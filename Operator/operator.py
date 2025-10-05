@@ -1,5 +1,5 @@
 import bpy
-from ..Helper import bootstrap, snapshot, newmarker, detect, compare
+from ..Helper import bootstrap, snapshot, newmarker, detect, compare, cleaneup
 
 class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
     bl_idname = 'kaiserlich.detect_cyclus'
@@ -35,6 +35,8 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
         detect.run(context, tr=values['tr'], md=values['md'], ma=values['ma'])
         print('--- Marker Vergleich ---')
         compare.run(context)
+        print('--- Cleaneup ---')
+        cleaneup.run(context, values)
 
         self.report({'INFO'}, f'Zyklus ausgeführt (ef={ef})')
         return {'FINISHED'}
