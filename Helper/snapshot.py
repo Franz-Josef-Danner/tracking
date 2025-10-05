@@ -2,6 +2,7 @@ import bpy
 
 # Speichert vorherige Track-Namen je Clip (clip.name -> set(names))
 _previous_tracks = {}
+_previous_marker_counts = {}
 
 def run(context, values: dict):
     """Snapshot der vorhandenen Track-Namen vor der Detection.
@@ -16,7 +17,18 @@ def run(context, values: dict):
     frame = context.scene.frame_current
     names = {t.name for t in clip.tracking.tracks}
     _previous_tracks[clip.name] = names
-    print(f'snapshot: Frame {frame} Clip {clip.name} gespeicherte Marker: {len(names)}')
+    # Markeranzahl je Track erfassen (Frame Count)
+    counts = {}
+    for t in clip.tracking.tracks:
+        try:
+            counts[t.name] = len(t.markers)
+        except Exception:
+            counts[t.name] = -1
+    _previous_marker_counts[clip.name] = counts
+    print(f'snapshot: Frame {frame} Clip {clip.name} gespeicherte Marker: {len(names)} (Detail counts: {counts})')
 
 def get_previous_for_clip(clip):
     return _previous_tracks.get(clip.name, set())
+
+def get_previous_marker_counts(clip):
+    return _previous_marker_counts.get(clip.name, {})

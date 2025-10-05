@@ -31,8 +31,8 @@ def run(context, values: dict):
 
     prev_names = snapshot.get_previous_for_clip(clip)
     current_tracks = list(clip.tracking.tracks)
-    new_tracks = [t for t in current_tracks if t.name not in prev_names]
-    old_tracks = [t for t in current_tracks if t.name in prev_names]
+    new_tracks = [t for t in current_tracks if t.name not in prev_names and not t.name.startswith('DELETED_')]
+    old_tracks = [t for t in current_tracks if t.name in prev_names and not t.name.startswith('DELETED_')]
 
     print(f'cleaneup: {len(new_tracks)} neue / {len(old_tracks)} alte Marker, md={md}')
 
@@ -40,6 +40,12 @@ def run(context, values: dict):
     for nt in new_tracks:
         nm_marker = _marker_at_frame(nt, frame_current)
         if nm_marker is None:
+            try:
+                # Log alle Frames des Tracks
+                frames_list = [m.frame for m in nt.markers]
+                print(f'cleaneup: kein Marker auf Frame {frame_current} in {nt.name} (Frames={frames_list})')
+            except Exception:
+                pass
             continue
         # Normalized zu Pixel
         nm_x = nm_marker.co[0] * hz
@@ -72,4 +78,9 @@ def run(context, values: dict):
         if not delete_flag:
             print(f'cleaneup: keep {nt.name}')
 
-    print(f'cleaneup: entfernt {removed} Marker')
+    # Statistik nach Bereinigung
+    try:
+        remaining = [t.name for t in clip.tracking.tracks]
+        print(f'cleaneup: entfernt {removed} Marker – verbleibende Tracks: {remaining}')
+    except Exception:
+        print(f'cleaneup: entfernt {removed} Marker')

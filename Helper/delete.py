@@ -84,7 +84,18 @@ def run(track, frame=None):
 
     # 1. Versuch: Marker am Frame löschen
     removed_marker = _delete_marker_at_frame(target, frame)
-    _log(f'Marker am Frame gelöscht={removed_marker}')
+    # Verifizieren ob Frame wirklich weg ist
+    frame_still = False
+    try:
+        for mk in target.markers:
+            if getattr(mk, 'frame', None) == frame:
+                frame_still = True
+                break
+    except Exception:
+        pass
+    _log(f'Marker am Frame gelöscht={removed_marker} frame_still_exists={frame_still}')
+    if removed_marker and frame_still:
+        _log('Warnung: API meldete Erfolg aber Marker-Frame weiterhin vorhanden')
 
     # 2. Wenn nichts gelöscht wurde -> kompletten Track leeren (Marker-Wipe)
     if not removed_marker:
