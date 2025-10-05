@@ -10,16 +10,31 @@ class KT_PT_panel(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        # Panel nur anzeigen, wenn wir im Movie Clip Editor sind
         return context.space_data is not None and context.space_data.type == 'CLIP_EDITOR'
 
     def draw(self, context):
         layout = self.layout
         scene = context.scene
+        params = getattr(scene, 'kt_params', None)
 
-        col = layout.column(align=True)
-        col.prop(scene, 'kt_marker_per_frame')
-        col.operator('kt.detect_cyclus', icon='TRACKING_FORWARDS')
+        if params is None:
+            layout.label(text="Parameter nicht initialisiert")
+            return
+
+        box_in = layout.box()
+        box_in.label(text="Eingabe")
+        box_in.prop(params, 'marker_per_frame')
+        box_in.operator('kt.detect_cyclus', icon='TRACKING_FORWARDS')
+
+        box_out = layout.box()
+        box_out.label(text="Berechnete Werte")
+        grid = box_out.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=True)
+        # Anzeige wichtiger Parameter
+        for attr in ('hz', 'vc', 'pz', 'sz', 'og', 'ug', 'md', 'ma', 'za', 'tr'):
+            row = grid.row()
+            row.label(text=f"{attr}:")
+            val = getattr(params, attr)
+            row.label(text=str(val))
 
 
 classes = (KT_PT_panel,)

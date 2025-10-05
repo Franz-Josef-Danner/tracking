@@ -10,26 +10,40 @@ bl_info = {
 }
 
 import importlib
-from . import properties
-from .operators import operator as kt_operator
-from .UI import ui as kt_ui
 
-modules = [properties, kt_operator, kt_ui]
+# Globale Referenzen für Module (werden lazy geladen)
+_modules = {}
+
+
+def _load_modules(reload=False):
+    from . import properties  # noqa: F401
+    from .operators import operator as kt_operator  # noqa: F401
+    from .UI import ui as kt_ui  # noqa: F401
+
+    mods = {
+        'properties': properties,
+        'kt_operator': kt_operator,
+        'kt_ui': kt_ui,
+    }
+    if reload:
+        for m in mods.values():
+            importlib.reload(m)
+    _modules.update(mods)
 
 
 def register():
-    for m in modules:
-        importlib.reload(m)
-    properties.register()
-    kt_operator.register()
-    kt_ui.register()
+    # Beim Nachladen (F8) existieren Module schon -> reload erzwingen
+    reload_flag = bool(_modules)
+    _load_modules(reload=reload_flag)
+    _modules['properties'].register()
+    _modules['kt_operator'].register()
+    _modules['kt_ui'].register()
 
 
 def unregister():
-    kt_ui.unregister()
-    kt_operator.unregister()
-    properties.unregister()
+    if not _modules:
+        return
+    _modules['kt_ui'].unregister()
+    _modules['kt_operator'].unregister()
+    _modules['properties'].unregister()
 
-
-if __name__ == "__main__":
-    register()
