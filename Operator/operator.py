@@ -26,10 +26,10 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
 
     max_iterations: bpy.props.IntProperty(  # type: ignore
         name="Max Iterationen",
-        default=6,
-        min=1,
-        soft_max=15,
-        description="Sicherheitslimit für Zyklen, um Endlosschleifen zu vermeiden"
+        default=0,
+        min=0,
+        soft_max=50,
+        description="0 oder kleiner = kein Limit; sonst maximale Anzahl Iterationen als Sicherheitsbremse"
     )
 
     def execute(self, context):
@@ -58,7 +58,8 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
         total_deleted_during_cleanup = 0
         iterations = 0
 
-        while iterations < self.max_iterations:
+        # Iteriere bis Abbruchbedingung (am > ug) oder optionales Limit
+        while (self.max_iterations <= 0) or (iterations < self.max_iterations):
             iterations += 1
             print(f"[Kaiserlich Tracker] ---- Iteration {iterations} (md={md:.2f}) ----")
 
@@ -114,8 +115,9 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                 print("[Kaiserlich Tracker] Keine neuen Marker zu löschen.")
 
         else:
-            # while ohne Break -> Limit erreicht
-            print(f"[Kaiserlich Tracker] Iterationslimit ({self.max_iterations}) erreicht – letzter Satz neuer Marker wird verworfen.")
+            if self.max_iterations > 0:
+                # while ohne Break -> Limit erreicht
+                print(f"[Kaiserlich Tracker] Iterationslimit ({self.max_iterations}) erreicht – letzter Satz neuer Marker wird verworfen.")
 
         # Zusammenfassung
         final_snapshot = snapshot_active_markers(context)
