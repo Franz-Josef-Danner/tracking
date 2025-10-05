@@ -94,6 +94,9 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
             )
             summary_deleted += deleted_count
 
+            # TEMP: Frühabbruch nach der ersten Detect-Runde zur Inspektion
+            break
+
             # Abbruchbedingungen / Adaptive Logik
             # Falls keine neuen Marker: aggressiveres Nachjustieren statt sofortigem Ende
             if am == 0:
