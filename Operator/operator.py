@@ -125,9 +125,9 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
             print(f"[Kaiserlich Tracker] Anzahl neue Marker nach Cleanup (am): {am}")
 
             # 5. Korridor Logik
-            if am > ug:
+            if am >= ug:
                 # Wir liegen über Untergrenze
-                if am < og:
+                if am <= og:
                     # Im Korridor (zwischen ug und og)
                     print(f"[Kaiserlich Tracker] Im Korridor: ug < am ({am}) < og. Versuche Verfeinerung.")
                     tr *= self.corridor_tr_factor
