@@ -1,5 +1,12 @@
 import bpy
 from . import snapshot, delete, bulk_delete
+import time
+
+# Konfiguration für Stabilität
+_BULK_CHUNK_SIZE = 4          # In kleineren Gruppen löschen um UI-Block zu reduzieren
+_RETRY_ON_FAIL = 1            # Wie oft eine fehlgeschlagene Gruppe nochmals versucht wird
+_DELETE_STRATEGY = 'temp_first'  # 'auto' | 'temp_first' | 'operator_first'
+_GLOBAL_TIMEOUT_SEC = 5       # Harte Obergrenze für gesamten Cleanup-Löschteil
 
 def _marker_at_frame(track, frame_current):
     # Finde Marker exakt auf aktuellem Frame, sonst None
@@ -76,9 +83,35 @@ def run(context, values: dict):
 
     # Jetzt gesammelt löschen
     if to_delete_tracks:
-        print(f'cleaneup: versuche {len(to_delete_tracks)} Tracks via bulk_delete zu entfernen')
-        actually_removed = bulk_delete.delete_tracks(to_delete_tracks)
-        removed += actually_removed
+        print(f'cleaneup: versuche {len(to_delete_tracks)} Tracks via bulk_delete (Strategie={_DELETE_STRATEGY}) zu entfernen')
+        start_delete = time.perf_counter()
+        # In Chunks verarbeiten
+        for i in range(0, len(to_delete_tracks), _BULK_CHUNK_SIZE):
+            if (time.perf_counter() - start_delete) > _GLOBAL_TIMEOUT_SEC:
+                print('cleaneup: Lösch-Timeout erreicht – breche weitere Versuche ab')
+                break
+            chunk = to_delete_tracks[i:i+_BULK_CHUNK_SIZE]
+            attempt = 0
+            while True:
+                attempt += 1
+                before_names = [t.name for t in chunk]
+                print(f'cleaneup: Chunk {i//_BULK_CHUNK_SIZE+1} Versuch {attempt} Tracks={before_names}')
+                removed_now = bulk_delete.delete_tracks(chunk, strategy=_DELETE_STRATEGY)
+                removed += removed_now
+                # Herausfiltern was noch existiert (nicht physisch gelöscht) aber nicht logisch umbenannt
+                remaining_obj = []
+                current_names = {t.name: t for t in bpy.context.edit_movieclip.tracking.tracks}
+                for t in chunk:
+                    if t.name in current_names and not t.name.startswith('DELETED_'):
+                        remaining_obj.append(current_names[t.name])
+                if not remaining_obj:
+                    break  # Alles erledigt (physisch oder logical)
+                if removed_now == 0 and attempt > _RETRY_ON_FAIL:
+                    print('cleaneup: keine weitere Verbesserung – breche Chunk ab')
+                    break
+                if (time.perf_counter() - start_delete) > _GLOBAL_TIMEOUT_SEC:
+                    print('cleaneup: Timeout während Chunk – Abbruch')
+                    break
     else:
         print('cleaneup: keine Tracks zum Löschen geflaggt')
 
