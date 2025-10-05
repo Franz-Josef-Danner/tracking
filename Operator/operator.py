@@ -55,16 +55,6 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                 'sz': sz,
             })
 
-            # Redraw nach jedem Detect zur visuellen Aktualisierung
-            try:
-                wm = bpy.context.window_manager
-                for window in wm.windows:
-                    for area in window.screen.areas:
-                        if area.type == 'CLIP_EDITOR':
-                            area.tag_redraw()
-            except Exception:
-                pass
-
             # Neue Marker nach Detect
             new_markers = newmarker.capture_new_tracks(context, old_names)
             am = len(new_markers)
@@ -112,18 +102,18 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                 tr *= 0.5  # Schwelle senken um mehr Features zuzulassen
                 pz = max(2, int(pz * 1.05))  # leicht größere Pattern Size
                 sz = max(4, int(pz * 2))
-                if tr < 0.1:
+                if tr < 0.01:
                     break
                 continue
 
-            if tr < 0.1:
+            if tr < 0.01:
                 break
             # Bereichslogik
             if am > ug:
                 if am < og:
                     # zwischen ug und og: Parameter fein anpassen
                     tr *= 0.15
-                    if tr < 0.1:
+                    if tr < 0.01:
                         break
                     pz = max(2, int(pz * 1.1))
                     sz = max(4, int(pz * 2))
