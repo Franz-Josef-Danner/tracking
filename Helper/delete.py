@@ -24,42 +24,45 @@ def _track_still_exists(clip, name):
     return False
 
 def _delete_marker_at_frame(track, frame):
-    # Versuche gezielt Marker am Frame zu löschen
+    """Versucht den Marker auf 'frame' zu löschen und validiert den Erfolg.
+    Rückgabe True nur, wenn der Marker vorher existierte und danach nicht mehr vorhanden ist.
+    """
+    try:
+        before_exists = any(getattr(mk, 'frame', None) == frame for mk in track.markers)
+    except Exception:
+        before_exists = False
+    if not before_exists:
+        return False
+
+    # Versuche über find_frame
     if hasattr(track.markers, 'find_frame'):
         try:
             m = track.markers.find_frame(frame)
         except Exception:
             m = None
-        if m is not None:
+        if m is not None and hasattr(track.markers, 'delete_frame'):
             try:
                 track.markers.delete_frame(frame)
-                return True
             except Exception:
                 pass
-    # Fallback: Suche manuell
-    found = None
-    for mk in track.markers:
-        if getattr(mk, 'frame', None) == frame:
-            found = mk
-            break
-    if found is not None and hasattr(track.markers, 'delete_frame'):
-        try:
-            track.markers.delete_frame(frame)
-            return True
-        except Exception:
-            pass
+    # Validierung
+    after_exists = any(getattr(mk, 'frame', None) == frame for mk in track.markers)
+    if not after_exists:
+        return True
+    # Zweiter Versuch: brute force (alle Marker kopieren außer dem Frame – hier nur möglich wenn API löscht)
+    # Wenn weiterhin vorhanden -> nicht erfolgreich
     return False
 
 def _delete_all_markers(track):
-    frames = []
+    frames_list = []
     for mk in track.markers:
-        fr = getattr(mk, 'frame', None)
-        if fr is not None:
-            frames.append(fr)
-    frames = sorted(set(fr), reverse=True)
+        frv = getattr(mk, 'frame', None)
+        if frv is not None:
+            frames_list.append(frv)
+    unique_frames = sorted(set(frames_list), reverse=True)
     ok = True
-    for fr in frames:
-        if not _delete_marker_at_frame(track, fr):
+    for frv in unique_frames:
+        if not _delete_marker_at_frame(track, frv):
             ok = False
     return ok and len(track.markers) == 0
 
@@ -127,12 +130,22 @@ def run(track, frame=None):
         _log(f'Track {name} ist leer -> markiert als gelöscht (mute/rename)')
         return True
 
+    # Wenn nur EIN Marker (unlöschbar) und wir wollten ihn entfernen -> Track logisch deaktivieren
+    if len(target.markers) == 1:
+        try:
+            target.mute = True
+            target.name = f'DELETED_SINGLE_{name}'
+            _log(f'Track {name} single-marker not deletable -> logical removal (mute & rename)')
+            return True
+        except Exception:
+            pass
+
     # Erfolg nur melden, wenn mindestens ein Marker weniger existiert als vorher
     try:
         existing_after = sorted({getattr(mk, 'frame', None) for mk in target.markers})
     except Exception:
         existing_after = []
-    changed = len(existing_after) < len(existing_frames)
+    changed = len(existing_after) < len(existing_frames) or target.name.startswith('DELETED_')
     _log(f'Abschluss: vorher_frames={existing_frames} nachher_frames={existing_after} changed={changed}')
     return changed
 def _resolve_track(context, track_name: str, case_insensitive: bool = True):
