@@ -30,7 +30,6 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
 
         while True:
             iteration += 1
-            print(f"[Kaiserlich Tracker] === Cyclus Iteration {iteration} === tr={tr} md={md} pz={pz} sz={sz}")
 
             # Anwenden der aktuellen Markergrößen falls geändert
             marker_size.apply_marker_sizes(context, pz, sz)
@@ -59,7 +58,7 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
             # Neue Marker nach Detect
             new_markers = newmarker.capture_new_tracks(context, old_names)
             am = len(new_markers)
-            print(f"[Kaiserlich Tracker] am (Anzahl neue Marker) = {am}")
+            # Anzahl neue Marker intern verfügbar (am)
 
             # Vergleich alt/neu
             old_by_track = {m.track_name: m for m in old_markers}
@@ -78,10 +77,7 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                     comparison_log.append(
                         f"NM: {nm.track_name} neu=({nm.co_x:.4f},{nm.co_y:.4f})"
                     )
-            if comparison_log:
-                print("[Kaiserlich Tracker] Marker Vergleich:")
-                for line in comparison_log:
-                    print("   ", line)
+            # Vergleichslog entfernt
 
             # Cleanup Paare bilden nur für AMA
             from ..Helper.cleaneup import MarkerPair
@@ -106,14 +102,11 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                 tr *= 0.5  # Schwelle senken um mehr Features zuzulassen
                 pz = max(2, int(pz * 1.05))  # leicht größere Pattern Size
                 sz = max(4, int(pz * 2))
-                print(f"[Kaiserlich Tracker] am==0 -> tr reduziert auf {tr:.4f}, pz={pz}, sz={sz} (weiter)")
                 if tr < 0.1:
-                    print("[Kaiserlich Tracker] tr < 0.1 nach am==0 Anpassungen - Ende.")
                     break
                 continue
 
             if tr < 0.1:
-                print("[Kaiserlich Tracker] Schwelle < 0.1 - Ende.")
                 break
             # Bereichslogik
             if am > ug:
@@ -121,18 +114,15 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                     # zwischen ug und og: Parameter fein anpassen
                     tr *= 0.15
                     if tr < 0.1:
-                        print("[Kaiserlich Tracker] tr unter 0.1 nach Anpassung - Ende.")
                         break
                     pz = max(2, int(pz * 1.1))
                     sz = max(4, int(pz * 2))
-                    print(f"[Kaiserlich Tracker] Anpassung: tr={tr:.4f} pz={pz} sz={sz}")
                     continue  # neuer Zyklus
                 else:
                     # am >= og -> md neu kalibrieren und alle neuen Marker löschen
                     ratio = za / max(am, 1)
                     if ratio > 0:
                         md = int(md / ratio) if ratio != 0 else md
-                    print(f"[Kaiserlich Tracker] Neue md (over-range) = {md}")
                     for nm in new_markers:
                         delete.delete_marker_frame(context, nm.track_name, context.scene.frame_current)
                     continue  # neuer Zyklus
@@ -141,7 +131,6 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                 ratio = za / max(am, 1)
                 if ratio > 0:
                     md = int(md / ratio) if ratio != 0 else md
-                print(f"[Kaiserlich Tracker] Neue md (under-range) = {md}")
                 for nm in new_markers:
                     delete.delete_marker_frame(context, nm.track_name, context.scene.frame_current)
                 continue

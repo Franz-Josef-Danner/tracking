@@ -38,17 +38,14 @@ def run(context, ef: int):
 
     ma = hz * 0.025
     md = hz * 0.025
-    print(f"md = {md}")
 
     # pattern size (integer)
     pz = int(hz * 0.01)
-    print(f"pz = {pz}")
 
     # search size (integer)
     sz = int(pz * 2)
 
     tr = 1
-    print(f"tr = {tr}")
 
     za = (ef * 4) / 14
     # og aufrunden (ceil), ug abrunden (floor)
@@ -59,7 +56,7 @@ def run(context, ef: int):
     if clip:
         marker_size.apply_marker_sizes(context, pz, sz)
 
-    print(f"[Kaiserlich Tracker] ef={ef} hz={hz} vc={vc} ma={ma} md={md} pz={pz} sz={sz} tr={tr} za={za} og={og} ug={ug}")
+    # Zusammenfassung bewusst ohne direkte Ausgabe gehalten
 
     return {
         "ef": int(ef),

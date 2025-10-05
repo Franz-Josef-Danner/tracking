@@ -9,7 +9,6 @@ def detect_features(context, params: Dict[str, Any]):
     """
     space = context.space_data
     if not space or space.type != 'CLIP_EDITOR':
-        print("[Kaiserlich Tracker] detect_features: Kein Clip Editor Kontext.")
         return {'CANCELLED'}
 
     margin = params.get('ma', 16)
@@ -18,7 +17,6 @@ def detect_features(context, params: Dict[str, Any]):
     pattern_size = int(params.get('pz', 21))  # fallback typische Standardgröße
     search_size = int(params.get('sz', pattern_size * 2))
 
-    print(f"[Kaiserlich Tracker] detect_features -> margin={margin} min_distance={min_distance} threshold={threshold} pattern_size={pattern_size} search_size={search_size}")
 
     # Versuche die globalen Tracking Settings zu beeinflussen (optional, abhängig von Blender Version)
     clip = space.clip
@@ -31,8 +29,8 @@ def detect_features(context, params: Dict[str, Any]):
                 settings.pattern_size = pattern_size
             if hasattr(settings, 'search_size'):
                 settings.search_size = search_size
-        except Exception as e:
-            print(f"[Kaiserlich Tracker] Konnte pattern/search size nicht setzen: {e}")
+        except Exception:
+            pass
 
     try:
         bpy.ops.clip.detect_features(
@@ -41,8 +39,7 @@ def detect_features(context, params: Dict[str, Any]):
             threshold=threshold,
             min_distance=min_distance,
         )
-    except Exception as e:
-        print(f"[Kaiserlich Tracker] Fehler bei detect_features: {e}")
+    except Exception:
         return {'CANCELLED'}
 
     return {'FINISHED'}

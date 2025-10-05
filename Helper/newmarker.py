@@ -21,11 +21,9 @@ def capture_new_tracks(context, old_track_names) -> List[NewTrackSnapshot]:
     """
     space = context.space_data
     if not space or space.type != 'CLIP_EDITOR':
-        print("[Kaiserlich Tracker] newmarker: Kein Clip Editor Kontext.")
         return []
     clip = space.clip
     if not clip:
-        print("[Kaiserlich Tracker] newmarker: Kein aktiver Clip.")
         return []
     tracking = clip.tracking
     frame_current = context.scene.frame_current
@@ -46,10 +44,4 @@ def capture_new_tracks(context, old_track_names) -> List[NewTrackSnapshot]:
             co_x=marker.co[0],
             co_y=marker.co[1],
         ))
-    if new_list:
-        print(f"[Kaiserlich Tracker] Neue Marker: {len(new_list)}")
-        for nm in new_list:
-            print("   ", nm)
-    else:
-        print("[Kaiserlich Tracker] Keine neuen Marker gefunden.")
     return new_list

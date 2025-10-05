@@ -26,12 +26,10 @@ def capture_current_frame_markers(context) -> List[MarkerSnapshot]:
     markers_out: List[MarkerSnapshot] = []
     space = context.space_data
     if not space or space.type != 'CLIP_EDITOR':
-        print("[Kaiserlich Tracker] Kein Clip Editor Kontext.")
         return markers_out
 
     clip = space.clip
     if not clip:
-        print("[Kaiserlich Tracker] Kein aktiver Movie Clip.")
         return markers_out
 
     tracking = clip.tracking
@@ -54,9 +52,5 @@ def capture_current_frame_markers(context) -> List[MarkerSnapshot]:
             mute=marker.mute,
         )
         markers_out.append(snap)
-
-    print(f"[Kaiserlich Tracker] Snapshot Frame {frame_current}: {len(markers_out)} Marker")
-    for ms in markers_out:
-        print("  ", ms)
 
     return markers_out

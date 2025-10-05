@@ -2,13 +2,12 @@ import bpy
 
 
 def _resolve_track(context, track_name: str, case_insensitive: bool = True):
+    """Findet einen Track anhand seines Namens (optional case-insensitive)."""
     space = context.space_data
     if not space or space.type != 'CLIP_EDITOR':
-        print(f"[Kaiserlich Tracker][DEBUG] _resolve_track: Kein gültiger CLIP_EDITOR Kontext (space={getattr(space, 'type', None)})")
         return None
     clip = getattr(space, 'clip', None)
     if not clip:
-        print("[Kaiserlich Tracker][DEBUG] _resolve_track: Kein aktiver Clip vorhanden.")
         return None
     tracking = clip.tracking
     target = track_name if track_name else ""
@@ -19,9 +18,7 @@ def _resolve_track(context, track_name: str, case_insensitive: bool = True):
         lower = target.lower()
         for tr in tracking.tracks:
             if tr.name.lower() == lower:
-                print(f"[Kaiserlich Tracker][DEBUG] _resolve_track: Case-insensitive Match '{tr.name}' für Eingabe '{track_name}'")
                 return tr
-    print(f"[Kaiserlich Tracker][DEBUG] _resolve_track: Track '{track_name}' nicht gefunden. Verfügbare Tracks: {[t.name for t in tracking.tracks]}")
     return None
 
 
@@ -33,15 +30,8 @@ def _marker_frames(track):
 
 
 def _debug_track_introspection(track):
-    try:
-        attrs = [a for a in dir(track.markers) if not a.startswith('_')]
-        print(f"[Kaiserlich Tracker][INTROSPECT] track='{track.name}' markers_attrs={attrs}")
-    except Exception as e:
-        print(f"[Kaiserlich Tracker][INTROSPECT] Fehler beim Auflisten marker attrs -> {e}")
-    try:
-        print(f"[Kaiserlich Tracker][INTROSPECT] track='{track.name}' len(markers)={len(track.markers)} first_marker_frame={getattr(track.markers[0],'frame',None) if len(track.markers)>0 else None}")
-    except Exception as e:
-        print(f"[Kaiserlich Tracker][INTROSPECT] Fehler Basisdaten -> {e}")
+    """(Entfernt) Funktion diente reinem Debugging – Platzhalter für evtl. zukünftige introspektion."""
+    return
 
 
 def _remove_marker_object(track, marker):
@@ -53,40 +43,36 @@ def _remove_marker_object(track, marker):
     before_count = len(before_frames)
     marker_frame = getattr(marker, 'frame', None)
 
-    available = [m for m in ("delete", "remove", "delete_frame") if hasattr(track.markers, m)]
-    print(f"[Kaiserlich Tracker][DEBUG] _remove_marker_object: Verfügbare Methoden={available} Track={track.name} MarkerFrame={marker_frame} VorherCount={before_count}")
+    # Versuche verschiedene API-Varianten – still.
 
-    def verify(methode_name):
+    def verify(_methode_name):
         after_frames = _marker_frames(track)
-        after_count = len(after_frames)
         still = marker_frame in after_frames
-        print(f"[Kaiserlich Tracker][DEBUG] _remove_marker_object: Methode={methode_name} AfterCount={after_count} StillThere={still}")
-        # Spezieller Fall: Letzter Marker einer Spur darf evtl. nicht verschwinden
-        return (not still) or (before_count == 1 and after_count == 1 and still)
+        # Sonderfall: letzter Marker bleibt evtl. bestehen
+        return (not still) or (before_count == 1 and len(after_frames) == 1 and still)
 
     if hasattr(track.markers, 'delete'):
         try:
             track.markers.delete(marker)
             if verify('delete(marker)'):
                 return True, 'delete(marker)'
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][DEBUG] _remove_marker_object: delete(marker) FAIL -> {e}")
+        except Exception:
+            pass
     if hasattr(track.markers, 'remove'):
         try:
             track.markers.remove(marker)
             if verify('remove(marker)'):
                 return True, 'remove(marker)'
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][DEBUG] _remove_marker_object: remove(marker) FAIL -> {e}")
+        except Exception:
+            pass
     if hasattr(track.markers, 'delete_frame') and marker_frame is not None:
         try:
             track.markers.delete_frame(marker_frame)
             if verify('delete_frame(frame)'):
                 return True, 'delete_frame(frame)'
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][DEBUG] _remove_marker_object: delete_frame(frame) FAIL -> {e}")
-
-    print("[Kaiserlich Tracker][DEBUG] _remove_marker_object: Alle Methoden ohne effektive Entfernung.")
+        except Exception:
+            pass
+    # Keine Methode erfolgreich
     return False, None
 
 
@@ -94,22 +80,17 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
     """Löscht einen einzelnen Marker-Keyframe eines Tracks (by frame) mit ausführlichem Debug-Log."""
     space = context.space_data
     if not space or space.type != 'CLIP_EDITOR':
-        print("[Kaiserlich Tracker] delete_marker_frame: Kein CLIP_EDITOR Kontext.")
         return False
     clip = getattr(space, 'clip', None)
     if not clip:
-        print("[Kaiserlich Tracker] delete_marker_frame: Kein aktiver Clip.")
         return False
     tracking = clip.tracking
-    print(f"[Kaiserlich Tracker][DEBUG] delete_marker_frame: Ziel track='{track_name}' frame={frame} AktuelleSceneFrame={context.scene.frame_current}")
-    print(f"[Kaiserlich Tracker][DEBUG] delete_marker_frame: Verfügbare Tracks={[t.name for t in tracking.tracks]}")
     try:
         for tr in tracking.tracks:
             if tr.name != track_name:
                 continue
+            # Vorher Frames (nur intern genutzt)
             frames_vorher = _marker_frames(tr)
-            print(f"[Kaiserlich Tracker][DEBUG] Track '{tr.name}' MarkerFrames vor Löschung: {frames_vorher[:50]} (Total={len(frames_vorher)})")
-            _debug_track_introspection(tr)
 
             # Marker suchen
             marker = None
@@ -118,8 +99,8 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
                 try:
                     marker = tr.markers.find_frame(frame)
                     used_find = True
-                except Exception as e:
-                    print(f"[Kaiserlich Tracker][DEBUG] find_frame Exception -> {e}")
+                except Exception:
+                    pass
                     marker = None
             if marker is None:
                 for m in tr.markers:
@@ -127,20 +108,16 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
                         marker = m
                         break
             if marker is None:
-                print(f"[Kaiserlich Tracker] Marker nicht gefunden: track={track_name} frame={frame} (find_frame_verwendet={used_find})")
                 return False
-            print(f"[Kaiserlich Tracker][DEBUG] Gefundener Marker frame={getattr(marker,'frame',None)} used_find={used_find}")
 
             removed, methode = _remove_marker_object(tr, marker)
-            print(f"[Kaiserlich Tracker][DEBUG] Entfernen Ergebnis removed_effective={removed} methode={methode}")
 
             still_there = any(m.frame == frame for m in tr.markers)
             frames_nachher = _marker_frames(tr)
-            print(f"[Kaiserlich Tracker][DEBUG] Track '{tr.name}' MarkerFrames nach Löschung: {frames_nachher[:50]} (Total={len(frames_nachher)}) still_there={still_there}")
 
             # Sonderfall: Spur mit einzigem Marker lässt sich per API nicht leeren -> ggf. Track entfernen
             if still_there and len(frames_nachher) == 1 and removed:
-                print(f"[Kaiserlich Tracker][DEBUG] Single-Marker-Track Fallback aktiv für Track '{tr.name}' (Frame {frame})")
+                # Fallback für Single-Marker-Track
                 # Versuch 1: Track per Operator löschen
                 deleted_track = False
                 try:
@@ -178,37 +155,30 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
                                     break
                         if override:
                             break
-                    print(f"[Kaiserlich Tracker][DEBUG] Fallback Track Delete Operator Kontext gefunden={bool(override)}")
                     try:
-                        result = bpy.ops.clip.delete_track(override) if override else bpy.ops.clip.delete_track()
-                        print(f"[Kaiserlich Tracker][DEBUG] Operator clip.delete_track Rückgabe: {result}")
-                    except Exception as oe:
-                        print(f"[Kaiserlich Tracker][DEBUG] Operator clip.delete_track Fehler -> {oe}")
+                        _ = bpy.ops.clip.delete_track(override) if override else bpy.ops.clip.delete_track()
+                    except Exception:
+                        pass
                     # Prüfen ob Track weg ist
                     deleted_track = all(t.name != tr.name for t in tracking.tracks)
-                except Exception as e_op:
-                    print(f"[Kaiserlich Tracker][DEBUG] Track-Operator Löschung Ausnahme -> {e_op}")
+                except Exception:
+                    pass
 
                 if deleted_track:
-                    print(f"[Kaiserlich Tracker] Track gelöscht (Einzel-Marker Spur): {track_name}")
                     return True
                 else:
-                    print(f"[Kaiserlich Tracker][DEBUG] Track nicht gelöscht via Operator. Versuche Dummy-Workaround ...")
                     # Versuch 2: Dummy-Marker an anderem Frame anlegen, dann Ziel löschen
                     try:
                         dummy_frame = frame + 1
                         if hasattr(tr.markers, 'find_frame') and tr.markers.find_frame(dummy_frame) is None:
                             tr.markers.insert_frame(dummy_frame)
-                            print(f"[Kaiserlich Tracker][DEBUG] Dummy Marker eingefügt bei Frame {dummy_frame}")
+                            pass
                         # Nochmals Ziel löschen
                         if hasattr(tr.markers, 'delete_frame'):
                             tr.markers.delete_frame(frame)
                             check_after_dummy = any(m.frame == frame for m in tr.markers)
                             if not check_after_dummy:
-                                print(f"[Kaiserlich Tracker] Marker gelöscht nach Dummy-Workaround: track={track_name} frame={frame}")
                                 return True
-                            else:
-                                print(f"[Kaiserlich Tracker][DEBUG] Dummy-Workaround löschte Marker nicht (track={track_name})")
                         # Aufräumen: Dummy wieder löschen wenn nur er übrig ist und nicht gewollt
                         if len(tr.markers) == 1 and any(m.frame == dummy_frame for m in tr.markers):
                             # Versuchen Track doch zu entfernen
@@ -216,29 +186,21 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
                                 for tsel in tracking.tracks:
                                     tsel.select = False
                                 tr.select = True
-                                result2 = bpy.ops.clip.delete_track(override) if override else bpy.ops.clip.delete_track()
-                                print(f"[Kaiserlich Tracker][DEBUG] Zweiter Versuch Track löschen (nur Dummy übrig) -> {result2}")
-                            except Exception as e2:
-                                print(f"[Kaiserlich Tracker][DEBUG] Zweiter Versuch Track delete Fehler -> {e2}")
-                    except Exception as dwe:
-                        print(f"[Kaiserlich Tracker][DEBUG] Dummy-Workaround Fehler -> {dwe}")
+                                _ = bpy.ops.clip.delete_track(override) if override else bpy.ops.clip.delete_track()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
 
             if not still_there and removed:
                 try:
                     context.scene.frame_set(context.scene.frame_current)
-                except Exception as e:
-                    print(f"[Kaiserlich Tracker][DEBUG] frame_set Exception -> {e}")
-                print(f"[Kaiserlich Tracker] Marker gelöscht: track={track_name} frame={frame} via {methode}")
+                except Exception:
+                    pass
                 return True
-            print(f"[Kaiserlich Tracker] Marker konnte nicht gelöscht werden (track={track_name} frame={frame}) removed={removed} still_there={still_there} methode={methode}")
-            if frames_nachher:
-                diffs = [(abs(f - frame), f) for f in frames_nachher]
-                diffs.sort()
-                print(f"[Kaiserlich Tracker][DEBUG] Nächste vorhandene Markerframes relativ zum Ziel: {diffs[:5]}")
 
             # Operator-Fallback (nur wenn Frame noch existiert)
             if still_there:
-                print("[Kaiserlich Tracker][DEBUG] Starte Operator-Fallback bpy.ops.clip.delete_marker() ...")
                 # Kontext Override auf einen CLIP_EDITOR Area
                 override = None
                 try:
@@ -264,8 +226,8 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
                                     break
                         if override:
                             break
-                except Exception as e:
-                    print(f"[Kaiserlich Tracker][DEBUG] Fallback Kontextsuche Fehler -> {e}")
+                except Exception:
+                    pass
 
                 # Track & Marker selektieren
                 try:
@@ -282,30 +244,25 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
                         mk = tr.markers.find_frame(frame)
                         if mk:
                             mk.select = True
-                    print(f"[Kaiserlich Tracker][DEBUG] Fallback Auswahl gesetzt: track='{tr.name}' frame={frame}")
-                except Exception as e:
-                    print(f"[Kaiserlich Tracker][DEBUG] Auswahl setzen Fehler -> {e}")
+                except Exception:
+                    pass
 
                 try:
                     if override:
-                        result = bpy.ops.clip.delete_marker(override)
+                        _ = bpy.ops.clip.delete_marker(override)
                     else:
-                        result = bpy.ops.clip.delete_marker()
-                    print(f"[Kaiserlich Tracker][DEBUG] Operator Rückgabe: {result}")
-                except Exception as e:
-                    print(f"[Kaiserlich Tracker][DEBUG] Operator Fehler -> {e}")
+                        _ = bpy.ops.clip.delete_marker()
+                except Exception:
+                    pass
 
                 # Nach-Überprüfung
                 frames_after_op = _marker_frames(tr)
-                print(f"[Kaiserlich Tracker][DEBUG] Nach Operator Frames: {frames_after_op}")
                 if frame not in frames_after_op:
-                    print(f"[Kaiserlich Tracker] Marker gelöscht (Operator Fallback): track={track_name} frame={frame}")
                     return True
-                else:
-                    print(f"[Kaiserlich Tracker][DEBUG] Operator-Fallback ohne Erfolg für track={track_name} frame={frame}")
             return False
     except Exception as e:
-        print(f"[Kaiserlich Tracker] Fehler beim Löschen Marker track={track_name} frame={frame}: {e}")
+        # Fehler wird still geschluckt (kein Log für Übersichtlichkeit)
+        _ = e
     return False
 
 
@@ -313,39 +270,27 @@ def delete_marker_index(context, track_name: str, index: int) -> bool:
     """Löscht Marker per Index (0-basiert in aktueller Reihenfolge der Collection) mit Debug."""
     tr = _resolve_track(context, track_name)
     if not tr:
-        print(f"[Kaiserlich Tracker] Track nicht gefunden: {track_name}")
         return False
     markers_list = list(tr.markers)
-    print(f"[Kaiserlich Tracker][DEBUG] delete_marker_index: Track={track_name} MarkerAnzahl={len(markers_list)} IndexZiel={index}")
     if index < 0 or index >= len(markers_list):
-        print(f"[Kaiserlich Tracker] Ungültiger Marker-Index {index} (Track {track_name})")
         return False
     marker = markers_list[index]
     frame = getattr(marker, 'frame', None)
     removed, methode = _remove_marker_object(tr, marker)
     still_there = any(getattr(m, 'frame', None) == frame for m in tr.markers)
-    if removed and not still_there:
-        print(f"[Kaiserlich Tracker] Marker (Index {index}, Frame {frame}) gelöscht: {track_name} via {methode}")
-        return True
-    print(f"[Kaiserlich Tracker] Marker (Index {index}) NICHT gelöscht: {track_name} removed={removed} still_there={still_there} methode={methode}")
-    return False
+    return bool(removed and not still_there)
 
 
 def delete_all_markers(context, track_name: str) -> int:
     """Löscht alle Marker eines Tracks und gibt Anzahl gelöschter Marker zurück (Debug)."""
     tr = _resolve_track(context, track_name)
     if not tr:
-        print(f"[Kaiserlich Tracker] Track nicht gefunden: {track_name}")
         return 0
     original = _marker_frames(tr)
-    print(f"[Kaiserlich Tracker][DEBUG] delete_all_markers: Track={track_name} StartFrames={original[:50]} Total={len(original)}")
     count = 0
     for mk in list(tr.markers):
         removed, methode = _remove_marker_object(tr, mk)
         if removed:
             count += 1
     remaining = _marker_frames(tr)
-    print(f"[Kaiserlich Tracker] Alle Marker gelöscht: {track_name} (Entfernt={count} Vorher={len(original)} Rest={len(remaining)})")
-    if remaining:
-        print(f"[Kaiserlich Tracker][DEBUG] Verbliebene Frames: {remaining[:50]}")
     return count
