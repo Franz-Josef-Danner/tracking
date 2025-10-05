@@ -1,5 +1,5 @@
 import bpy
-from . import snapshot, delete
+from . import snapshot, delete, bulk_delete
 
 def _marker_at_frame(track, frame_current):
     # Finde Marker exakt auf aktuellem Frame, sonst None
@@ -37,6 +37,8 @@ def run(context, values: dict):
     print(f'cleaneup: {len(new_tracks)} neue / {len(old_tracks)} alte Marker, md={md}')
 
     removed = 0
+    # Sammeln statt sofort löschen – dann ein Operator-Aufruf.
+    to_delete_tracks = []
     for nt in new_tracks:
         nm_marker = _marker_at_frame(nt, frame_current)
         if nm_marker is None:
@@ -60,27 +62,29 @@ def run(context, values: dict):
             disH = abs(om_x - nm_x)
             disV = abs(om_y - nm_y)
             if disH < md:
-                print(f'cleaneup: disH {disH:.2f} < {md} -> remove {nt.name}')
-                success = delete.run(nt, frame=frame_current)
-                print(f'cleaneup: delete result for {nt.name} success={success}')
-                if success:
-                    removed += 1
+                print(f'cleaneup: disH {disH:.2f} < {md} -> flag remove {nt.name}')
+                to_delete_tracks.append(nt)
                 delete_flag = True
                 break
             elif disV < md:
-                print(f'cleaneup: disV {disV:.2f} < {md} -> remove {nt.name}')
-                success = delete.run(nt, frame=frame_current)
-                print(f'cleaneup: delete result for {nt.name} success={success}')
-                if success:
-                    removed += 1
+                print(f'cleaneup: disV {disV:.2f} < {md} -> flag remove {nt.name}')
+                to_delete_tracks.append(nt)
                 delete_flag = True
                 break
         if not delete_flag:
             print(f'cleaneup: keep {nt.name}')
 
+    # Jetzt gesammelt löschen
+    if to_delete_tracks:
+        print(f'cleaneup: versuche {len(to_delete_tracks)} Tracks via bulk_delete zu entfernen')
+        actually_removed = bulk_delete.delete_tracks(to_delete_tracks)
+        removed += actually_removed
+    else:
+        print('cleaneup: keine Tracks zum Löschen geflaggt')
+
     # Statistik nach Bereinigung
     try:
         remaining = [t.name for t in clip.tracking.tracks]
-        print(f'cleaneup: entfernt {removed} Marker – verbleibende Tracks: {remaining}')
+        print(f'cleaneup: entfernt {removed} Tracks – verbleibende Tracks: {remaining}')
     except Exception:
-        print(f'cleaneup: entfernt {removed} Marker')
+        print(f'cleaneup: entfernt {removed} Tracks')
