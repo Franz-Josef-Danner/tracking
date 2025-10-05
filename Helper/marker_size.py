@@ -1,16 +1,16 @@
 import bpy
 
-def apply(pz: int, sz: int):
-    """Setzt Default Pattern & Search Size für neue Marker im aktiven Clip."""
-    clip = bpy.context.edit_movieclip
-    if not clip:
-        print('Kein Clip für marker_size.apply()')
-        return
-    try:
-        settings = clip.tracking.settings
-        # Blender erwartet typische Größen im Bereich 4..128 – wir setzen direkt unsere berechneten Werte.
-        settings.default_pattern_size = int(pz)
-        settings.default_search_size = int(sz)
-        print(f'Marker Size gesetzt -> pattern: {pz}  search: {sz}')
-    except Exception as e:
-        print(f'Fehler beim Setzen der Marker Sizes: {e}')
+def apply_marker_sizes(pz: int, sz: int):
+    """Setzt die Standard Pattern/Search Größe für neue Tracks.
+    In Blender sind dies die Preferences für Tracking (Movie Clip Editor -> Track-Einstellungen).
+    """
+    # Die Eigenschaften existieren pro Szene als Tracking-Settings
+    scene = bpy.context.scene
+    tracking_settings = scene.tracking.settings
+
+    # Blender verwendet pattern_size und search_size (Quadrat-Kantenlänge in Pixeln)
+    tracking_settings.default_pattern_size = pz
+    tracking_settings.default_search_size = sz
+
+    print(f"[Kaiserlich Tracker] default_pattern_size auf {pz} gesetzt")
+    print(f"[Kaiserlich Tracker] default_search_size auf {sz} gesetzt")
