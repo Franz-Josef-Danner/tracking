@@ -72,63 +72,70 @@ def delete_tracks(tracks):
         _log('Keine übereinstimmenden Track-Namen')
         return 0
 
-    ctx = _find_clip_editor_context(clip)
-    if not ctx:
-        _log('Versuche Fallback ohne Operator (direktes Entfernen)')
-        # Fallback direkt ohne Operator
-        removed = 0
-        existing = list(clip.tracking.tracks)
-        name_set = {t.name for t in to_delete}
-        for trk in existing:
-            if trk.name in name_set:
-                try:
-                    clip.tracking.tracks.remove(trk)
-                    removed += 1
-                    _log(f'Fallback entfernt Track: {trk.name}')
-                except Exception as e:
-                    _log(f'Fallback Fehler Track {trk.name}: {e}')
-        _log(f'Fallback Entfernt: {removed}')
-        return removed
-
-    # Selektion vorbereiten + aktiver Track setzen
-    active_set = False
-    for t in clip.tracking.tracks:
+    # Versuch: jeden Track einzeln löschen (robuster als Multi-Select)
+    total_removed = 0
+    for target in to_delete:
+        name_before = target.name
+        ctx = _find_clip_editor_context(clip)
+        if not ctx:
+            _log(f'Kein Kontext für {name_before} – markiere nur (logical delete)')
+            try:
+                target.name = f'DELETED_UNREM_{name_before}'
+            except Exception:
+                pass
+            continue
+        # Alle deselektieren
+        for t in clip.tracking.tracks:
+            try:
+                t.select = False
+            except Exception:
+                pass
+        # Ziel selektieren + aktiv setzen
         try:
-            t.select = False
-        except Exception:
-            pass
-    for i, t in enumerate(to_delete):
+            target.select = True
+            clip.tracking.tracks.active = target
+        except Exception as e:
+            _log(f'Set active/select fehlgeschlagen {name_before}: {e}')
+        before_names = [t.name for t in clip.tracking.tracks]
+        _log(f'Vor Löschung einzelner Track={name_before} Tracks={before_names}')
         try:
-            t.select = True
-            if not active_set:
-                clip.tracking.tracks.active = t
-                active_set = True
-        except Exception:
-            pass
-
-    before = [t.name for t in clip.tracking.tracks]
-    _log(f'Vorher Tracks: {before}')
-    _log('Selektiert für Löschung: ' + ', '.join([t.name for t in to_delete]))
-    try:
-        res = bpy.ops.clip.delete_track(ctx)
-        _log(f'Operator delete_track Ergebnis: {res}')
-    except Exception as e:
-        _log(f'Operator Fehler: {e} – Fallback Entfernen einzelner Tracks')
-        removed = 0
-        existing = list(clip.tracking.tracks)
-        name_set = {t.name for t in to_delete}
-        for trk in existing:
-            if trk.name in name_set:
-                try:
-                    clip.tracking.tracks.remove(trk)
-                    removed += 1
-                    _log(f'Fallback entfernt Track: {trk.name}')
-                except Exception as e2:
-                    _log(f'Fallback Fehler Track {trk.name}: {e2}')
-        _log(f'Fallback Entfernt: {removed}')
-        return removed
-    after = [t.name for t in clip.tracking.tracks]
-    _log(f'Nachher Tracks: {after}')
-    removed = len(before) - len(after)
-    _log(f'Entfernt (Differenz): {removed}')
-    return removed
+            res = bpy.ops.clip.delete_track(ctx)
+            _log(f'Operator Einzel-Löschung {name_before} Ergebnis: {res}')
+        except Exception as e:
+            _log(f'Operator Fehler bei {name_before}: {e} – versuche direkten remove()')
+            # Direkter Remove (falls API unterstützt)
+            try:
+                # Prüfen ob Collection remove unterstützt
+                if hasattr(clip.tracking.tracks, 'remove'):
+                    clip.tracking.tracks.remove(target)
+                    _log(f'Direkt entfernt via Collection.remove: {name_before}')
+                    total_removed += 1
+                    continue
+                else:
+                    _log('Collection.remove nicht verfügbar – logical rename')
+            except Exception as e2:
+                _log(f'Direkter remove Fehler {name_before}: {e2}')
+            # Logical Delete (Rename) als Fallback
+            try:
+                if not name_before.startswith('DELETED_'):
+                    target.name = f'DELETED_{name_before}'
+                    _log(f'Logical umbenannt: {target.name}')
+            except Exception:
+                pass
+            continue
+        # Erfolg prüfen: existiert Name noch?
+        after_names = [t.name for t in clip.tracking.tracks]
+        if name_before not in after_names:
+            total_removed += 1
+            _log(f'Bestätigt entfernt: {name_before}')
+        else:
+            _log(f'Noch vorhanden nach Operator: {name_before} – versuche rename logical')
+            try:
+                tgt = next((t for t in clip.tracking.tracks if t.name == name_before), None)
+                if tgt and not tgt.name.startswith('DELETED_'):
+                    tgt.name = f'DELETED_{name_before}'
+                    _log(f'Logical rename fallback: {tgt.name}')
+            except Exception:
+                pass
+    _log(f'Gesamt physisch entfernt: {total_removed} (logical markierte bleiben erhalten)')
+    return total_removed
