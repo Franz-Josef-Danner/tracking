@@ -9,15 +9,40 @@ from ..Helper.marker_size import apply_marker_sizes
 
 
 def _recompute_md(current_md: float, za: float, am: int) -> float:
-    """Berechnet neues md gemäß Vorgabe: md / (za / am) => md * am / za.
+        """Berechnet neues md gemäß deiner Spezifikation:
 
-    Schutz vor Division durch 0 und zu kleinen Werten. Falls am == 0 wird ein
-    konservativer Reduktionsfaktor angewandt.
-    """
-    if am <= 0 or za <= 0:
-        return max(1.0, current_md * 0.5)
-    new_md = current_md * max(0.75, min(1.5, (am / za)))
-    return max(1.0, new_md)
+        Vorgabe (vereinfacht übersetzt):
+            md / max(-50, min(50, (za / am)))
+
+        Interpretation:
+            ratio = za / am (wie weit liegen wir vom Ziel entfernt?)
+            clamp ratio in [-50, 50] (negativer Teil praktisch irrelevant, da za & am > 0)
+            neues_md = current_md / clamp_ratio
+
+        Wirkung:
+            - Wenn am < za  -> ratio > 1  -> md wird kleiner -> dichter liegende neue Marker zugelassen.
+            - Wenn am > za  -> ratio < 1  -> md wird größer -> strengere Distanz -> weniger neue Marker.
+
+        Edge Cases:
+            - am <= 0 -> wir haben keine neuen Marker -> md stärker verkleinern (Förderung neuer Marker)
+            - za <= 0 -> unlogisch, fallback: unverändert.
+        """
+        if za <= 0:
+                return current_md
+        if am <= 0:
+                # Aggressive Absenkung um mehr Marker zu ermöglichen, aber auf >= 1 Pixel begrenzen
+                return max(1.0, current_md / 2.0)
+        ratio = za / am
+        # Clamp in [-50, 50]
+        if ratio > 50:
+                ratio = 50.0
+        elif ratio < -50:
+                ratio = -50.0  # theoretisch nie erreicht
+        # Division – ratio sollte > 0 sein; Sicherheitsfallback
+        if ratio <= 0:
+                return current_md
+        new_md = current_md / ratio
+        return max(1.0, new_md)
 
 class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
     bl_idname = "kaiserlich_tracker.detect_cycle"
@@ -38,9 +63,9 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
 
     finish_threshold: bpy.props.FloatProperty(  # type: ignore
         name="Finish Threshold (tr <)",
-        default=0.01,
+        default=0.0001,  # gemäß Anforderung tr < 0.0001 -> fertig
         min=0.0001,
-        description="Schwellwert unter den der Threshold fallen muss um im Korridor final zu beenden"
+        description="Schwellwert unter den der Threshold fallen muss um im Korridor final zu beenden (Spezifikation: 0.0001)"
     )
 
     corridor_tr_factor: bpy.props.FloatProperty(  # type: ignore
