@@ -2,21 +2,34 @@ import bpy
 from ..Helper.bootstrap import run_bootstrap
 from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.detect import detect_features
-from ..Helper.newmarker import classify_markers
+from ..Helper.newmarker import classify_markers, diff_markers
 from ..Helper.cleaneup import cleanup_new_markers
 from ..Helper.delete import delete_tracks_by_names
 from ..Helper.marker_size import apply_marker_sizes
 
 
-def _recompute_md(current_md: float, za: float, am: int) -> float:
-    """Berechnet neues md gemäß Vorgabe: md / (za / am) => md * am / za.
+def _recompute_md_clamped(current_md: float, za: float, am: int) -> float:
+    """Neue md-Regel laut aktualisierter Vorgabe:
+    md_neu = md_alt / clamp(za / am, -100, 100)
 
-    Schutz vor Division durch 0 und zu kleinen Werten. Falls am == 0 wird ein
-    konservativer Reduktionsfaktor angewandt.
+    Für positive Werte (za, am > 0) ist dies äquivalent zu md * (am/za), solange (za/am) <= 100.
+    Die Clamp vermeidet extremes Schrumpfen bei sehr kleinen am.
+
+    Schutzfälle:
+      - am <= 0 oder za <= 0 -> halbieren (aber >= 1.0)
+      - Division durch 0 vermeiden.
     """
     if am <= 0 or za <= 0:
         return max(1.0, current_md * 0.5)
-    new_md = current_md * (am / za)
+    divisor = za / am
+    # Clamp
+    if divisor > 100:
+        divisor = 100.0
+    elif divisor < -100:
+        divisor = -100.0
+    if divisor == 0:
+        return max(1.0, current_md)
+    new_md = current_md / divisor
     return max(1.0, new_md)
 
 class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
@@ -107,6 +120,8 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
 
             # 2. Snapshot danach
             after = snapshot_active_markers(context)
+            # Diff Logging (neue Marker ROH vor Cleanup)
+            _ = diff_markers(baseline, after)
 
             # 3. Klassifikation (alte vs neue Marker)
             alte_marker, neue_marker_roh = classify_markers(baseline, after)
@@ -152,8 +167,8 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                 else:
                     # am >= og => zu viele neue Marker -> md adjust & neue verwerfen
                     print(f"[Kaiserlich Tracker] Über OG: am ({am}) >= og ({og}) -> md anpassen & neue löschen.")
-                    md = _recompute_md(md, za, am)
-                    print(f"[Kaiserlich Tracker] md angepasst (über OG): {md:.2f}")
+                    md = _recompute_md_clamped(md, za, am)
+                    print(f"[Kaiserlich Tracker] md angepasst (über OG) neue Formel: {md:.2f}")
                     if cleaned_new:
                         names = [m['track'] for m in cleaned_new]
                         removed = delete_tracks_by_names(context, names)
@@ -162,8 +177,8 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
             else:
                 # am <= ug -> unter Untergrenze -> md anpassen & neue löschen (wir wollen mehr, also verwerfen & Param anpassen)
                 print(f"[Kaiserlich Tracker] Unter UG: am ({am}) <= ug ({ug}) -> md anpassen & neue löschen.")
-                md = _recompute_md(md, za, am)
-                print(f"[Kaiserlich Tracker] md angepasst (unter UG): {md:.2f}")
+                md = _recompute_md_clamped(md, za, am)
+                print(f"[Kaiserlich Tracker] md angepasst (unter UG) neue Formel: {md:.2f}")
                 if cleaned_new:
                     names = [m['track'] for m in cleaned_new]
                     removed = delete_tracks_by_names(context, names)
