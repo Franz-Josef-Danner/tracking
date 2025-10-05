@@ -1,5 +1,5 @@
 import bpy
-from ..Helper import bootstrap, snapshot, newmarker, detect, compare, cleaneup, delete
+from ..Helper import bootstrap, snapshot, newmarker, detect, compare, cleaneup, delete, bulk_delete
 
 class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
     bl_idname = 'kaiserlich.detect_cyclus'
@@ -72,29 +72,20 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                 md_current = new_md
             else:
                 print('[Cycle] za=0 -> md unverändert')
-            # Neue Marker auf aktuellem Frame löschen, um nächste Iteration frisch zu generieren
+            # Ganze neue Tracks löschen (statt nur Marker), um frisches Feld für nächste Iteration zu haben
             try:
                 clip = bpy.context.edit_movieclip
-                frame_cur = context.scene.frame_current
                 if clip:
-                    candidate_names = cmp_result.get('new_names', set())
-                    # Filter: existiert Track noch & hat Marker auf Frame
-                    existing_names = []
-                    for t in clip.tracking.tracks:
-                        if t.name in candidate_names:
-                            try:
-                                has_marker = any(m.frame == frame_cur for m in t.markers)
-                            except Exception:
-                                has_marker = False
-                            if has_marker:
-                                existing_names.append(t.name)
-                    if existing_names:
-                        print(f'[Cycle] Lösche Marker auf Frame {frame_cur} für neue Tracks: {existing_names}')
-                        delete.delete_markers_by_names(frame_cur, existing_names)
+                    candidate_names = set(cmp_result.get('new_names', set()))
+                    # Erneut nur diejenigen nehmen, die noch existieren (nach Cleanup evtl. schon weg)
+                    to_remove_objs = [t for t in clip.tracking.tracks if t.name in candidate_names]
+                    if to_remove_objs:
+                        print(f'[Cycle] Entferne komplette neue Tracks: {[t.name for t in to_remove_objs]}')
+                        bulk_delete.delete_tracks(to_remove_objs, clip=clip)
                     else:
-                        print('[Cycle] Keine überlebenden neuen Marker zum Löschen gefunden')
+                        print('[Cycle] Keine neuen Tracks mehr zum Entfernen (evtl. durch Cleanup gelöscht)')
             except Exception as e:
-                print(f'[Cycle] Fehler beim Löschschritt: {e}')
+                print(f'[Cycle] Fehler beim Track-Löschschritt: {e}')
             # Weiter zur nächsten Iteration
         self.report({'INFO'}, f'Zyklus beendet – neue Marker zuletzt: {surviving} (ef={ef})')
         return {'FINISHED'}
