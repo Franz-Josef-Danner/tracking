@@ -1,21 +1,20 @@
 import bpy
 import time
 
-# ===== Safe Mode Optionen =====
-# Wenn True: Nur temp_override (oder direct remove) – keine Operator-Varianten
 SAFE_MODE = True
-# Max Gesamtzeit pro delete_tracks Aufruf (Sekunden)
 SAFE_TOTAL_TIMEOUT = 4.0
-# Minimale Pause (Sekunden) nach physischem Entfernen zur internen Aktualisierung
 SAFE_POST_REMOVE_SLEEP = 0.0
+#
+## ===== Konfiguration (vereinfachter stabiler Modus) =====
+SAFE_TOTAL_TIMEOUT = 4.0      # Max Gesamtzeit pro Löschaufruf (Sek.)
+SAFE_POST_REMOVE_SLEEP = 0.0  # Optionaler Sleep nach Entfernung (0 deaktiviert)
 
 # Globale Caches / Flags zur Laufzeit zur Stabilitäts-/Performance-Steigerung
 # Sobald klar ist, dass Operator-Löschung nicht funktioniert, sparen wir uns weitere Versuche.
-_OPERATOR_DELETE_UNSUPPORTED = False
 # Merkt sich, ob temp_override Löschung mind. einmal funktioniert hat (True) oder sicher fehlgeschlagen ist (False)
-_TEMP_OVERRIDE_CAPABLE = None  # None = noch nicht getestet
+_TEMP_OVERRIDE_CAPABLE = None  # Cache ob temp_override bereits erfolgreich war
 
-# Konfigurierbare Limits
+## Konfigurierbare Limits
 MAX_OPERATOR_ATTEMPTS_PER_TRACK = 6  # Hartes Limit, danach Abbruch
 MAX_RECORDED_ATTEMPTS = 12           # Wie viele Detail-Einträge wir pro Track speichern
 OPERATOR_FIRST_DEFAULT = False       # Falls True zuerst Operator statt temp_override
@@ -83,21 +82,8 @@ def _iter_clip_context_variants(target_clip):
             space = area.spaces.active
             if getattr(space, 'clip', None) != target_clip:
                 continue
-            # Variante 1: Voll
-            full = bpy.context.copy()
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    full.update({'window': window, 'screen': screen, 'area': area, 'region': region, 'space_data': space, 'scene': bpy.context.scene})
-                    yield full
-                    # Variante 2: Minimal (nur area/region/space_data)
-                    minimal = {'area': area, 'region': region, 'space_data': space}
-                    yield minimal
-                    # Variante 3: Minimal + scene
-                    minimal_scene = {'area': area, 'region': region, 'space_data': space, 'scene': bpy.context.scene}
-                    yield minimal_scene
-                    # Variante 4: Ohne region (manchmal tolerant)
-                    yield {'area': area, 'space_data': space}
-                    break
+            yield {'area': area, 'space_data': space}
+            break
 
 def _try_operator_delete_with_variants(track, target_clip):
     """Versucht verschiedene Operator- / Kontext-Kombinationen.
@@ -252,7 +238,7 @@ def purge_logically_deleted(target_clip=None):
     Falls physisches Entfernen nicht geht, werden sie lediglich gezählt.
     """
     if target_clip is None:
-        target_clip = bpy.context.edit_movieclip
+        target_clip = getattr(bpy.context, 'edit_movieclip', None)
     if not target_clip:
         _log('purge: kein Clip')
         return {'removed': 0, 'remaining_deleted': 0}
@@ -271,16 +257,12 @@ def purge_logically_deleted(target_clip=None):
     _log(f'purge: entfernt={removed} verbleibend_markiert={remaining_deleted}')
     return {'removed': removed, 'remaining_deleted': remaining_deleted}
 
-def delete_tracks(tracks, strategy='auto', clip=None):
-    """ Löscht mehrere Tracking-Tracks stabil mit mehrstufigem Fallback.
+def delete_tracks(tracks, clip=None):
+    """ Löscht übergebene Tracks robust (temp_override -> remove -> logical rename).
 
-    Parameter:
-      tracks   : Iterable von MovieTrackingTrack (oder Objekten mit .name)
-      strategy : 'auto' | 'temp_first' | 'operator_first'
-                 auto          -> nutzt Heuristik (temp_override bevorzugen sobald erfolgreich)
-                 temp_first    -> versucht temp_override zuerst pro Track
-                 operator_first-> zwingt Operator zuerst (innerhalb Limits)
-    Rückgabe: Anzahl physisch entfernter Tracks
+    tracks: iterable von Objekten mit .name
+    clip: Optional MovieClip (sonst aus Kontext)
+    Rückgabe: Anzahl physisch gelöschter Tracks
     """
     if not tracks:
         _log('Keine Tracks übergeben')
@@ -321,7 +303,6 @@ def delete_tracks(tracks, strategy='auto', clip=None):
 
     total_removed = 0
     start_total = time.perf_counter()
-    use_operator_first = (not SAFE_MODE) and ((strategy == 'operator_first') or (strategy == 'auto' and not _TEMP_OVERRIDE_CAPABLE and OPERATOR_FIRST_DEFAULT))
     for idx, name_before in enumerate(to_delete_names, 1):
         if (time.perf_counter() - start_total) > SAFE_TOTAL_TIMEOUT:
             _log('Abbruch: SAFE_TOTAL_TIMEOUT erreicht')
@@ -339,16 +320,7 @@ def delete_tracks(tracks, strategy='auto', clip=None):
         start_track = time.perf_counter()
 
         # Reihenfolge bestimmen je nach Strategie / Safe Mode
-        methods = []
-        if SAFE_MODE:
-            methods = ['temp']
-        else:
-            if strategy == 'temp_first' or (strategy == 'auto' and _TEMP_OVERRIDE_CAPABLE):
-                methods = ['temp', 'operator']
-            elif use_operator_first:
-                methods = ['operator', 'temp']
-            else:
-                methods = ['temp', 'operator']
+        methods = ['temp']
 
         removed = False
         for m in methods:
@@ -369,16 +341,7 @@ def delete_tracks(tracks, strategy='auto', clip=None):
                         break
                     else:
                         _log(f'temp_override meldete FINISHED, Track {name_before} existiert jedoch noch')
-            elif m == 'operator':
-                success, attempts = _try_operator_delete_with_variants(target, clip)
-                if success:
-                    removed = True
-                    _log(f'Removed via Operator: {name_before}')
-                    break
-                else:
-                    if attempts:
-                        last = attempts[-1]
-                        _log(f'Operator fehlgeschlagen (summary letzte={last})')
+            # keine Operator Pfade
 
         if not removed:
             # Direkter remove Versuch falls vorhanden
