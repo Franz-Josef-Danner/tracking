@@ -19,35 +19,46 @@ from . import marker_size
 import math
 
 def run(context, ef: int):
+    """Führt Grundberechnungen aus und gibt ein Dict mit Werten zurück."""
     clip = bpy.context.edit_movieclip
     if not clip:
         print('Kein Movie Clip aktiv.')
-        return
+        return {}
 
     hz = clip.size[0]
     vc = clip.size[1]
 
-    ma = hz * 0.025
-    ma = hz * 0.025
-    md = hz * 0.025
-    print(f'ma (margin): {ma}')
+    ma = hz * 0.025  # margin
+    md = hz * 0.025  # min_distance
     pz = int(hz * 0.01)
-    print(f'pz (pixel size basis): {pz}')
     sz = pz * 2
+    tr = 1  # threshold konstant laut Vorgabe
 
-    marker_size.calculate(pz, sz)
-
-    tr = 1
-    print(f'tr (threshold): {tr}')
+    marker_size.apply(pz, sz)
 
     za = (ef * 4) / 14
     og = math.ceil(za * 1.1)
     ug = math.floor(za * 0.9)
 
-    print(f'Eingabewert ef: {ef}')
-    print(f'za (Zwischenwert): {za}')
-    print(f'og (Obergrenze): {og}')
-    print(f'ug (Untergrenze): {ug}')
+    print(f'hz: {hz}  vc: {vc}')
+    print(f'ma (margin): {ma}')
+    print(f'md (min_distance): {md}')
+    print(f'pz (pattern size basis): {pz}')
+    print(f'sz (search size): {sz}')
+    print(f'tr (threshold): {tr}')
+    print(f'ef (Eingabe): {ef}')
+    print(f'za: {za}  og: {og}  ug: {ug}')
 
-    # Platzhalter für weitere Verarbeitung / Erkennung
-    # ... weitere Logik kann hier implementiert werden
+    return {
+        'hz': hz,
+        'vc': vc,
+        'ma': ma,
+        'md': md,
+        'pz': pz,
+        'sz': sz,
+        'tr': tr,
+        'ef': ef,
+        'za': za,
+        'og': og,
+        'ug': ug,
+    }

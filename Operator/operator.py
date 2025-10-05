@@ -1,5 +1,5 @@
 import bpy
-from ..Helper import bootstrap
+from ..Helper import bootstrap, snapshot, newmarker, detect
 
 class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
     bl_idname = 'kaiserlich.detect_cyclus'
@@ -21,8 +21,20 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
             self.report({'ERROR'}, f'Ungueltiger Eingabewert: {ef_raw}')
             return {'CANCELLED'}
 
-        bootstrap.run(context, ef)
-        self.report({'INFO'}, f'Berechnung gestartet mit Eingabewert {ef}')
+        values = bootstrap.run(context, ef)
+        if not values:
+            self.report({'ERROR'}, 'Keine Berechnungen – kein aktiver Clip?')
+            return {'CANCELLED'}
+
+        # Zyklus / Pipeline Schritte
+        print('--- Zyklus Start (snapshot) ---')
+        snapshot.run(context, values)
+        print('--- Neue Marker Vorbereitung ---')
+        newmarker.run(context, values)
+        print('--- Feature Detection ---')
+        detect.run(context, tr=values['tr'], md=values['md'], ma=values['ma'])
+
+        self.report({'INFO'}, f'Zyklus ausgeführt (ef={ef})')
         return {'FINISHED'}
 
 classes = (KAISERLICH_OT_detect_cyclus,)
