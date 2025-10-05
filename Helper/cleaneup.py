@@ -48,6 +48,9 @@ def cleanup_new_markers(context, alte_marker: List[MarkerSnapshot], neue_marker:
         if should_delete:
             if delete_track_by_name(context, nm['track']):
                 deleted_count += 1
+            else:
+                # Löschen fehlgeschlagen -> Marker behalten, damit kein logischer Verlust entsteht
+                kept.append(nm)
         else:
             kept.append(nm)
 
