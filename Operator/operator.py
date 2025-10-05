@@ -31,9 +31,10 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
         ug = values['ug']
         md_current = values['md']  # dynamisch anpassbar
 
-        max_iterations = 15  # Sicherheitsbegrenzung gegen Endlosschleifen
         surviving = 0
-        for iteration in range(1, max_iterations + 1):
+        iteration = 0
+        while True:
+            iteration += 1
             print(f'=== Zyklus Start Iteration {iteration} (md={md_current}) ===')
             # Snapshot (Baseline alte Marker)
             snapshot.run(context, values)
@@ -95,9 +96,6 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
             except Exception as e:
                 print(f'[Cycle] Fehler beim Löschschritt: {e}')
             # Weiter zur nächsten Iteration
-        else:
-            print('[Cycle] Max Iterationen erreicht – Abbruch')
-
         self.report({'INFO'}, f'Zyklus beendet – neue Marker zuletzt: {surviving} (ef={ef})')
         return {'FINISHED'}
 
