@@ -32,6 +32,18 @@ def _marker_frames(track):
         return []
 
 
+def _debug_track_introspection(track):
+    try:
+        attrs = [a for a in dir(track.markers) if not a.startswith('_')]
+        print(f"[Kaiserlich Tracker][INTROSPECT] track='{track.name}' markers_attrs={attrs}")
+    except Exception as e:
+        print(f"[Kaiserlich Tracker][INTROSPECT] Fehler beim Auflisten marker attrs -> {e}")
+    try:
+        print(f"[Kaiserlich Tracker][INTROSPECT] track='{track.name}' len(markers)={len(track.markers)} first_marker_frame={getattr(track.markers[0],'frame',None) if len(track.markers)>0 else None}")
+    except Exception as e:
+        print(f"[Kaiserlich Tracker][INTROSPECT] Fehler Basisdaten -> {e}")
+
+
 def _remove_marker_object(track, marker):
     """Versucht Marker zu entfernen und verifiziert direkt den Effekt.
     Rückgabe: (removed_effective: bool, methode: str oder None)"""
@@ -97,6 +109,7 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
                 continue
             frames_vorher = _marker_frames(tr)
             print(f"[Kaiserlich Tracker][DEBUG] Track '{tr.name}' MarkerFrames vor Löschung: {frames_vorher[:50]} (Total={len(frames_vorher)})")
+            _debug_track_introspection(tr)
 
             # Marker suchen
             marker = None
@@ -149,6 +162,74 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
                 diffs = [(abs(f - frame), f) for f in frames_nachher]
                 diffs.sort()
                 print(f"[Kaiserlich Tracker][DEBUG] Nächste vorhandene Markerframes relativ zum Ziel: {diffs[:5]}")
+
+            # Operator-Fallback (nur wenn Frame noch existiert)
+            if still_there:
+                print("[Kaiserlich Tracker][DEBUG] Starte Operator-Fallback bpy.ops.clip.delete_marker() ...")
+                # Kontext Override auf einen CLIP_EDITOR Area
+                override = None
+                try:
+                    wm = bpy.context.window_manager
+                    for window in wm.windows:
+                        for area in window.screen.areas:
+                            if area.type == 'CLIP_EDITOR':
+                                for region in area.regions:
+                                    if region.type == 'WINDOW':
+                                        override = {
+                                            'window': window,
+                                            'screen': window.screen,
+                                            'area': area,
+                                            'region': region,
+                                            'scene': context.scene,
+                                        }
+                                        space = area.spaces.active
+                                        if getattr(space, 'clip', None):
+                                            override['space_data'] = space
+                                            override['clip'] = space.clip
+                                        break
+                                if override:
+                                    break
+                        if override:
+                            break
+                except Exception as e:
+                    print(f"[Kaiserlich Tracker][DEBUG] Fallback Kontextsuche Fehler -> {e}")
+
+                # Track & Marker selektieren
+                try:
+                    for tt in tracking.tracks:
+                        tt.select = False
+                        try:
+                            mk = tt.markers.find_frame(frame) if hasattr(tt.markers,'find_frame') else None
+                            if mk:
+                                mk.select = False
+                        except Exception:
+                            pass
+                    tr.select = True
+                    if hasattr(tr.markers, 'find_frame'):
+                        mk = tr.markers.find_frame(frame)
+                        if mk:
+                            mk.select = True
+                    print(f"[Kaiserlich Tracker][DEBUG] Fallback Auswahl gesetzt: track='{tr.name}' frame={frame}")
+                except Exception as e:
+                    print(f"[Kaiserlich Tracker][DEBUG] Auswahl setzen Fehler -> {e}")
+
+                try:
+                    if override:
+                        result = bpy.ops.clip.delete_marker(override)
+                    else:
+                        result = bpy.ops.clip.delete_marker()
+                    print(f"[Kaiserlich Tracker][DEBUG] Operator Rückgabe: {result}")
+                except Exception as e:
+                    print(f"[Kaiserlich Tracker][DEBUG] Operator Fehler -> {e}")
+
+                # Nach-Überprüfung
+                frames_after_op = _marker_frames(tr)
+                print(f"[Kaiserlich Tracker][DEBUG] Nach Operator Frames: {frames_after_op}")
+                if frame not in frames_after_op:
+                    print(f"[Kaiserlich Tracker] Marker gelöscht (Operator Fallback): track={track_name} frame={frame}")
+                    return True
+                else:
+                    print(f"[Kaiserlich Tracker][DEBUG] Operator-Fallback ohne Erfolg für track={track_name} frame={frame}")
             return False
     except Exception as e:
         print(f"[Kaiserlich Tracker] Fehler beim Löschen Marker track={track_name} frame={frame}: {e}")
