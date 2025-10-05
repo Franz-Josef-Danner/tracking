@@ -153,7 +153,44 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
         ))
         return {'FINISHED'}
 
-classes = [KAISERLICH_OT_detect_cyclus]
+class KAISERLICH_OT_delete_marker(bpy.types.Operator):
+    """Löscht Marker im aktuellen Frame.
+
+    Wenn ein Track-Name gesetzt ist (UI-Feld), wird nur dessen Marker im aktuellen Frame gelöscht.
+    Ist kein Name gesetzt, werden Marker aller Tracks im aktuellen Frame (falls vorhanden) gelöscht.
+    """
+    bl_idname = "kaiserlich.delete_marker"
+    bl_label = "Delete Marker Frame"
+    bl_description = "Löscht Marker im aktuellen Frame (optional nur eines Tracks)"
+
+    def execute(self, context):
+        scene = context.scene
+        frame = scene.frame_current
+        track_name = getattr(scene, 'kaiserlich_delete_track_name', '').strip()
+
+        space = context.space_data
+        if not space or space.type != 'CLIP_EDITOR':
+            self.report({'WARNING'}, "Kein Clip Editor aktiv")
+            return {'CANCELLED'}
+        clip = getattr(space, 'clip', None)
+        if not clip:
+            self.report({'WARNING'}, "Kein aktiver Clip")
+            return {'CANCELLED'}
+
+        tracking = clip.tracking
+        deleted = 0
+        if track_name:
+            if delete.delete_marker_frame(context, track_name, frame):
+                deleted = 1
+        else:
+            for tr in tracking.tracks:
+                if delete.delete_marker_frame(context, tr.name, frame):
+                    deleted += 1
+
+        self.report({'INFO'}, f"Marker gelöscht: {deleted} (Frame {frame})")
+        return {'FINISHED'}
+
+classes = [KAISERLICH_OT_detect_cyclus, KAISERLICH_OT_delete_marker]
 
 def register():
     for cls in classes:

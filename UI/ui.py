@@ -1,5 +1,5 @@
 import bpy
-from bpy.props import IntProperty
+from bpy.props import IntProperty, StringProperty
 
 class KAISERLICH_PT_tracker(bpy.types.Panel):
     bl_label = "Kaiserlich Tracker"
@@ -17,6 +17,10 @@ class KAISERLICH_PT_tracker(bpy.types.Panel):
         scn = context.scene
         layout.prop(scn, "kaiserlich_marker_per_frame")
         layout.operator("kaiserlich.detect_cycle", text="Detect Cyclus")
+        box = layout.box()
+        box.label(text="Delete Marker")
+        box.prop(scn, "kaiserlich_delete_track_name", text="Track (optional)")
+        box.operator("kaiserlich.delete_marker", text="Delete Marker Frame")
 
 
 def register():
@@ -35,11 +39,22 @@ def register():
             min=1,
             soft_max=200,
         )
+    if not hasattr(bpy.types.Scene, 'kaiserlich_delete_track_name'):
+        bpy.types.Scene.kaiserlich_delete_track_name = StringProperty(
+            name="Track",
+            description="Name des Tracks (leer = alle Tracks)",
+            default="",
+        )
 
 def unregister():
     if hasattr(bpy.types.Scene, 'kaiserlich_marker_per_frame'):
         try:
             del bpy.types.Scene.kaiserlich_marker_per_frame
+        except Exception:
+            pass
+    if hasattr(bpy.types.Scene, 'kaiserlich_delete_track_name'):
+        try:
+            del bpy.types.Scene.kaiserlich_delete_track_name
         except Exception:
             pass
     for cls in [KAISERLICH_PT_tracker]:
