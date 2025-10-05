@@ -15,7 +15,7 @@ def run(context, values: dict):
         print('snapshot: kein Clip')
         return
     frame = context.scene.frame_current
-    names = {t.name for t in clip.tracking.tracks if not (t.name.startswith('DELETED_') or t.name.startswith('FAILED_DEL_'))}
+    names = {t.name for t in clip.tracking.tracks if not (t.name.startswith('DELETED_') or t.name.startswith('FAILED_DEL_') or t.name.startswith('DELETED_UNREM_'))}
     _previous_tracks[clip.name] = names
     # Markeranzahl je Track erfassen (Frame Count)
     counts = {}

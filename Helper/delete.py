@@ -84,6 +84,21 @@ def run(track, frame=None):
     if frame is None:
         frame = bpy.context.scene.frame_current
     _log(f'Run delete für Track={name} Frame={frame}')
+    # Diagnose: Attribute-Liste / Methodenverfügbarkeit
+    try:
+        has_del_frame = hasattr(target.markers, 'delete_frame')
+        has_find_frame = hasattr(target.markers, 'find_frame')
+        _log(f'Capabilities: delete_frame={has_del_frame} find_frame={has_find_frame} len(markers)={len(target.markers)}')
+    except Exception:
+        pass
+    # Liste aller Marker Frames + Koordinaten
+    try:
+        marker_dump = []
+        for mk in target.markers:
+            marker_dump.append({'frame': getattr(mk,'frame',None), 'co': getattr(mk,'co',None)})
+        _log(f'MarkerDump vor: {marker_dump}')
+    except Exception:
+        pass
 
     # 1. Versuch: Marker am Frame löschen
     # Aktuelle Marker Frames vor Start
@@ -108,6 +123,60 @@ def run(track, frame=None):
             _log(f'  Versuch delete_frame({fr}) ok={ok_single} still_exists={still}')
         after_frames = sorted({getattr(mk, 'frame', None) for mk in target.markers})
         _log(f'Frames nach Einzel-Versuchen: {after_frames}')
+        # Operator-Fallback für einzelne Marker (nur falls noch Marker existieren)
+        if after_frames:
+            _log('Versuche Operator-Fallback delete_marker für jede Frame-ID')
+            clip = bpy.context.edit_movieclip
+            if clip:
+                # Build override
+                try:
+                    wm = bpy.context.window_manager
+                    override = None
+                    for window in wm.windows:
+                        for area in window.screen.areas:
+                            if area.type == 'CLIP_EDITOR':
+                                space = area.spaces.active
+                                if getattr(space,'clip',None) != clip:
+                                    continue
+                                for region in area.regions:
+                                    if region.type == 'WINDOW':
+                                        override = {
+                                            'window': window,
+                                            'screen': window.screen,
+                                            'area': area,
+                                            'region': region,
+                                            'space_data': space,
+                                            'scene': bpy.context.scene,
+                                        }
+                                        break
+                                if override: break
+                        if override: break
+                except Exception:
+                    override = None
+                # Selektions-Setup + Marker-Selektion und Operator
+                try:
+                    for tsel in clip.tracking.tracks:
+                        try: tsel.select = False
+                        except Exception: pass
+                    try: target.select = True
+                    except Exception: pass
+                    # Selektiere alle Marker (oder spezifischen Frame)
+                    if hasattr(target.markers,'find_frame'):
+                        mk = target.markers.find_frame(frame)
+                        if mk: 
+                            try: mk.select = True
+                            except Exception: pass
+                    # Operator versuchen
+                    try:
+                        if override:
+                            op_res = bpy.ops.clip.delete_marker(override)
+                        else:
+                            op_res = bpy.ops.clip.delete_marker()
+                        _log(f'Operator delete_marker Ergebnis: {op_res}')
+                    except Exception as e:
+                        _log(f'Operator delete_marker Exception: {e}')
+                except Exception as e:
+                    _log(f'Operator-Fallback Setup Fehler: {e}')
 
     # 2. Wenn immer noch Marker existieren -> roher Wipe
     if len(target.markers):
@@ -146,7 +215,25 @@ def run(track, frame=None):
     except Exception:
         existing_after = []
     changed = len(existing_after) < len(existing_frames) or target.name.startswith('DELETED_')
+    # Dump Marker nachher
+    try:
+        marker_dump_after = []
+        for mk in target.markers:
+            marker_dump_after.append({'frame': getattr(mk,'frame',None), 'co': getattr(mk,'co',None)})
+        _log(f'MarkerDump nach: {marker_dump_after}')
+    except Exception:
+        pass
     _log(f'Abschluss: vorher_frames={existing_frames} nachher_frames={existing_after} changed={changed}')
+    if not changed:
+        # Letzter Versuch: logisches Deaktivieren falls wir eigentlich löschen wollten (Frame Teilmenge)
+        if frame in existing_after:
+            try:
+                target.mute = True
+                target.name = f'DELETED_UNREM_{name}'
+                _log(f'Logische Deaktivierung (Umbenennung) für {name} da nicht physisch löschbar')
+                return True
+            except Exception:
+                pass
     return changed
 def _resolve_track(context, track_name: str, case_insensitive: bool = True):
     """Findet einen Track anhand seines Namens (optional case-insensitive)."""
