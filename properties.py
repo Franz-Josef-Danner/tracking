@@ -17,6 +17,7 @@ class KTParameters(PropertyGroup):
     ma: FloatProperty(name="ma", default=0.0, precision=2)
     za: FloatProperty(name="za", default=0.0, precision=3)
     tr: IntProperty(name="tr", default=0)
+    marker_count: IntProperty(name="Marker Count", default=0)
 
 
 classes = (KTParameters,)

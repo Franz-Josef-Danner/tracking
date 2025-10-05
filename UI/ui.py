@@ -30,7 +30,7 @@ class KT_PT_panel(bpy.types.Panel):
         box_out.label(text="Berechnete Werte")
         grid = box_out.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=True)
         # Anzeige wichtiger Parameter
-        for attr in ('hz', 'vc', 'pz', 'sz', 'og', 'ug', 'md', 'ma', 'za', 'tr'):
+        for attr in ('hz', 'vc', 'pz', 'sz', 'og', 'ug', 'md', 'ma', 'za', 'tr', 'marker_count'):
             row = grid.row()
             row.label(text=f"{attr}:")
             val = getattr(params, attr)

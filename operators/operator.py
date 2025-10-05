@@ -31,7 +31,8 @@ class KT_OT_detect_cyclus(bpy.types.Operator):
 		params_pg.ma = float(params['ma'])
 		params_pg.za = float(params['za'])
 		params_pg.tr = int(params['tr'])
-		self.report({'INFO'}, f"Detect Cyclus fertig (pz={params['pz']} sz={params['sz']})")
+		params_pg.marker_count = int(params.get('marker_count', 0))
+		self.report({'INFO'}, f"Detect Cyclus fertig (pz={params['pz']} sz={params['sz']} markers={params.get('marker_count', 0)})")
 		return {'FINISHED'}
 
 

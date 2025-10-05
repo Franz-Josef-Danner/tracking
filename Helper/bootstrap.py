@@ -8,6 +8,7 @@ import math
 import importlib
 import bpy
 from . import marker_size as helper_marker_size
+from . import snapshot as helper_snapshot
 
 
 def compute_parameters(context: bpy.types.Context, ef: int):
@@ -54,11 +55,14 @@ def run_detect_cyclus(context: bpy.types.Context, ef: int):
     3. Konsolen-Zusammenfassung
     """
     importlib.reload(helper_marker_size)
+    importlib.reload(helper_snapshot)
     params = compute_parameters(context, ef)
     helper_marker_size.apply_marker_size(params['pz'], params['sz'])
+    markers = helper_snapshot.collect_active_markers(context)
+    params['marker_count'] = len(markers)
     print(
         f"[Kaiserlich Tracker][INFO] Detect Cyclus | hz={params['hz']} vc={params['vc']} "
-        f"pz={params['pz']} sz={params['sz']} og={params['og']} ug={params['ug']} ef={params['ef']}"
+        f"pz={params['pz']} sz={params['sz']} og={params['og']} ug={params['ug']} ef={params['ef']} markers={params['marker_count']}"
     )
     return params
 
