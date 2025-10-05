@@ -1,37 +1,5 @@
-import bpy
+"""Marker-Größen Verarbeitung (Platzhalter)."""
 
-def apply_marker_sizes(context, pz: int, sz: int):
-    """Setzt Default- und (Fallback) aktuelle Pattern- und Search-Size für neue Tracks.
-
-    Parameter:
-      pz (int): pattern size
-      sz (int): search size
-    """
-    space = getattr(context, 'space_data', None)
-    if not (space and getattr(space, 'type', None) == 'CLIP_EDITOR'):
-        return False
-
-    clip = getattr(space, 'clip', None)
-    if not clip:
-        return False
-
-    tracking = clip.tracking
-    try:
-        settings = tracking.settings
-        changed = False
-        if hasattr(settings, 'default_pattern_size'):
-            settings.default_pattern_size = int(pz)
-            changed = True
-        if hasattr(settings, 'default_search_size'):
-            settings.default_search_size = int(sz)
-            changed = True
-        # Fallback für einige Blender-Versionen
-        if hasattr(settings, 'pattern_size'):
-            settings.pattern_size = int(pz)
-            changed = True
-        if hasattr(settings, 'search_size'):
-            settings.search_size = int(sz)
-            changed = True
-        return changed
-    except Exception:
-        return False
+def apply_marker_size(pz: int, sz: int):
+    print(f"[Kaiserlich Tracker][MARKER_SIZE] pz={pz} sz={sz}")
+    return {'FINISHED'}
