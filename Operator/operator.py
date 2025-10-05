@@ -83,25 +83,15 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                     )
             # Vergleichslog entfernt
 
-            # Cleanup Paare bilden nur für AMA
-            from ..Helper.cleaneup import MarkerPair
-            marker_pairs = []
-            for nm in new_markers:
-                old = old_by_track.get(nm.track_name)
-                if old:
-                    marker_pairs.append(MarkerPair(
-                        track_name=nm.track_name,
-                        old_co=(old.co_x, old.co_y),
-                        new_co=(nm.co_x, nm.co_y)
-                    ))
-            if not marker_pairs and am > 0 and old_markers:
-                inter = {nm.track_name for nm in new_markers} & {om.track_name for om in old_markers}
-                if not inter:
-                    print("[KT][cycle][warn] Keine AMA-Paare gebildet: Track-Namen alter und neuer Marker überschneiden sich nicht. Evtl. andere Logik nötig (z.B. Abstandsvergleich aller neuen untereinander).")
-            else:
-                print(f"[KT][cycle] pairs={len(marker_pairs)} (für Distanzprüfung)")
-            # Cleanup jetzt immer aufrufen, damit Logging sichtbar ist, auch wenn 0 Paare
-            deleted_count = cleaneup.cleanup_markers(context, marker_pairs, md=md, hz=hz, vc=vc)
+            # Neue Logik: alle neuen Marker gegen alle alten vergleichen
+            deleted_count = cleaneup.delete_new_markers_close_to_old(
+                context,
+                old_markers=old_markers,
+                new_markers=new_markers,
+                md=md,
+                hz=hz,
+                vc=vc,
+            )
             summary_deleted += deleted_count
 
             # Abbruchbedingungen / Adaptive Logik
