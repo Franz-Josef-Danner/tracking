@@ -2,11 +2,10 @@ import bpy
 from . import snapshot, delete, bulk_delete
 import time
 
-# Konfiguration für Stabilität
-_BULK_CHUNK_SIZE = 4          # In kleineren Gruppen löschen um UI-Block zu reduzieren
-_RETRY_ON_FAIL = 1            # Wie oft eine fehlgeschlagene Gruppe nochmals versucht wird
-_DELETE_STRATEGY = None  # veraltet – wird nicht mehr genutzt, nur für rückwärtskompatibles Logging
-_GLOBAL_TIMEOUT_SEC = 5       # Harte Obergrenze für gesamten Cleanup-Löschteil
+# Schlanke Konfiguration
+_BULK_CHUNK_SIZE = 4      # Chunk-Größe für Löschdurchläufe
+_RETRY_ON_FAIL = 1        # Wie oft ein Chunk ohne Fortschritt erneut versucht wird
+_GLOBAL_TIMEOUT_SEC = 5   # Harte Obergrenze für gesamten Löschteil (Sek.)
 
 def _marker_at_frame(track, frame_current):
     # Finde Marker exakt auf aktuellem Frame, sonst None
