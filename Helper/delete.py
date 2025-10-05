@@ -83,26 +83,36 @@ def run(track, frame=None):
     _log(f'Run delete für Track={name} Frame={frame}')
 
     # 1. Versuch: Marker am Frame löschen
-    removed_marker = _delete_marker_at_frame(target, frame)
-    # Verifizieren ob Frame wirklich weg ist
-    frame_still = False
+    # Aktuelle Marker Frames vor Start
     try:
-        for mk in target.markers:
-            if getattr(mk, 'frame', None) == frame:
-                frame_still = True
-                break
+        existing_frames = sorted({getattr(mk, 'frame', None) for mk in target.markers})
     except Exception:
-        pass
-    _log(f'Marker am Frame gelöscht={removed_marker} frame_still_exists={frame_still}')
-    if removed_marker and frame_still:
-        _log('Warnung: API meldete Erfolg aber Marker-Frame weiterhin vorhanden')
+        existing_frames = []
+    _log(f'Aktuelle Marker Frames vor Löschung: {existing_frames}')
 
-    # 2. Wenn nichts gelöscht wurde -> kompletten Track leeren (Marker-Wipe)
-    if not removed_marker:
+    removed_marker = _delete_marker_at_frame(target, frame)
+    # Verifizieren ob Frame wirklich weg ist (direkte Prüfung)
+    frame_still = any(getattr(mk, 'frame', None) == frame for mk in target.markers)
+    _log(f'Marker am Frame gelöscht={removed_marker} frame_still_exists={frame_still}')
+
+    # Falls vom angefragten Frame nichts weg ging oder Frame weiter existiert -> Versuche alle Frames einzeln
+    if (not removed_marker) or frame_still:
+        _log('Starte Einzel-Frame-Löschversuche für alle Marker')
+        all_frames_before = sorted({getattr(mk, 'frame', None) for mk in target.markers})
+        for fr in reversed(all_frames_before):
+            ok_single = _delete_marker_at_frame(target, fr)
+            still = any(getattr(mk, 'frame', None) == fr for mk in target.markers)
+            _log(f'  Versuch delete_frame({fr}) ok={ok_single} still_exists={still}')
+        after_frames = sorted({getattr(mk, 'frame', None) for mk in target.markers})
+        _log(f'Frames nach Einzel-Versuchen: {after_frames}')
+
+    # 2. Wenn immer noch Marker existieren -> roher Wipe
+    if len(target.markers):
+        _log('Wipe-Routine: versuche alle Marker über _delete_all_markers zu entfernen')
         wiped = _delete_all_markers(target)
-        _log(f'Alle Marker entfernt (wipe)={wiped} verbleibend={len(target.markers)}')
+        _log(f'Wipe Ergebnis wiped={wiped} verbleibend={len(target.markers)}')
     else:
-        wiped = len(target.markers) == 0
+        wiped = True
 
     # 3. Optional: Track löschen falls leer – aber ohne Operator (Problemquelle) -> nur rename/mute
     if len(target.markers) == 0:
@@ -117,7 +127,14 @@ def run(track, frame=None):
         _log(f'Track {name} ist leer -> markiert als gelöscht (mute/rename)')
         return True
 
-    return removed_marker
+    # Erfolg nur melden, wenn mindestens ein Marker weniger existiert als vorher
+    try:
+        existing_after = sorted({getattr(mk, 'frame', None) for mk in target.markers})
+    except Exception:
+        existing_after = []
+    changed = len(existing_after) < len(existing_frames)
+    _log(f'Abschluss: vorher_frames={existing_frames} nachher_frames={existing_after} changed={changed}')
+    return changed
 def _resolve_track(context, track_name: str, case_insensitive: bool = True):
     """Findet einen Track anhand seines Namens (optional case-insensitive)."""
     space = context.space_data
