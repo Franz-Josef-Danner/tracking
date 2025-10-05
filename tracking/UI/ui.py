@@ -12,6 +12,8 @@ class KAISERLICH_PT_tracker(bpy.types.Panel):
         props = scn.kaiserlich_tracker
         layout.prop(props, 'marker_per_frame')
         layout.operator('kaiserlich.detect_cyclus', icon='TRACKING')
+    layout.separator()
+    layout.operator('kaiserlich.cyclus_start', icon='RESTRICT_SELECT_OFF')
 
 class KaiserlichTrackerProperties(bpy.types.PropertyGroup):
     # Direkt in der Klasse definieren (notwendig für Blender RNA Registrierung)
