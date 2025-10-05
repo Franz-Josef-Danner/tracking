@@ -10,10 +10,10 @@ from ..Helper.marker_size import apply_marker_sizes
 
 def _recompute_md_clamped(current_md: float, za: float, am: int) -> float:
     """Neue md-Regel laut aktualisierter Vorgabe:
-    md_neu = md_alt / clamp(za / am, -100, 100)
+    md_neu = md_alt / clamp(za / am, -50, 50)
 
-    Für positive Werte (za, am > 0) ist dies äquivalent zu md * (am/za), solange (za/am) <= 100.
-    Die Clamp vermeidet extremes Schrumpfen bei sehr kleinen am.
+    Für positive Werte (za, am > 0) ist dies ~ äquivalent zu md * (am/za), solange (za/am) <= 50.
+    Die engere Clamp (±50) begrenzt extreme Sprünge stärker als zuvor.
 
     Schutzfälle:
       - am <= 0 oder za <= 0 -> halbieren (aber >= 1.0)
@@ -22,11 +22,11 @@ def _recompute_md_clamped(current_md: float, za: float, am: int) -> float:
     if am <= 0 or za <= 0:
         return max(1.0, current_md * 0.5)
     divisor = za / am
-    # Clamp
-    if divisor > 100:
-        divisor = 100.0
-    elif divisor < -100:
-        divisor = -100.0
+    # Clamp auf [-50, 50]
+    if divisor > 50:
+        divisor = 50.0
+    elif divisor < -50:
+        divisor = -50.0
     if divisor == 0:
         return max(1.0, current_md)
     new_md = current_md / divisor
