@@ -2,7 +2,7 @@ import bpy
 from ..Helper.bootstrap import run_bootstrap
 from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.detect import detect_features
-from ..Helper.newmarker import diff_markers
+from ..Helper.newmarker import diff_markers, classify_markers
 
 class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
     bl_idname = "kaiserlich_tracker.detect_cycle"
@@ -34,8 +34,14 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
         # 3. Snapshot nachher
         after = snapshot_active_markers(context)
 
-        # 4. Diff
-        new_markers = diff_markers(before, after)
+        # 4. Klassifikation (alte vs neue Marker)
+        alte_marker, neue_marker = classify_markers(before, after)
 
-        self.report({'INFO'}, f"Detect fertig: ~{created} neu, tatsächlich {len(new_markers)} neue aktive Marker")
+        # Für Kompatibilität weiterhin diff bereitstellen (nur neue)
+        _ = diff_markers(before, after)  # Logging
+
+        self.report({'INFO'}, (
+            f"Detect fertig: detect_features schätzt ~{created} neu | Neue aktive Marker: {len(neue_marker)} | "
+            f"Vorher {len(before)} -> Nachher {len(after)} (alte behalten: {len(alte_marker)})"
+        ))
         return {'FINISHED'}
