@@ -1,4 +1,17 @@
 import bpy
+import time
+
+# Globale Caches / Flags zur Laufzeit zur Stabilitäts-/Performance-Steigerung
+# Sobald klar ist, dass Operator-Löschung nicht funktioniert, sparen wir uns weitere Versuche.
+_OPERATOR_DELETE_UNSUPPORTED = False
+# Merkt sich, ob temp_override Löschung mind. einmal funktioniert hat (True) oder sicher fehlgeschlagen ist (False)
+_TEMP_OVERRIDE_CAPABLE = None  # None = noch nicht getestet
+
+# Konfigurierbare Limits
+MAX_OPERATOR_ATTEMPTS_PER_TRACK = 6  # Hartes Limit, danach Abbruch
+MAX_RECORDED_ATTEMPTS = 12           # Wie viele Detail-Einträge wir pro Track speichern
+OPERATOR_FIRST_DEFAULT = False       # Falls True zuerst Operator statt temp_override
+ABORT_ON_IDENTICAL_ERROR_SERIES = 3  # Nach X identischen Fehlern gleicher Signatur abbrechen
 
 def _log(msg):
     print(f'[bulk_delete] {msg}')
@@ -79,30 +92,37 @@ def _iter_clip_context_variants(target_clip):
                     break
 
 def _try_operator_delete_with_variants(track, target_clip):
+    """Versucht verschiedene Operator- / Kontext-Kombinationen.
+
+    Mit Limits versehen, damit UI nicht blockiert.
+    Nutzt globales Flag _OPERATOR_DELETE_UNSUPPORTED um erneute Massen-Versuche zu vermeiden.
+    """
+    global _OPERATOR_DELETE_UNSUPPORTED
+    if _OPERATOR_DELETE_UNSUPPORTED:
+        return False, [('SKIPPED', False, 'Operator bereits als unsupported markiert')]
+
     ops_tried = []
-    # Mögliche Operator-Namen (Plural falls neue API?)
     operator_candidates = []
-    try:
-        operator_candidates.append(bpy.ops.clip.delete_track)
-    except Exception:
-        pass
-    # Versuch plural
-    try:
-        operator_candidates.append(getattr(bpy.ops.clip, 'delete_tracks'))
-    except Exception:
-        pass
-    # Tracking Namespace (Spekulation für API Änderung)
-    try:
-        operator_candidates.append(getattr(bpy.ops.clip.tracking, 'delete_track'))
-    except Exception:
-        pass
-    try:
-        operator_candidates.append(getattr(bpy.ops.clip.tracking, 'delete_tracks'))
-    except Exception:
-        pass
+    # Kandidaten sammeln (robust, stillschweigend fehlertolerant)
+    for getter in (
+        lambda: bpy.ops.clip.delete_track,
+        lambda: getattr(bpy.ops.clip, 'delete_tracks'),
+        lambda: getattr(bpy.ops.clip.tracking, 'delete_track'),
+        lambda: getattr(bpy.ops.clip.tracking, 'delete_tracks'),
+    ):
+        try:
+            c = getter()
+            if c not in operator_candidates:
+                operator_candidates.append(c)
+        except Exception:
+            pass
+
+    attempt_count = 0
+    last_error_sig = None
+    identical_error_series = 0
 
     for ctx in _iter_clip_context_variants(target_clip):
-        # Sicherstellen Track selektiert + aktiv im aktuellen Real-Kontext
+        # Auswahl vorbereiten
         try:
             for t in target_clip.tracking.tracks:
                 t.select = False
@@ -111,25 +131,57 @@ def _try_operator_delete_with_variants(track, target_clip):
         except Exception:
             pass
         for op in operator_candidates:
-            if op is None:
-                continue
+            if attempt_count >= MAX_OPERATOR_ATTEMPTS_PER_TRACK:
+                _log('Abbruch weiterer Operator-Versuche (Limit erreicht)')
+                if not ops_tried:
+                    ops_tried.append(('ABORT_LIMIT', False, 'Keine Versuche protokolliert'))
+                return False, ops_tried
+            attempt_count += 1
             op_name = getattr(op, '__name__', str(op))
+            keys_list = list(ctx.keys())
             try:
                 res = op(ctx)
-                _log(f'Operator Versuch {op_name} mit Kontext {list(ctx.keys())} -> {res}')
-                ops_tried.append((op_name, True, list(ctx.keys())))
-                # Erfolg prüfen: Track verschwunden?
-                remaining_names = [t.name for t in target_clip.tracking.tracks]
-                if track.name not in remaining_names and not any(n.endswith(track.name) for n in remaining_names):
+                ops_tried.append((op_name, True, keys_list))
+                _log(f'Operator Versuch {op_name} ({attempt_count}) -> {res}')
+                remaining = [t.name for t in target_clip.tracking.tracks]
+                if track.name not in remaining:
                     return True, ops_tried
             except Exception as e:
-                ops_tried.append((op_name, False, f'{list(ctx.keys())} ERR={e}'))
-                _log(f'Operator Fehlversuch {op_name} Kontext={list(ctx.keys())}: {e}')
+                # Fehler-Signatur für Kompressions- / Abbruchlogik
+                err_sig = str(type(e)) + ':' + str(e)
+                if err_sig == last_error_sig:
+                    identical_error_series += 1
+                else:
+                    identical_error_series = 1
+                    last_error_sig = err_sig
+                # Komprimiertes Logging: nur jede 2. Wiederholung ausführlich
+                if identical_error_series <= 2:
+                    _log(f'Operator Fehlversuch {op_name} ({attempt_count}) Kontext={keys_list}: {e}')
+                elif identical_error_series == ABORT_ON_IDENTICAL_ERROR_SERIES:
+                    _log(f'Immer gleicher Fehler ({err_sig}) – breche Operator-Schleife früh ab')
+                    _OPERATOR_DELETE_UNSUPPORTED = True
+                    ops_tried.append((op_name, False, f'{keys_list} ERR={e} EARLY_ABORT'))
+                    return False, ops_tried
+                ops_tried.append((op_name, False, f'{keys_list} ERR={e}'))
+            # Versuche Anzahl aufgezeichnete Entries zu begrenzen
+            if len(ops_tried) > MAX_RECORDED_ATTEMPTS:
+                ops_tried.append(('TRUNCATED', False, f'max {MAX_RECORDED_ATTEMPTS} reached'))
+                return False, ops_tried
+    # Wenn wir hierher gelangen und nichts funktioniert hat: global auf unsupported setzen
+    _OPERATOR_DELETE_UNSUPPORTED = True
     return False, ops_tried
 
 def _try_temp_override_delete(track, target_clip):
-    """Versucht Löschung über neue Context Override API (Blender 3.2+)."""
+    """Versucht Löschung über neue Context Override API (Blender 3.2+).
+
+    Nutzt globales Cache-Flag für Capability.
+    """
+    global _TEMP_OVERRIDE_CAPABLE
+    # Wenn bereits bekannt, dass es nicht geht: sofort abbrechen
+    if _TEMP_OVERRIDE_CAPABLE is False:
+        return False
     wm = bpy.context.window_manager
+    start = time.perf_counter()
     for window in wm.windows:
         for area in window.screen.areas:
             if area.type != 'CLIP_EDITOR':
@@ -141,12 +193,11 @@ def _try_temp_override_delete(track, target_clip):
                 if region.type != 'WINDOW':
                     continue
                 try:
-                    # Auswahl setzen innerhalb Override
                     with bpy.context.temp_override(window=window, area=area, region=region, scene=bpy.context.scene, space_data=space):
-                        for t in target_clip.tracking.tracks:
-                            try: t.select = False
-                            except Exception: pass
+                        # Auswahl setzen
                         try:
+                            for t in target_clip.tracking.tracks:
+                                t.select = False
                             track.select = True
                             target_clip.tracking.tracks.active = track
                         except Exception:
@@ -157,11 +208,17 @@ def _try_temp_override_delete(track, target_clip):
                             if res == {'FINISHED'}:
                                 remaining = [t.name for t in target_clip.tracking.tracks]
                                 if track.name not in remaining:
+                                    _TEMP_OVERRIDE_CAPABLE = True
+                                    dur = (time.perf_counter() - start) * 1000
+                                    _log(f'temp_override Erfolg nach {dur:.1f}ms')
                                     return True
                         except Exception as e:
                             _log(f'temp_override Fehler: {e}')
                 except Exception as e:
                     _log(f'Override Setup Fehler: {e}')
+    # Kein Erfolg
+    if _TEMP_OVERRIDE_CAPABLE is None:
+        _TEMP_OVERRIDE_CAPABLE = False
     return False
 
 def purge_logically_deleted(target_clip=None):
@@ -189,10 +246,16 @@ def purge_logically_deleted(target_clip=None):
     _log(f'purge: entfernt={removed} verbleibend_markiert={remaining_deleted}')
     return {'removed': removed, 'remaining_deleted': remaining_deleted}
 
-def delete_tracks(tracks):
-    """Versucht mehrere Tracks mittels Operator in einem Durchgang zu löschen.
+def delete_tracks(tracks, strategy='auto'):
+    """ Löscht mehrere Tracking-Tracks stabil mit mehrstufigem Fallback.
 
-    tracks: Liste von MovieTrackingTrack Objekten
+    Parameter:
+      tracks   : Iterable von MovieTrackingTrack (oder Objekten mit .name)
+      strategy : 'auto' | 'temp_first' | 'operator_first'
+                 auto          -> nutzt Heuristik (temp_override bevorzugen sobald erfolgreich)
+                 temp_first    -> versucht temp_override zuerst pro Track
+                 operator_first-> zwingt Operator zuerst (innerhalb Limits)
+    Rückgabe: Anzahl physisch entfernter Tracks
     """
     if not tracks:
         _log('Keine Tracks übergeben')
@@ -202,51 +265,78 @@ def delete_tracks(tracks):
         _log('Kein aktiver Clip')
         return 0
 
-    # Auflösen auf aktuelle Track-Objekte anhand des Namens (Veränderungen berücksichtigen)
-    name_map = {t.name: t for t in clip.tracking.tracks}
-    to_delete = []
-    for t in tracks:
-        nm = getattr(t, 'name', None)
-        if nm in name_map:
-            to_delete.append(name_map[nm])
+    # Namen auflösen (frische Referenzen)
+    current_map = {t.name: t for t in clip.tracking.tracks}
+    to_delete = [current_map[t.name] for t in tracks if getattr(t, 'name', None) in current_map]
     if not to_delete:
         _log('Keine übereinstimmenden Track-Namen')
         return 0
 
-    # Versuch: jeden Track einzeln löschen (robuster als Multi-Select)
     total_removed = 0
-    for target in to_delete:
+    use_operator_first = (strategy == 'operator_first') or (strategy == 'auto' and not _TEMP_OVERRIDE_CAPABLE and OPERATOR_FIRST_DEFAULT)
+    for idx, target in enumerate(to_delete, 1):
         name_before = target.name
-        before_names = [t.name for t in clip.tracking.tracks]
-        _log(f'Vor Löschung einzelner Track={name_before} Tracks={before_names}')
-        success, attempts = _try_operator_delete_with_variants(target, clip)
-        if success:
-            total_removed += 1
-            _log(f'Physisch entfernt (Operator Varianten): {name_before}')
-            continue
-        _log(f'Alle Operator-Varianten gescheitert für {name_before}. Attempts={attempts}')
-        # Neuer Versuch über temp_override
-        if _try_temp_override_delete(target, clip):
-            total_removed += 1
-            _log(f'Physisch entfernt (temp_override): {name_before}')
-            continue
-        # Direkter Remove Versuch falls vorhanden
-        try:
-            if hasattr(clip.tracking.tracks, 'remove'):
-                clip.tracking.tracks.remove(target)
-                total_removed += 1
-                _log(f'Direkt entfernt via Collection.remove (nach Varianten): {name_before}')
-                continue
-            else:
-                _log('Collection.remove nicht verfügbar – logical rename')
-        except Exception as e2:
-            _log(f'Direkter remove Fehler {name_before}: {e2}')
-        # Logical rename Fallback
-        if not name_before.startswith('DELETED_'):
+        _log(f'[{idx}/{len(to_delete)}] Lösche Track {name_before}')
+        start_track = time.perf_counter()
+
+        # Reihenfolge bestimmen je nach Strategie
+        methods = []
+        if strategy == 'temp_first' or (strategy == 'auto' and _TEMP_OVERRIDE_CAPABLE):
+            methods = ['temp', 'operator']
+        elif use_operator_first:
+            methods = ['operator', 'temp']
+        else:
+            # Bevorzugt temp (vermutlich zuverlässiger in deiner Umgebung)
+            methods = ['temp', 'operator']
+
+        removed = False
+        for m in methods:
+            if m == 'temp':
+                if _try_temp_override_delete(target, clip):
+                    removed = True
+                    _log(f'Removed via temp_override: {name_before}')
+                    break
+            elif m == 'operator':
+                success, attempts = _try_operator_delete_with_variants(target, clip)
+                if success:
+                    removed = True
+                    _log(f'Removed via Operator: {name_before}')
+                    break
+                else:
+                    # Nur kompaktes Summary loggen
+                    if attempts:
+                        last = attempts[-1]
+                        _log(f'Operator fehlgeschlagen (summary letzte={last})')
+
+        if not removed:
+            # Direkter remove Versuch falls Collection.remove existiert
             try:
-                target.name = f'DELETED_{name_before}'
-                _log(f'Logical umbenannt: {target.name}')
-            except Exception:
-                pass
-    _log(f'Gesamt physisch entfernt: {total_removed} (logical markierte bleiben erhalten)')
+                if hasattr(clip.tracking.tracks, 'remove'):
+                    clip.tracking.tracks.remove(target)
+                    removed = True
+                    _log(f'Removed via collection.remove: {name_before}')
+            except Exception as e2:
+                _log(f'collection.remove Fehler {name_before}: {e2}')
+
+        if not removed:
+            # Logical Rename Fallback
+            if not name_before.startswith('DELETED_'):
+                try:
+                    target.name = f'DELETED_{name_before}'
+                    _log(f'Logical rename -> {target.name}')
+                except Exception:
+                    _log('Logical rename fehlgeschlagen (ignoriert)')
+        else:
+            total_removed += 1
+
+        dur_ms = (time.perf_counter() - start_track) * 1000
+        _log(f'Fertig Track {name_before} ({dur_ms:.1f}ms) removed={removed}')
+
+        # UI entlasten: leichter Redraw Impuls (sofern Operator existiert)
+        try:
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        except Exception:
+            pass
+
+    _log(f'Gesamt physisch entfernt: {total_removed} / {len(to_delete)} (Rest logical)')
     return total_removed
