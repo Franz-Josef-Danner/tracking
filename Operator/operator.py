@@ -108,6 +108,9 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                         accepted = True
                         break
                     else:
+                        # Neue Vorgabe: za im Korridor bei Fortsetzung reduzieren
+                        za *= 0.82
+                        print(f"[Kaiserlich Tracker] za reduziert (Korridor Fortsetzung): {za:.4f}")
                         # Pattern Größen reduzieren
                         pz = max(1, int(round(pz * 0.3)))
                         sz = pz * 2
@@ -119,7 +122,6 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                 else:
                     # am > og
                     print(f"[Kaiserlich Tracker] Über OG: am={am} > og={og}")
-                    za *= 0.82
                     # Einheitliche md-Formel (wie vorgegeben)
                     if am > 0:
                         denom = max(0.75, min(1.5, (za / am)))
