@@ -49,16 +49,7 @@ def _find_clip_editor_area(clip) -> Tuple[Optional[object], Optional[object], Op
 
 
 def track_forward_selected_markers(context, *, sequence: bool = True, backwards: bool = False) -> bool:
-    """Trackt die aktuell selektierten Marker vorwärts.
 
-    Args:
-        context: Blender Kontext
-        sequence: True -> kompletter Sequenzlauf; False -> nur ein Frame Schritt
-        backwards: True -> rückwärts statt vorwärts
-
-    Returns:
-        bool: True bei Erfolg (Operator nicht "CANCELLED"), sonst False.
-    """
     clip = context.space_data.clip if getattr(context, 'space_data', None) else None
     if clip is None:
         print("[Kaiserlich Tracker] track_forward: Kein Clip aktiv.")
