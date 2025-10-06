@@ -51,7 +51,7 @@ def cleanup_new_markers(context, alte_marker: List[MarkerSnapshot], neue_marker:
 
     old_pixels = build_old_pixel_map()
 
-    thresh = float(pz) * 0.05  # pz/2 als effektive Schwelle
+    thresh = float(pz) * 0.025  # pz/2 als effektive Schwelle
 
     for nm in neue_marker:
         nm_px_x = nm['co'][0] * hz
