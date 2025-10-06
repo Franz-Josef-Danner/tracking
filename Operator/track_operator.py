@@ -31,6 +31,20 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 		default=True,
 		description="Wenn aktiv: pro Iteration nur 1 Frame tracken (sequence=False) und kein frames_limit=1 setzen"
 	)
+	min_progress_ratio: bpy.props.FloatProperty(  # type: ignore
+		name="Min Fortschritt Quote",
+		default=0.5,
+		min=0.0,
+		max=1.0,
+		description="Anteil (0..1) selektierter Tracks, die in einer Iteration Fortschritt machen müssen, sonst Fallback/Abbruch"
+	)
+	retry_sequence_on_stall: bpy.props.IntProperty(  # type: ignore
+		name="Fallback sequence-Retries",
+		default=1,
+		min=0,
+		max=10,
+		description="Wie oft bei 0-Fortschritt ein sequence=True Versuch unternommen wird (nur im step_mode)"
+	)
 	max_internal_calls: bpy.props.IntProperty(  # type: ignore
 		name="Sicherheitslimit Calls",
 		default=0,
@@ -73,6 +87,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 		start_frame = pf
 		last_frame = pf - 1  # Damit erste Iteration als Fortschritt zählt
 
+		stall_retries = 0
 		while True:
 			pf = scene.frame_current
 			if pf >= se:
@@ -132,38 +147,63 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 
 				print(f"[Kaiserlich Tracker] STEP: frame_before={scene_frame_before} frame_after={scene_frame_after} delta={delta_scene} any_new_marker={any_new_marker} min_marker={global_min_marker} max_marker={global_max_marker}")
 
-				if any_new_marker or delta_scene > 0:
-					# Fortschritt vorhanden: wenn Operator nicht vorgerückt ist, rücken wir manuell eins weiter (Catch-up optional)
+				# Fortschritt auswerten: Wieviele Tracks haben neue Marker?
+				progress_count = 0
+				for tr, max_after in new_max_per_track.items():
+					if max_after > baseline.get(tr, -1):
+						progress_count += 1
+				progress_ratio = (progress_count / len(new_max_per_track)) if new_max_per_track else 0.0
+				print(f"[Kaiserlich Tracker] STEP: progress_count={progress_count}/{len(new_max_per_track)} ratio={progress_ratio:.2f} threshold={self.min_progress_ratio:.2f} retries={stall_retries}/{self.retry_sequence_on_stall}")
+
+				if progress_ratio >= self.min_progress_ratio or delta_scene > 0:
+					stall_retries = 0  # Reset Stall Counter
 					if delta_scene == 0:
-						# Prüfen ob alle Tracks schon >= current+1 Marker haben -> dann dürfen wir weiter
+						# Kein Szenen-Fortschritt -> versuchen manuell vorzugehen, falls alle Tracks schon nächsten Frame haben
 						current_target = scene_frame_after + 1
 						all_have_next = True
 						for tr, max_after in new_max_per_track.items():
 							if max_after < current_target:
 								all_have_next = False
 								break
-						if scene_frame_after + 1 <= se and all_have_next:
+						if all_have_next and scene_frame_after + 1 <= se:
 							scene.frame_current = scene_frame_after + 1
-							print(f"[Kaiserlich Tracker] STEP: manual advance (all tracks already have frame {scene.frame_current})")
+							print(f"[Kaiserlich Tracker] STEP: manual advance -> {scene.frame_current}")
 						else:
-							print("[Kaiserlich Tracker] STEP: kein manueller Advance (noch nicht alle Tracks besitzen nächsten Frame)")
+							print("[Kaiserlich Tracker] STEP: kein manual advance (noch nicht alle Tracks bereit oder Ende erreicht)")
 					else:
 						print(f"[Kaiserlich Tracker] STEP: Operator hat Frame verschoben (delta={delta_scene})")
 					# Weiter zur nächsten Iteration
 				else:
-					# Kein neuer Marker in diesem Frame. Prüfen ob wir nur 'aufholen' müssen.
-					current_target = scene_frame_before + 1
-					# Falls ALLE Tracks bereits Marker >= current_target besitzen -> wir können Szene nachziehen
-					all_ahead = True
-					for tr, max_after in new_max_per_track.items():
-						if max_after < current_target:
-							all_ahead = False
+					# Kein ausreichender Fortschritt
+					if progress_count == 0:
+						# Prüfen ob wir nur 'aufholen' können (alle Tracks besitzen bereits Marker >= pf+1)
+						current_target = scene_frame_before + 1
+						all_ahead = True
+						for tr, max_after in new_max_per_track.items():
+							if max_after < current_target:
+								all_ahead = False
+								break
+						if all_ahead and scene_frame_before + 1 <= se:
+							scene.frame_current = scene_frame_before + 1
+							print(f"[Kaiserlich Tracker] STEP: catch-up advance -> {scene.frame_current}")
+							stall_retries = 0
+							# weiter
+						elif stall_retries < self.retry_sequence_on_stall:
+							stall_retries += 1
+							print(f"[Kaiserlich Tracker] STEP: stall detected -> sequence Fallback Versuch {stall_retries}/{self.retry_sequence_on_stall}")
+							# Fallback: versuche einmal sequence=True sofort (ohne Loop-Zähler zu erhöhen)
+							fallback_ok = track_forward_selected_markers(context, sequence=True, backwards=False)
+							if not fallback_ok:
+								print("[Kaiserlich Tracker] STEP: Fallback sequence fehlgeschlagen -> Abbruch")
+								break
+							# Nach Fallback erneut Marker aktualisieren (einfach nächste Iteration läuft neu mit Baseline)
+							continue
+						else:
+							print("[Kaiserlich Tracker] Kein neuer Marker-Fortschritt & kein Catch-up/Fallback mehr -> Abbruch")
 							break
-					if all_ahead and scene_frame_before + 1 <= se:
-						scene.frame_current = scene_frame_before + 1
-						print(f"[Kaiserlich Tracker] STEP: catch-up advance -> {scene.frame_current}")
 					else:
-						print("[Kaiserlich Tracker] Kein neuer Marker-Fortschritt & kein Catch-up möglich -> Abbruch")
+						# Etwas Fortschritt aber unter Quote
+						print("[Kaiserlich Tracker] Fortschritt unter Quote -> Abbruch (Konfiguration min_progress_ratio anpassen?)")
 						break
 			else:
 				# SEQ_LIMIT1 Modus: Szene sollte selbst fortschreiten; prüfen ob Frame sprang
