@@ -137,7 +137,7 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                 # am < ug (zu wenig) -> md Anpassung mit anderem Clamp-Bereich & neue verwerfen
                 print(f"[Kaiserlich Tracker] Unter UG: am={am} < ug={ug} -> md anpassen, neue verwerfen")
                 ratio = (za / am) if am > 0 else 1.0
-                denom = max(-50.0, min(50.0, ratio))  # clamp [-50, 50]
+                denom = max(0.75, min(0.15, (za / am)))
                 if denom == 0:
                     denom = 0.0001
                 md = md / denom
