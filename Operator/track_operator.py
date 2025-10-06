@@ -1,56 +1,50 @@
 import bpy
 from ..Helper.track_forward import track_forward_selected_markers
 from ..Helper.bootstrap import run_bootstrap
-from ..Helper.frames_limit import resolve_frames_limit
+from ..Helper.frames_limit import set_one_frame_limit
 
 
 class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
-	"""Tracking über die gesamte Sequenz (ein Blender Operator-Aufruf).
+	"""Setzt Frames-Limit=1 auf Settings & selektierte Tracks und trackt dann vorwärts (sequence=True).
 
-	Verwendet track_forward_selected_markers(sequence=True). Keine Bootstrap-/Limit-Logik.
+	Durch das Limit stoppt jeder Track nach genau einem Frame Fortschritt; erneuter Aufruf
+	verarbeitet den nächsten Frame. Damit ist das Verhalten deterministisch ohne eigene Schleife.
 	"""
 	bl_idname = "kaiserlich_tracker.track_cycle"
-	bl_label = "Track Forward (Sequence)"
-	bl_description = "Trackt selektierte Marker vorwärts durch die gesamte Sequenz (sequence=True)."
+	bl_label = "Track 1 Frame (Limit)"
+	bl_description = "Setzt Frames-Limit=1 und trackt (sequence=True) genau einen Frame pro Track."
 	bl_options = {"REGISTER", "INTERNAL"}
 
+	use_bootstrap: bpy.props.BoolProperty(  # type: ignore
+		name="Bootstrap vorab",
+		default=False,
+		description="Vor dem Tracking einmal Bootstrap ausführen (Markergrößen etc.)"
+	)
+
 	def execute(self, context):
+		clip = context.space_data.clip if getattr(context, 'space_data', None) else None
+		if not clip:
+			self.report({'WARNING'}, "Kein Clip aktiv")
+			return {'CANCELLED'}
+
+		if self.use_bootstrap:
+			ef = getattr(context.scene, 'kaiserlich_markers_per_frame', 10)
+			params = run_bootstrap(context, ef)
+			if not params:
+				self.report({'WARNING'}, "Bootstrap fehlgeschlagen")
+				return {'CANCELLED'}
+
+		changed = set_one_frame_limit(clip, only_selected=True)
+		print(f"[Kaiserlich Tracker] Frame-Limit gesetzt für {changed} Elemente")
+
 		ok = track_forward_selected_markers(context, sequence=True, backwards=False)
 		if not ok:
 			self.report({'WARNING'}, "Tracking fehlgeschlagen oder keine selektierten Marker")
 			return {'CANCELLED'}
-		self.report({'INFO'}, "Vorwärts-Tracking (Sequenz) abgeschlossen")
-		return {'FINISHED'}
 
-
-class KAISERLICHTRACKER_OT_track_full_cycle(bpy.types.Operator):
-	"""Bootstrap + vollständiges Sequenz-Tracking (ein Aufruf, sequence=True).
-
-	Bootstrap dient der Parametrierung (Markergrößen etc.). Danach wird direkt
-	der Blender Operator über den Helper mit sequence=True gestartet.
-	"""
-	bl_idname = "kaiserlich_tracker.track_full_cycle"
-	bl_label = "Bootstrap + Track Sequence"
-	bl_description = "Führt Bootstrap aus und trackt dann selektierte Marker durch die ganze Sequenz."
-	bl_options = {"REGISTER", "INTERNAL"}
-
-	def execute(self, context):
-		scene = context.scene
-		ef = getattr(scene, 'kaiserlich_markers_per_frame', 10)
-		params = run_bootstrap(context, ef)
-		if not params:
-			self.report({'WARNING'}, "Bootstrap fehlgeschlagen (kein Clip?)")
-			return {'CANCELLED'}
-
-		_ = resolve_frames_limit(context)  # aktuell rein informativ – ggf. später nutzen
-		start_frame = scene.frame_current
-		if not track_forward_selected_markers(context, sequence=True, backwards=False):
-			self.report({'WARNING'}, "Tracking fehlgeschlagen oder keine selektierten Marker")
-			return {'CANCELLED'}
-		self.report({'INFO'}, f"Sequenz-Tracking abgeschlossen (Start={start_frame} Ende={scene.frame_current})")
+		self.report({'INFO'}, "Ein Frame pro Track verarbeitet (Frames-Limit=1)")
 		return {'FINISHED'}
 
 __all__ = [
 	"KAISERLICHTRACKER_OT_track_cycle",
-	"KAISERLICHTRACKER_OT_track_full_cycle",
 ]
