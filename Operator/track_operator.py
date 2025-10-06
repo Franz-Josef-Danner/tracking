@@ -80,27 +80,57 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 				break
 			print(f"[Kaiserlich Tracker] cycle start: pf={pf} se={se} calls={calls} mode={'STEP' if self.step_mode else 'SEQ_LIMIT1'}")
 
-			# STEP-MODUS: Wir müssen den Playhead selbst weiterschalten, weil sequence=False
-			if self.step_mode:
-				next_frame = pf + 1
-				if next_frame > se:
-					print(f"[Kaiserlich Tracker] Nächstes Frame ({next_frame}) > se ({se}) -> beendet")
-					break
-				# Frame weiter setzen bevor getrackt wird, damit Blender auf dem neuen Frame trackt
-				scene.frame_current = next_frame
-				print(f"[Kaiserlich Tracker] STEP: advance frame -> {scene.frame_current}")
+			tracking = getattr(clip, 'tracking', None)
+			selected_tracks = []
+			baseline = {}
+			if self.step_mode and tracking is not None:
+				for tr in tracking.tracks:
+					if getattr(tr, 'select', False):
+						selected_tracks.append(tr)
+						markers = getattr(tr, 'markers', [])
+						max_frame = -1
+						for mk in markers:
+							f = getattr(mk, 'frame', -1)
+							if f > max_frame:
+								max_frame = f
+						baseline[tr] = max_frame
 
-			# Tracking: sequence=True nur im alten Modus
+			# Tracking: sequence=True nur im alten Modus. Im STEP Modus bleibt frame_current vor Call unverändert.
 			ok = track_forward_selected_markers(context, sequence=not self.step_mode, backwards=False)
 			if not ok:
 				print("[Kaiserlich Tracker] Tracking abgebrochen / Fehler")
 				break
 			calls += 1
 
-			pf_new = scene.frame_current
-			if pf_new == pf:
-				print("[Kaiserlich Tracker] Kein Frame-Fortschritt erkannt -> Abbruch")
-				break
+			if self.step_mode:
+				# Fortschritt durch neue Marker-Frames prüfen
+				progress = False
+				for tr in selected_tracks:
+					markers = getattr(tr, 'markers', [])
+					max_frame_after = -1
+					for mk in markers:
+						f = getattr(mk, 'frame', -1)
+						if f > max_frame_after:
+							max_frame_after = f
+					if max_frame_after > baseline.get(tr, -1):
+						progress = True
+						break
+				if not progress:
+					print("[Kaiserlich Tracker] Kein neuer Marker-Fortschritt erkannt -> Abbruch")
+					break
+				# Frame jetzt für nächsten Schritt weiterstellen
+				if scene.frame_current + 1 <= se:
+					scene.frame_current += 1
+					print(f"[Kaiserlich Tracker] STEP: advance frame -> {scene.frame_current}")
+				else:
+					print(f"[Kaiserlich Tracker] Nächstes Frame ({scene.frame_current + 1}) > se ({se}) -> beendet")
+					break
+			else:
+				# SEQ_LIMIT1 Modus: Szene sollte selbst fortschreiten; prüfen ob Frame sprang
+				pf_new = scene.frame_current
+				if pf_new == pf:
+					print("[Kaiserlich Tracker] Kein Frame-Fortschritt erkannt -> Abbruch")
+					break
 
 			if self.max_internal_calls > 0 and calls >= self.max_internal_calls:
 				print(f"[Kaiserlich Tracker] Sicherheitslimit erreicht (calls={calls})")
