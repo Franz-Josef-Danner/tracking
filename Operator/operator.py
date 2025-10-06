@@ -98,7 +98,7 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                         context,
                         alte_marker,
                         neue_marker,
-                        md=md,
+                        pz=pz,  # Nutzung der Pattern-Größe als Distanz-Schwelle
                         hz=hz,
                         vc=vc
                     )

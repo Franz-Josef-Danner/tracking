@@ -23,52 +23,57 @@ from .delete import delete_track_by_name
 
 MarkerSnapshot = Dict[str, Any]
 
-def cleanup_new_markers(context, alte_marker: List[MarkerSnapshot], neue_marker: List[MarkerSnapshot], *, md: float, hz: int, vc: int) -> Tuple[List[MarkerSnapshot], int]:
-    """Löscht alte Tracks, die zu nahe (horizontal oder vertikal) an neuen liegen.
+def cleanup_new_markers(context, alte_marker: List[MarkerSnapshot], neue_marker: List[MarkerSnapshot], *, pz: int, hz: int, vc: int) -> Tuple[List[MarkerSnapshot], int]:
+    """Löscht alte Tracks, die zu nahe an neuen liegen – jetzt mit pz (Pattern-Größe) als Schwelle.
 
-    Parameter bleiben kompatibel zur alten Signatur.
+    Änderung: Statt der früheren Distanzschwelle 'md' wird die Pattern-Größe 'pz' (in Pixeln) als
+    Vergleichswert verwendet. Damit koppeln wir die Bereinigung an die aktuell verwendete
+    Pattern-Größe.
+
+    Kriterium (wie vorher, ODER-Logik beibehalten):
+        |dx| < pz  ODER  |dy| < pz  => alter Track wird gelöscht
+
+    Rückgabe:
+        (neue_marker_unverändert, anzahl_gelöschter_alter_tracks)
     """
     if not neue_marker or not alte_marker:
-        # Nichts zu bereinigen – gebe neue Marker unverändert zurück, 0 alte gelöscht
+        return neue_marker, 0
+
+    # Sicherstellen, dass pz positiv ist
+    if pz <= 0:
+        print(f"[Kaiserlich Tracker] cleanup: Ungültiges pz={pz} -> kein Cleanup.")
         return neue_marker, 0
 
     deleted_old = 0
+    remaining_old = {(m['track'], m['frame']): m for m in alte_marker}
 
-    # Wir arbeiten auf einer lokalen Kopie der alten Marker-Liste (für Logging optional)
-    # (Aktuell nicht zurückgegeben, da Aufrufer nur neue Marker möchte)
-    remaining_old = { (m['track'], m['frame']): m for m in alte_marker }
-
-    # Für Effizienz: Precompute Koordinaten der alten Marker (wird dynamisch aktualisiert falls gelöscht)
     def build_old_pixel_map():
-        return [ (key, m['co'][0]*hz, m['co'][1]*vc, m) for key, m in remaining_old.items() ]
+        return [(key, m['co'][0] * hz, m['co'][1] * vc, m) for key, m in remaining_old.items()]
 
     old_pixels = build_old_pixel_map()
+
+    thresh = float(pz)  # als float für Formatierung
 
     for nm in neue_marker:
         nm_px_x = nm['co'][0] * hz
         nm_px_y = nm['co'][1] * vc
-        # Für jeden alten Marker prüfen
-        # Da wir während Iterationen löschen können, nutzen wir eine Kopie der Strukturen
         for key, ama_px_x, ama_px_y, ama_m in list(old_pixels):
             disH = abs(ama_px_x - nm_px_x)
-            if disH < md:
-                # Lösche alten Track
+            if disH < thresh:
                 if delete_track_by_name(context, ama_m['track']):
                     deleted_old += 1
                     remaining_old.pop(key, None)
-                    print(f"[Kaiserlich Tracker] cleanup: Alter Track '{ama_m['track']}' gelöscht (disH={disH:.2f} < md={md}).")
-                # Pixel-Mapping neu aufbauen nach Löschung
-                old_pixels = build_old_pixel_map()
-                continue  # Weiter prüfen ob weitere alte zu nahe sind
-            disV = abs(ama_px_y - nm_px_y)
-            if disV < md:
-                if delete_track_by_name(context, ama_m['track']):
-                    deleted_old += 1
-                    remaining_old.pop(key, None)
-                    print(f"[Kaiserlich Tracker] cleanup: Alter Track '{ama_m['track']}' gelöscht (disV={disV:.2f} < md={md}).")
+                    print(f"[Kaiserlich Tracker] cleanup: Alter Track '{ama_m['track']}' gelöscht (disH={disH:.2f} < pz={thresh}).")
                 old_pixels = build_old_pixel_map()
                 continue
-        # Ende Prüfung für diesen neuen Marker – neue Marker werden NIE gelöscht
+            disV = abs(ama_px_y - nm_px_y)
+            if disV < thresh:
+                if delete_track_by_name(context, ama_m['track']):
+                    deleted_old += 1
+                    remaining_old.pop(key, None)
+                    print(f"[Kaiserlich Tracker] cleanup: Alter Track '{ama_m['track']}' gelöscht (disV={disV:.2f} < pz={thresh}).")
+                old_pixels = build_old_pixel_map()
+                continue
 
-    print(f"[Kaiserlich Tracker] cleanup: {deleted_old} alte Tracks entfernt (Schwelle md={md}). Neue Marker behalten: {len(neue_marker)}")
+    print(f"[Kaiserlich Tracker] cleanup: {deleted_old} alte Tracks entfernt (Schwelle pz={thresh}). Neue Marker behalten: {len(neue_marker)}")
     return neue_marker, deleted_old
