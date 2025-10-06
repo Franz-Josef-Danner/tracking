@@ -94,8 +94,13 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 							if f > max_frame:
 								max_frame = f
 						baseline[tr] = max_frame
+				# Debug: baseline summary
+				if selected_tracks:
+					mx = max(baseline.values()) if baseline else -1
+					print(f"[Kaiserlich Tracker] STEP: baseline max marker frame={mx}")
 
 			# Tracking: sequence=True nur im alten Modus. Im STEP Modus bleibt frame_current vor Call unverändert.
+			scene_frame_before = scene.frame_current
 			ok = track_forward_selected_markers(context, sequence=not self.step_mode, backwards=False)
 			if not ok:
 				print("[Kaiserlich Tracker] Tracking abgebrochen / Fehler")
@@ -103,28 +108,35 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 			calls += 1
 
 			if self.step_mode:
-				# Fortschritt durch neue Marker-Frames prüfen
+				# Fortschritt durch neue Marker-Frames prüfen & Operator Frame-Bewegung
 				progress = False
+				new_marker_max = -1
 				for tr in selected_tracks:
 					markers = getattr(tr, 'markers', [])
-					max_frame_after = -1
 					for mk in markers:
 						f = getattr(mk, 'frame', -1)
-						if f > max_frame_after:
-							max_frame_after = f
-					if max_frame_after > baseline.get(tr, -1):
-						progress = True
+						if f > new_marker_max:
+							new_marker_max = f
+						if f > baseline.get(tr, -1):
+							progress = True
+							break
+					if progress:
 						break
+				scene_frame_after = scene.frame_current
+				print(f"[Kaiserlich Tracker] STEP: scene frame before={scene_frame_before} after={scene_frame_after} marker_max={new_marker_max} progress={progress}")
 				if not progress:
 					print("[Kaiserlich Tracker] Kein neuer Marker-Fortschritt erkannt -> Abbruch")
 					break
-				# Frame jetzt für nächsten Schritt weiterstellen
-				if scene.frame_current + 1 <= se:
-					scene.frame_current += 1
-					print(f"[Kaiserlich Tracker] STEP: advance frame -> {scene.frame_current}")
+				# Nur manuell erhöhen, wenn Operator die Szene NICHT weitergeschoben hat
+				if scene_frame_after == scene_frame_before:
+					if scene_frame_after + 1 <= se:
+						scene.frame_current = scene_frame_after + 1
+						print(f"[Kaiserlich Tracker] STEP: manual advance -> {scene.frame_current}")
+					else:
+						print(f"[Kaiserlich Tracker] STEP: kein Advance mehr möglich (next={scene_frame_after + 1} > se={se})")
+						break
 				else:
-					print(f"[Kaiserlich Tracker] Nächstes Frame ({scene.frame_current + 1}) > se ({se}) -> beendet")
-					break
+					print(f"[Kaiserlich Tracker] STEP: Operator hat Frame bereits verschoben (delta={scene_frame_after - scene_frame_before})")
 			else:
 				# SEQ_LIMIT1 Modus: Szene sollte selbst fortschreiten; prüfen ob Frame sprang
 				pf_new = scene.frame_current
