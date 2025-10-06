@@ -108,35 +108,63 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 			calls += 1
 
 			if self.step_mode:
-				# Fortschritt durch neue Marker-Frames prüfen & Operator Frame-Bewegung
-				progress = False
-				new_marker_max = -1
+				# Fortschrittsermittlung & Catch-Up Logik
+				scene_frame_after = scene.frame_current
+				delta_scene = scene_frame_after - scene_frame_before
+				new_max_per_track = {}
+				any_new_marker = False
+				global_max_marker = -1
+				global_min_marker = None
 				for tr in selected_tracks:
 					markers = getattr(tr, 'markers', [])
+					max_frame_after = -1
 					for mk in markers:
 						f = getattr(mk, 'frame', -1)
-						if f > new_marker_max:
-							new_marker_max = f
-						if f > baseline.get(tr, -1):
-							progress = True
-							break
-					if progress:
-						break
-				scene_frame_after = scene.frame_current
-				print(f"[Kaiserlich Tracker] STEP: scene frame before={scene_frame_before} after={scene_frame_after} marker_max={new_marker_max} progress={progress}")
-				if not progress:
-					print("[Kaiserlich Tracker] Kein neuer Marker-Fortschritt erkannt -> Abbruch")
-					break
-				# Nur manuell erhöhen, wenn Operator die Szene NICHT weitergeschoben hat
-				if scene_frame_after == scene_frame_before:
-					if scene_frame_after + 1 <= se:
-						scene.frame_current = scene_frame_after + 1
-						print(f"[Kaiserlich Tracker] STEP: manual advance -> {scene.frame_current}")
+						if f > max_frame_after:
+							max_frame_after = f
+					if max_frame_after > global_max_marker:
+						global_max_marker = max_frame_after
+					if global_min_marker is None or (max_frame_after >= 0 and max_frame_after < global_min_marker):
+						global_min_marker = max_frame_after
+					new_max_per_track[tr] = max_frame_after
+					if max_frame_after > baseline.get(tr, -1):
+						any_new_marker = True
+
+				print(f"[Kaiserlich Tracker] STEP: frame_before={scene_frame_before} frame_after={scene_frame_after} delta={delta_scene} any_new_marker={any_new_marker} min_marker={global_min_marker} max_marker={global_max_marker}")
+
+				if any_new_marker or delta_scene > 0:
+					# Fortschritt vorhanden: wenn Operator nicht vorgerückt ist, rücken wir manuell eins weiter (Catch-up optional)
+					if delta_scene == 0:
+						# Prüfen ob alle Tracks schon >= current+1 Marker haben -> dann dürfen wir weiter
+						current_target = scene_frame_after + 1
+						all_have_next = True
+						for tr, max_after in new_max_per_track.items():
+							if max_after < current_target:
+								all_have_next = False
+								break
+						if scene_frame_after + 1 <= se and all_have_next:
+							scene.frame_current = scene_frame_after + 1
+							print(f"[Kaiserlich Tracker] STEP: manual advance (all tracks already have frame {scene.frame_current})")
+						else:
+							print("[Kaiserlich Tracker] STEP: kein manueller Advance (noch nicht alle Tracks besitzen nächsten Frame)")
 					else:
-						print(f"[Kaiserlich Tracker] STEP: kein Advance mehr möglich (next={scene_frame_after + 1} > se={se})")
-						break
+						print(f"[Kaiserlich Tracker] STEP: Operator hat Frame verschoben (delta={delta_scene})")
+					# Weiter zur nächsten Iteration
 				else:
-					print(f"[Kaiserlich Tracker] STEP: Operator hat Frame bereits verschoben (delta={scene_frame_after - scene_frame_before})")
+					# Kein neuer Marker in diesem Frame. Prüfen ob wir nur 'aufholen' müssen.
+					current_target = scene_frame_before + 1
+					# Falls ALLE Tracks bereits Marker >= current_target besitzen -> wir können Szene nachziehen
+					all_ahead = True
+					for tr, max_after in new_max_per_track.items():
+						if max_after < current_target:
+							all_ahead = False
+							break
+					if all_ahead and scene_frame_before + 1 <= se:
+						scene.frame_current = scene_frame_before + 1
+						print(f"[Kaiserlich Tracker] STEP: catch-up advance -> {scene.frame_current}")
+					else:
+						print("[Kaiserlich Tracker] Kein neuer Marker-Fortschritt & kein Catch-up möglich -> Abbruch")
+						break
 			else:
 				# SEQ_LIMIT1 Modus: Szene sollte selbst fortschreiten; prüfen ob Frame sprang
 				pf_new = scene.frame_current
