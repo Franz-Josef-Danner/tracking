@@ -65,7 +65,10 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
             iterations += 1
             print(f"[Kaiserlich Tracker] ---- Iteration {iterations} ---- tr={tr:.4f} md={md:.2f} pz={pz} sz={sz} za={za:.2f}")
 
-            # Detect Schritt (mit aktuellen Parametern)
+            # Snapshot vor Detect
+            pre_snapshot = snapshot_active_markers(context)
+
+            # Detect mit aktuellen Parametern
             detect_features(
                 context,
                 placement='FRAME',
@@ -75,17 +78,17 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
             )
 
             # Snapshot nach Detect
-            after = snapshot_active_markers(context)
-            alte_marker, neue_marker = classify_markers(baseline, after)
+            post_snapshot = snapshot_active_markers(context)
+            alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
             am = len(neue_marker)
-            print(f"[Kaiserlich Tracker] Anzahl neue Marker (roh) am={am}")
+            print(f"[Kaiserlich Tracker] Neue Marker am={am}")
 
-            # Entscheidungs-Logik
+            # Entscheidungslogik gemäß korrigierter Spezifikation
             if am >= ug:
                 if am <= og:
-                    print(f"[Kaiserlich Tracker] Korridor erreicht (ug <= am <= og): {ug} <= {am} <= {og}")
-                    # Cleanup anwenden (Parameter md, hz, vc)
-                    cleaned_new, deleted = cleanup_new_markers(
+                    print(f"[Kaiserlich Tracker] Korridor: {ug} <= {am} <= {og}")
+                    # Cleanup mit neuen & alten Markern
+                    cleaned_new, deleted_old = cleanup_new_markers(
                         context,
                         alte_marker,
                         neue_marker,
@@ -93,63 +96,67 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                         hz=hz,
                         vc=vc
                     )
-                    total_deleted_cleanup += deleted
-                    am_clean = len(cleaned_new)
-                    print(f"[Kaiserlich Tracker] Cleanup: {deleted} alte Tracks entfernt; verbleibende neue Marker = {am_clean}")
-                    # Threshold Verdoppeln
+                    total_deleted_cleanup += deleted_old
+                    print(f"[Kaiserlich Tracker] Cleanup: {deleted_old} alte Tracks gelöscht; verbleibend neue={len(cleaned_new)}")
+                    # Threshold verdoppeln
                     tr *= 2.0
-                    print(f"[Kaiserlich Tracker] tr verdoppelt -> {tr:.4f}")
+                    print(f"[Kaiserlich Tracker] tr -> {tr:.4f} (verdoppelt)")
                     if tr > 1.0:
-                        print("[Kaiserlich Tracker] tr > 1 -> Fertig (finished)")
-                        # akzeptierte Marker in Baseline übernehmen
-                        baseline.extend(cleaned_new)
+                        print("[Kaiserlich Tracker] tr > 1 -> Fertig")
+                        # Akzeptiere bereinigte neue Marker
+                        baseline = pre_snapshot + cleaned_new
                         accepted = True
                         break
                     else:
-                        # Pattern Size Reduktion gemäß Vorgabe: pz = pz * 0.3
+                        # Pattern Größen reduzieren
                         pz = max(1, int(round(pz * 0.3)))
                         sz = pz * 2
                         apply_marker_sizes(context.space_data.clip if getattr(context, 'space_data', None) else None, pz, sz)
                         print(f"[Kaiserlich Tracker] Pattern/Search reduziert: pz={pz} sz={sz}")
-                        # Übernommene neue Marker zur Baseline hinzufügen, damit sie im nächsten Durchlauf als 'alte' gelten
-                        if cleaned_new:
-                            baseline.extend(cleaned_new)
-                        # Zyklus fortsetzen
+                        # Baseline erweitern um akzeptierte neue Marker
+                        baseline = pre_snapshot + cleaned_new
                         continue
                 else:
-                    # am > og (zu viele) -> za reduzieren & md anpassen & neue verwerfen
-                    print(f"[Kaiserlich Tracker] Über OG: am={am} > og={og} -> za & md anpassen, neue verwerfen")
-                    za *= 0.82  # Skalierung gemäß Vorgabe
-                    # Formel (wie vorgegeben – bewusst wörtlich, auch wenn min/max Reihenfolge konstant wird)
-                    denom = max(0.75, min(0.15, (za / am)))
+                    # am > og
+                    print(f"[Kaiserlich Tracker] Über OG: am={am} > og={og}")
+                    za *= 0.82
+                    # Einheitliche md-Formel (wie vorgegeben)
+                    if am > 0:
+                        denom = max(0.75, min(0.15, (za / am)))
+                    else:
+                        denom = 0.75
                     if denom == 0:
                         denom = 0.0001
                     md = md / denom
-                    print(f"[Kaiserlich Tracker] Neues md (über OG): {md:.4f} (denom={denom:.4f})")
-                    # Neue Marker löschen (alle neuen Tracks), ohne sie zu behalten
+                    print(f"[Kaiserlich Tracker] md angepasst (über OG): {md:.4f} (denom={denom:.4f})")
+                    # Neue Marker löschen
                     if neue_marker:
                         names = [m['track'] for m in neue_marker]
                         removed = delete_tracks_by_names(context, names)
                         print(f"[Kaiserlich Tracker] {removed} neue Tracks gelöscht (über OG)")
-                    # Kein Baseline-Update (da verworfen)
+                    # Baseline bleibt pre_snapshot (da neue verworfen)
+                    baseline = pre_snapshot
                     continue
             else:
-                # am < ug (zu wenig) -> md Anpassung mit anderem Clamp-Bereich & neue verwerfen
-                print(f"[Kaiserlich Tracker] Unter UG: am={am} < ug={ug} -> md anpassen, neue verwerfen")
-                ratio = (za / am) if am > 0 else 1.0
-                denom = max(0.75, min(0.15, (za / am)))
+                # am < ug
+                print(f"[Kaiserlich Tracker] Unter UG: am={am} < ug={ug}")
+                if am > 0:
+                    denom = max(0.75, min(0.15, (za / am)))
+                else:
+                    denom = 0.75
                 if denom == 0:
                     denom = 0.0001
                 md = md / denom
-                print(f"[Kaiserlich Tracker] Neues md (unter UG): {md:.4f} (ratio={ratio:.4f} denom={denom:.4f})")
+                print(f"[Kaiserlich Tracker] md angepasst (unter UG): {md:.4f} (denom={denom:.4f})")
                 if neue_marker:
                     names = [m['track'] for m in neue_marker]
                     removed = delete_tracks_by_names(context, names)
                     print(f"[Kaiserlich Tracker] {removed} neue Tracks gelöscht (unter UG)")
+                baseline = pre_snapshot
                 continue
 
-            # Falls keiner der Pfade griff (sollte nicht passieren)
-            print("[Kaiserlich Tracker] Warnung: Kein Regel-Pfad gegriffen – Abbruch zur Sicherheit.")
+            # Sicherheits-Fall
+            print("[Kaiserlich Tracker] Warnung: Kein Regelpfad aktiv – Abbruch.")
             break
 
         else:
