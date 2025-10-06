@@ -80,7 +80,17 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 				break
 			print(f"[Kaiserlich Tracker] cycle start: pf={pf} se={se} calls={calls} mode={'STEP' if self.step_mode else 'SEQ_LIMIT1'}")
 
-			# In step_mode nur einen Frame pro Call (sequence=False)
+			# STEP-MODUS: Wir müssen den Playhead selbst weiterschalten, weil sequence=False
+			if self.step_mode:
+				next_frame = pf + 1
+				if next_frame > se:
+					print(f"[Kaiserlich Tracker] Nächstes Frame ({next_frame}) > se ({se}) -> beendet")
+					break
+				# Frame weiter setzen bevor getrackt wird, damit Blender auf dem neuen Frame trackt
+				scene.frame_current = next_frame
+				print(f"[Kaiserlich Tracker] STEP: advance frame -> {scene.frame_current}")
+
+			# Tracking: sequence=True nur im alten Modus
 			ok = track_forward_selected_markers(context, sequence=not self.step_mode, backwards=False)
 			if not ok:
 				print("[Kaiserlich Tracker] Tracking abgebrochen / Fehler")
