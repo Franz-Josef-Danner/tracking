@@ -26,6 +26,11 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 		default=False,
 		description="Vor Start einmal Bootstrap ausführen"
 	)
+	step_mode: bpy.props.BoolProperty(  # type: ignore
+		name="Frameweise (sequence=False)",
+		default=True,
+		description="Wenn aktiv: pro Iteration nur 1 Frame tracken (sequence=False) und kein frames_limit=1 setzen"
+	)
 	max_internal_calls: bpy.props.IntProperty(  # type: ignore
 		name="Sicherheitslimit Calls",
 		default=0,
@@ -56,9 +61,12 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 		pf = scene.frame_current
 		print(f"[Kaiserlich Tracker] Playhead Frame (pf): {pf} (se={se})")
 
-		# 3) Frame-Limit setzen (aktueller Ansatz: hart auf 1)
-		changed = set_one_frame_limit(clip, only_selected=True)
-		print(f"[Kaiserlich Tracker] frames_limit gesetzt (geändert={changed})")
+		# 3) Frame-Limit setzen nur falls NICHT step_mode
+		if not self.step_mode:
+			changed = set_one_frame_limit(clip, only_selected=True)
+			print(f"[Kaiserlich Tracker] frames_limit gesetzt (geändert={changed})")
+		else:
+			print("[Kaiserlich Tracker] step_mode aktiv: kein frames_limit=1 gesetzt (sequence=False)")
 
 		# 4) Zyklus / Loop: Solange pf < se
 		calls = 0
@@ -70,9 +78,10 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 			if pf >= se:
 				print(f"[Kaiserlich Tracker] pf >= se ({pf} >= {se}) -> beendet")
 				break
-			print(f"[Kaiserlich Tracker] cycle start: pf={pf} se={se} calls={calls}")
+			print(f"[Kaiserlich Tracker] cycle start: pf={pf} se={se} calls={calls} mode={'STEP' if self.step_mode else 'SEQ_LIMIT1'}")
 
-			ok = track_forward_selected_markers(context, sequence=True, backwards=False)
+			# In step_mode nur einen Frame pro Call (sequence=False)
+			ok = track_forward_selected_markers(context, sequence=not self.step_mode, backwards=False)
 			if not ok:
 				print("[Kaiserlich Tracker] Tracking abgebrochen / Fehler")
 				break
