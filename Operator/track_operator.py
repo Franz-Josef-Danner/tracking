@@ -7,15 +7,8 @@ from ..Helper.track_forward import track_forward_selected_markers
 class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 	bl_idname = "kaiserlich_tracker.track_cycle"
 	bl_label = "Track Zyklus"
-	bl_description = "Bootstrap -> Frames-Limit -> solange nicht am Endframe: forward track (frameweise)"
+	bl_description = "Bootstrap -> Frames-Limit aufrufen -> frameweise tracken bis pf >= se (Ende)."
 	bl_options = {"REGISTER", "INTERNAL"}
-
-	frames_limit: bpy.props.IntProperty(  # type: ignore
-		name="Frames pro Zyklus",
-		default=default_frames_limit,
-		min=1,
-		description="Max Frames die in diesem Aufruf getrackt werden (oder bis Endframe erreicht)"
-	)
 
 	def execute(self, context):
 		# 1) Bootstrap auslösen
@@ -27,8 +20,9 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 			return {'CANCELLED'}
 		se = params.get('se')  # Szenen-Endframe (kann None sein)
 
-		# 2) Frames-Limit bestimmen
-		limit = resolve_frames_limit(context, self.frames_limit)
+		# 2) Frames-Limit bestimmen (aus Scene-Property statt Operator-Property)
+		scene_limit = getattr(scene, 'kaiserlich_track_frames_limit', default_frames_limit) if scene else default_frames_limit
+		limit = resolve_frames_limit(context, scene_limit)
 		if limit < 1:
 			limit = 1
 
@@ -47,26 +41,25 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 			return {'CANCELLED'}
 
 		print("[Kaiserlich Tracker] ===== Track Cycle Start =====")
-		print(f"[Kaiserlich Tracker] Start-Frame={context.scene.frame_current} Endframe(se)={se} limit={limit} selected={len(selected)}")
+		print(f"[Kaiserlich Tracker] Start-Frame={context.scene.frame_current} Endframe(se)={se} selected={len(selected)} (frames_limit aufgerufen={limit})")
 
 		frames_done = 0
-		finished = False
-		for _ in range(limit):  # Zyklus
+		while True:  # cycle start
 			pf = context.scene.frame_current
-			if se is not None and pf >= se:
-				finished = True
-				print(f"[Kaiserlich Tracker] Endframe erreicht (pf={pf} >= se={se})")
+			print(f"[Kaiserlich Tracker] cycle start (pf={pf})")
+			if se is not None and pf >= se:  # pf >= se => fertig
+				print(f"[Kaiserlich Tracker] Endframe erreicht (pf={pf} >= se={se}) -> finished")
 				break
-			# 3) Forward Track (ein Frame Schritt sequence=False damit Limit greift)
+			# auslösen -> helper/track_forward.py
 			ok = track_forward_selected_markers(context, sequence=False, backwards=False)
 			if not ok:
-				print("[Kaiserlich Tracker] Tracking Schritt fehlgeschlagen oder CANCELLED")
+				print("[Kaiserlich Tracker] Tracking Schritt fehlgeschlagen oder CANCELLED -> Abbruch")
 				break
 			frames_done += 1
-			print(f"[Kaiserlich Tracker] Frame-Schritt abgeschlossen (frames_done={frames_done})")
+			# nächster cycle start automatisch durch Schleife
 
-		status = "Fertig (Endframe)" if finished else ("Limit erreicht" if frames_done == limit else "Abbruch/Fehler")
+		status = "Fertig (Endframe)" if (se is not None and context.scene.frame_current >= se) else ("Abbruch/Fehler" if frames_done == 0 else "Abbruch vor Endframe")
 		self.report({'INFO'}, f"Track Cycle: {status} | Schritte={frames_done} | Aktueller Frame={context.scene.frame_current}")
 		print("[Kaiserlich Tracker] ===== Track Cycle Ende =====")
-		return {'FINISHED'} if frames_done > 0 or finished else {'CANCELLED'}
+		return {'FINISHED'} if frames_done > 0 else {'CANCELLED'}
 

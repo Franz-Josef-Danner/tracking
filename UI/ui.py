@@ -17,7 +17,6 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 
         col = layout.column(align=True)
         col.prop(scene, "kaiserlich_markers_per_frame", text="Marker per Frame")
+        col.prop(scene, "kaiserlich_track_frames_limit", text="Frames/Zyklus")
         col.operator("kaiserlich_tracker.detect_cycle", text="Detect Cyclus")
-
-        # Einfacher Button für Track Cycle (Frames-Limit aktuell fest / Operator Property)
         col.operator("kaiserlich_tracker.track_cycle", text="Track Cycle")
