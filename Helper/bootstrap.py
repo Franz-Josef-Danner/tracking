@@ -6,11 +6,12 @@ def run_bootstrap(context, ef: int):
   """Berechnet Start-Parameter basierend auf Clip-Auflösung und gewünschter Markeranzahl.
 
   Neue Vorgaben:
+    se  = Szenen-Endframe (frame_end der aktiven Szene)
     hz  = horizontale Auflösung des Clips
     vc  = vertikale Auflösung des Clips
     ma  = hz * 0.025
     md  = hz * 0.025 (Wird ausgegeben)
-    pz  = int(hz * 0.04) (4% der horizontalen Auflösung, ausgegeben)
+  pz  = int(hz * 0.05) (5% der horizontalen Auflösung, ausgegeben)
     sz  = pz * 2
     tr  = 0.0001 (threshold, ausgegeben)
     ef  = Eingabewert aus UI
@@ -27,6 +28,10 @@ def run_bootstrap(context, ef: int):
 
   hz = clip.size[0]
   vc = clip.size[1]
+  # Szenen-Endframe (falls vorhanden)
+  se = None
+  if getattr(context, "scene", None) is not None:
+    se = context.scene.frame_end
 
   ma = hz * 0.025
   md = hz * 0.025
@@ -39,6 +44,8 @@ def run_bootstrap(context, ef: int):
 
   print("[Kaiserlich Tracker] ================= Bootstrap =================")
   print(f"[Kaiserlich Tracker] Auflösung: {hz}x{vc}")
+  if se is not None:
+    print(f"[Kaiserlich Tracker] Szenen-Endframe (se): {se}")
   print(f"[Kaiserlich Tracker] margin (ma): {ma:.2f}")
   print(f"[Kaiserlich Tracker] min_distance (md): {md:.2f}")
   print(f"[Kaiserlich Tracker] pattern_size (pz): {pz}")
@@ -52,6 +59,7 @@ def run_bootstrap(context, ef: int):
   apply_marker_sizes(clip, pz, sz)
 
   return {
+    "se": se,
     "hz": hz,
     "vc": vc,
     "ma": ma,
