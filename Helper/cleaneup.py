@@ -24,14 +24,13 @@ from .delete import delete_track_by_name
 MarkerSnapshot = Dict[str, Any]
 
 def cleanup_new_markers(context, alte_marker: List[MarkerSnapshot], neue_marker: List[MarkerSnapshot], *, pz: int, hz: int, vc: int) -> Tuple[List[MarkerSnapshot], int]:
-    """Löscht alte Tracks, die zu nahe an neuen liegen – jetzt mit pz (Pattern-Größe) als Schwelle.
+    """Löscht alte Tracks, die zu nahe an neuen liegen – Schwelle = pz/2.
 
-    Änderung: Statt der früheren Distanzschwelle 'md' wird die Pattern-Größe 'pz' (in Pixeln) als
-    Vergleichswert verwendet. Damit koppeln wir die Bereinigung an die aktuell verwendete
-    Pattern-Größe.
+    Änderung: Die effektive Distanzschwelle ist nicht mehr pz, sondern pz/2, um das
+    frühere Verhalten zu entschärfen und weniger aggressive Löschung zu erreichen.
 
-    Kriterium (wie vorher, ODER-Logik beibehalten):
-        |dx| < pz  ODER  |dy| < pz  => alter Track wird gelöscht
+    Kriterium (ODER-Logik beibehalten):
+        |dx| < (pz/2)  ODER  |dy| < (pz/2)  => alter Track wird gelöscht
 
     Rückgabe:
         (neue_marker_unverändert, anzahl_gelöschter_alter_tracks)
@@ -52,7 +51,7 @@ def cleanup_new_markers(context, alte_marker: List[MarkerSnapshot], neue_marker:
 
     old_pixels = build_old_pixel_map()
 
-    thresh = float(pz)  # als float für Formatierung
+    thresh = float(pz) * 0.5  # pz/2 als effektive Schwelle
 
     for nm in neue_marker:
         nm_px_x = nm['co'][0] * hz
@@ -63,7 +62,7 @@ def cleanup_new_markers(context, alte_marker: List[MarkerSnapshot], neue_marker:
                 if delete_track_by_name(context, ama_m['track']):
                     deleted_old += 1
                     remaining_old.pop(key, None)
-                    print(f"[Kaiserlich Tracker] cleanup: Alter Track '{ama_m['track']}' gelöscht (disH={disH:.2f} < pz={thresh}).")
+                    print(f"[Kaiserlich Tracker] cleanup: Alter Track '{ama_m['track']}' gelöscht (disH={disH:.2f} < pz/2={thresh}).")
                 old_pixels = build_old_pixel_map()
                 continue
             disV = abs(ama_px_y - nm_px_y)
@@ -71,9 +70,9 @@ def cleanup_new_markers(context, alte_marker: List[MarkerSnapshot], neue_marker:
                 if delete_track_by_name(context, ama_m['track']):
                     deleted_old += 1
                     remaining_old.pop(key, None)
-                    print(f"[Kaiserlich Tracker] cleanup: Alter Track '{ama_m['track']}' gelöscht (disV={disV:.2f} < pz={thresh}).")
+                    print(f"[Kaiserlich Tracker] cleanup: Alter Track '{ama_m['track']}' gelöscht (disV={disV:.2f} < pz/2={thresh}).")
                 old_pixels = build_old_pixel_map()
                 continue
 
-    print(f"[Kaiserlich Tracker] cleanup: {deleted_old} alte Tracks entfernt (Schwelle pz={thresh}). Neue Marker behalten: {len(neue_marker)}")
+    print(f"[Kaiserlich Tracker] cleanup: {deleted_old} alte Tracks entfernt (Schwelle pz/2={thresh}). Neue Marker behalten: {len(neue_marker)}")
     return neue_marker, deleted_old
