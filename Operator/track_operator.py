@@ -2,7 +2,7 @@ import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
 
-from Helper.motionmodel import evaluate_motion_model
+from ..Helper.motionmodel import evaluate_motion_model
 
 
 # ------------------------------------------------------------
