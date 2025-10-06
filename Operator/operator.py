@@ -7,56 +7,68 @@ from ..Helper.cleaneup import cleanup_new_markers
 from ..Helper.delete import delete_tracks_by_names
 from ..Helper.marker_size import apply_marker_sizes
 
-class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
-    """Detect-Zyklus (vereinfachte Version) – bestehender Operator umgebaut laut Vorgabe.
 
-    Pseudocode (Originalvorgabe, wortnah umgesetzt):
-      bootstrap -> (Startwerte ma, md, pz, sz, tr, za, ug, og)
-      while ...:
-        detect (mit tr, md, ma)
-        snapshot
-        klassifizieren (alte vs neue marker)
-        am = anzahl neue marker
-        if am >= ug:
-          if am <= og:
-            cleanup (alte + neue, md)
-            tr = tr * 2
-            if tr > 1 => break (finished)
-            else pz = pz * 0.3; sz = pz * 2; apply sizes; continue
-          else (am > og):
-            za = za * 0.82
-            md = md / max(0.75, min(0.15, (za / am)))  # bewusst wortgetreu, mathematisch immer 0.75
-            delete neue marker
-            continue
-        else (am < ug):
-          md = md / max(-50, min(50, (za / am)))
-          delete neue marker
-          continue
+def _recompute_md(current_md: float, za: float, am: int) -> float:
+    """Berechnet neues md gemäß Vorgabe: md / (za / am) => md * am / za.
 
-    Sicherheits-Extras: max_iterations, Schutz gegen Division durch 0 und pz < 1.
+    Schutz vor Division durch 0 und zu kleinen Werten. Falls am == 0 wird ein
+    konservativer Reduktionsfaktor angewandt.
     """
+    if am <= 0 or za <= 0:
+        return max(1.0, current_md * 0.5)
+    new_md = current_md * max(0.75, min(1.5, (am / za)))
+    return max(1.0, new_md)
+
+class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
     bl_idname = "kaiserlich_tracker.detect_cycle"
-    bl_label = "Detect Zyklus"
-    bl_description = "Einfacher Detect Zyklus gemäß bereitgestelltem Pseudocode (Operator umgebaut)"
+    bl_label = "Detect Zyklus"  # Neuer Algorithmus laut Vorgabe ug/og Korridor
+    bl_description = (
+        "Iterativer Marker-Detect Zyklus gemäß Vorgabe: Bootstrap -> Detect -> Klassifikation -> Cleanup -> "
+        "Korridorlogik (ug/og) mit dynamischer Anpassung von threshold, pattern/search-size und md."
+    )
     bl_options = {"REGISTER", "INTERNAL"}
 
     max_iterations: bpy.props.IntProperty(  # type: ignore
         name="Max Iterationen",
-        default=50,
+        default=0,
         min=0,
-        soft_max=500,
-        description="0 = unendlich; Sicherheitslimit für Iterationen"
+        soft_max=100,
+        description="0 oder kleiner = kein Limit; sonst maximale Anzahl Iterationen als Sicherheitsbremse"
     )
 
-    def execute(self, context):  # noqa: C901
+    finish_threshold: bpy.props.FloatProperty(  # type: ignore
+        name="Finish Threshold (tr <)",
+        default=0.01,
+        min=0.0001,
+        description="Schwellwert unter den der Threshold fallen muss um im Korridor final zu beenden"
+    )
+
+    corridor_tr_factor: bpy.props.FloatProperty(  # type: ignore
+        name="Korridor Threshold Faktor",
+        default=0.15,
+        min=0.01,
+        max=0.99,
+        description="Faktor zur Multiplikation von tr wenn (ug < am < og)"
+    )
+
+    pattern_growth: bpy.props.FloatProperty(  # type: ignore
+        name="Pattern Wachstumsfaktor",
+        default=1.1,
+        min=1.01,
+        max=3.0,
+        description="Multiplikator für pz im Korridor (wenn noch nicht fertig)"
+    )
+
+    def execute(self, context):
         scene = context.scene
-        ef = getattr(scene, 'kaiserlich_markers_per_frame', 0)
+        ef = scene.kaiserlich_markers_per_frame
 
         params = run_bootstrap(context, ef)
         if not params:
             self.report({'WARNING'}, "Bootstrap fehlgeschlagen")
             return {'CANCELLED'}
 
+        # Ausgangswerte aus Bootstrap
         md = float(params['md'])
         ma = int(params['ma'])
         tr = float(params['tr'])
@@ -65,24 +77,26 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
         og = int(params['og'])
         pz = int(params['pz'])
         sz = int(params['sz'])
-        hz = int(params['hz'])
-        vc = int(params['vc'])
 
-        print("[Kaiserlich Tracker] ==== Detect Zyklus (umbau) Start ====")
-        print(f"[Kaiserlich Tracker] ug={ug} og={og} za={za:.3f} md={md:.2f} tr={tr:.3f} pz={pz} sz={sz}")
+        hz = params['hz']
+        vc = params['vc']
+
+        # Baseline Snapshot (alle vorhandenen Marker vor Start)
+        baseline = snapshot_active_markers(context)
+        baseline_count = len(baseline)
+
+        print("[Kaiserlich Tracker] ================ Detect Zyklus Start ================")
+        print(f"[Kaiserlich Tracker] ug={ug} og={og} za={za:.2f} | Start md={md:.2f} tr={tr:.3f} pz={pz} sz={sz}")
 
         iterations = 0
+        total_deleted_during_cleanup = 0
         accepted = False
-        total_deleted_cleanup = 0
-        baseline = snapshot_active_markers(context)
 
-        while True:
+        while (self.max_iterations <= 0) or (iterations < self.max_iterations):
             iterations += 1
-            if self.max_iterations > 0 and iterations > self.max_iterations:
-                print(f"[Kaiserlich Tracker] Iterationslimit {self.max_iterations} erreicht – Abbruch.")
-                break
-            print(f"[Kaiserlich Tracker] -- Iteration {iterations} -- tr={tr:.4f} md={md:.2f} pz={pz} za={za:.3f}")
+            print(f"[Kaiserlich Tracker] ---- Iteration {iterations} ---- md={md:.2f} tr={tr:.4f} pz={pz} sz={sz}")
 
+            # 1. Detect
             detect_features(
                 context,
                 placement='FRAME',
@@ -91,71 +105,85 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                 min_distance=int(max(1, round(md)))
             )
 
+            # 2. Snapshot danach
             after = snapshot_active_markers(context)
-            alte_marker, neue_marker = classify_markers(baseline, after)
-            am = len(neue_marker)
-            print(f"[Kaiserlich Tracker] Neue Marker roh (am) = {am}")
 
+            # 3. Klassifikation (alte vs neue Marker)
+            alte_marker, neue_marker_roh = classify_markers(baseline, after)
+
+            # 4. Cleanup Abstand md
+            cleaned_new, deleted = cleanup_new_markers(
+                context,
+                alte_marker,
+                neue_marker_roh,
+                md=md,
+                hz=hz,
+                vc=vc
+            )
+            total_deleted_during_cleanup += deleted
+            am = len(cleaned_new)
+            print(f"[Kaiserlich Tracker] Anzahl neue Marker nach Cleanup (am): {am}")
+
+            # 5. Korridor Logik
             if am >= ug:
+                # Wir liegen über Untergrenze
                 if am <= og:
-                    print(f"[Kaiserlich Tracker] Im Korridor ({ug} <= {am} <= {og}) -> Cleanup & tr*2")
-                    cleaned, deleted = cleanup_new_markers(
-                        context,
-                        alte_marker,
-                        neue_marker,
-                        md=md,
-                        hz=hz,
-                        vc=vc
-                    )
-                    total_deleted_cleanup += deleted
-                    am = len(cleaned)
-                    print(f"[Kaiserlich Tracker] Neue Marker nach Cleanup (am) = {am}")
-                    if cleaned:
-                        baseline.extend(cleaned)
-                    tr *= 2.0
-                    print(f"[Kaiserlich Tracker] Threshold verdoppelt: tr={tr:.4f}")
-                    if tr > 1.0:
-                        print("[Kaiserlich Tracker] tr > 1 -> fertig (break)")
+                    # Im Korridor (zwischen ug und og)
+                    print(f"[Kaiserlich Tracker] Im Korridor: ug < am ({am}) < og. Versuche Verfeinerung.")
+                    tr *= self.corridor_tr_factor
+                    print(f"[Kaiserlich Tracker] Threshold reduziert: neuer tr={tr:.5f}")
+                    if tr < self.finish_threshold:
+                        print(f"[Kaiserlich Tracker] tr ({tr:.5f}) < Finish ({self.finish_threshold}) -> Fertig.")
                         accepted = True
+                        # Neue Marker behalten -> Baseline erweitern & Abbruch
+                        baseline.extend(cleaned_new)
                         break
                     else:
-                        pz = max(1, int(round(pz * 0.3)))
+                        # Pattern/Search Größe erhöhen
+                        pz = max(1, int(round(pz * self.pattern_growth)))
                         sz = pz * 2
                         apply_marker_sizes(context.space_data.clip if getattr(context, 'space_data', None) else None, pz, sz)
-                        print(f"[Kaiserlich Tracker] Pattern/Search angepasst pz={pz} sz={sz}")
+                        print(f"[Kaiserlich Tracker] Pattern/Search angepasst: pz={pz} sz={sz}")
+                        # akzeptiere bisherige neue Marker & erweitere Baseline, dann weiter sammeln
+                        if cleaned_new:
+                            baseline.extend(cleaned_new)
+                        # Weiter zur nächsten Iteration ohne Löschen
                         continue
                 else:
-                    print(f"[Kaiserlich Tracker] Über OG: am={am} og={og} -> za*0.82 & md Formel1 & delete neue Marker")
-                    za *= 0.82
-                    ratio = (za / am) if am != 0 else 0.0
-                    denom = max(0.75, min(0.15, ratio))
-                    if denom == 0:
-                        denom = 0.75
-                    md = md / denom
-                    print(f"[Kaiserlich Tracker] za={za:.3f} ratio={ratio:.5f} denom={denom:.5f} -> md={md:.2f}")
-                    if neue_marker:
-                        names = [m['track'] for m in neue_marker]
+                    # am >= og => zu viele neue Marker -> md adjust & neue verwerfen
+                    print(f"[Kaiserlich Tracker] Über OG: am ({am}) >= og ({og}) -> md anpassen & neue löschen.")
+                    md = _recompute_md(md, za, am)
+                    print(f"[Kaiserlich Tracker] md angepasst (über OG): {md:.2f}")
+                    if cleaned_new:
+                        names = [m['track'] for m in cleaned_new]
                         removed = delete_tracks_by_names(context, names)
-                        print(f"[Kaiserlich Tracker] {removed} neue Tracks gelöscht (über OG)")
+                        print(f"[Kaiserlich Tracker] {removed} neue Tracks verworfen (über OG).")
                     continue
             else:
-                print(f"[Kaiserlich Tracker] Unter UG: am={am} ug={ug} -> md Formel2 & delete neue Marker")
-                ratio = (za / am) if am != 0 else 0.0
-                denom = max(-50, min(50, ratio))
-                if denom == 0:
-                    denom = 1.0
-                md = md / denom
-                print(f"[Kaiserlich Tracker] ratio={ratio:.5f} denom={denom:.5f} -> md={md:.2f}")
-                if neue_marker:
-                    names = [m['track'] for m in neue_marker]
+                # am <= ug -> unter Untergrenze -> md anpassen & neue löschen (wir wollen mehr, also verwerfen & Param anpassen)
+                print(f"[Kaiserlich Tracker] Unter UG: am ({am}) <= ug ({ug}) -> md anpassen & neue löschen.")
+                md = _recompute_md(md, za, am)
+                print(f"[Kaiserlich Tracker] md angepasst (unter UG): {md:.2f}")
+                if cleaned_new:
+                    names = [m['track'] for m in cleaned_new]
                     removed = delete_tracks_by_names(context, names)
-                    print(f"[Kaiserlich Tracker] {removed} neue Tracks gelöscht (unter UG)")
+                    print(f"[Kaiserlich Tracker] {removed} neue Tracks verworfen (unter UG).")
                 continue
 
-        final_snapshot = snapshot_active_markers(context)
-        net_added = len(final_snapshot) - len(baseline)
-        status = "Fertig" if accepted else "Abgebrochen"
-        self.report({'INFO'}, f"{status}: Iterationen={iterations} net_added={net_added} md={md:.2f} tr={tr:.3f} pz={pz} cleanup_deleted={total_deleted_cleanup}")
-        print("[Kaiserlich Tracker] ==== Detect Zyklus (umbau) Ende ====")
-        return {'FINISHED'}
+            # Falls wir hier landen wäre das eine Sicherheits-Situation (sollte nicht passieren)
+            print("[Kaiserlich Tracker] Warnung: Unerwarteter Pfad – keine Regel angewandt.")
 
+        else:
+            if self.max_iterations > 0:
+                print(f"[Kaiserlich Tracker] Iterationslimit ({self.max_iterations}) erreicht – Abbruch.")
+
+        final_snapshot = snapshot_active_markers(context)
+        final_total = len(final_snapshot)
+        added_effective = final_total - baseline_count
+
+        status = "Abgeschlossen" if accepted else ("Limit erreicht" if self.max_iterations > 0 and iterations >= self.max_iterations else "Abbruch")
+        self.report({'INFO'}, (
+            f"{status}: Iterationen={iterations} | Effektiv hinzugefügt={added_effective} | md={md:.2f} | tr={tr:.5f} | pz={pz} | Cleanup gelöscht Summe={total_deleted_during_cleanup} | Gesamt={final_total}"
+        ))
+        print("[Kaiserlich Tracker] ================ Detect Zyklus Ende =================")
+        return {'FINISHED'}
