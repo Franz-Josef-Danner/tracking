@@ -1,4 +1,5 @@
 import bpy
+import math
 from ..Helper.bootstrap import run_bootstrap
 from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.detect import detect_features
@@ -16,8 +17,8 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
     bl_idname = "kaiserlich_tracker.detect_cycle"
     bl_label = "Detect Zyklus (angepasst)"
     bl_description = (
-        "Neuer iterativer Zyklus gemäß Vorgabe: Bootstrap -> Detect -> Klassifikation -> (ug/og) Logik mit tr*2, "
-        "Pattern-Reduktion, md-Anpassung und Lösch-Strategie."
+    "Iterativer Zyklus gemäß Vorgabe: Bootstrap -> Detect -> Klassifikation -> ug/og Logik mit tr*2, "
+    "Pattern-Reduktion, md-Anpassung, dynamische za/og/ug-Anpassung und Lösch-Strategie."
     )
     bl_options = {"REGISTER", "INTERNAL"}
 
@@ -108,9 +109,11 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                         accepted = True
                         break
                     else:
-                        # Neue Vorgabe: za im Korridor bei Fortsetzung reduzieren
+                        # Neue Vorgabe: za im Korridor bei Fortsetzung reduzieren und og/ug neu berechnen
                         za *= 0.82
-                        print(f"[Kaiserlich Tracker] za reduziert (Korridor Fortsetzung): {za:.4f}")
+                        og = math.ceil(za * 1.1)
+                        ug = math.floor(za * 0.9)
+                        print(f"[Kaiserlich Tracker] za reduziert (Korridor Fortsetzung): za={za:.4f} -> og={og} ug={ug}")
                         # Pattern Größen reduzieren
                         pz = max(1, int(round(pz * 0.3)))
                         sz = pz * 2
