@@ -1,6 +1,7 @@
 import bpy
 from ..Helper.frames_limit import default_frames_limit, resolve_frames_limit
 from ..Helper.bootstrap import run_bootstrap
+from ..Helper.track_forward import track_forward_selected_markers
 
 
 class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
@@ -67,14 +68,16 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 		frames_tracked = 0
 		cancelled = False
 		for i in range(limit):
+			# Frameweises Tracking (sequence=False) über direkten Operator-Aufruf.
+			# Alternativ könnte track_forward_selected_markers(sequence=True) für einen ganzen Rutsch genutzt werden.
+			ok = True
 			try:
 				res = bpy.ops.clip.track_markers(backwards=False, sequence=False)
 			except Exception as e:  # noqa
 				print(f"[Kaiserlich Tracker] Tracking Fehler bei Schritt {i+1}: {e}")
-				cancelled = True
-				break
-			if 'CANCELLED' in res:
-				print(f"[Kaiserlich Tracker] Blender meldet CANCELLED bei Schritt {i+1} -> Abbruch")
+				ok = False
+			if not ok or 'CANCELLED' in res:
+				print(f"[Kaiserlich Tracker] Tracking Abbruch bei Schritt {i+1}")
 				cancelled = True
 				break
 			frames_tracked += 1
