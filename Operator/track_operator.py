@@ -1,7 +1,6 @@
 import bpy  # type: ignore
 
 from ..Helper.bootstrap import run_bootstrap
-from ..Helper.frames_limit import set_one_frame_limit
 from ..Helper.track_forward import track_forward_selected_markers
 
 
@@ -9,7 +8,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 	bl_idname = "kaiserlich_tracker.track_cycle"
 	bl_label = "Track Cycle"
 	bl_description = (
-		"Bootstrap -> frames_limit=1 (selektierte Marker) -> Vorwärts-Tracking mit sequence=True bis Blender stoppt (Ende/Fehler)."
+		"Bootstrap -> Vorwärts-Tracking (sequence=True) der selektierten Marker bis Blender stoppt (Ende/Fehler)."
 		" GANZ WICHTIG: sequence=True umgesetzt."
 	)
 	bl_options = {"REGISTER", "INTERNAL"}
@@ -35,8 +34,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 			self.report({'WARNING'}, "Kein aktiver Clip")
 			return {'CANCELLED'}
 
-		changed = set_one_frame_limit(clip, only_selected=True)
-		print(f"[Kaiserlich Tracker] frames_limit -> 1 (Änderungen={changed})")
+	# frames_limit wurde auf Wunsch entfernt – keine Limit-Anpassung mehr
 
 		# Ein einziger Tracking-Call mit sequence=True
 		ok = track_forward_selected_markers(context, sequence=True, backwards=False)
