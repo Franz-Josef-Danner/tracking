@@ -211,18 +211,19 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
         selected_new_tracks = 0
         if clip and getattr(clip, 'tracking', None):
             tracking = clip.tracking
-            new_tracks = [tr for tr in tracking.tracks if tr.name not in baseline_start_tracknames]
+            # Liste der neu entstandenen Track-Objekte
+            new_tracks = [trk for trk in tracking.tracks if trk.name not in baseline_start_tracknames]
             try:
                 # Auswahl zurücksetzen
-                for tr in tracking.tracks:
+                for trk in tracking.tracks:
                     try:
-                        tr.select = False
+                        trk.select = False
                     except Exception:
                         pass
                 # Neue selektieren
-                for tr in new_tracks:
+                for new_trk in new_tracks:
                     try:
-                        tr.select = True
+                        new_trk.select = True
                     except Exception:
                         pass
                 selected_new_tracks = len(new_tracks)
