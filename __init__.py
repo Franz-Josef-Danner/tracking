@@ -30,20 +30,11 @@ def register():
         min=1,
         soft_min=1,
     )
-    # Neu: Frames pro Track-Zyklus (statt Operator-Property, damit persistent und UI-editierbar)
-    bpy.types.Scene.kaiserlich_track_frames_limit = bpy.props.IntProperty(
-        name="Frames/Zyklus",
-        description="Wie viele Frames in einem Track-Zyklus vorgerückt wird (1 = nur ein Frame)",
-        default=10,
-        min=1,
-        soft_min=1,
-    )
 
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
     del bpy.types.Scene.kaiserlich_markers_per_frame
-    del bpy.types.Scene.kaiserlich_track_frames_limit
 
 if __name__ == "__main__":
     register()
