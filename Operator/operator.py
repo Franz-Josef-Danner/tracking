@@ -51,6 +51,11 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
         hz = params['hz']
         vc = params['vc']
 
+        # Annahmen für harte Grenzen der min_distance (md)
+        # (User-Spezifikation nannte md_min / md_max nicht; wir leiten sie heuristisch aus Auflösung ab)
+        md_min = max(1.0, hz * 0.002)   # ca. 0.2% der horizontalen Auflösung, mindestens 1 Pixel
+        md_max = hz * 0.25              # maximal 25% der Breite
+
         # Baseline vor Start
         baseline = snapshot_active_markers(context)
         baseline_start_count = len(baseline)
@@ -123,36 +128,63 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                         baseline = pre_snapshot + cleaned_new
                         continue
                 else:
-                    # am > og
+                    # am > og -> md-Anpassung über Regelkreis (eps/k/L/U/O/d/beta)
                     print(f"[Kaiserlich Tracker] Über OG: am={am} > og={og}")
-                    # Einheitliche md-Formel (wie vorgegeben)
-                    if am > 0:
-                        denom = max(0.9, min(1.1, (za / am)))
+                    eps  = 1.0
+                    k    = 0.6
+                    L    = 1.5
+                    Ufac = 1.5  # max down factor per step
+                    Ofac = 1.5  # max up factor per step
+                    d    = 0.03 # deadband
+                    beta = 0.3  # smoothing
+
+                    r = (am + eps) / (za + eps)
+                    if abs(r - 1.0) < d:
+                        md_next = md
+                        reason = "deadband"
                     else:
-                        denom = 0.9
-                    if denom == 0:
-                        denom = 0.0001
-                    md = md / denom
-                    print(f"[Kaiserlich Tracker] md angepasst (über OG): {md:.4f} (denom={denom:.4f})")
-                    # Neue Marker löschen
+                        delta = max(-L, min(L, math.log(r)))
+                        raw = md * math.exp(k * delta)
+                        # Per-step caps
+                        raw = max(md / Ufac, min(md * Ofac, raw))
+                        # Harte Grenzen
+                        raw = max(md_min, min(md_max, raw))
+                        # Glättung
+                        md_next = (1 - beta) * md + beta * raw
+                        reason = f"delta={delta:.3f} raw={raw:.2f}"
+                    print(f"[Kaiserlich Tracker] md Regel (über OG): md_alt={md:.2f} md_neu={md_next:.2f} r={r:.3f} ({reason})")
+                    md = md_next
+                    # Neue Marker verwerfen (löschen)
                     if neue_marker:
                         names = [m['track'] for m in neue_marker]
                         removed = delete_tracks_by_names(context, names)
                         print(f"[Kaiserlich Tracker] {removed} neue Tracks gelöscht (über OG)")
-                    # Baseline bleibt pre_snapshot (da neue verworfen)
                     baseline = pre_snapshot
                     continue
             else:
-                # am < ug
+                # am < ug -> md-Anpassung über gleiche Regel
                 print(f"[Kaiserlich Tracker] Unter UG: am={am} < ug={ug}")
-                if am > 0:
-                    denom = max(0.9, min(1.1, (za / am)))
+                eps  = 1.0
+                k    = 0.6
+                L    = 1.5
+                Ufac = 1.5
+                Ofac = 1.5
+                d    = 0.03
+                beta = 0.3
+
+                r = (am + eps) / (za + eps)
+                if abs(r - 1.0) < d:
+                    md_next = md
+                    reason = "deadband"
                 else:
-                    denom = 0.9
-                if denom == 0:
-                    denom = 0.0001
-                md = md / denom
-                print(f"[Kaiserlich Tracker] md angepasst (unter UG): {md:.4f} (denom={denom:.4f})")
+                    delta = max(-L, min(L, math.log(r)))
+                    raw = md * math.exp(k * delta)
+                    raw = max(md / Ufac, min(md * Ofac, raw))
+                    raw = max(md_min, min(md_max, raw))
+                    md_next = (1 - beta) * md + beta * raw
+                    reason = f"delta={delta:.3f} raw={raw:.2f}"
+                print(f"[Kaiserlich Tracker] md Regel (unter UG): md_alt={md:.2f} md_neu={md_next:.2f} r={r:.3f} ({reason})")
+                md = md_next
                 if neue_marker:
                     names = [m['track'] for m in neue_marker]
                     removed = delete_tracks_by_names(context, names)
