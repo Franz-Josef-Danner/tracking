@@ -11,11 +11,12 @@ bl_info = {
 import bpy
 from .UI.ui import KAISERLICHTRACKER_PT_panel
 from .Operator.detect_operator import KAISERLICHTRACKER_OT_detect_cycle
-from .Operator.track_operator import KAISERLICHTRACKER_OT_track_cycle
+from .Operator.track_operator import KAISERLICHTRACKER_OT_track_cycle, KAISERLICHTRACKER_OT_track_until_end
 
 classes = (
     KAISERLICHTRACKER_OT_detect_cycle,
     KAISERLICHTRACKER_OT_track_cycle,
+    KAISERLICHTRACKER_OT_track_until_end,
     KAISERLICHTRACKER_PT_panel,
 )
 
