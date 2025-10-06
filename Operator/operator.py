@@ -95,7 +95,7 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                     )
                     total_deleted_cleanup += deleted
                     am_clean = len(cleaned_new)
-                    print(f"[Kaiserlich Tracker] Nach Cleanup verbleiben {am_clean} neue Marker (deleted={deleted})")
+                    print(f"[Kaiserlich Tracker] Cleanup: {deleted} alte Tracks entfernt; verbleibende neue Marker = {am_clean}")
                     # Threshold Verdoppeln
                     tr *= 2.0
                     print(f"[Kaiserlich Tracker] tr verdoppelt -> {tr:.4f}")
@@ -162,7 +162,7 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
         added_effective = final_total - baseline_start_count
         status = "Abgeschlossen" if accepted else ("Limit erreicht" if (self.max_iterations > 0 and iterations >= self.max_iterations) else "Abbruch")
         self.report({'INFO'}, (
-            f"{status}: Iterationen={iterations} | Effektiv hinzugefügt={added_effective} | md={md:.2f} | tr={tr:.4f} | pz={pz} | CleanupDel={total_deleted_cleanup} | Gesamt={final_total}"
+            f"{status}: Iterationen={iterations} | Effektiv hinzugefügt={added_effective} | md={md:.2f} | tr={tr:.4f} | pz={pz} | Gelöschte alte Tracks im Cleanup={total_deleted_cleanup} | Gesamt Marker (Ende)={final_total}"
         ))
         print("[Kaiserlich Tracker] ================ Detect Zyklus Ende ==================")
         return {'FINISHED'}
