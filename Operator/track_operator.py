@@ -41,38 +41,54 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 			self.report({'WARNING'}, "Kein Clip aktiv")
 			return {'CANCELLED'}
 
+		# 1) Bootstrap (optional) -> liefert u.a. se (Endframe)
 		if self.use_bootstrap:
 			ef = getattr(scene, 'kaiserlich_markers_per_frame', 10)
 			params = run_bootstrap(context, ef)
 			if not params:
 				self.report({'WARNING'}, "Bootstrap fehlgeschlagen")
 				return {'CANCELLED'}
-			end_frame = params.get('se') or scene.frame_end
+			se = params.get('se') or scene.frame_end
 		else:
-			end_frame = scene.frame_end
+			se = scene.frame_end
 
+		# 2) Playhead Frame (pf) ausgeben (vor Änderung des Frame-Limits)
+		pf = scene.frame_current
+		print(f"[Kaiserlich Tracker] Playhead Frame (pf): {pf} (se={se})")
+
+		# 3) Frame-Limit setzen (aktueller Ansatz: hart auf 1)
 		changed = set_one_frame_limit(clip, only_selected=True)
-		print(f"[Kaiserlich Tracker] Frame-Limit=1 gesetzt (geändert: {changed}) -> Start Loop pf={scene.frame_current} se={end_frame}")
+		print(f"[Kaiserlich Tracker] frames_limit gesetzt (geändert={changed})")
 
+		# 4) Zyklus / Loop: Solange pf < se
 		calls = 0
-		start_frame = scene.frame_current
-		last_frame = start_frame - 1
-		while scene.frame_current < end_frame:
+		start_frame = pf
+		last_frame = pf - 1  # Damit erste Iteration als Fortschritt zählt
+
+		while True:
+			pf = scene.frame_current
+			if pf >= se:
+				print(f"[Kaiserlich Tracker] pf >= se ({pf} >= {se}) -> beendet")
+				break
+			print(f"[Kaiserlich Tracker] cycle start: pf={pf} se={se} calls={calls}")
+
 			ok = track_forward_selected_markers(context, sequence=True, backwards=False)
 			if not ok:
 				print("[Kaiserlich Tracker] Tracking abgebrochen / Fehler")
 				break
 			calls += 1
-			# Fortschritt prüfen
-			if scene.frame_current == last_frame:  # Kein Fortschritt -> Notbremse
+
+			pf_new = scene.frame_current
+			if pf_new == pf:
 				print("[Kaiserlich Tracker] Kein Frame-Fortschritt erkannt -> Abbruch")
 				break
-			last_frame = scene.frame_current
+
 			if self.max_internal_calls > 0 and calls >= self.max_internal_calls:
 				print(f"[Kaiserlich Tracker] Sicherheitslimit erreicht (calls={calls})")
 				break
+			# nächste Iteration (pf wird oben neu gelesen)
 
-		status = "vollständig" if scene.frame_current >= end_frame else "vorzeitig beendet"
+		status = "vollständig" if scene.frame_current >= se else "vorzeitig beendet"
 		self.report({'INFO'}, f"Tracking {status}: Start={start_frame} Ende={scene.frame_current} Calls={calls}")
 		return {'FINISHED'}
 
