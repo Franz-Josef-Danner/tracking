@@ -10,7 +10,8 @@ bl_info = {
 
 import bpy
 from .UI.ui import KAISERLICHTRACKER_PT_panel
-from .Operator.operator import KAISERLICHTRACKER_OT_detect_cycle, KAISERLICHTRACKER_OT_track_cycle
+from .Operator.detect_operator import KAISERLICHTRACKER_OT_detect_cycle
+from .Operator.track_operator import KAISERLICHTRACKER_OT_track_cycle
 
 classes = (
     KAISERLICHTRACKER_OT_detect_cycle,
