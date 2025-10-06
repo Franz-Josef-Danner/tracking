@@ -2,7 +2,7 @@ import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
 
-from ..Helper.motionmodel import evaluate_motion_model
+from Helper.motionmodel import evaluate_motion_model
 
 
 # ------------------------------------------------------------
@@ -90,11 +90,124 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
     # --------------------------------------------------------
 
     def execute(self, context):
-        # Delegiert an die freistehende track_cycle Funktion unten, um Logik testbar zu halten.
-        result = track_cycle(context, max_frames=self.max_frames, verbose=self.verbose, report_fn=self.report)
-        return result
-        # Alte Logik wurde in track_cycle ausgelagert.
-        return {'FINISHED'}  # Fallback (sollte nie erreicht werden)
+        scene = context.scene
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Clip.")
+            return {'CANCELLED'}
+
+        tracking = getattr(clip, 'tracking', None)
+        if tracking is None:
+            self.report({'WARNING'}, "Clip hat kein Tracking-Objekt.")
+            return {'CANCELLED'}
+
+        end_frame_scene = getattr(scene, "frame_end", None)
+        if end_frame_scene is None:
+            self.report({'WARNING'}, "Kein Szenen-Endframe gesetzt.")
+            return {'CANCELLED'}
+
+        start_frame = scene.frame_current
+        track_names = _collect_selected_track_names(context)
+        if not track_names:
+            self.report({'WARNING'}, "Keine selektierten Tracks.")
+            return {'CANCELLED'}
+
+        window, area, region, space = _find_clip_editor_area(clip)
+        if not window:
+            self.report({'WARNING'}, "Kein CLIP_EDITOR Kontext gefunden.")
+            return {'CANCELLED'}
+
+        # Start-Setup
+        frames_processed = 0
+        failures_total = 0
+        current_frame = start_frame
+
+        # Szene & Clip synchronisieren
+        space.clip_user.frame_current = current_frame
+        scene.frame_current = current_frame
+
+        self._log("Start:", f"Frame={start_frame}", f"End={end_frame_scene}", f"Tracks={len(track_names)}")
+
+        # Nur selektierte Tracks aktiv halten
+        for tr in tracking.tracks:
+            tr.select = tr.name in track_names
+
+        # Historien für Motion Model
+        histories: Dict[str, Deque[Tuple[int, float, float]]] = {name: deque(maxlen=10) for name in track_names}
+        # Initiale Positionen (Startframe)
+        for name in track_names:
+            tr = tracking.tracks.get(name)
+            if tr:
+                mk = tr.markers.find_frame(current_frame)
+                if mk:
+                    histories[name].append((current_frame, mk.co[0], mk.co[1]))
+
+        # Hauptschleife
+        while True:
+            if self.max_frames > 0 and frames_processed >= self.max_frames:
+                self._log("Limit erreicht → Abbruch")
+                break
+            if current_frame >= end_frame_scene:
+                self._log("Szenen-Ende erreicht → Abbruch")
+                break
+            if not track_names:
+                self._log("Keine aktiven Tracks mehr → Abbruch")
+                break
+
+            self._log(f"→ Frame {current_frame}: Tracking {len(track_names)} Tracks")
+
+            with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+                try:
+                    bpy.ops.clip.track_markers(backwards=False, sequence=False)
+                except Exception as e:
+                    self._log(f"Fehler beim track_markers: {e}")
+                    break
+
+            # Sicherstellen, dass Clip wirklich einen Frame weiterspringt
+            prev_frame = current_frame
+            next_frame = space.clip_user.frame_current
+            if next_frame == prev_frame:
+                next_frame = prev_frame + 1
+                space.clip_user.frame_current = next_frame
+
+            # Szene aktualisieren (nur visuell, nicht zwingend nötig)
+            scene.frame_current = space.clip_user.frame_current
+            current_frame = next_frame
+            frames_processed += 1
+
+            # Neue Marker-Positionen diesem Frame erfassen
+            for name in track_names:
+                tr = tracking.tracks.get(name)
+                if not tr:
+                    continue
+                mk = tr.markers.find_frame(current_frame)
+                if mk:
+                    histories[name].append((current_frame, mk.co[0], mk.co[1]))
+
+            # Motion-Model evaluieren (nur Log, keine Steuerung)
+            for name, hist in histories.items():
+                if len(hist) >= 2:
+                    model = evaluate_motion_model(list(hist))
+                    self._log(f"  Modell {name}: {model}")
+
+            # Filtere verlorene Tracks
+            track_names, dropped = _filter_active_tracks_at_frame(context, track_names, current_frame)
+            failures_total += dropped
+            if dropped > 0:
+                self._log(f"Tracks verloren: {dropped}, aktiv: {len(track_names)}")
+
+            # Nur verbleibende Tracks selektieren
+            for tr in tracking.tracks:
+                tr.select = tr.name in track_names
+
+        summary = (
+            f"Start={start_frame} Ende={current_frame} "
+            f"Schritte={frames_processed} Aktiv={len(track_names)} "
+            f"Ausgefallen={failures_total}"
+        )
+        self._log("Fertig:", summary)
+        self.report({'INFO'}, f"Track-Zyklus beendet: {summary}")
+        return {'FINISHED'}
 
 
 # ------------------------------------------------------------
@@ -111,141 +224,4 @@ def unregister():
 
 if __name__ == "__main__":
     register()
-
-
-# ---------------------------------------------------------------------------
-# Freistehende Track-Cycle Implementierung (funktionsorientiert)
-# ---------------------------------------------------------------------------
-
-def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn=None):
-    """Implementiert den in der Spezifikation beschriebenen Tracking-Zyklus.
-
-    Schritte:
-        INIT scene, clip, tracking
-        Validierungen – bei Fehler → CANCELLED
-        Start-/End-Frames ermitteln
-        Selektierte Tracks sammeln
-        Clip-Editor-Kontext finden für Override
-        Schleife: frameweise track_markers aufrufen
-            - Bewegungsmodell aus letzten N (≤10) Frames jedes aktiven Tracks evaluieren
-            - Abbruchbedingungen prüfen
-            - verlorene Tracks entfernen
-    """
-    def _log(*a):
-        if verbose:
-            print("[Kaiserlich Tracker][Cycle]", *a)
-
-    scene = context.scene
-    clip = getattr(context.space_data, "clip", None)
-    if clip is None:
-        if report_fn:
-            report_fn({'WARNING'}, "Kein aktiver Clip.")
-        return {'CANCELLED'}
-
-    tracking = getattr(clip, 'tracking', None)
-    if tracking is None:
-        if report_fn:
-            report_fn({'WARNING'}, "Clip hat kein Tracking-Objekt.")
-        return {'CANCELLED'}
-
-    end_frame = getattr(scene, 'frame_end', None)
-    if end_frame is None:
-        if report_fn:
-            report_fn({'WARNING'}, "Kein Szenen-Endframe gesetzt.")
-        return {'CANCELLED'}
-
-    start_frame = scene.frame_current
-    track_names = _collect_selected_track_names(context)
-    if not track_names:
-        if report_fn:
-            report_fn({'WARNING'}, "Keine selektierten Tracks.")
-        return {'CANCELLED'}
-
-    window, area, region, space = _find_clip_editor_area(clip)
-    if not window:
-        if report_fn:
-            report_fn({'WARNING'}, "Kein CLIP_EDITOR Kontext gefunden.")
-        return {'CANCELLED'}
-
-    # Kontext initialisieren
-    current_frame = start_frame
-    space.clip_user.frame_current = current_frame
-    scene.frame_current = current_frame
-
-    # Historie der letzten <=10 Frames für jeden Track
-    histories: Dict[str, Deque[Tuple[int, float, float]]] = {
-        name: deque(maxlen=10) for name in track_names
-    }
-
-    _log("Start Tracking-Zyklus", f"Start={start_frame}", f"End={end_frame}", f"Tracks={len(track_names)}")
-
-    # Nur selektierte markieren
-    for tr in tracking.tracks:
-        tr.select = tr.name in track_names
-
-    frames_processed = 0
-    failures_total = 0
-
-    while True:
-        if current_frame > end_frame:
-            _log("End-Frame erreicht → Ende")
-            break
-        if not track_names:
-            _log("Keine aktiven Tracks mehr → Ende")
-            break
-        if max_frames > 0 and frames_processed >= max_frames:
-            _log("Max Frames erreicht → Ende")
-            break
-
-        _log(f"Track Step @Frame {current_frame} (Aktive: {len(track_names)})")
-
-        # Bewegungsmodell vorbereiten: vorhandene Marker-Positionen einsammeln
-        for name in list(track_names):
-            tr = tracking.tracks.get(name)
-            if not tr:
-                continue
-            mk = tr.markers.find_frame(current_frame)
-            if mk:
-                histories[name].append((current_frame, mk.co[0], mk.co[1]))
-
-        # Beispiel-Auswertung (optional): Modellklassifikation pro Track
-        for name, hist in histories.items():
-            if len(hist) >= 2:
-                model = evaluate_motion_model(list(hist))
-                # (Derzeit nur Log – spätere Nutzung für adaptive Strategien möglich)
-                _log(f"  Modell {name}: {model}")
-
-        # Tracking-Schritt ausführen
-        with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-            try:
-                bpy.ops.clip.track_markers(backwards=False, sequence=False)
-            except Exception as e:
-                _log("Fehler beim track_markers", e)
-                break
-
-        # Frame Synchronisation
-        if space.clip_user.frame_current == current_frame:
-            space.clip_user.frame_current += 1
-        scene.frame_current = space.clip_user.frame_current
-        current_frame = space.clip_user.frame_current
-        frames_processed += 1
-
-        # Aktive Tracks nach neuem Frame prüfen
-        track_names, dropped = _filter_active_tracks_at_frame(context, track_names, current_frame)
-        if dropped:
-            failures_total += dropped
-            _log(f"Verlorene Tracks: {dropped} (verbleibend {len(track_names)})")
-
-        # Selektion aktualisieren
-        for tr in tracking.tracks:
-            tr.select = tr.name in track_names
-
-    summary = (
-        f"Start={start_frame} Ende={current_frame} "
-        f"Schritte={frames_processed} Aktiv={len(track_names)} Verloren={failures_total}"
-    )
-    _log("Tracking beendet", summary)
-    if report_fn:
-        report_fn({'INFO'}, f"Track-Zyklus: {summary}")
-    return {'FINISHED'}
 
