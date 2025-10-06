@@ -127,9 +127,9 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                     print(f"[Kaiserlich Tracker] Über OG: am={am} > og={og}")
                     # Einheitliche md-Formel (wie vorgegeben)
                     if am > 0:
-                        denom = max(0.8, min(1.25, (za / am)))
+                        denom = max(0.9, min(1.1, (za / am)))
                     else:
-                        denom = 0.8
+                        denom = 0.9
                     if denom == 0:
                         denom = 0.0001
                     md = md / denom
@@ -146,9 +146,9 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                 # am < ug
                 print(f"[Kaiserlich Tracker] Unter UG: am={am} < ug={ug}")
                 if am > 0:
-                    denom = max(0.8, min(1.25, (za / am)))
+                    denom = max(0.9, min(1.1, (za / am)))
                 else:
-                    denom = 0.8
+                    denom = 0.9
                 if denom == 0:
                     denom = 0.0001
                 md = md / denom
