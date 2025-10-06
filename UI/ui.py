@@ -17,4 +17,4 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 
         col = layout.column(align=True)
         col.prop(scene, "kaiserlich_markers_per_frame", text="Marker per Frame")
-        col.operator("kaiserlich_tracker.detect_cycle", text="Detect Cyclus")
+    col.operator("kaiserlich_tracker.detect_cycle", text="Detect Cyclus")
