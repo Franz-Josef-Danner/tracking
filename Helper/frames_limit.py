@@ -1,20 +1,3 @@
-"""Helper: Frames-Limit für Tracking-Zyklen.
-
-Dieses Modul definiert eine (vorerst) einfache Konstante `default_frames_limit`,
-die angibt, wie viele Frames in einem einzelnen Tracking-Zyklus fortgeschritten
-und getrackt werden sollen.
-
-Erweiterbarkeit:
- - Später kann hier z.B. eine Szenen- oder Addon-Property abgefragt werden.
- - Oder Logik für adaptive Schrittweite (z.B. je nach Anzahl aktiv selektierter Marker).
-
-Verwendung:
-    from ..Helper.frames_limit import default_frames_limit
-
-    frames_to_track = default_frames_limit  # oder in einer UI-Property gespiegelt
-
-"""
-
 from typing import Final
 
 # Öffentlich genutzter Default (laut Anforderung: int in [1])
