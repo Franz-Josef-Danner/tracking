@@ -224,3 +224,79 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 __all__ = [
 	"KAISERLICHTRACKER_OT_track_cycle",
 ]
+
+
+class KAISERLICHTRACKER_OT_track_simple(bpy.types.Operator):
+	"""Einfaches Frame-für-Frame Tracking bis Szenen-Ende.
+
+	Logik:
+	- Pro Iteration genau EIN Tracking-Aufruf (sequence=False)
+	- Danach Playhead +1 (falls < Endframe)
+	- Stopp bei Ende oder Fehler oder Sicherheitslimit
+	"""
+	bl_idname = "kaiserlich_tracker.track_simple"
+	bl_label = "Track Simple (Frameweise)"
+	bl_description = "Trackt selektierte Marker Frame für Frame bis zum Szenen-Ende (sequence=False)."
+	bl_options = {"REGISTER", "INTERNAL"}
+
+	use_bootstrap: bpy.props.BoolProperty(  # type: ignore
+		name="Bootstrap vorab",
+		default=False,
+		description="Vor Start einmal Bootstrap ausführen, um Parameter zu setzen"
+	)
+	max_internal_calls: bpy.props.IntProperty(  # type: ignore
+		name="Sicherheitslimit Calls",
+		default=0,
+		min=0,
+		soft_max=50000,
+		description="0 = kein Limit; >0 maximale Anzahl Tracking-Schritte"
+	)
+
+	def execute(self, context):  # type: ignore
+		scene = context.scene
+		clip = context.space_data.clip if getattr(context, 'space_data', None) else None
+		if not clip:
+			self.report({'WARNING'}, "Kein Clip aktiv")
+			return {'CANCELLED'}
+
+		if self.use_bootstrap:
+			ef = getattr(scene, 'kaiserlich_markers_per_frame', 10)
+			params = run_bootstrap(context, ef)
+			if not params:
+				self.report({'WARNING'}, "Bootstrap fehlgeschlagen")
+				return {'CANCELLED'}
+			end_frame = params.get('se') or scene.frame_end
+		else:
+			end_frame = scene.frame_end
+
+		start_frame = scene.frame_current
+		calls = 0
+		print(f"[Kaiserlich Tracker] SIMPLE: Start pf={start_frame} se={end_frame}")
+
+		while scene.frame_current < end_frame:
+			pf = scene.frame_current
+			print(f"[Kaiserlich Tracker] SIMPLE: step pf={pf}")
+			ok = track_forward_selected_markers(context, sequence=False, backwards=False)
+			if not ok:
+				print("[Kaiserlich Tracker] SIMPLE: Tracking Fehler/Abbruch -> Stop")
+				break
+			calls += 1
+			# Playhead manuell +1 (falls noch nicht am Ende)
+			if scene.frame_current == pf:  # Blender hat Frame nicht verschoben
+				if scene.frame_current + 1 <= end_frame:
+					scene.frame_current += 1
+					print(f"[Kaiserlich Tracker] SIMPLE: advance -> {scene.frame_current}")
+			else:
+				print(f"[Kaiserlich Tracker] SIMPLE: Operator verschob Frame -> {scene.frame_current}")
+
+			if self.max_internal_calls > 0 and calls >= self.max_internal_calls:
+				print(f"[Kaiserlich Tracker] SIMPLE: Sicherheitslimit erreicht calls={calls}")
+				break
+
+		status = "vollständig" if scene.frame_current >= end_frame else "vorzeitig beendet"
+		self.report({'INFO'}, f"Simple Tracking {status}: Start={start_frame} Ende={scene.frame_current} Calls={calls}")
+		return {'FINISHED'}
+
+
+# Export aktualisieren
+__all__.append("KAISERLICHTRACKER_OT_track_simple")
