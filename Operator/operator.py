@@ -59,6 +59,7 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
         # Baseline vor Start
         baseline = snapshot_active_markers(context)
         baseline_start_count = len(baseline)
+        baseline_start_tracknames = {m['track'] for m in baseline}
 
         print("[Kaiserlich Tracker] ================ Neuer Detect Zyklus Start ================")
         print(f"[Kaiserlich Tracker] ug={ug} og={og} za={za:.2f} | Start md={md:.2f} tr={tr:.3f} pz={pz} sz={sz}")
@@ -204,9 +205,36 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
         final_snapshot = snapshot_active_markers(context)
         final_total = len(final_snapshot)
         added_effective = final_total - baseline_start_count
+
+        # Neue Tracks (nicht nur Marker) bestimmen: Track-Namen, die es anfangs nicht gab
+        clip = context.space_data.clip if getattr(context, 'space_data', None) else None
+        selected_new_tracks = 0
+        if clip and getattr(clip, 'tracking', None):
+            tracking = clip.tracking
+            new_tracks = [tr for tr in tracking.tracks if tr.name not in baseline_start_tracknames]
+            try:
+                # Auswahl zurücksetzen
+                for tr in tracking.tracks:
+                    try:
+                        tr.select = False
+                    except Exception:
+                        pass
+                # Neue selektieren
+                for tr in new_tracks:
+                    try:
+                        tr.select = True
+                    except Exception:
+                        pass
+                selected_new_tracks = len(new_tracks)
+                print(f"[Kaiserlich Tracker] Selektion: {selected_new_tracks} neue Tracks selektiert.")
+            except Exception as e:  # noqa
+                print(f"[Kaiserlich Tracker] Selektion fehlgeschlagen: {e}")
+        else:
+            print("[Kaiserlich Tracker] Keine Clip/Tracking Daten für Selektion verfügbar.")
+
         status = "Abgeschlossen" if accepted else ("Limit erreicht" if (self.max_iterations > 0 and iterations >= self.max_iterations) else "Abbruch")
         self.report({'INFO'}, (
-            f"{status}: Iterationen={iterations} | Effektiv hinzugefügt={added_effective} | md={md:.2f} | tr={tr:.4f} | pz={pz} | Gelöschte alte Tracks im Cleanup={total_deleted_cleanup} | Gesamt Marker (Ende)={final_total}"
+            f"{status}: Iterationen={iterations} | Effektiv hinzugefügt={added_effective} | md={md:.2f} | tr={tr:.4f} | pz={pz} | Gelöschte alte Tracks im Cleanup={total_deleted_cleanup} | Gesamt Marker (Ende)={final_total} | Neue Tracks selektiert={selected_new_tracks}"
         ))
         print("[Kaiserlich Tracker] ================ Detect Zyklus Ende ==================")
         return {'FINISHED'}
