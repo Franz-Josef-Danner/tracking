@@ -117,10 +117,10 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
                         # Neue Vorgabe: za im Korridor bei Fortsetzung reduzieren und og/ug neu berechnen
                         za *= 0.82
                         og = math.ceil(za * 1.1)
-                        ug = math.floor(za * 0.85)
+                        ug = math.floor(za * 0.9)
                         print(f"[Kaiserlich Tracker] za reduziert (Korridor Fortsetzung): za={za:.4f} -> og={og} ug={ug}")
                         # Pattern Größen reduzieren
-                        pz = max(1, int(round(pz * 0.9)))
+                        pz = max(1, int(round(pz * 0.85)))
                         sz = pz * 2
                         apply_marker_sizes(context.space_data.clip if getattr(context, 'space_data', None) else None, pz, sz)
                         print(f"[Kaiserlich Tracker] Pattern/Search reduziert: pz={pz} sz={sz}")
