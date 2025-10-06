@@ -1,5 +1,6 @@
 import bpy
 from ..Helper.frames_limit import default_frames_limit, resolve_frames_limit
+from ..Helper.bootstrap import run_bootstrap
 
 
 class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
@@ -35,6 +36,15 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 			self.report({'WARNING'}, "Kein Clip aktiv")
 			return {'CANCELLED'}
 
+		# Bootstrap ausführen (Anforderung: track_operator soll bootstrap auslösen)
+		# Dies stellt sicher, dass Pattern/Search Größen konsistent gesetzt bleiben.
+		scene = context.scene if getattr(context, 'scene', None) else None
+		ef = getattr(scene, 'kaiserlich_markers_per_frame', 0) if scene else 0
+		params = run_bootstrap(context, ef)
+		if not params:
+			self.report({'WARNING'}, "Bootstrap fehlgeschlagen oder kein Clip")
+			return {'CANCELLED'}
+
 		tracking = getattr(clip, 'tracking', None)
 		if tracking is None:
 			self.report({'WARNING'}, "Clip hat kein Tracking Objekt")
@@ -46,6 +56,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 			self.report({'WARNING'}, "Keine selektierten Tracks")
 			return {'CANCELLED'}
 
+		# Frames-Limit über Helper auflösen (Anforderung: frames_limit Helper auslösen)
 		limit = resolve_frames_limit(context, self.frames_limit)
 		if limit < 1:
 			limit = 1
