@@ -3,21 +3,22 @@ from .marker_size import apply_marker_sizes
 import math
 
 def run_bootstrap(context, ef: int):
-  """Berechne Parameter aus Clip-Auflösung und gewünschter Markeranzahl.
+  """Berechnet Start-Parameter basierend auf Clip-Auflösung und gewünschter Markeranzahl.
 
-  ef: Eingabewert Marker per Frame
-  Formelbasis (aus Vorgabe):
-    hz = horizontale Auflösung
-    vc = vertikale Auflösung
-    ma = margin = hz * 0.025
-    md = min_distance = hz * 0.025
-    pz = int(hz * 0.01)
-    sz = pz * 2
-    tr = 1.0 (threshold)
-    za = (ef * 4) / 14
-    og = ceil(za * 1.1)
-    ug = floor(za * 0.9)
-  Rückgabe: dict aller relevanten Werte zur Weiterverwendung im Erkennungs-Zyklus.
+  Neue Vorgaben:
+    hz  = horizontale Auflösung des Clips
+    vc  = vertikale Auflösung des Clips
+    ma  = hz * 0.025
+    md  = hz * 0.025 (Wird ausgegeben)
+    pz  = int(hz * 0.04) (4% der horizontalen Auflösung, ausgegeben)
+    sz  = pz * 2
+    tr  = 0.0001 (threshold, ausgegeben)
+    ef  = Eingabewert aus UI
+    za  = ef * 4
+    og  = ceil(za * 1.1)
+    ug  = floor(za * 0.9)
+
+  Rückgabe: dict mit allen Parametern für den weiteren Detect-Zyklus.
   """
   clip = context.space_data.clip if getattr(context, "space_data", None) else None
   if clip is None:
@@ -29,16 +30,15 @@ def run_bootstrap(context, ef: int):
 
   ma = hz * 0.025
   md = hz * 0.025
-  pz = int(hz * 0.01)
+  pz = int(hz * 0.04)
   sz = pz * 2
-  tr = 1.0
-
-  za = (ef * 4) / 14
-  og = math.ceil(za * 1.1)  # obere Grenze Zielkorridor
-  ug = math.floor(za * 0.9)  # untere Grenze Zielkorridor
+  tr = 0.0001
+  za = ef * 4
+  og = math.ceil(za * 1.1)
+  ug = math.floor(za * 0.9)
 
   print("[Kaiserlich Tracker] ================= Bootstrap =================")
-  print("[Kaiserlich Tracker] Auflösung: {}x{}".format(hz, vc))
+  print(f"[Kaiserlich Tracker] Auflösung: {hz}x{vc}")
   print(f"[Kaiserlich Tracker] margin (ma): {ma:.2f}")
   print(f"[Kaiserlich Tracker] min_distance (md): {md:.2f}")
   print(f"[Kaiserlich Tracker] pattern_size (pz): {pz}")
