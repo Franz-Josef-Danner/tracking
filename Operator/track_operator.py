@@ -1,7 +1,7 @@
 import bpy
 from typing import List, Tuple
 
-from Helper.motionmodel import evaluate_motion_model
+from ..Helper.motionmodel import evaluate_motion_model
 
 
 # ------------------------------------------------------------
