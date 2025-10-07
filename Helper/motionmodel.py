@@ -1,26 +1,12 @@
-"""Motion Model Evaluierung für Marker-Bewegungen.
+# tracking/Helper/motion_model.py
+# -----------------------------------------------------------
+# Motion Model Evaluierung für Marker-Bewegungen
+# -----------------------------------------------------------
 
-Diese Datei implementiert eine heuristische Klassifikation der Bewegung
-eines Track-Markers basierend auf den letzten Positionsmessungen.
-
-Modelle (Rückgabe-Strings):
-    - "Loc"             : Reine Translation
-    - "LocRot"          : Translation + Rotation
-    - "LocScale"        : Translation + Skalierung
-    - "LocRotScale"     : Translation + Rotation + uniforme Skalierung
-    - "Affine"          : Allgemeine affine (inkl. Scherung / ungleichm. Skal.)
-    - "Perspective"     : Signifikante perspektivische Verzerrung
-
-Hinweis: Viele Bild-basierten Auswertungen (Homographie / Patch Analyse)
-werden hier nur angedeutet, da Blender-Python im Tracking-Kontext keinen
-direkten Zugriff auf die Roh-Pixel der Pattern-Patches liefert, ohne
-zusätzliche Operationen. Die Funktionen sind daher als Platzhalter
-implementiert und können später mit OpenCV / NumPy ersetzt werden.
-"""
 from __future__ import annotations
-
+import bpy
 from math import sqrt, atan2
-from typing import Iterable, List, Sequence, Tuple, Optional
+from typing import Sequence, Tuple, Optional
 
 MarkerPosition = Tuple[int, float, float]  # (frame, x_norm, y_norm)
 
@@ -49,7 +35,7 @@ def _variance_of_step_lengths(positions: Sequence[MarkerPosition]) -> float:
 
 
 def _find_homography_placeholder(_patch_a, _patch_b):
-    """Platzhalter: Liefert Identitätsmatrix für Homographie."""
+    """Platzhalter – Liefert Identitätsmatrix."""
     return [
         [1.0, 0.0, 0.0],
         [0.0, 1.0, 0.0],
@@ -58,7 +44,6 @@ def _find_homography_placeholder(_patch_a, _patch_b):
 
 
 def _extract_elements(H) -> Tuple[float, float, float, float, float, float, float, float]:
-    # H = [[a, b, tx], [c, d, ty], [p, q, 1]]
     a = H[0][0]; b = H[0][1]; tx = H[0][2]
     c = H[1][0]; d = H[1][1]; ty = H[1][2]
     p = H[2][0]; q = H[2][1]
@@ -85,49 +70,28 @@ def evaluate_motion_model(
     epsilon_rot: float = 0.0175,       # ~1°
     epsilon_scale: float = 1e-2,
 ) -> str:
-    """Klassifiziert das Bewegungsmodell basierend auf Marker-Historie.
-
-    Parameter
-    ---------
-    marker_positions : Liste von (frame, x, y) in normalisierten Clip-Koordinaten.
-    marker_patches   : (Optional) Rohbild-Ausschnitte zum Start-/Endzeitpunkt.
-    corr_values      : (Optional) Liste korrelativer Match-Werte (0..1).
-
-    Returns
-    -------
-    str: Modellbezeichner (siehe Modul-Header).
-    """
+    """Klassifiziert das Bewegungsmodell basierend auf Marker-Historie."""
     N = len(marker_positions)
     if N < 2:
-        return "Loc"  # Zu wenig Daten für komplexere Bewertung
+        return "Loc"
 
-    # 2. Translation-Analyse
-    total_disp = _distance(marker_positions[0], marker_positions[-1])
     disp_var = _variance_of_step_lengths(marker_positions)
 
-    if disp_var < 1e-9:
-        base_model = "Loc"  # Gleichmäßige / keine Bewegung
-    else:
-        base_model = "Loc"
-
-    # 3. Patch / Homographie Analyse (Platzhalter)
-    if marker_patches and len(marker_patches) >= 2:
-        H = _find_homography_placeholder(marker_patches[0], marker_patches[-1])
-    else:
-        H = _find_homography_placeholder(None, None)
+    # Dummy Homographie
+    H = _find_homography_placeholder(None, None)
     a, b, c, d, tx, ty, p, q = _extract_elements(H)
 
-    # 4. Perspektive
+    # Perspektivische Komponente?
     if abs(p) > epsilon_affine or abs(q) > epsilon_affine:
         return "Perspective"
 
-    # 5. Affin: Skalierung / Rotation / Scherung
+    # Affine Komponenten
     sx = sqrt(a * a + b * b)
     sy = sqrt(c * c + d * d)
     rot_angle = atan2(b, a)
     shear = abs(a * c + b * d)
 
-    # 6. Modellklassifikation
+    # Modellklassifikation
     if abs(sx - 1) < epsilon_scale and abs(sy - 1) < epsilon_scale:
         if abs(rot_angle) < epsilon_rot:
             model = "Loc"
@@ -140,10 +104,10 @@ def evaluate_motion_model(
     else:
         model = "LocScale"
 
-    # 7. Qualitätsprüfung
+    # Qualitätsprüfung
     mean_corr = _average(corr_values)
     if mean_corr < threshold_corr:
-        if model in ("Loc", "LocRot"):
+        if model in ("Loc", "LocRot", "LocScale"):
             model = "LocRotScale"
         elif model == "LocRotScale":
             model = "Affine"
@@ -151,6 +115,47 @@ def evaluate_motion_model(
     return model
 
 
-__all__ = [
-    "evaluate_motion_model",
-]
+# ---------------------------------------------------------------------------
+# Blender Operator – testweise Integration
+# ---------------------------------------------------------------------------
+
+class CLIP_OT_evaluate_motion_model(bpy.types.Operator):
+    """Analysiert das Bewegungsmodell des aktiven Tracks."""
+    bl_idname = "clip.evaluate_motion_model"
+    bl_label = "Evaluate Motion Model"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        clip = getattr(context.space_data, "clip", None)
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip im Movie Clip Editor aktiv.")
+            return {'CANCELLED'}
+
+        track = getattr(clip.tracking.tracks.active, "markers", None)
+        if not track:
+            self.report({'WARNING'}, "Kein aktiver Track ausgewählt.")
+            return {'CANCELLED'}
+
+        # Markerpositionen erfassen
+        positions = [(m.frame, m.co[0], m.co[1]) for m in clip.tracking.tracks.active.markers]
+        if len(positions) < 2:
+            self.report({'WARNING'}, "Zu wenige Marker für Analyse.")
+            return {'CANCELLED'}
+
+        model = evaluate_motion_model(positions)
+        self.report({'INFO'}, f"Erkanntes Modell: {model}")
+        print(f"[MotionModel] {clip.name}: {model}")
+        return {'FINISHED'}
+
+
+# ---------------------------------------------------------------------------
+# Registrierung
+# ---------------------------------------------------------------------------
+
+def register():
+    bpy.utils.register_class(CLIP_OT_evaluate_motion_model)
+
+def unregister():
+    bpy.utils.unregister_class(CLIP_OT_evaluate_motion_model)
+
+__all__ = ["evaluate_motion_model", "CLIP_OT_evaluate_motion_model"]
