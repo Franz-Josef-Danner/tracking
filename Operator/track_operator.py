@@ -210,11 +210,13 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
                 histories[name].append((current_frame, mk.co[0], mk.co[1]))
 
         # Beispiel-Auswertung (optional): Modellklassifikation pro Track
-        for name, hist in histories.items():
-            if len(hist) >= 2:
-                model = apply_formula_on_selected_tracks(list(hist))
-                # (Derzeit nur Log – spätere Nutzung für adaptive Strategien möglich)
-                _log(f"  Modell {name}: {model}")
+        # Frühere (fehlerhafte) Version hat apply_formula_on_selected_tracks mit einer History-Liste
+        # statt mit dem Blender Context aufgerufen und damit einen AttributeError ausgelöst.
+        # Wir wenden das Glättungsverfahren jetzt einmal pro Frame auf alle selektierten Tracks an.
+        try:
+            apply_formula_on_selected_tracks(context, max_frames=5)
+        except Exception as e:
+            _log("Fehler beim Anwenden der Formel:", e)
 
         # Tracking-Schritt ausführen
         with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
