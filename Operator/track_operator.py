@@ -1,8 +1,7 @@
 import bpy
-from typing import List, Tuple, Dict, Deque
-from collections import deque
+from typing import List, Tuple
 
-from ..Helper.motionmodel import evaluate_motion_model
+from Helper.motionmodel import evaluate_motion_model
 
 
 # ------------------------------------------------------------
@@ -132,16 +131,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         for tr in tracking.tracks:
             tr.select = tr.name in track_names
 
-        # Historien für Motion Model
-        histories: Dict[str, Deque[Tuple[int, float, float]]] = {name: deque(maxlen=10) for name in track_names}
-        # Initiale Positionen (Startframe)
-        for name in track_names:
-            tr = tracking.tracks.get(name)
-            if tr:
-                mk = tr.markers.find_frame(current_frame)
-                if mk:
-                    histories[name].append((current_frame, mk.co[0], mk.co[1]))
-
         # Hauptschleife
         while True:
             if self.max_frames > 0 and frames_processed >= self.max_frames:
@@ -175,19 +164,26 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
             current_frame = next_frame
             frames_processed += 1
 
-            # Neue Marker-Positionen diesem Frame erfassen
+            # Motion-Model (minimal): Für jeden aktiven Track letzte bis zu 10 Marker sammeln und auswerten
             for name in track_names:
                 tr = tracking.tracks.get(name)
                 if not tr:
                     continue
-                mk = tr.markers.find_frame(current_frame)
-                if mk:
-                    histories[name].append((current_frame, mk.co[0], mk.co[1]))
-
-            # Motion-Model evaluieren (nur Log, keine Steuerung)
-            for name, hist in histories.items():
-                if len(hist) >= 2:
-                    model = evaluate_motion_model(list(hist))
+                # Marker der letzten bis zu 10 Frames (einschließlich current_frame)
+                recent = []
+                lower_bound = current_frame - 10
+                for mk in tr.markers:
+                    fr = getattr(mk, 'frame', None)
+                    if fr is None:
+                        continue
+                    if fr > current_frame:
+                        continue
+                    if fr >= lower_bound:
+                        recent.append((fr, mk.co[0], mk.co[1]))
+                if len(recent) >= 2:
+                    # Sortieren nach Frame, dann Modell evaluieren
+                    recent.sort(key=lambda r: r[0])
+                    model = evaluate_motion_model(recent)
                     self._log(f"  Modell {name}: {model}")
 
             # Filtere verlorene Tracks
