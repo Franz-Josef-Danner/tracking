@@ -2,7 +2,7 @@ import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
 
-from ..Helper.motionmodel import evaluate_motion_model
+from ..Helper.formula_helper import apply_formula_on_selected_tracks
 
 
 # ------------------------------------------------------------
@@ -212,7 +212,7 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
         # Beispiel-Auswertung (optional): Modellklassifikation pro Track
         for name, hist in histories.items():
             if len(hist) >= 2:
-                model = evaluate_motion_model(list(hist))
+                model = apply_formula_on_selected_tracks(list(hist))
                 # (Derzeit nur Log – spätere Nutzung für adaptive Strategien möglich)
                 _log(f"  Modell {name}: {model}")
 
