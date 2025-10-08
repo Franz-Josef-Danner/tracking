@@ -31,10 +31,22 @@ def register():
         soft_min=1,
     )
 
+    # UI-Properties registrieren
+    try:
+        from .UI import ui
+        ui.register()
+    except Exception as e:
+        print(f"[Kaiserlich Tracker] Warnung: UI-Properties konnten nicht registriert werden: {e}")
+        
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
     del bpy.types.Scene.kaiserlich_markers_per_frame
 
+    try:
+        from .UI import ui
+        ui.unregister()
+    except Exception:
+        pass
 if __name__ == "__main__":
     register()
