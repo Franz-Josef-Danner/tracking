@@ -32,7 +32,12 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 # Property-Definitionen für Rotation-Thresholds
 # ==========================================================
 
+# ==========================================================
+# Sicherstellen, dass Properties beim Laden registriert sind
+# ==========================================================
 def register():
+    import bpy
+
     bpy.types.Scene.kaiserlich_rot_thresh_x = bpy.props.FloatProperty(
         name="ΔX Threshold",
         description="Minimaler ΔX-Unterschied zur Erkennung von Rotation",
@@ -50,6 +55,22 @@ def register():
         soft_max=0.01,
         precision=6
     )
+
+
+def unregister():
+    import bpy
+    if hasattr(bpy.types.Scene, "kaiserlich_rot_thresh_x"):
+        del bpy.types.Scene.kaiserlich_rot_thresh_x
+    if hasattr(bpy.types.Scene, "kaiserlich_rot_thresh_y"):
+        del bpy.types.Scene.kaiserlich_rot_thresh_y
+
+
+# Automatisch registrieren, wenn Modul einzeln geladen wird
+if __name__ == "__main__" or hasattr(bpy, "app"):
+    try:
+        register()
+    except Exception:
+        pass
 
 
 def unregister():
