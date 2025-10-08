@@ -62,7 +62,7 @@ def _evaluate_motion_model(marker_positions,
     # Entscheidungslogik:
     # Wenn Bewegung konsistent in einer Richtung → Loc
     # Wenn sich Δx oder Δy über 0.001 von ihrer Mittelrichtung unterscheiden → LocRot
-    if dev_x > 0.001 or dev_y > 0.001:
+    if dev_x > 0.0001 or dev_y > 0.0001:
         model = "LocRot"
     else:
         model = "Loc"
