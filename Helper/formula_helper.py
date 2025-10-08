@@ -79,8 +79,28 @@ def _evaluate_motion_model(marker_positions,
     ratio_var = np.var(xy_ratio)
 
     # Entscheidung nach stabilen Relationen
+    # ---------------------------------------------
+    # Erweiterte Heuristik für Loc / LocRot:
+    # Wenn die Distanz konstant bleibt, aber Δx und Δy sich
+    # gegensinnig oder unterschiedlich stark verändern → Rotation.
+    # ---------------------------------------------
+
+    dx_var = np.var(dx)
+    dy_var = np.var(dy)
+
+    # Korrelation zwischen Δx und Δy: bei Translation meist ≈ +1,
+    # bei Rotation ≈ -1 oder stark < +0.5
+    if len(dx) > 2:
+        corr = np.corrcoef(dx, dy)[0, 1]
+    else:
+        corr = 1.0
+
+    # Debug-Ausgabe
+    print(f"[EvalModel] rel_len_var={rel_len_var:.6f}, ratio_var={ratio_var:.6f}, dx_var={dx_var:.6f}, dy_var={dy_var:.6f}, corr={corr:.3f}")
+
+    # Translation → beide Achsen variieren gleichgerichtet
     if rel_len_var < 0.001:
-        if ratio_var > 0.0001:
+        if corr < 0.5 and (dx_var > 1e-6 or dy_var > 1e-6):
             model = "LocRot"
         else:
             model = "Loc"
@@ -88,7 +108,6 @@ def _evaluate_motion_model(marker_positions,
         model = "Other"
 
     return model
-
 def _estimate_affine_from_points(pts):
     """Fallback: einfache Translation aus Start- und Endpunkt."""
     if len(pts) < 2:
