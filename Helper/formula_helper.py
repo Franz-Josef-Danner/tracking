@@ -96,7 +96,7 @@ def _linear_regression(frames: List[int], values: List[float]) -> Tuple[float, f
     return intercept, slope
 
 
-def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
+def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 50) -> None:
     """Analysiert die Markerbewegung und setzt das passende Motion Model (nur Loc / LocRot)."""
     
     if not ENABLE_FORMULA_SMOOTHING:
