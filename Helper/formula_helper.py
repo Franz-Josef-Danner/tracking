@@ -184,10 +184,11 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         try:
             # ============================================================
             # Heuristik: Unterscheide Loc vs LocRot anhand Markerabstände
+            # (mit Mittelung über mehrere Frames)
             # ============================================================
 
             def _pairwise_deltas(points: list[tuple[float, float]]):
-                """Gibt Listen mit allen Δx, Δy und Distanzwerten zurück."""
+                """Erzeugt Listen aller Δx, Δy und Distanzwerte zwischen Markern."""
                 dxs, dys, dists = [], [], []
                 for i in range(len(points)):
                     for j in range(i + 1, len(points)):
@@ -198,47 +199,57 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
                         dists.append((dx * dx + dy * dy) ** 0.5)
                 return dxs, dys, dists
 
-            # Falls nur ein Marker vorhanden ist, keine Rotationsanalyse
+            def _mean_values(seq):
+                return sum(seq) / len(seq) if seq else 0.0
+
+            # Wenn weniger als zwei Marker → keine Rotationsanalyse
             if len(modeled_positions) < 2:
                 motion_model = 'Loc'
+                rel_dist_diff = rel_dx_diff = rel_dy_diff = 0.0
             else:
-                # Positionen des ersten und letzten Frames (alle Marker in diesen Frames)
-                first_pts = [co for _, co in modeled_positions[:1]]
-                last_pts  = [co for _, co in modeled_positions[-1:]]
+                # -------------------------------
+                # Frame-Segmentierung für Mittelung
+                # -------------------------------
+                num_samples = min(3, len(modeled_positions))
+                step = max(1, len(modeled_positions) // num_samples)
 
-                # Wenn mehrere Marker verfügbar, vergleiche relative Abstände
-                dx1, dy1, dist1 = _pairwise_deltas(first_pts)
-                dx2, dy2, dist2 = _pairwise_deltas(last_pts)
+                sample_indices = list(range(0, len(modeled_positions), step))[:num_samples]
+                sampled_sets = [modeled_positions[i][1] for i in sample_indices]
 
-                if not dist1 or not dist2:
-                    motion_model = 'Loc'
+                # -------------------------------
+                # Analyse erster / mittlerer / letzter Frame
+                # -------------------------------
+                dx1, dy1, dist1 = _pairwise_deltas([sampled_sets[0]]) if sampled_sets else ([], [], [])
+                dxM, dyM, distM = _pairwise_deltas([sampled_sets[len(sampled_sets)//2]]) if len(sampled_sets) > 1 else ([], [], [])
+                dx2, dy2, dist2 = _pairwise_deltas([sampled_sets[-1]]) if len(sampled_sets) > 2 else ([], [], [])
+
+                mean_d1, mean_d2 = _mean_values(dist1), _mean_values(dist2)
+                rel_dist_diff = abs(mean_d2 - mean_d1) / (mean_d1 + 1e-9) if mean_d1 else 0.0
+
+                mean_dx1, mean_dy1 = _mean_values(dx1), _mean_values(dy1)
+                mean_dx2, mean_dy2 = _mean_values(dx2), _mean_values(dy2)
+                rel_dx_diff = abs(mean_dx2 - mean_dx1) / (abs(mean_dx1) + 1e-9) if mean_dx1 else 0.0
+                rel_dy_diff = abs(mean_dy2 - mean_dy1) / (abs(mean_dy1) + 1e-9) if mean_dy1 else 0.0
+
+                # -------------------------------
+                # Entscheidungslogik
+                # -------------------------------
+                # Wenn Distanzen stabil (kaum Skalierung)
+                # und x/y-Relationen sich verändern → Rotation
+                if rel_dist_diff < 0.01 and (rel_dx_diff > 0.01 or rel_dy_diff > 0.01):
+                    motion_model = 'LocRot'
                 else:
-                    # Mittelwerte
-                    mean_d1 = sum(dist1) / len(dist1)
-                    mean_d2 = sum(dist2) / len(dist2)
-                    rel_dist_diff = abs(mean_d2 - mean_d1) / (mean_d1 + 1e-9)
+                    motion_model = 'Loc'
 
-                    # Mittelabweichung der Δx und Δy-Paare
-                    mean_dx1 = sum(dx1) / len(dx1)
-                    mean_dy1 = sum(dy1) / len(dy1)
-                    mean_dx2 = sum(dx2) / len(dx2)
-                    mean_dy2 = sum(dy2) / len(dy2)
-
-                    rel_dx_diff = abs(mean_dx2 - mean_dx1) / (abs(mean_dx1) + 1e-9)
-                    rel_dy_diff = abs(mean_dy2 - mean_dy1) / (abs(mean_dy1) + 1e-9)
-
-                    # Entscheidung:
-                    # - Distanz stabil (rel_dist_diff < 0.01)
-                    # - aber Δx oder Δy haben sich >1 % geändert ⇒ Rotation
-                    if rel_dist_diff < 0.01 and (rel_dx_diff > 0.01 or rel_dy_diff > 0.01):
-                        motion_model = 'LocRot'
-                    else:
-                        motion_model = 'Loc'
-
+            # Anwenden des erkannten Bewegungsmodells
             apply_motion_model(track, modeled_positions, motion_model=motion_model)
 
-            print(f"[FormulaHelper] {track.name}: {motion_model} "
-                  f"distΔ={rel_dist_diff:.4f} dxΔ={rel_dx_diff:.4f} dyΔ={rel_dy_diff:.4f}")
+            # Debug-Ausgabe (kompakt, aber informativ)
+            print(
+                f"[FormulaHelper] {track.name}: {motion_model} | "
+                f"Δdist={rel_dist_diff:.4f}, Δx={rel_dx_diff:.4f}, Δy={rel_dy_diff:.4f}, "
+                f"frames={len(modeled_positions)}"
+            )
         except Exception:
             continue
 
