@@ -43,7 +43,7 @@ from typing import List, Tuple
 from .marker_positions_helper import get_positions
 from .motion_model_helper import apply_motion_model
 
-# Modul-Logger
+# Schlanker Modul-Logger (nur zusammenfassende Infos)
 logger = logging.getLogger(__name__)
 
 
@@ -111,7 +111,6 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     scene = context.scene
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
-        logger.warning("apply_formula_on_selected_tracks: Kein Clip im Kontext vorhanden – Abbruch.")
         return
 
     # Determine which tracks to process: all selected tracks, or the
@@ -126,51 +125,21 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     current_frame = scene.frame_current
 
     if not selected_tracks:
-        logger.info("Keine Tracks ausgewählt oder aktiv – nichts zu tun.")
         return
-
-    logger.debug(
-        "apply_formula_on_selected_tracks: frame=%s, max_frames=%s, tracks=%s",
-        current_frame,
-        max_frames,
-        [t.name for t in selected_tracks],
-    )
 
     for track in selected_tracks:
         # Retrieve the marker positions for the most recent frames.
         positions = get_positions(track, current_frame, max_frames=max_frames)
         if len(positions) < 2:
-            logger.debug(
-                "Track '%s': weniger als zwei Positionen (%d) – übersprungen.",
-                track.name,
-                len(positions),
-            )
             continue
 
         frames: List[int] = [frame for frame, _co in positions]
         xs: List[float] = [co[0] for _, co in positions]
         ys: List[float] = [co[1] for _, co in positions]
 
-        logger.debug(
-            "Track '%s': gesampelte Frames=%s, xs=%s, ys=%s",
-            track.name,
-            frames,
-            [f"{x:.6f}" for x in xs],
-            [f"{y:.6f}" for y in ys],
-        )
-
         # Fit linear models to x and y coordinates separately.
         intercept_x, slope_x = _linear_regression(frames, xs)
         intercept_y, slope_y = _linear_regression(frames, ys)
-
-        logger.debug(
-            "Track '%s': Regression -> ix=%.6f, sx=%.6f, iy=%.6f, sy=%.6f",
-            track.name,
-            intercept_x,
-            slope_x,
-            intercept_y,
-            slope_y,
-        )
 
         modeled_positions: list[tuple[int, tuple[float, float]]] = []
         for f in frames:
@@ -178,23 +147,32 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             y_pred = intercept_y + slope_y * f
             modeled_positions.append((f, (x_pred, y_pred)))
 
-        logger.debug(
-            "Track '%s': modellierte Positionen=%s",
-            track.name,
-            [
-                (f, (f"{co[0]:.6f}", f"{co[1]:.6f}"))
-                for f, co in modeled_positions
-            ],
-        )
-
         # Apply the smoothed positions and set the track's motion model
         # to 'Loc' (translation only)【646072811079919†L2217-L2241】.
         try:
             apply_motion_model(track, modeled_positions, motion_model='Loc')
-            logger.debug("Track '%s': motion_model auf 'Loc' gesetzt und Werte angewendet.", track.name)
-        except Exception as exc:  # noqa: BLE001 – wir wollen robust loggen
-            logger.error(
-                "Track '%s': Fehler beim Anwenden des Motion Models: %s",
-                track.name,
-                exc,
-            )
+        except Exception:
+            # Wenn Anwenden fehlschlägt, Track überspringen ohne Logspam.
+            continue
+
+        # Kompakte Integritäts-Ausgabe: Anzahl, Frame-Spanne, erste/letzte Position vorher/nachher & max Delta.
+        orig_first_x, orig_first_y = xs[0], ys[0]
+        orig_last_x, orig_last_y = xs[-1], ys[-1]
+        modeled_first_x, modeled_first_y = modeled_positions[0][1]
+        modeled_last_x, modeled_last_y = modeled_positions[-1][1]
+        max_dx = max(abs(o_x - (intercept_x + slope_x * f)) for f, o_x in zip(frames, xs))
+        max_dy = max(abs(o_y - (intercept_y + slope_y * f)) for f, o_y in zip(frames, ys))
+
+        # Nur INFO-Level (kein Debug-Sturm):
+        logger.info(
+            "Track %s frames=%d span=%d..%d first=(%.4f,%.4f)->(%.4f,%.4f) last=(%.4f,%.4f)->(%.4f,%.4f) max_delta=(%.4f,%.4f)",
+            track.name,
+            len(frames),
+            frames[0],
+            frames[-1],
+            orig_first_x, orig_first_y,
+            modeled_first_x, modeled_first_y,
+            orig_last_x, orig_last_y,
+            modeled_last_x, modeled_last_y,
+            max_dx, max_dy,
+        )

@@ -64,14 +64,6 @@ def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max
     markers = track.markers
     positions: list[tuple[int, any]] = []
 
-    if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(
-            "get_positions: track=%s current_frame=%s max_frames=%s",
-            getattr(track, 'name', '<unnamed>'),
-            current_frame,
-            max_frames,
-        )
-
     # Determine the earliest frame to inspect.  We walk backwards
     # ``max_frames - 1`` frames from the current frame.
     start_frame = current_frame - (max_frames - 1)
@@ -80,40 +72,24 @@ def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max
     # For each frame we try to find an exact marker.  If none exists,
     # ``find_frame`` returns ``None`` and we skip that frame.
     for frame in range(start_frame, current_frame + 1):
-        try:
-            marker = markers.find_frame(frame, exact=True)
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "get_positions: Fehler beim Zugriff auf Frame %s für Track %s: %s",
-                frame,
-                getattr(track, 'name', '<unnamed>'),
-                exc,
-            )
-            continue
+        marker = markers.find_frame(frame, exact=True)
         if marker is None:
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    "get_positions: Track %s kein Marker @Frame %s",
-                    getattr(track, 'name', '<unnamed>'),
-                    frame,
-                )
             continue
         positions.append((frame, marker.co.copy()))
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "get_positions: Track %s Marker @Frame %s ko=(%.6f, %.6f)",
-                getattr(track, 'name', '<unnamed>'),
-                frame,
-                marker.co[0],
-                marker.co[1],
-            )
-    if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(
-            "get_positions: Track %s gesammelt %d Frames (Start=%s Ende=%s) Frames=%s",
+
+    # Kompakte Zusammenfassung (INFO-Level) zur Integritätsprüfung der Rohdaten
+    if positions:
+        frames = [f for f, _ in positions]
+        first_f, last_f = frames[0], frames[-1]
+        first_co = positions[0][1]
+        last_co = positions[-1][1]
+        logger.info(
+            "raw track %s count=%d span=%d..%d first=(%.4f,%.4f) last=(%.4f,%.4f)",
             getattr(track, 'name', '<unnamed>'),
             len(positions),
-            start_frame,
-            current_frame,
-            [f for f, _ in positions],
+            first_f,
+            last_f,
+            first_co[0], first_co[1],
+            last_co[0], last_co[1],
         )
     return positions
