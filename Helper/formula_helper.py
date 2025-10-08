@@ -59,10 +59,15 @@ def _evaluate_motion_model(marker_positions,
     # Debug-Ausgabe
     print(f"[EvalModel] total_dx={total_dx:.6f}, total_dy={total_dy:.6f}, dev_x={dev_x:.6f}, dev_y={dev_y:.6f}")
 
-    # Entscheidungslogik:
+ Entscheidungslogik:
     # Wenn Bewegung konsistent in einer Richtung → Loc
-    # Wenn sich Δx oder Δy über 0.001 von ihrer Mittelrichtung unterscheiden → LocRot
-    if dev_x > 0.001 or dev_y > 0.001:
+    # Wenn sich Δx oder Δy über den eingestellten Threshold unterscheiden → LocRot
+    import bpy
+    scene = bpy.context.scene
+    thresh_x = getattr(scene, "kaiserlich_rot_thresh_x", 0.001)
+    thresh_y = getattr(scene, "kaiserlich_rot_thresh_y", 0.001)
+
+    if dev_x > thresh_x or dev_y > thresh_y:
         model = "LocRot"
     else:
         model = "Loc"
