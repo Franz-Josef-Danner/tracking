@@ -31,59 +31,34 @@ def _evaluate_motion_model(marker_positions,
     if N < 2:
         return "Loc"
 
+    # ---------------------------------------------
+    # Vereinfachte, markerbasierte Rotationserkennung
+    # ---------------------------------------------
     pts = np.array([[x, y] for _, x, y in marker_positions], dtype=np.float32)
 
-    # Versuche, Transformation aus Positionsdaten oder optional Patches zu bestimmen
-    if patches is not None and len(patches) >= 2:
-        try:
-            warp_matrix = np.eye(3, 3, dtype=np.float32)
-            cc, warp_matrix = cv2.findTransformECC(
-                cv2.cvtColor(patches[0], cv2.COLOR_BGR2GRAY),
-                cv2.cvtColor(patches[-1], cv2.COLOR_BGR2GRAY),
-                warp_matrix,
-                cv2.MOTION_HOMOGRAPHY
-            )
-            H = warp_matrix
-        except Exception:
-            H = _estimate_affine_from_points(pts)
+    # Differenzen über Frames
+    dx = np.diff(pts[:, 0])
+    dy = np.diff(pts[:, 1])
+
+    # Normierte Bewegung (gesamt)
+    mean_dx = float(np.mean(dx))
+    mean_dy = float(np.mean(dy))
+
+    # Standardabweichung der Bewegungsrichtung
+    # Wenn Δx, Δy stabil → Translation
+    # Wenn Δx, Δy Richtungsvariationen → Rotation
+    std_dx = float(np.std(dx))
+    std_dy = float(np.std(dy))
+
+    # Verhältnisabweichung in %
+    rel_dx = std_dx / (abs(mean_dx) + 1e-9)
+    rel_dy = std_dy / (abs(mean_dy) + 1e-9)
+
+    # Entscheidungslogik
+    if (rel_dx < 0.05 and rel_dy < 0.05):
+        model = "Loc"
     else:
-        H = _estimate_affine_from_points(pts)
-
-    a, b, tx = H[0, 0], H[0, 1], H[0, 2]
-    c, d, ty = H[1, 0], H[1, 1], H[1, 2]
-    p, q = H[2, 0], H[2, 1]
-
-    # Perspektivische Komponenten?
-    if abs(p) > epsilon_affine or abs(q) > epsilon_affine:
-        return "Perspective"
-
-    # Skalierung / Rotation / Scherung
-    sx = np.sqrt(a * a + b * b)
-    sy = np.sqrt(c * c + d * d)
-    rot_angle = np.arctan2(b, a)
-    shear = abs(a * c + b * d)
-
-    # Basisklassifikation
-    if abs(sx - 1) < epsilon_scale and abs(sy - 1) < epsilon_scale:
-        if abs(rot_angle) < epsilon_rot:
-            model = "Loc"
-        else:
-            model = "LocRot"
-    elif abs(sx - sy) < epsilon_scale and shear < epsilon_affine:
-        model = "LocRotScale"
-    elif shear >= epsilon_affine:
-        model = "Affine"
-    else:
-        model = "LocScale"
-
-    # Korrelation prüfen
-    if corr_values is not None and len(corr_values) > 0:
-        mean_corr = float(np.mean(corr_values))
-        if mean_corr < threshold_corr:
-            if model in ("Loc", "LocRot"):
-                model = "LocRotScale"
-            elif model == "LocRotScale":
-                model = "Affine"
+        model = "LocRot"
 
     return model
 
