@@ -189,5 +189,12 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
 
         # Apply the smoothed positions and set the track's motion model
         # to 'Loc' (translation only)【646072811079919†L2217-L2241】.
-    apply_motion_model(track, modeled_positions, motion_model='Loc')
-    logger.debug("Track '%s': motion_model auf 'Loc' gesetzt und Werte angewendet.", track.name)
+        try:
+            apply_motion_model(track, modeled_positions, motion_model='Loc')
+            logger.debug("Track '%s': motion_model auf 'Loc' gesetzt und Werte angewendet.", track.name)
+        except Exception as exc:  # noqa: BLE001 – wir wollen robust loggen
+            logger.error(
+                "Track '%s': Fehler beim Anwenden des Motion Models: %s",
+                track.name,
+                exc,
+            )
