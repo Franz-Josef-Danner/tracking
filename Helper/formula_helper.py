@@ -31,81 +31,41 @@ def _evaluate_motion_model(marker_positions,
     if N < 2:
         return "Loc"
 
-    # ---------------------------------------------
-    # Erweiterte Auswertung:
-    # Prüft die RELATIONEN zwischen mehreren Markern.
-    # Wenn die Distanzen konstant bleiben, aber die
-    # Achsenverhältnisse (Δx/Δy) schwanken → Rotation.
-    # ---------------------------------------------
+    # ======================================================
+    # Einfache geometrische Rotationserkennung
+    # keine Glättung, keine Regression – nur Rohpositionen
+    # ======================================================
 
     pts = np.array([[x, y] for _, x, y in marker_positions], dtype=np.float32)
-
-    # Bewegungen pro Frame
     disp = np.diff(pts, axis=0)
     if len(disp) < 1:
         return "Loc"
 
-    # Gesamtstrecke (Länge der Bewegungsvektoren)
-    step_len = np.linalg.norm(disp, axis=1)
-    mean_len = np.mean(step_len)
+    # Gesamtdistanzänderung zwischen erstem und letztem Punkt
+    total_dx = pts[-1, 0] - pts[0, 0]
+    total_dy = pts[-1, 1] - pts[0, 1]
 
-    # Varianz der Schrittweiten
-    len_var = np.var(step_len)
-
-    # Prüfe auf Richtungsänderungen: Differenz der Winkel zwischen den Schritten
-    angles = np.arctan2(disp[:, 1], disp[:, 0])
-    if len(angles) > 1:
-        d_angle = np.diff(angles)
-        mean_angle_change = np.mean(np.abs(d_angle))
-    else:
-        mean_angle_change = 0.0
-
-    # Heuristik:
-    # - kleine Winkeländerung → reine Translation
-    # - größere Winkeländerung, aber konstante Länge → Rotation
-
-    # relative Varianz als Maß für Skalierung
-    rel_len_var = len_var / (mean_len**2 + 1e-9)
-
-    # Neue Heuristik:
-    # Wenn Abstände konstant bleiben, aber Verhältnis Δx/Δy stark schwankt → Rotation
+    # Lokale Bewegungen pro Frame
     dx = disp[:, 0]
     dy = disp[:, 1]
 
-    # Verhältnisänderung prüfen (wie sehr sich die Richtung zwischen Frames ändert)
-    with np.errstate(divide='ignore', invalid='ignore'):
-        xy_ratio = np.where(np.abs(dy) > 1e-9, dx / dy, 0)
-
-    ratio_var = np.var(xy_ratio)
-
-    # Entscheidung nach stabilen Relationen
-    # ---------------------------------------------
-    # Erweiterte Heuristik für Loc / LocRot:
-    # Wenn die Distanz konstant bleibt, aber Δx und Δy sich
-    # gegensinnig oder unterschiedlich stark verändern → Rotation.
-    # ---------------------------------------------
-
-    dx_var = np.var(dx)
-    dy_var = np.var(dy)
-
-    # Korrelation zwischen Δx und Δy: bei Translation meist ≈ +1,
-    # bei Rotation ≈ -1 oder stark < +0.5
-    if len(dx) > 2:
-        corr = np.corrcoef(dx, dy)[0, 1]
-    else:
-        corr = 1.0
+    # Abweichung zwischen Schrittbewegungen und Gesamtbewegung
+    # (zeigt Richtungsänderung an)
+    mean_dx = np.mean(dx)
+    mean_dy = np.mean(dy)
+    dev_x = np.max(np.abs(dx - mean_dx))
+    dev_y = np.max(np.abs(dy - mean_dy))
 
     # Debug-Ausgabe
-    print(f"[EvalModel] rel_len_var={rel_len_var:.6f}, ratio_var={ratio_var:.6f}, dx_var={dx_var:.6f}, dy_var={dy_var:.6f}, corr={corr:.3f}")
+    print(f"[EvalModel] total_dx={total_dx:.6f}, total_dy={total_dy:.6f}, dev_x={dev_x:.6f}, dev_y={dev_y:.6f}")
 
-    # Translation → beide Achsen variieren gleichgerichtet
-    if rel_len_var < 0.001:
-        if corr < 0.5 and (dx_var > 1e-6 or dy_var > 1e-6):
-            model = "LocRot"
-        else:
-            model = "Loc"
+    # Entscheidungslogik:
+    # Wenn Bewegung konsistent in einer Richtung → Loc
+    # Wenn sich Δx oder Δy über 0.001 von ihrer Mittelrichtung unterscheiden → LocRot
+    if dev_x > 0.001 or dev_y > 0.001:
+        model = "LocRot"
     else:
-        model = "Other"
+        model = "Loc"
 
     return model
 def _estimate_affine_from_points(pts):
