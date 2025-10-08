@@ -64,16 +64,30 @@ def _evaluate_motion_model(marker_positions,
     # - kleine Winkeländerung → reine Translation
     # - größere Winkeländerung, aber konstante Länge → Rotation
 
-    # relative Varianz als Maß für Skalierung (soll gering sein bei reiner Rotation)
+    # relative Varianz als Maß für Skalierung
     rel_len_var = len_var / (mean_len**2 + 1e-9)
 
-    if rel_len_var < 0.001 and mean_angle_change > 0.005:
-        model = "LocRot"
+    # Neue Heuristik:
+    # Wenn Abstände konstant bleiben, aber Verhältnis Δx/Δy stark schwankt → Rotation
+    dx = disp[:, 0]
+    dy = disp[:, 1]
+
+    # Verhältnisänderung prüfen (wie sehr sich die Richtung zwischen Frames ändert)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        xy_ratio = np.where(np.abs(dy) > 1e-9, dx / dy, 0)
+
+    ratio_var = np.var(xy_ratio)
+
+    # Entscheidung nach stabilen Relationen
+    if rel_len_var < 0.001:
+        if ratio_var > 0.0005:
+            model = "LocRot"
+        else:
+            model = "Loc"
     else:
-        model = "Loc"
+        model = "Other"
 
     return model
-
 
 def _estimate_affine_from_points(pts):
     """Fallback: einfache Translation aus Start- und Endpunkt."""
