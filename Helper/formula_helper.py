@@ -67,10 +67,17 @@ def _evaluate_motion_model_pairwise(marker_positions, thresh_x=0.001, thresh_y=0
     mean_dev_y = total_dev_y / pair_count
     mean_dev_pos = total_dev_pos / pair_count
 
-    # Klassifikation
-    if mean_dev_pos < thresh_x and mean_dev_x < thresh_x and mean_dev_y < thresh_y:
-        return "Loc"
-    elif mean_dev_pos < thresh_x and (mean_dev_x > thresh_x or mean_dev_y > thresh_y):
+    print(f"[EvalPairwise] mean_dev_pos={mean_dev_pos:.6f}, mean_dev_x={mean_dev_x:.6f}, mean_dev_y={mean_dev_y:.6f}, "
+          f"thresh_x={thresh_x:.6f}, thresh_y={thresh_y:.6f}")
+
+
+    print(f"[EvalPairwise] mean_dev_pos={mean_dev_pos:.6f}, mean_dev_x={mean_dev_x:.6f}, mean_dev_y={mean_dev_y:.6f}, "
+          f"thresh_x={thresh_x:.6f}, thresh_y={thresh_y:.6f}")
+
+    # Klassifikation mit dynamischer Toleranz
+    if mean_dev_pos < thresh_x * 2 and (mean_dev_x > thresh_x or mean_dev_y > thresh_y):
+        return "LocRot"
+    elif mean_dev_pos < thresh_x * 4 and (mean_dev_x > thresh_x * 2 or mean_dev_y > thresh_y * 2):
         return "LocRot"
     else:
         return "Loc"
@@ -148,7 +155,7 @@ def _linear_regression(frames: List[int], values: List[float]) -> Tuple[float, f
     return intercept, slope
 
 
-def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 5) -> None:
+def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
     
     if not ENABLE_FORMULA_SMOOTHING:
         return
