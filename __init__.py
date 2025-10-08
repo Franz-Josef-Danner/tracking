@@ -12,7 +12,7 @@ import bpy
 from .UI.ui import KAISERLICHTRACKER_PT_panel
 from .Operator.detect_operator import KAISERLICHTRACKER_OT_detect_cycle
 from .Operator.track_operator import KAISERLICHTRACKER_OT_track_cycle
-from .UI.ui import ui as ui_module   # <— neu: explizit importieren
+from .UI import ui as ui_module   # <— neu: explizit importieren
 
 classes = (
     KAISERLICHTRACKER_OT_detect_cycle,
