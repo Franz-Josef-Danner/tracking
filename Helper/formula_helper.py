@@ -32,33 +32,45 @@ def _evaluate_motion_model(marker_positions,
         return "Loc"
 
     # ---------------------------------------------
-    # Vereinfachte, markerbasierte Rotationserkennung
+    # Erweiterte Auswertung:
+    # Prüft die RELATIONEN zwischen mehreren Markern.
+    # Wenn die Distanzen konstant bleiben, aber die
+    # Achsenverhältnisse (Δx/Δy) schwanken → Rotation.
     # ---------------------------------------------
+
     pts = np.array([[x, y] for _, x, y in marker_positions], dtype=np.float32)
 
-    # Differenzen über Frames
-    dx = np.diff(pts[:, 0])
-    dy = np.diff(pts[:, 1])
+    # Bewegungen pro Frame
+    disp = np.diff(pts, axis=0)
+    if len(disp) < 1:
+        return "Loc"
 
-    # Normierte Bewegung (gesamt)
-    mean_dx = float(np.mean(dx))
-    mean_dy = float(np.mean(dy))
+    # Gesamtstrecke (Länge der Bewegungsvektoren)
+    step_len = np.linalg.norm(disp, axis=1)
+    mean_len = np.mean(step_len)
 
-    # Standardabweichung der Bewegungsrichtung
-    # Wenn Δx, Δy stabil → Translation
-    # Wenn Δx, Δy Richtungsvariationen → Rotation
-    std_dx = float(np.std(dx))
-    std_dy = float(np.std(dy))
+    # Varianz der Schrittweiten
+    len_var = np.var(step_len)
 
-    # Verhältnisabweichung in %
-    rel_dx = std_dx / (abs(mean_dx) + 1e-9)
-    rel_dy = std_dy / (abs(mean_dy) + 1e-9)
-
-    # Entscheidungslogik
-    if (rel_dx < 0.05 and rel_dy < 0.05):
-        model = "Loc"
+    # Prüfe auf Richtungsänderungen: Differenz der Winkel zwischen den Schritten
+    angles = np.arctan2(disp[:, 1], disp[:, 0])
+    if len(angles) > 1:
+        d_angle = np.diff(angles)
+        mean_angle_change = np.mean(np.abs(d_angle))
     else:
+        mean_angle_change = 0.0
+
+    # Heuristik:
+    # - kleine Winkeländerung → reine Translation
+    # - größere Winkeländerung, aber konstante Länge → Rotation
+
+    # relative Varianz als Maß für Skalierung (soll gering sein bei reiner Rotation)
+    rel_len_var = len_var / (mean_len**2 + 1e-9)
+
+    if rel_len_var < 0.001 and mean_angle_change > 0.005:
         model = "LocRot"
+    else:
+        model = "Loc"
 
     return model
 
