@@ -43,6 +43,10 @@ from typing import List, Tuple
 from .marker_positions_helper import get_positions
 from .motion_model_helper import apply_motion_model
 
+# Globaler Schalter zum schnellen (De-)Aktivieren der Glättung.
+# Auf False setzen um die Funktion wirkungslos zu machen (für Vergleichstests).
+ENABLE_FORMULA_SMOOTHING = True
+
 # Minimaler Logger für Formel-Ergebnis-Ausgaben (Fallback auf print)
 logger = logging.getLogger(__name__)
 
@@ -130,6 +134,10 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     - The motion model assigned is always ``'Loc'``, reflecting that
       only translation is being enforced by the fit.
     """
+    # Früher Ausstieg wenn deaktiviert (Vergleich ohne Glättung / Option D)
+    if not ENABLE_FORMULA_SMOOTHING:
+        return
+
     scene = context.scene
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
