@@ -80,7 +80,7 @@ def _evaluate_motion_model(marker_positions,
 
     # Entscheidung nach stabilen Relationen
     if rel_len_var < 0.001:
-        if ratio_var > 0.0005:
+        if ratio_var > 0.0001:
             model = "LocRot"
         else:
             model = "Loc"
