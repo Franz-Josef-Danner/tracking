@@ -1,47 +1,105 @@
-"""
-Formula Helper
-==============
-
-This module defines a function that orchestrates the process of
-sampling recent marker positions, fitting a simple linear motion
-formula to the sampled data, and then applying the resulting motion
-model back onto the track.  The helper works on all selected
-tracking tracks (or the active track if no tracks are selected) in
-Blender's Movie Clip Editor.  It is designed to be invoked from a
-custom operator that performs frame-by-frame tracking, providing a
-hook for post-processing each frame.
-
-The motion model in this context is a straight-line fit through the
-latest 1–5 sampled marker positions.  A least-squares linear
-regression is performed independently on the x and y coordinates as
-functions of the frame number.  The fitted model is then evaluated
-exactly on the sampled frames to obtain smoothed positions.  Finally,
-the updated positions are written back to the track and the track's
-``motion_model`` property is set to ``'Loc'`` (translation only).
-
-This approach can reduce jitter in tracking data by enforcing a
-consistent translational motion across several frames.
-
-Usage:
-
-    from .formula_helper import apply_formula_on_selected_tracks
-    apply_formula_on_selected_tracks(bpy.context, max_frames=5)
-
-References:
-    - ``MovieTrackingMarker.co`` property【111914411816643†L2128-L2135】.
-    - ``MovieTrackingMarkers.find_frame`` for marker retrieval【706584264448716†L2126-L2143】.
-    - ``MovieTrackingTrack.motion_model`` enumerations【646072811079919†L2217-L2241】.
-    - ``MovieTrackingTrack.select`` property indicates whether a track is selected【646072811079919†L2272-L2278】.
-"""
-
 from __future__ import annotations
 
 import bpy
 import logging
 from typing import List, Tuple
+import numpy as np
+import cv2
 
 from .marker_positions_helper import get_positions
 from .motion_model_helper import apply_motion_model
+
+
+# ==========================================================
+# Bewegungsmodell-Evaluierung (integriert)
+# ==========================================================
+
+def _evaluate_motion_model(marker_positions,
+                           patches=None,
+                           corr_values=None,
+                           threshold_corr=0.85,
+                           epsilon_affine=1e-3,
+                           epsilon_rot=0.01,
+                           epsilon_scale=0.02):
+    """
+    marker_positions: [(frame, x, y), ...]
+    patches: optional list of (ndarray) image crops per frame
+    corr_values: optional list of correlation floats
+    """
+
+    N = len(marker_positions)
+    if N < 2:
+        return "Loc"
+
+    pts = np.array([[x, y] for _, x, y in marker_positions], dtype=np.float32)
+
+    # Versuche, Transformation aus Positionsdaten oder optional Patches zu bestimmen
+    if patches is not None and len(patches) >= 2:
+        try:
+            warp_matrix = np.eye(3, 3, dtype=np.float32)
+            cc, warp_matrix = cv2.findTransformECC(
+                cv2.cvtColor(patches[0], cv2.COLOR_BGR2GRAY),
+                cv2.cvtColor(patches[-1], cv2.COLOR_BGR2GRAY),
+                warp_matrix,
+                cv2.MOTION_HOMOGRAPHY
+            )
+            H = warp_matrix
+        except Exception:
+            H = _estimate_affine_from_points(pts)
+    else:
+        H = _estimate_affine_from_points(pts)
+
+    a, b, tx = H[0, 0], H[0, 1], H[0, 2]
+    c, d, ty = H[1, 0], H[1, 1], H[1, 2]
+    p, q = H[2, 0], H[2, 1]
+
+    # Perspektivische Komponenten?
+    if abs(p) > epsilon_affine or abs(q) > epsilon_affine:
+        return "Perspective"
+
+    # Skalierung / Rotation / Scherung
+    sx = np.sqrt(a * a + b * b)
+    sy = np.sqrt(c * c + d * d)
+    rot_angle = np.arctan2(b, a)
+    shear = abs(a * c + b * d)
+
+    # Basisklassifikation
+    if abs(sx - 1) < epsilon_scale and abs(sy - 1) < epsilon_scale:
+        if abs(rot_angle) < epsilon_rot:
+            model = "Loc"
+        else:
+            model = "LocRot"
+    elif abs(sx - sy) < epsilon_scale and shear < epsilon_affine:
+        model = "LocRotScale"
+    elif shear >= epsilon_affine:
+        model = "Affine"
+    else:
+        model = "LocScale"
+
+    # Korrelation prüfen
+    if corr_values is not None and len(corr_values) > 0:
+        mean_corr = float(np.mean(corr_values))
+        if mean_corr < threshold_corr:
+            if model in ("Loc", "LocRot"):
+                model = "LocRotScale"
+            elif model == "LocRotScale":
+                model = "Affine"
+
+    return model
+
+
+def _estimate_affine_from_points(pts):
+    """Fallback: einfache Translation aus Start- und Endpunkt."""
+    if len(pts) < 2:
+        return np.eye(3, dtype=np.float32)
+    p0, p1 = pts[0], pts[-1]
+    dx, dy = p1 - p0
+    H = np.eye(3, dtype=np.float32)
+    H[0, 2] = dx
+    H[1, 2] = dy
+    return H
+
+
 
 # Globaler Schalter zum schnellen (De-)Aktivieren der Glättung.
 # Auf False setzen um die Funktion wirkungslos zu machen (für Vergleichstests).
@@ -104,37 +162,7 @@ def _linear_regression(frames: List[int], values: List[float]) -> Tuple[float, f
 
 
 def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 5) -> None:
-    """Sample, fit and apply a linear motion model to selected tracks.
-
-    This function retrieves up to ``max_frames`` recent marker positions
-    for each selected track (or the active track if none are selected),
-    computes a linear least‑squares fit on the x and y coordinates
-    separately, and then updates the markers with the fitted positions.
-    Finally, it sets the track's ``motion_model`` property to ``'Loc'``.
-
-    Parameters
-    ----------
-    context : bpy.types.Context
-        The Blender context from which to obtain the current scene and
-        clip.  It is assumed that the operator invoking this helper
-        runs in the Movie Clip Editor, so ``context.space_data.clip``
-        will reference the active clip.
-    max_frames : int, optional
-        The maximum number of frames to consider when fitting the
-        motion model.  Defaults to 5.  If fewer than ``max_frames``
-        markers exist before the current frame, all available markers
-        are used.
-
-    Notes
-    -----
-    - If a track contains fewer than two sampled positions, it will be
-      skipped because a meaningful line cannot be fitted.
-    - The fitted positions are only written back to the sampled
-      frames, not extrapolated beyond the sample window.
-    - The motion model assigned is always ``'Loc'``, reflecting that
-      only translation is being enforced by the fit.
-    """
-    # Früher Ausstieg wenn deaktiviert (Vergleich ohne Glättung / Option D)
+    
     if not ENABLE_FORMULA_SMOOTHING:
         return
 
@@ -179,78 +207,24 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             y_pred = intercept_y + slope_y * f
             modeled_positions.append((f, (x_pred, y_pred)))
 
-        # Apply the smoothed positions and set the track's motion model
-        # to 'Loc' (translation only)【646072811079919†L2217-L2241】.
+        # ============================================================
+        # Bewegungsauswertung & Anwendung des Motion Models
+        # ============================================================
         try:
-            # ============================================================
-            # Heuristik: Unterscheide Loc vs LocRot anhand Markerabstände
-            # (mit Mittelung über mehrere Frames)
-            # ============================================================
+            # Markerpositionen für Analyse sammeln
+            marker_positions = [(f, x, y) for f, (x, y) in modeled_positions]
 
-            def _pairwise_deltas(points: list[tuple[float, float]]):
-                """Erzeugt Listen aller Δx, Δy und Distanzwerte zwischen Markern."""
-                dxs, dys, dists = [], [], []
-                for i in range(len(points)):
-                    for j in range(i + 1, len(points)):
-                        dx = points[i][0] - points[j][0]
-                        dy = points[i][1] - points[j][1]
-                        dxs.append(dx)
-                        dys.append(dy)
-                        dists.append((dx * dx + dy * dy) ** 0.5)
-                return dxs, dys, dists
+            # Bewegungsmodell bestimmen
+            motion_model = _evaluate_motion_model(marker_positions)
 
-            def _mean_values(seq):
-                return sum(seq) / len(seq) if seq else 0.0
-
-            # Wenn weniger als zwei Marker → keine Rotationsanalyse
-            if len(modeled_positions) < 2:
-                motion_model = 'Loc'
-                rel_dist_diff = rel_dx_diff = rel_dy_diff = 0.0
-            else:
-                # -------------------------------
-                # Frame-Segmentierung für Mittelung
-                # -------------------------------
-                num_samples = min(3, len(modeled_positions))
-                step = max(1, len(modeled_positions) // num_samples)
-
-                sample_indices = list(range(0, len(modeled_positions), step))[:num_samples]
-                sampled_sets = [modeled_positions[i][1] for i in sample_indices]
-
-                # -------------------------------
-                # Analyse erster / mittlerer / letzter Frame
-                # -------------------------------
-                dx1, dy1, dist1 = _pairwise_deltas([sampled_sets[0]]) if sampled_sets else ([], [], [])
-                dxM, dyM, distM = _pairwise_deltas([sampled_sets[len(sampled_sets)//2]]) if len(sampled_sets) > 1 else ([], [], [])
-                dx2, dy2, dist2 = _pairwise_deltas([sampled_sets[-1]]) if len(sampled_sets) > 2 else ([], [], [])
-
-                mean_d1, mean_d2 = _mean_values(dist1), _mean_values(dist2)
-                rel_dist_diff = abs(mean_d2 - mean_d1) / (mean_d1 + 1e-9) if mean_d1 else 0.0
-
-                mean_dx1, mean_dy1 = _mean_values(dx1), _mean_values(dy1)
-                mean_dx2, mean_dy2 = _mean_values(dx2), _mean_values(dy2)
-                rel_dx_diff = abs(mean_dx2 - mean_dx1) / (abs(mean_dx1) + 1e-9) if mean_dx1 else 0.0
-                rel_dy_diff = abs(mean_dy2 - mean_dy1) / (abs(mean_dy1) + 1e-9) if mean_dy1 else 0.0
-
-                # -------------------------------
-                # Entscheidungslogik
-                # -------------------------------
-                # Wenn Distanzen stabil (kaum Skalierung)
-                # und x/y-Relationen sich verändern → Rotation
-                if rel_dist_diff < 0.01 and (rel_dx_diff > 0.01 or rel_dy_diff > 0.01):
-                    motion_model = 'LocRot'
-                else:
-                    motion_model = 'Loc'
-
-            # Anwenden des erkannten Bewegungsmodells
+            # Anwenden des erkannten Modells auf Track
             apply_motion_model(track, modeled_positions, motion_model=motion_model)
 
-            # Debug-Ausgabe (kompakt, aber informativ)
-            print(
-                f"[FormulaHelper] {track.name}: {motion_model} | "
-                f"Δdist={rel_dist_diff:.4f}, Δx={rel_dx_diff:.4f}, Δy={rel_dy_diff:.4f}, "
-                f"frames={len(modeled_positions)}"
-            )
-        except Exception:
+            # Logging / Debug-Ausgabe
+            print(f"[FormulaHelper] {track.name}: detected {motion_model}")
+
+        except Exception as e:
+            print(f"[FormulaHelper] Fehler bei motion_model_eval für {track.name}: {e}")
             continue
 
         # Formel-Ergebnis-Log (Ausgabe der modellierten Werte)
