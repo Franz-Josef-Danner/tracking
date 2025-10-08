@@ -14,73 +14,30 @@ from .motion_model_helper import apply_motion_model
 # Bewegungsmodell-Evaluierung (integriert)
 # ==========================================================
 
-def _evaluate_motion_model_pairwise(marker_positions, thresh_x=0.001, thresh_y=0.001):
-    """
-    Bestimmt das Bewegungsmodell anhand paarweiser Marker-Vergleiche.
-    marker_positions: dict[str, list[tuple[x, y]]]
-        z. B. {"Track.001": [(x1, y1), (x2, y2), ...], "Track.002": [...], ...}
-    """
-    markers = list(marker_positions.keys())
-    if len(markers) < 2:
+def _evaluate_motion_model_pairwise(marker_positions, thresh_rot=0.002, thresh_persp=0.01):
+    if len(marker_positions) < 2:
         return "Loc"
 
-    total_dev_x = 0.0
-    total_dev_y = 0.0
-    total_dev_pos = 0.0
-    pair_count = 0
+    diffs = []
+    for i in range(len(marker_positions) - 1):
+        (x1, y1), (x2, y2) = marker_positions[i], marker_positions[i + 1]
+        diffs.append(((x2 - x1), (y2 - y1)))
 
-    for i in range(len(markers)):
-        for j in range(i + 1, len(markers)):
-            mi = marker_positions[markers[i]]
-            mj = marker_positions[markers[j]]
-            if len(mi) != len(mj):
-                continue
+    # Mittlere Bewegungsdifferenz
+    mean_dx = sum(abs(dx) for dx, _ in diffs) / len(diffs)
+    mean_dy = sum(abs(dy) for _, dy in diffs) / len(diffs)
+    dev_xy = abs(mean_dx - mean_dy)
 
-            avg_x_values = []
-            avg_y_values = []
-            avg_pos_values = []
+    print(f"[EvalPairwise] mean_dx={mean_dx:.5f}, mean_dy={mean_dy:.5f}, dev_xy={dev_xy:.5f}")
 
-            for f in range(len(mi)):
-                m1x, m1y = mi[f]
-                m2x, m2y = mj[f]
-                avg_x = (m1x + m2x) / 2.0
-                avg_y = (m1y + m2y) / 2.0
-                avg_pos = (m1x + m2x + m1y + m2y) / 4.0
-                avg_x_values.append(avg_x)
-                avg_y_values.append(avg_y)
-                avg_pos_values.append(avg_pos)
-
-            # Abweichungen über die Zeit
-            dx_var = max(avg_x_values) - min(avg_x_values)
-            dy_var = max(avg_y_values) - min(avg_y_values)
-            pos_var = max(avg_pos_values) - min(avg_pos_values)
-
-            total_dev_x += dx_var
-            total_dev_y += dy_var
-            total_dev_pos += pos_var
-            pair_count += 1
-
-    if pair_count == 0:
+    # Klassifikation nach Bewegungskonsistenz
+    if dev_xy < thresh_rot:
         return "Loc"
-
-    mean_dev_x = total_dev_x / pair_count
-    mean_dev_y = total_dev_y / pair_count
-    mean_dev_pos = total_dev_pos / pair_count
-
-    print(f"[EvalPairwise] mean_dev_pos={mean_dev_pos:.6f}, mean_dev_x={mean_dev_x:.6f}, mean_dev_y={mean_dev_y:.6f}, "
-          f"thresh_x={thresh_x:.6f}, thresh_y={thresh_y:.6f}")
-
-
-    print(f"[EvalPairwise] mean_dev_pos={mean_dev_pos:.6f}, mean_dev_x={mean_dev_x:.6f}, mean_dev_y={mean_dev_y:.6f}, "
-          f"thresh_x={thresh_x:.6f}, thresh_y={thresh_y:.6f}")
-
-    # Klassifikation mit dynamischer Toleranz
-    if mean_dev_pos < thresh_x * 2 and (mean_dev_x > thresh_x or mean_dev_y > thresh_y):
-        return "LocRot"
-    elif mean_dev_pos < thresh_x * 4 and (mean_dev_x > thresh_x * 2 or mean_dev_y > thresh_y * 2):
+    elif dev_xy < thresh_persp:
         return "LocRot"
     else:
-        return "Loc"
+        return "Perspective"
+
       
 def _estimate_affine_from_points(pts):
     """Fallback: einfache Translation aus Start- und Endpunkt."""
