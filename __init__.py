@@ -1,3 +1,13 @@
+bl_info = {
+    "name": "Kaiserlich Tracker",
+    "author": "Franz-Josef Danner",
+    "version": (0, 1, 0),
+    "blender": (3, 0, 0),
+    "location": "Movie Clip Editor > Sidebar > Kaiserlich Tracker",
+    "description": "Hilft beim Berechnen von Marker Parametern (Pattern/Search Größe) basierend auf Auflösung und gewünschter Marker-Dichte.",
+    "category": "Tracking",
+}
+
 import bpy
 from .UI.ui import KAISERLICHTRACKER_PT_panel
 from .Operator.detect_operator import KAISERLICHTRACKER_OT_detect_cycle
