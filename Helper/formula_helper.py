@@ -182,7 +182,45 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         # Apply the smoothed positions and set the track's motion model
         # to 'Loc' (translation only)【646072811079919†L2217-L2241】.
         try:
-            apply_motion_model(track, modeled_positions, motion_model='Loc')
+            # --- Heuristik: Rotation erkennen anhand stabiler Distanzen ---
+            def _mean_pair_distance(points: list[tuple[float, float]]) -> float:
+                if len(points) < 2:
+                    return 0.0
+                total, count = 0.0, 0
+                for i in range(len(points)):
+                    for j in range(i + 1, len(points)):
+                        dx = points[i][0] - points[j][0]
+                        dy = points[i][1] - points[j][1]
+                        total += (dx * dx + dy * dy) ** 0.5
+                        count += 1
+                return total / count if count > 0 else 0.0
+
+            # Verwende erste und letzte modellierte Frame-Positionen als Näherung
+            first_points = [co for _, co in modeled_positions[:1]]
+            last_points  = [co for _, co in modeled_positions[-1:]]
+
+            # Falls Marker-Koordinaten aus mehreren Frames bestehen (z. B. mehrere Marker),
+            # sammle je Frame die Positionen und vergleiche mittlere Distanzen
+            # zwischen erstem und letztem Frame.
+            if len(modeled_positions) >= 2:
+                # Extrahiere alle Marker-Koordinaten der ersten und letzten Frames
+                # (Bei Single-Track-Fit nur eine Position pro Frame)
+                first_dist = _mean_pair_distance([modeled_positions[0][1]])
+                last_dist  = _mean_pair_distance([modeled_positions[-1][1]])
+                rel_diff = abs(last_dist - first_dist) / (first_dist + 1e-9)
+
+                if rel_diff < 0.005 and (abs(slope_x) > 1e-6 or abs(slope_y) > 1e-6):
+                    motion_model = 'LocRot'
+                else:
+                    motion_model = 'Loc'
+            else:
+                motion_model = 'Loc'
+
+            apply_motion_model(track, modeled_positions, motion_model=motion_model)
+
+            # Debug-Ausgabe
+            print(f"[FormulaHelper] {track.name}: detected motion_model={motion_model} "
+                  f"(rel_diff={rel_diff:.6f})")
         except Exception:
             continue
 
