@@ -172,55 +172,64 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     if not selected_tracks:
         return
 
+    # ============================================================
+    # Gemeinsame Bewegungsauswertung aller ausgewählten Tracks
+    # ============================================================
+
+    marker_positions = {}
     for track in selected_tracks:
-        # Retrieve the marker positions for the most recent frames.
         positions = get_positions(track, current_frame, max_frames=max_frames)
         if len(positions) < 2:
             continue
+        marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
 
-        frames: List[int] = [frame for frame, _co in positions]
-        xs: List[float] = [co[0] for _, co in positions]
-        ys: List[float] = [co[1] for _, co in positions]
+    if len(marker_positions) < 2:
+        print("[FormulaHelper] Zu wenige Marker für Paarvergleich – nur Loc möglich.")
+        return
 
-        # (Rohdaten-Logging entfernt – nur Ergebnis wird ausgegeben)
+    try:
+        # Bewegungsmodell anhand aller Markerpaare bestimmen
+        motion_model = _evaluate_motion_model_pairwise(
+            marker_positions,
+            scene.kaiserlich_rot_thresh_x,
+            scene.kaiserlich_rot_thresh_y
+        )
 
-        # Fit linear models to x and y coordinates separately.
-        intercept_x, slope_x = _linear_regression(frames, xs)
-        intercept_y, slope_y = _linear_regression(frames, ys)
+        print(f"[FormulaHelper] Gemeinsames Modell erkannt: {motion_model}")
 
-        modeled_positions: list[tuple[int, tuple[float, float]]] = []
-        for f in frames:
-            x_pred = intercept_x + slope_x * f
-            y_pred = intercept_y + slope_y * f
-            modeled_positions.append((f, (x_pred, y_pred)))
+        # Für jedes Track individuell Regression anwenden und Modell setzen
+        for track in selected_tracks:
+            positions = get_positions(track, current_frame, max_frames=max_frames)
+            frames: List[int] = [frame for frame, _co in positions]
+            xs: List[float] = [co[0] for _, co in positions]
+            ys: List[float] = [co[1] for _, co in positions]
 
-        # ============================================================
-        # Bewegungsauswertung & Anwendung des Motion Models
-        # ============================================================
-        try:
-            # Markerpositionen für Analyse sammeln
-            marker_positions = [(f, x, y) for f, (x, y) in modeled_positions]
+            intercept_x, slope_x = _linear_regression(frames, xs)
+            intercept_y, slope_y = _linear_regression(frames, ys)
 
-            # Bewegungsmodell bestimmen
-            motion_model = _evaluate_motion_model(marker_positions)
+            modeled_positions: list[tuple[int, tuple[float, float]]] = []
+            for f in frames:
+                x_pred = intercept_x + slope_x * f
+                y_pred = intercept_y + slope_y * f
+                modeled_positions.append((f, (x_pred, y_pred)))
 
-            # Anwenden des erkannten Modells auf Track
+            # Motion Model anwenden
             apply_motion_model(track, modeled_positions, motion_model=motion_model)
 
-            # Logging / Debug-Ausgabe
+            # Log / Debug
             print(f"[FormulaHelper] {track.name}: detected {motion_model}")
 
-        except Exception as e:
-            print(f"[FormulaHelper] Fehler bei motion_model_eval für {track.name}: {e}")
-            continue
+            _emit_fit(
+                track.name,
+                frames,
+                modeled_positions,
+                intercept_x,
+                slope_x,
+                intercept_y,
+                slope_y,
+            )
 
-        # Formel-Ergebnis-Log (Ausgabe der modellierten Werte)
-        _emit_fit(
-            track.name,
-            frames,
-            modeled_positions,
-            intercept_x,
-            slope_x,
-            intercept_y,
-            slope_y,
-        )
+    except Exception as e:
+        print(f"[FormulaHelper] Fehler bei gemeinsamer motion_model_eval: {e}")
+        return
+
