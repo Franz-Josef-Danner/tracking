@@ -59,7 +59,7 @@ def _evaluate_motion_model(marker_positions,
     # Debug-Ausgabe
     print(f"[EvalModel] total_dx={total_dx:.6f}, total_dy={total_dy:.6f}, dev_x={dev_x:.6f}, dev_y={dev_y:.6f}")
 
- Entscheidungslogik:
+    # Entscheidungslogik:
     # Wenn Bewegung konsistent in einer Richtung → Loc
     # Wenn sich Δx oder Δy über den eingestellten Threshold unterscheiden → LocRot
     import bpy
