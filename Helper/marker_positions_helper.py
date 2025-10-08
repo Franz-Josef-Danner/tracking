@@ -32,6 +32,8 @@ References:
 import bpy
 import logging
 
+# Logging hier optional – aktuell keine Ausgabe, die Rohdaten werden erst in
+# formula_helper geloggt, um die Sichtbarkeit zu bündeln.
 logger = logging.getLogger(__name__)
 
 def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max_frames: int = 5):
@@ -76,20 +78,4 @@ def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max
         if marker is None:
             continue
         positions.append((frame, marker.co.copy()))
-
-    # Kompakte Zusammenfassung (INFO-Level) zur Integritätsprüfung der Rohdaten
-    if positions:
-        frames = [f for f, _ in positions]
-        first_f, last_f = frames[0], frames[-1]
-        first_co = positions[0][1]
-        last_co = positions[-1][1]
-        logger.info(
-            "raw track %s count=%d span=%d..%d first=(%.4f,%.4f) last=(%.4f,%.4f)",
-            getattr(track, 'name', '<unnamed>'),
-            len(positions),
-            first_f,
-            last_f,
-            first_co[0], first_co[1],
-            last_co[0], last_co[1],
-        )
     return positions

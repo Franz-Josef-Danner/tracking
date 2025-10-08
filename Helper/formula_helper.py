@@ -43,7 +43,7 @@ from typing import List, Tuple
 from .marker_positions_helper import get_positions
 from .motion_model_helper import apply_motion_model
 
-# Schlanker Modul-Logger (nur zusammenfassende Infos)
+# Logger für reine Positions- & Ergebnis-Ausgabe
 logger = logging.getLogger(__name__)
 
 
@@ -137,6 +137,13 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         xs: List[float] = [co[0] for _, co in positions]
         ys: List[float] = [co[1] for _, co in positions]
 
+        # Roh-Positions-Log (nur diese + Ergebnis erwünscht)
+        logger.info(
+            "RAW %s %s",
+            track.name,
+            " ".join(f"{f}:{x:.5f},{y:.5f}" for f, (x, y) in zip(frames, [(xv, yv) for xv, yv in zip(xs, ys)])),
+        )
+
         # Fit linear models to x and y coordinates separately.
         intercept_x, slope_x = _linear_regression(frames, xs)
         intercept_y, slope_y = _linear_regression(frames, ys)
@@ -152,27 +159,13 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         try:
             apply_motion_model(track, modeled_positions, motion_model='Loc')
         except Exception:
-            # Wenn Anwenden fehlschlägt, Track überspringen ohne Logspam.
             continue
 
-        # Kompakte Integritäts-Ausgabe: Anzahl, Frame-Spanne, erste/letzte Position vorher/nachher & max Delta.
-        orig_first_x, orig_first_y = xs[0], ys[0]
-        orig_last_x, orig_last_y = xs[-1], ys[-1]
-        modeled_first_x, modeled_first_y = modeled_positions[0][1]
-        modeled_last_x, modeled_last_y = modeled_positions[-1][1]
-        max_dx = max(abs(o_x - (intercept_x + slope_x * f)) for f, o_x in zip(frames, xs))
-        max_dy = max(abs(o_y - (intercept_y + slope_y * f)) for f, o_y in zip(frames, ys))
-
-        # Nur INFO-Level (kein Debug-Sturm):
+        # Formel-Ergebnis-Log
         logger.info(
-            "Track %s frames=%d span=%d..%d first=(%.4f,%.4f)->(%.4f,%.4f) last=(%.4f,%.4f)->(%.4f,%.4f) max_delta=(%.4f,%.4f)",
+            "FIT %s %s",
             track.name,
-            len(frames),
-            frames[0],
-            frames[-1],
-            orig_first_x, orig_first_y,
-            modeled_first_x, modeled_first_y,
-            orig_last_x, orig_last_y,
-            modeled_last_x, modeled_last_y,
-            max_dx, max_dy,
+            " ".join(
+                f"{f}:{x:.5f},{y:.5f}" for f, (x, y) in modeled_positions
+            ),
         )
