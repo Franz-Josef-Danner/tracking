@@ -30,6 +30,9 @@ References:
 """
 
 import bpy
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max_frames: int = 5):
     """Return up to ``max_frames`` marker positions for a track.
@@ -61,6 +64,14 @@ def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max
     markers = track.markers
     positions: list[tuple[int, any]] = []
 
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "get_positions: track=%s current_frame=%s max_frames=%s",
+            getattr(track, 'name', '<unnamed>'),
+            current_frame,
+            max_frames,
+        )
+
     # Determine the earliest frame to inspect.  We walk backwards
     # ``max_frames - 1`` frames from the current frame.
     start_frame = current_frame - (max_frames - 1)
@@ -69,11 +80,40 @@ def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max
     # For each frame we try to find an exact marker.  If none exists,
     # ``find_frame`` returns ``None`` and we skip that frame.
     for frame in range(start_frame, current_frame + 1):
-        marker = markers.find_frame(frame, exact=True)
-        if marker is None:
-            # No marker for this frame, skip.
+        try:
+            marker = markers.find_frame(frame, exact=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "get_positions: Fehler beim Zugriff auf Frame %s für Track %s: %s",
+                frame,
+                getattr(track, 'name', '<unnamed>'),
+                exc,
+            )
             continue
-        # ``marker.co`` returns a mathutils.Vector of length 2
-        # containing the normalized coordinates【111914411816643†L2128-L2135】.
+        if marker is None:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "get_positions: Track %s kein Marker @Frame %s",
+                    getattr(track, 'name', '<unnamed>'),
+                    frame,
+                )
+            continue
         positions.append((frame, marker.co.copy()))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "get_positions: Track %s Marker @Frame %s ko=(%.6f, %.6f)",
+                getattr(track, 'name', '<unnamed>'),
+                frame,
+                marker.co[0],
+                marker.co[1],
+            )
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "get_positions: Track %s gesammelt %d Frames (Start=%s Ende=%s) Frames=%s",
+            getattr(track, 'name', '<unnamed>'),
+            len(positions),
+            start_frame,
+            current_frame,
+            [f for f, _ in positions],
+        )
     return positions
