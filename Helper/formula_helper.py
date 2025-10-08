@@ -37,10 +37,14 @@ References:
 from __future__ import annotations
 
 import bpy
+import logging
 from typing import List, Tuple
 
 from .marker_positions_helper import get_positions
 from .motion_model_helper import apply_motion_model
+
+# Modul-Logger
+logger = logging.getLogger(__name__)
 
 
 def _linear_regression(frames: List[int], values: List[float]) -> Tuple[float, float]:
@@ -107,7 +111,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     scene = context.scene
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
-        # No clip available – nothing to do.
+        logger.warning("apply_formula_on_selected_tracks: Kein Clip im Kontext vorhanden – Abbruch.")
         return
 
     # Determine which tracks to process: all selected tracks, or the
@@ -121,20 +125,52 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
 
     current_frame = scene.frame_current
 
+    if not selected_tracks:
+        logger.info("Keine Tracks ausgewählt oder aktiv – nichts zu tun.")
+        return
+
+    logger.debug(
+        "apply_formula_on_selected_tracks: frame=%s, max_frames=%s, tracks=%s",
+        current_frame,
+        max_frames,
+        [t.name for t in selected_tracks],
+    )
+
     for track in selected_tracks:
         # Retrieve the marker positions for the most recent frames.
         positions = get_positions(track, current_frame, max_frames=max_frames)
-        # Require at least two points for a regression.
         if len(positions) < 2:
+            logger.debug(
+                "Track '%s': weniger als zwei Positionen (%d) – übersprungen.",
+                track.name,
+                len(positions),
+            )
             continue
 
         frames: List[int] = [frame for frame, _co in positions]
         xs: List[float] = [co[0] for _, co in positions]
         ys: List[float] = [co[1] for _, co in positions]
 
+        logger.debug(
+            "Track '%s': gesampelte Frames=%s, xs=%s, ys=%s",
+            track.name,
+            frames,
+            [f"{x:.6f}" for x in xs],
+            [f"{y:.6f}" for y in ys],
+        )
+
         # Fit linear models to x and y coordinates separately.
         intercept_x, slope_x = _linear_regression(frames, xs)
         intercept_y, slope_y = _linear_regression(frames, ys)
+
+        logger.debug(
+            "Track '%s': Regression -> ix=%.6f, sx=%.6f, iy=%.6f, sy=%.6f",
+            track.name,
+            intercept_x,
+            slope_x,
+            intercept_y,
+            slope_y,
+        )
 
         modeled_positions: list[tuple[int, tuple[float, float]]] = []
         for f in frames:
@@ -142,6 +178,16 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             y_pred = intercept_y + slope_y * f
             modeled_positions.append((f, (x_pred, y_pred)))
 
+        logger.debug(
+            "Track '%s': modellierte Positionen=%s",
+            track.name,
+            [
+                (f, (f"{co[0]:.6f}", f"{co[1]:.6f}"))
+                for f, co in modeled_positions
+            ],
+        )
+
         # Apply the smoothed positions and set the track's motion model
         # to 'Loc' (translation only)【646072811079919†L2217-L2241】.
-        apply_motion_model(track, modeled_positions, motion_model='Loc')
+    apply_motion_model(track, modeled_positions, motion_model='Loc')
+    logger.debug("Track '%s': motion_model auf 'Loc' gesetzt und Werte angewendet.", track.name)
