@@ -14,65 +14,67 @@ from .motion_model_helper import apply_motion_model
 # Bewegungsmodell-Evaluierung (integriert)
 # ==========================================================
 
-def _evaluate_motion_model(marker_positions,
-                           patches=None,
-                           corr_values=None,
-                           threshold_corr=0.85,
-                           epsilon_affine=1e-3,
-                           epsilon_rot=0.01,
-                           epsilon_scale=0.02):
+def _evaluate_motion_model_pairwise(marker_positions, thresh_x=0.001, thresh_y=0.001):
     """
-    marker_positions: [(frame, x, y), ...]
-    patches: optional list of (ndarray) image crops per frame
-    corr_values: optional list of correlation floats
+    Bestimmt das Bewegungsmodell anhand paarweiser Marker-Vergleiche.
+    marker_positions: dict[str, list[tuple[x, y]]]
+        z. B. {"Track.001": [(x1, y1), (x2, y2), ...], "Track.002": [...], ...}
     """
-
-    N = len(marker_positions)
-    if N < 2:
+    markers = list(marker_positions.keys())
+    if len(markers) < 2:
         return "Loc"
 
-    # ======================================================
-    # Einfache geometrische Rotationserkennung
-    # keine Glättung, keine Regression – nur Rohpositionen
-    # ======================================================
+    total_dev_x = 0.0
+    total_dev_y = 0.0
+    total_dev_pos = 0.0
+    pair_count = 0
 
-    pts = np.array([[x, y] for _, x, y in marker_positions], dtype=np.float32)
-    disp = np.diff(pts, axis=0)
-    if len(disp) < 1:
+    for i in range(len(markers)):
+        for j in range(i + 1, len(markers)):
+            mi = marker_positions[markers[i]]
+            mj = marker_positions[markers[j]]
+            if len(mi) != len(mj):
+                continue
+
+            avg_x_values = []
+            avg_y_values = []
+            avg_pos_values = []
+
+            for f in range(len(mi)):
+                m1x, m1y = mi[f]
+                m2x, m2y = mj[f]
+                avg_x = (m1x + m2x) / 2.0
+                avg_y = (m1y + m2y) / 2.0
+                avg_pos = (m1x + m2x + m1y + m2y) / 4.0
+                avg_x_values.append(avg_x)
+                avg_y_values.append(avg_y)
+                avg_pos_values.append(avg_pos)
+
+            # Abweichungen über die Zeit
+            dx_var = max(avg_x_values) - min(avg_x_values)
+            dy_var = max(avg_y_values) - min(avg_y_values)
+            pos_var = max(avg_pos_values) - min(avg_pos_values)
+
+            total_dev_x += dx_var
+            total_dev_y += dy_var
+            total_dev_pos += pos_var
+            pair_count += 1
+
+    if pair_count == 0:
         return "Loc"
 
-    # Gesamtdistanzänderung zwischen erstem und letztem Punkt
-    total_dx = pts[-1, 0] - pts[0, 0]
-    total_dy = pts[-1, 1] - pts[0, 1]
+    mean_dev_x = total_dev_x / pair_count
+    mean_dev_y = total_dev_y / pair_count
+    mean_dev_pos = total_dev_pos / pair_count
 
-    # Lokale Bewegungen pro Frame
-    dx = disp[:, 0]
-    dy = disp[:, 1]
-
-    # Abweichung zwischen Schrittbewegungen und Gesamtbewegung
-    # (zeigt Richtungsänderung an)
-    mean_dx = np.mean(dx)
-    mean_dy = np.mean(dy)
-    dev_x = np.max(np.abs(dx - mean_dx))
-    dev_y = np.max(np.abs(dy - mean_dy))
-
-    # Debug-Ausgabe
-    print(f"[EvalModel] total_dx={total_dx:.6f}, total_dy={total_dy:.6f}, dev_x={dev_x:.6f}, dev_y={dev_y:.6f}")
-
-    # Entscheidungslogik:
-    # Wenn Bewegung konsistent in einer Richtung → Loc
-    # Wenn sich Δx oder Δy über den eingestellten Threshold unterscheiden → LocRot
-    import bpy
-    scene = bpy.context.scene
-    thresh_x = getattr(scene, "kaiserlich_rot_thresh_x", 0.001)
-    thresh_y = getattr(scene, "kaiserlich_rot_thresh_y", 0.001)
-
-    if dev_x > thresh_x or dev_y > thresh_y:
-        model = "LocRot"
+    # Klassifikation
+    if mean_dev_pos < thresh_x and mean_dev_x < thresh_x and mean_dev_y < thresh_y:
+        return "Loc"
+    elif mean_dev_pos < thresh_x and (mean_dev_x > thresh_x or mean_dev_y > thresh_y):
+        return "LocRot"
     else:
-        model = "Loc"
-
-    return model
+        return "Loc"
+      
 def _estimate_affine_from_points(pts):
     """Fallback: einfache Translation aus Start- und Endpunkt."""
     if len(pts) < 2:
