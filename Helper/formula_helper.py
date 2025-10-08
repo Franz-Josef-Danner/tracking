@@ -202,25 +202,39 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             # Falls Marker-Koordinaten aus mehreren Frames bestehen (z. B. mehrere Marker),
             # sammle je Frame die Positionen und vergleiche mittlere Distanzen
             # zwischen erstem und letztem Frame.
-            if len(modeled_positions) >= 2:
-                # Extrahiere alle Marker-Koordinaten der ersten und letzten Frames
-                # (Bei Single-Track-Fit nur eine Position pro Frame)
-                first_dist = _mean_pair_distance([modeled_positions[0][1]])
-                last_dist  = _mean_pair_distance([modeled_positions[-1][1]])
-                rel_diff = abs(last_dist - first_dist) / (first_dist + 1e-9)
+            motion_model = 'Loc'
+            rel_diff = 0.0
 
-                if rel_diff < 0.005 and (abs(slope_x) > 1e-6 or abs(slope_y) > 1e-6):
-                    motion_model = 'LocRot'
-                else:
-                    motion_model = 'Loc'
-            else:
-                motion_model = 'Loc'
+            if len(modeled_positions) >= 3:
+                # Berechne Richtungswinkel zwischen erstem–mittlerem–letztem Punkt
+                (f1, (x1, y1)) = modeled_positions[0]
+                (fm, (xm, ym)) = modeled_positions[len(modeled_positions)//2]
+                (f2, (x2, y2)) = modeled_positions[-1]
+
+                # Richtungsvektoren
+                v1x, v1y = xm - x1, ym - y1
+                v2x, v2y = x2 - xm, y2 - ym
+
+                len1 = (v1x**2 + v1y**2) ** 0.5
+                len2 = (v2x**2 + v2y**2) ** 0.5
+
+                if len1 > 1e-9 and len2 > 1e-9:
+                    dot = (v1x*v2x + v1y*v2y) / (len1 * len2)
+                    dot = max(-1.0, min(1.0, dot))
+                    angle_deg = math.degrees(math.acos(dot))
+
+                    # Wenn sich die Bewegungsrichtung deutlich ändert (z. B. > 8°),
+                    # und die Gesamtdistanzänderung klein bleibt → Rotation.
+                    total_len = ((x2 - x1)**2 + (y2 - y1)**2)**0.5
+                    rel_diff = abs(len2 - len1) / (len1 + 1e-9)
+
+                    if angle_deg > 8.0 and rel_diff < 0.02:
+                        motion_model = 'LocRot'
 
             apply_motion_model(track, modeled_positions, motion_model=motion_model)
 
-            # Debug-Ausgabe
-            print(f"[FormulaHelper] {track.name}: detected motion_model={motion_model} "
-                  f"(rel_diff={rel_diff:.6f})")
+            # Debug-Ausgabe (reduziert)
+            print(f"[FormulaHelper] {track.name}: model={motion_model}")
         except Exception:
             continue
 
