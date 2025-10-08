@@ -43,22 +43,26 @@ from typing import List, Tuple
 from .marker_positions_helper import get_positions
 from .motion_model_helper import apply_motion_model
 
-# Logger für reine Positions- & Ergebnis-Ausgabe
+# Minimaler Logger für Formel-Ergebnis-Ausgaben (Fallback auf print)
 logger = logging.getLogger(__name__)
 
-def _emit_raw(track_name: str, frames: list[int], xs: list[float], ys: list[float]) -> None:
-    """Gibt die Roh-Positionszeile aus (Logger oder Fallback print)."""
-    parts = [f"{f}:{x:.5f},{y:.5f}" for f, x, y in zip(frames, xs, ys)]
-    line = f"RAW {track_name} {' '.join(parts)}"
-    if logger.hasHandlers() and logger.isEnabledFor(logging.INFO):
-        logger.info(line)
-    else:
-        print(line)
+def _emit_fit(track_name: str,
+              frames: list[int],
+              modeled_positions: list[tuple[int, tuple[float, float]]],
+              intercept_x: float, slope_x: float,
+              intercept_y: float, slope_y: float) -> None:
+    """Ausgabe der berechneten Modellwerte für einen Track.
 
-def _emit_fit(track_name: str, modeled_positions: list[tuple[int, tuple[float, float]]]) -> None:
-    """Gibt die Fit-Positionszeile aus (Logger oder Fallback print)."""
-    parts = [f"{f}:{x:.5f},{y:.5f}" for f, (x, y) in modeled_positions]
-    line = f"FIT {track_name} {' '.join(parts)}"
+    Format Beispiel:
+    FIT Track01 ix=0.123456 sx=0.000321 iy=0.456789 sy=-0.000210 positions: 120:0.52310,0.41234 121:0.52342,0.41228
+    """
+    pos_parts = [f"{f}:{x:.5f},{y:.5f}" for f, (x, y) in modeled_positions]
+    line = (
+        f"FIT {track_name} "
+        f"ix={intercept_x:.6f} sx={slope_x:.6f} "
+        f"iy={intercept_y:.6f} sy={slope_y:.6f} "
+        f"frames={frames[0]}..{frames[-1]} n={len(frames)} positions: " + " ".join(pos_parts)
+    )
     if logger.hasHandlers() and logger.isEnabledFor(logging.INFO):
         logger.info(line)
     else:
@@ -155,8 +159,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         xs: List[float] = [co[0] for _, co in positions]
         ys: List[float] = [co[1] for _, co in positions]
 
-        # Roh-Positions-Log (nur diese + Ergebnis erwünscht)
-        _emit_raw(track.name, frames, xs, ys)
+        # (Rohdaten-Logging entfernt – nur Ergebnis wird ausgegeben)
 
         # Fit linear models to x and y coordinates separately.
         intercept_x, slope_x = _linear_regression(frames, xs)
@@ -175,5 +178,13 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         except Exception:
             continue
 
-        # Formel-Ergebnis-Log
-        _emit_fit(track.name, modeled_positions)
+        # Formel-Ergebnis-Log (Ausgabe der modellierten Werte)
+        _emit_fit(
+            track.name,
+            frames,
+            modeled_positions,
+            intercept_x,
+            slope_x,
+            intercept_y,
+            slope_y,
+        )
