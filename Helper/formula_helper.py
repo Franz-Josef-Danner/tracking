@@ -46,6 +46,24 @@ from .motion_model_helper import apply_motion_model
 # Logger für reine Positions- & Ergebnis-Ausgabe
 logger = logging.getLogger(__name__)
 
+def _emit_raw(track_name: str, frames: list[int], xs: list[float], ys: list[float]) -> None:
+    """Gibt die Roh-Positionszeile aus (Logger oder Fallback print)."""
+    parts = [f"{f}:{x:.5f},{y:.5f}" for f, x, y in zip(frames, xs, ys)]
+    line = f"RAW {track_name} {' '.join(parts)}"
+    if logger.hasHandlers() and logger.isEnabledFor(logging.INFO):
+        logger.info(line)
+    else:
+        print(line)
+
+def _emit_fit(track_name: str, modeled_positions: list[tuple[int, tuple[float, float]]]) -> None:
+    """Gibt die Fit-Positionszeile aus (Logger oder Fallback print)."""
+    parts = [f"{f}:{x:.5f},{y:.5f}" for f, (x, y) in modeled_positions]
+    line = f"FIT {track_name} {' '.join(parts)}"
+    if logger.hasHandlers() and logger.isEnabledFor(logging.INFO):
+        logger.info(line)
+    else:
+        print(line)
+
 
 def _linear_regression(frames: List[int], values: List[float]) -> Tuple[float, float]:
     """Compute slope and intercept for a simple linear regression.
@@ -138,11 +156,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         ys: List[float] = [co[1] for _, co in positions]
 
         # Roh-Positions-Log (nur diese + Ergebnis erwünscht)
-        logger.info(
-            "RAW %s %s",
-            track.name,
-            " ".join(f"{f}:{x:.5f},{y:.5f}" for f, (x, y) in zip(frames, [(xv, yv) for xv, yv in zip(xs, ys)])),
-        )
+        _emit_raw(track.name, frames, xs, ys)
 
         # Fit linear models to x and y coordinates separately.
         intercept_x, slope_x = _linear_regression(frames, xs)
@@ -162,10 +176,4 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             continue
 
         # Formel-Ergebnis-Log
-        logger.info(
-            "FIT %s %s",
-            track.name,
-            " ".join(
-                f"{f}:{x:.5f},{y:.5f}" for f, (x, y) in modeled_positions
-            ),
-        )
+        _emit_fit(track.name, modeled_positions)
