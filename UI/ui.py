@@ -45,6 +45,13 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.prop(scene, "kaiserlich_rot_scale_thresh_rot", text="Rot+Scale ΔRot")
         col.prop(scene, "kaiserlich_rot_scale_thresh_scale", text="Rot+Scale ΔScale")
 
+        layout.separator()
+
+        # --- Perspective Thresholds ---
+        layout.label(text="Perspective Thresholds")
+        col = layout.column(align=True)
+        col.prop(scene, "kaiserlich_perspective_thresh", text="Perspective Δ")
+
 
 # ==========================================================
 # Registrierung der UI-Properties
@@ -110,7 +117,15 @@ def register():
         precision=6,
         subtype='FACTOR',
     )
-
+    bpy.types.Scene.kaiserlich_perspective_thresh = bpy.props.FloatProperty(
+        name="Perspective Δ",
+        description="Empfindlichkeit für perspektivische Abweichung (Tiefe/Parallaxe)",
+        default=0.002,
+        min=0.0,
+        soft_max=0.02,
+        precision=6,
+        subtype='FACTOR',
+    )
 
 def unregister():
     for prop in (
@@ -120,6 +135,7 @@ def unregister():
         "kaiserlich_scale_thresh_max",
         "kaiserlich_rot_scale_thresh_rot",
         "kaiserlich_rot_scale_thresh_scale",
+        "kaiserlich_perspective_thresh",
     ):
         if hasattr(bpy.types.Scene, prop):
             delattr(bpy.types.Scene, prop)
