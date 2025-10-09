@@ -42,7 +42,9 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
         (x1, y1), (x2, y2) = all_positions[i], all_positions[i + 1]
         avg_x = (x1 + x2) / 2.0
         avg_y = (y1 + y2) / 2.0
-        rel_dist = (x1 + x2 + y1 + y2) / 4.0  # relativer Abstand
+        # Neue Formel für relativen Abstand:
+        # Richtungsunabhängig, reagiert auf Skalierung und Translation
+        rel_dist = (abs(x1 - x2) + abs(y1 - y2)) / 2.0
         avg_x_values.append(avg_x)
         avg_y_values.append(avg_y)
         rel_distances.append(rel_dist)
