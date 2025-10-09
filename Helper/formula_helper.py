@@ -104,7 +104,6 @@ def _emit_fit(track_name: str,
               intercept_y: float, slope_y: float,
               motion_model: str) -> None:
     """Minimaler Logausgabe: nur Motion Model, keine Fit-Daten."""
-    print(f"[FormulaHelper] {track_name}: angewendet → {motion_model}")
 
 
 def _linear_regression(frames: List[int], values: List[float]) -> Tuple[float, float]:
