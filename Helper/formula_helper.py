@@ -23,39 +23,41 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     Rückgabe:
       - "Loc"       : reine Translation
       - "LocRot"    : Rotation (Abweichung in Bewegungsrichtung)
-      - "LocScale"  : Abstandsänderung zwischen Markern
+      - "LocScale"  : Abstandsänderung (relativer Durchschnittsabstand verändert sich)
     """
     if len(all_positions) < 2:
         print("[EvalPairwise] Zu wenige Marker – return Loc")
         return "Loc"
 
-    # --- Bewegungsdifferenzen berechnen ---
-    diffs = []
-    distances = []
+    # --- Bewegungsdifferenzen und relative Abstände ---
+    rel_distances = []
+    avg_x_values = []
+    avg_y_values = []
+
     for i in range(len(all_positions) - 1):
         (x1, y1), (x2, y2) = all_positions[i], all_positions[i + 1]
-        diffs.append(((x2 - x1), (y2 - y1)))
-        distances.append(math.sqrt((x2 - x1)**2 + (y2 - y1)**2))
+        avg_x = (x1 + x2) / 2.0
+        avg_y = (y1 + y2) / 2.0
+        rel_dist = (x1 + x2 + y1 + y2) / 4.0  # relativer Abstand
+        avg_x_values.append(avg_x)
+        avg_y_values.append(avg_y)
+        rel_distances.append(rel_dist)
 
-    if not diffs:
-        print("[EvalPairwise] Keine gültigen Differenzen – return Loc")
+    if not rel_distances:
+        print("[EvalPairwise] Keine gültigen Werte – return Loc")
         return "Loc"
 
-    # --- Mittelwerte und Varianz ---
-    mean_dx = sum(abs(dx) for dx, _ in diffs) / len(diffs)
-    mean_dy = sum(abs(dy) for _, dy in diffs) / len(diffs)
-    dev_xy = abs(mean_dx - mean_dy)
+    # --- Varianzberechnung ---
+    dx_var = max(avg_x_values) - min(avg_x_values)
+    dy_var = max(avg_y_values) - min(avg_y_values)
+    rel_var = max(rel_distances) - min(rel_distances)
 
-    mean_dist = sum(distances) / len(distances)
-    dev_dist = max(distances) - min(distances)
-
-    print(f"[EvalPairwise] mean_dx={mean_dx:.5f}, mean_dy={mean_dy:.5f}, dev_xy={dev_xy:.5f}, "
-          f"mean_dist={mean_dist:.5f}, dev_dist={dev_dist:.5f}")
+    print(f"[EvalPairwise] dx_var={dx_var:.5f}, dy_var={dy_var:.5f}, rel_var={rel_var:.5f}")
 
     # --- Klassifikation ---
-    if dev_dist > thresh_scale:
+    if rel_var > thresh_scale:
         return "LocScale"
-    elif dev_xy > thresh_rot:
+    elif dx_var > thresh_rot or dy_var > thresh_rot:
         return "LocRot"
     else:
         return "Loc"
@@ -166,7 +168,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         motion_model = _evaluate_motion_model_pairwise(
             all_positions,
             getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
-            getattr(scene, "kaiserlich_scale_thresh", 0.005)
+            getattr(scene, "kaiserlich_scale_thresh_max", 0.005)
         )
 
         print(f"[FormulaHelper] Gemeinsames Modell erkannt: {motion_model}")
