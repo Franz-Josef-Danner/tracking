@@ -165,10 +165,6 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         if active_track:
             selected_tracks = [active_track]
 
-    if not selected_tracks:
-        print("[FormulaHelper] Keine Tracks ausgewählt.")
-        return
-
     current_frame = scene.frame_current
 
     # --- Markerpositionen sammeln ---
@@ -178,10 +174,6 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         if len(positions) < 2:
             continue
         marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
-
-    if len(marker_positions) < 2:
-        print("[FormulaHelper] Zu wenige Marker für Paarvergleich – nur Loc möglich.")
-        return
 
     # --- 1. Globales Modell bestimmen ---
     try:
