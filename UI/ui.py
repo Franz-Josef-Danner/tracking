@@ -15,21 +15,35 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
+        # --- Hauptbereich ---
         col = layout.column(align=True)
         col.prop(scene, "kaiserlich_markers_per_frame", text="Marker per Frame")
         col.operator("kaiserlich_tracker.detect_cycle", text="Detect Cyclus")
         col.operator("kaiserlich_tracker.track_cycle", text="Track Cycle")
 
         layout.separator()
+
+        # --- Rotation Thresholds ---
         layout.label(text="Rotation Thresholds")
         col = layout.column(align=True)
-        # Sicher zeichnen: Props existieren jetzt (werden vor Panel registriert)
         col.prop(scene, "kaiserlich_rot_thresh_x", text="ΔX-Threshold")
         col.prop(scene, "kaiserlich_rot_thresh_y", text="ΔY-Threshold")
 
+        layout.separator()
+
+        # --- Scale Thresholds ---
+        layout.label(text="Scale Thresholds")
+        col = layout.column(align=True)
+        col.prop(scene, "kaiserlich_scale_thresh_min", text="Min Scale Δ")
+        col.prop(scene, "kaiserlich_scale_thresh_max", text="Max Scale Δ")
+
+
+# ==========================================================
+# Registrierung der UI-Properties
+# ==========================================================
 
 def register():
-    # Scene Properties DEFINIEREN (keine Klassenregistrierung hier)
+    # Rotation Thresholds
     bpy.types.Scene.kaiserlich_rot_thresh_x = bpy.props.FloatProperty(
         name="ΔX Threshold",
         description="Minimaler ΔX-Unterschied zur Erkennung von Rotation",
@@ -49,8 +63,33 @@ def register():
         subtype='FACTOR',
     )
 
+    # Scale Thresholds (neu)
+    bpy.types.Scene.kaiserlich_scale_thresh_min = bpy.props.FloatProperty(
+        name="Min Scale Δ",
+        description="Minimale Abstandsänderung zur Erkennung von Skalierung",
+        default=0.002,
+        min=0.0,
+        soft_max=0.02,
+        precision=6,
+        subtype='FACTOR',
+    )
+    bpy.types.Scene.kaiserlich_scale_thresh_max = bpy.props.FloatProperty(
+        name="Max Scale Δ",
+        description="Maximale Abstandsänderung, bevor Skalierung als instabil gilt",
+        default=0.010,
+        min=0.0,
+        soft_max=0.05,
+        precision=6,
+        subtype='FACTOR',
+    )
+
+
 def unregister():
-    if hasattr(bpy.types.Scene, "kaiserlich_rot_thresh_x"):
-        del bpy.types.Scene.kaiserlich_rot_thresh_x
-    if hasattr(bpy.types.Scene, "kaiserlich_rot_thresh_y"):
-        del bpy.types.Scene.kaiserlich_rot_thresh_y
+    for prop in (
+        "kaiserlich_rot_thresh_x",
+        "kaiserlich_rot_thresh_y",
+        "kaiserlich_scale_thresh_min",
+        "kaiserlich_scale_thresh_max",
+    ):
+        if hasattr(bpy.types.Scene, prop):
+            delattr(bpy.types.Scene, prop)
