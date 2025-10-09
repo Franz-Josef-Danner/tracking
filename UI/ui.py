@@ -37,6 +37,14 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.prop(scene, "kaiserlich_scale_thresh_min", text="Min Scale Δ")
         col.prop(scene, "kaiserlich_scale_thresh_max", text="Max Scale Δ")
 
+        layout.separator()
+
+        # --- LocRotScale Thresholds ---
+        layout.label(text="LocRotScale Thresholds")
+        col = layout.column(align=True)
+        col.prop(scene, "kaiserlich_rot_scale_thresh_rot", text="Rot+Scale ΔRot")
+        col.prop(scene, "kaiserlich_rot_scale_thresh_scale", text="Rot+Scale ΔScale")
+
 
 # ==========================================================
 # Registrierung der UI-Properties
@@ -63,7 +71,7 @@ def register():
         subtype='FACTOR',
     )
 
-    # Scale Thresholds (neu)
+    # Scale Thresholds
     bpy.types.Scene.kaiserlich_scale_thresh_min = bpy.props.FloatProperty(
         name="Min Scale Δ",
         description="Minimale Abstandsänderung zur Erkennung von Skalierung",
@@ -83,6 +91,26 @@ def register():
         subtype='FACTOR',
     )
 
+    # LocRotScale Thresholds (neu)
+    bpy.types.Scene.kaiserlich_rot_scale_thresh_rot = bpy.props.FloatProperty(
+        name="Rot+Scale ΔRot",
+        description="Empfindlichkeit für kombinierte Rotation und Skalierung (Rotationsteil)",
+        default=0.002,
+        min=0.0,
+        soft_max=0.02,
+        precision=6,
+        subtype='FACTOR',
+    )
+    bpy.types.Scene.kaiserlich_rot_scale_thresh_scale = bpy.props.FloatProperty(
+        name="Rot+Scale ΔScale",
+        description="Empfindlichkeit für kombinierte Rotation und Skalierung (Skalierungsteil)",
+        default=0.005,
+        min=0.0,
+        soft_max=0.02,
+        precision=6,
+        subtype='FACTOR',
+    )
+
 
 def unregister():
     for prop in (
@@ -90,6 +118,8 @@ def unregister():
         "kaiserlich_rot_thresh_y",
         "kaiserlich_scale_thresh_min",
         "kaiserlich_scale_thresh_max",
+        "kaiserlich_rot_scale_thresh_rot",
+        "kaiserlich_rot_scale_thresh_scale",
     ):
         if hasattr(bpy.types.Scene, prop):
             delattr(bpy.types.Scene, prop)
