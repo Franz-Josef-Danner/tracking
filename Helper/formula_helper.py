@@ -26,11 +26,10 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     Rückgabe:
       - "Loc"          : reine Translation
       - "LocRot"       : Rotation (Abweichung in Bewegungsrichtung)
-      - "LocScale"     : Abstandsänderung (relativer Durchschnittsabstand verändert sich)
+      - "LocScale"     : Abstandsänderung (relativer Abstand verändert sich)
       - "LocRotScale"  : Kombination aus beidem (Rotation UND Skalierung aktiv)
     """
     if len(all_positions) < 2:
-        print("[EvalPairwise] Zu wenige Marker – return Loc")
         return "Loc"
 
     # --- Bewegungsdifferenzen und relative Abstände ---
@@ -42,15 +41,13 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
         (x1, y1), (x2, y2) = all_positions[i], all_positions[i + 1]
         avg_x = (x1 + x2) / 2.0
         avg_y = (y1 + y2) / 2.0
-        # Neue Formel für relativen Abstand:
-        # Richtungsunabhängig, reagiert auf Skalierung und Translation
+        # neue, saubere Distanzformel
         rel_dist = (abs(x1 - x2) + abs(y1 - y2)) / 2.0
         avg_x_values.append(avg_x)
         avg_y_values.append(avg_y)
         rel_distances.append(rel_dist)
 
     if not rel_distances:
-        print("[EvalPairwise] Keine gültigen Werte – return Loc")
         return "Loc"
 
     # --- Varianzberechnung ---
@@ -58,31 +55,26 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     dy_var = max(avg_y_values) - min(avg_y_values)
     rel_var = max(rel_distances) - min(rel_distances)
 
-    print(f"[EvalPairwise] dx_var={dx_var:.5f}, dy_var={dy_var:.5f}, rel_var={rel_var:.5f}")
-    print(f"[EvalPairwise] Thresholds → rot={thresh_rot:.5f}, scale={thresh_scale:.5f}, "
-          f"rot_scale_rot={thresh_rot_scale_rot:.5f}, rot_scale_scale={thresh_rot_scale_scale:.5f}")
-
     # ==========================================================
-    # Entscheidungslogik (revised)
+    # Entscheidungslogik (ohne Debug-Spam)
     # ==========================================================
-
-    # 1. Kombination: Nur wenn Rotation UND Skalierung signifikant abweichen
     if (
         rel_var > thresh_rot_scale_scale
         and (dx_var > thresh_rot_scale_rot or dy_var > thresh_rot_scale_rot)
     ):
+        print("[FormulaHelper] → LocRotScale (Rotation + Skalierung erkannt)")
         return "LocRotScale"
 
-    # 2. Nur Skalierung
     elif rel_var > thresh_scale:
+        print("[FormulaHelper] → LocScale (Skalierung erkannt)")
         return "LocScale"
 
-    # 3. Nur Rotation
     elif dx_var > thresh_rot or dy_var > thresh_rot:
+        print("[FormulaHelper] → LocRot (Rotation erkannt)")
         return "LocRot"
 
-    # 4. Keine signifikante Veränderung
     else:
+        print("[FormulaHelper] → Loc (stabile Bewegung)")
         return "Loc"
 
 
