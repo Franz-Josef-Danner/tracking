@@ -101,19 +101,10 @@ def _emit_fit(track_name: str,
               frames: list[int],
               modeled_positions: list[tuple[int, tuple[float, float]]],
               intercept_x: float, slope_x: float,
-              intercept_y: float, slope_y: float) -> None:
-    """Ausgabe der berechneten Modellwerte für einen Track."""
-    pos_parts = [f"{f}:{x:.5f},{y:.5f}" for f, (x, y) in modeled_positions]
-    line = (
-        f"FIT {track_name} "
-        f"ix={intercept_x:.6f} sx={slope_x:.6f} "
-        f"iy={intercept_y:.6f} sy={slope_y:.6f} "
-        f"frames={frames[0]}..{frames[-1]} n={len(frames)} positions: " + " ".join(pos_parts)
-    )
-    if logger.hasHandlers() and logger.isEnabledFor(logging.INFO):
-        logger.info(line)
-    else:
-        print(line)
+              intercept_y: float, slope_y: float,
+              motion_model: str) -> None:
+    """Minimaler Logausgabe: nur Motion Model, keine Fit-Daten."""
+    print(f"[FormulaHelper] {track_name}: angewendet → {motion_model}")
 
 
 def _linear_regression(frames: List[int], values: List[float]) -> Tuple[float, float]:
