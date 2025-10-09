@@ -16,7 +16,10 @@ from .motion_model_helper import apply_motion_model
 
 def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
                                     thresh_rot: float = 0.002,
-                                    thresh_scale: float = 0.005) -> str:
+                                    thresh_scale: float = 0.005,
+                                    thresh_rot_scale_rot: float = 0.002,
+                                    thresh_rot_scale_scale: float = 0.005) -> str:
+
     """
     Bestimmt das Bewegungsmodell anhand paarweiser Vergleiche der Markerpositionen.
 
@@ -53,15 +56,19 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     rel_var = max(rel_distances) - min(rel_distances)
 
     print(f"[EvalPairwise] dx_var={dx_var:.5f}, dy_var={dy_var:.5f}, rel_var={rel_var:.5f}")
+    
+    print(f"[EvalPairwise] Thresholds → rot={thresh_rot:.5f}, scale={thresh_scale:.5f}, "
+          f"rot_scale_rot={thresh_rot_scale_rot:.5f}, rot_scale_scale={thresh_rot_scale_scale:.5f}")
 
     # --- Klassifikation ---
-    if rel_var > thresh_scale:
+    if rel_var > thresh_rot_scale_scale and (dx_var > thresh_rot_scale_rot or dy_var > thresh_rot_scale_rot):
+        return "LocRotScale"
+    elif rel_var > thresh_scale:
         return "LocScale"
     elif dx_var > thresh_rot or dy_var > thresh_rot:
         return "LocRot"
     else:
         return "Loc"
-
 
 # ==========================================================
 # Hilfsfunktionen & Logging
@@ -168,7 +175,9 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         motion_model = _evaluate_motion_model_pairwise(
             all_positions,
             getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
-            getattr(scene, "kaiserlich_scale_thresh_max", 0.005)
+            getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
+            getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002),
+            getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
         )
 
         print(f"[FormulaHelper] Gemeinsames Modell erkannt: {motion_model}")
