@@ -176,9 +176,13 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
         )
 
-        # --- 2. Perspektive prüfen ---
-        _, perspective_dev = _detect_perspective_motion(marker_positions, perspective_thresh=0.002)
-        if perspective_dev > 0.002:
+
+        # --- 2. Perspektive prüfen (global)
+        _, perspective_dev = _detect_perspective_motion(
+            marker_positions,
+            getattr(scene, "kaiserlich_perspective_thresh", 0.002)
+        )
+        if perspective_dev > getattr(scene, "kaiserlich_perspective_thresh", 0.002):
             global_model = "Perspective"
 
         # --- 3. Pro Track anwenden ---
@@ -186,6 +190,13 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             positions = get_positions(track, current_frame, max_frames=max_frames)
             if len(positions) < 2:
                 continue
+            # Perspektive auch für Einzeln-Marker prüfen
+            _, p_dev_single = _detect_perspective_motion(
+                {track.name: [(x, y) for _, (x, y) in positions]},
+                getattr(scene, "kaiserlich_perspective_thresh", 0.002)
+            )
+            if p_dev_single > getattr(scene, "kaiserlich_perspective_thresh", 0.002):
+                individual_model = "Perspective"
 
             individual_model = _evaluate_motion_model_pairwise(
                 [(x, y) for _, (x, y) in positions],
