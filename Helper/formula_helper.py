@@ -57,11 +57,60 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
 
 
 # ==========================================================
-# Logging-Funktion (nur Motion Model)
+# Perspective-Erkennung (Mittelpunktanalyse)
+# ==========================================================
+
+def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, float]]],
+                               perspective_thresh: float = 0.002) -> tuple[str | None, float]:
+    """Bestimmt Mittelpunkt-Marker und prüft perspektivische Abweichung."""
+    if not marker_positions:
+        return None, 0.0
+
+    # 1. Bewegungslänge pro Marker (mpd_i)
+    total_movement = {}
+    for name, positions in marker_positions.items():
+        if len(positions) < 2:
+            continue
+        mpf_values = [(x + y) / 2.0 for x, y in positions]
+        mpd_i = sum(abs(mpf_values[i+1] - mpf_values[i]) for i in range(len(mpf_values) - 1))
+        total_movement[name] = mpd_i
+
+    if not total_movement:
+        return None, 0.0
+
+    # 2. Mittelpunkt = Marker mit geringster Bewegung
+    center_marker = min(total_movement, key=total_movement.get)
+    center_positions = marker_positions[center_marker]
+    mmx = sum(x for x, _ in center_positions) / len(center_positions)
+    mmy = sum(y for _, y in center_positions) / len(center_positions)
+
+    # 3. Abstände zum Mittelpunkt & Veränderung (mv_i)
+    mv_values = {}
+    for name, positions in marker_positions.items():
+        md_list = [(abs(mmx - x) + abs(mmy - y)) / 2.0 for x, y in positions]
+        mv_i = sum(md_list[i] - md_list[i + 1] for i in range(len(md_list) - 1))
+        mv_values[name] = mv_i
+
+    mvth = sum(abs(v) for v in mv_values.values()) / len(mv_values)
+
+    # 4. Abweichung prüfen
+    max_dev = 0.0
+    for mv_i in mv_values.values():
+        mvc_i = abs(mv_i - mvth)
+        max_dev = max(max_dev, mvc_i)
+
+    if max_dev > perspective_thresh:
+        print(f"[FormulaHelper] Perspective erkannt (Abweichung {max_dev:.6f})")
+        return center_marker, max_dev
+
+    return center_marker, 0.0
+
+
+# ==========================================================
+# Logging-Funktion
 # ==========================================================
 
 def _emit_fit(track_name: str, motion_model: str) -> None:
-    """Nur Motion Model Log – keine Fit- oder Positionsdaten."""
     print(f"[FormulaHelper] {track_name}: {motion_model}")
 
 
@@ -84,11 +133,11 @@ def _linear_regression(frames: List[int], values: List[float]) -> Tuple[float, f
 
 
 # ==========================================================
-# Hauptlogik – Hybrid-Auswertung
+# Hauptlogik – Hybrid-Auswertung + Perspective
 # ==========================================================
 
 def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
-    """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale)."""
+    """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
         return
@@ -111,7 +160,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         if len(positions) >= 2:
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
 
-    # --- Globales Modell ---
+    # --- 1. Globales Modell ---
     try:
         all_positions = []
         for pts in marker_positions.values():
@@ -127,7 +176,12 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
         )
 
-        # --- Pro Track ---
+        # --- 2. Perspektive prüfen ---
+        _, perspective_dev = _detect_perspective_motion(marker_positions, perspective_thresh=0.002)
+        if perspective_dev > 0.002:
+            global_model = "Perspective"
+
+        # --- 3. Pro Track anwenden ---
         for track in selected_tracks:
             positions = get_positions(track, current_frame, max_frames=max_frames)
             if len(positions) < 2:
