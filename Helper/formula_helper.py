@@ -20,13 +20,23 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
                                     thresh_scale: float = 0.005,
                                     thresh_rot_scale_rot: float = 0.002,
                                     thresh_rot_scale_scale: float = 0.005) -> str:
-    """Bestimmt das Bewegungsmodell anhand paarweiser Vergleiche der Markerpositionen."""
+    """
+    Bestimmt das Bewegungsmodell anhand paarweiser Vergleiche der Markerpositionen.
 
+    Rückgabe:
+      - "Loc"          : reine Translation
+      - "LocRot"       : Rotation (Abweichung in Bewegungsrichtung)
+      - "LocScale"     : Abstandsänderung (relativer Durchschnittsabstand verändert sich)
+      - "LocRotScale"  : Kombination aus beidem (Rotation UND Skalierung aktiv)
+    """
     if len(all_positions) < 2:
         print("[EvalPairwise] Zu wenige Marker – return Loc")
         return "Loc"
 
-    rel_distances, avg_x_values, avg_y_values = [], [], []
+    # --- Bewegungsdifferenzen und relative Abstände ---
+    rel_distances = []
+    avg_x_values = []
+    avg_y_values = []
 
     for i in range(len(all_positions) - 1):
         (x1, y1), (x2, y2) = all_positions[i], all_positions[i + 1]
@@ -38,8 +48,10 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
         rel_distances.append(rel_dist)
 
     if not rel_distances:
+        print("[EvalPairwise] Keine gültigen Werte – return Loc")
         return "Loc"
 
+    # --- Varianzberechnung ---
     dx_var = max(avg_x_values) - min(avg_x_values)
     dy_var = max(avg_y_values) - min(avg_y_values)
     rel_var = max(rel_distances) - min(rel_distances)
@@ -48,13 +60,26 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     print(f"[EvalPairwise] Thresholds → rot={thresh_rot:.5f}, scale={thresh_scale:.5f}, "
           f"rot_scale_rot={thresh_rot_scale_rot:.5f}, rot_scale_scale={thresh_rot_scale_scale:.5f}")
 
-    # --- Klassifikation ---
-    if rel_var > thresh_rot_scale_scale and (dx_var > thresh_rot_scale_rot or dy_var > thresh_rot_scale_rot):
+    # ==========================================================
+    # Entscheidungslogik (revised)
+    # ==========================================================
+
+    # 1. Kombination: Nur wenn Rotation UND Skalierung signifikant abweichen
+    if (
+        rel_var > thresh_rot_scale_scale
+        and (dx_var > thresh_rot_scale_rot or dy_var > thresh_rot_scale_rot)
+    ):
         return "LocRotScale"
+
+    # 2. Nur Skalierung
     elif rel_var > thresh_scale:
         return "LocScale"
+
+    # 3. Nur Rotation
     elif dx_var > thresh_rot or dy_var > thresh_rot:
         return "LocRot"
+
+    # 4. Keine signifikante Veränderung
     else:
         return "Loc"
 
