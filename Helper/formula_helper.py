@@ -82,16 +82,10 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
 # Hilfsfunktionen & Logging
 # ==========================================================
 
-def _estimate_affine_from_points(pts):
-    """Fallback: einfache Translation aus Start- und Endpunkt."""
-    if len(pts) < 2:
-        return np.eye(3, dtype=np.float32)
-    p0, p1 = pts[0], pts[-1]
-    dx, dy = p1 - p0
-    H = np.eye(3, dtype=np.float32)
-    H[0, 2] = dx
-    H[1, 2] = dy
-    return H
+def _emit_fit(track_name: str, motion_model: str) -> None:
+    """Nur Motion Model Log – keine Fit- oder Positionsdaten."""
+    print(f"[FormulaHelper] {track_name}: {motion_model}")
+
 
 
 ENABLE_FORMULA_SMOOTHING = True
@@ -132,13 +126,11 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     """
     
     if not ENABLE_FORMULA_SMOOTHING:
-        print("[FormulaHelper] Glättung deaktiviert – überspringe.")
         return
 
     scene = context.scene
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
-        print("[FormulaHelper] Kein aktiver Clip gefunden.")
         return
 
     selected_tracks = [t for t in clip.tracking.tracks if t.select]
