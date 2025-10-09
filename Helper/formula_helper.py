@@ -190,14 +190,8 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             positions = get_positions(track, current_frame, max_frames=max_frames)
             if len(positions) < 2:
                 continue
-            # Perspektive auch für Einzeln-Marker prüfen
-            _, p_dev_single = _detect_perspective_motion(
-                {track.name: [(x, y) for _, (x, y) in positions]},
-                getattr(scene, "kaiserlich_perspective_thresh", 0.002)
-            )
-            if p_dev_single > getattr(scene, "kaiserlich_perspective_thresh", 0.002):
-                individual_model = "Perspective"
-
+        
+            # Basisbewertung
             individual_model = _evaluate_motion_model_pairwise(
                 [(x, y) for _, (x, y) in positions],
                 getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
@@ -205,6 +199,19 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
                 getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002),
                 getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
             )
+        
+            # Perspektive separat prüfen (danach Priorität)
+            _, p_dev_single = _detect_perspective_motion(
+                {track.name: [(x, y) for _, (x, y) in positions]},
+                getattr(scene, "kaiserlich_perspective_thresh", 0.002)
+            )
+        
+            if p_dev_single > getattr(scene, "kaiserlich_perspective_thresh", 0.002):
+                individual_model = "Perspective"
+        
+            # Kombinierte Entscheidung
+            motion_model = "Perspective" if global_model == "Perspective" or individual_model == "Perspective" else individual_model
+
 
             motion_model = individual_model if individual_model != global_model else global_model
 
