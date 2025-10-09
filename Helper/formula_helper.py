@@ -4,47 +4,66 @@ import bpy
 import logging
 from typing import List, Tuple
 import numpy as np
+import math
 import traceback
 
 from .marker_positions_helper import get_positions
 from .motion_model_helper import apply_motion_model
 
 # ==========================================================
-# Bewegungsmodell-Evaluierung (integriert)
+# Bewegungsmodell-Evaluierung (Loc, LocRot, LocScale)
 # ==========================================================
 
 def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
                                     thresh_rot: float = 0.002,
-                                    thresh_locrot: float = 0.01) -> str:
+                                    thresh_scale: float = 0.005) -> str:
     """
     Bestimmt das Bewegungsmodell anhand paarweiser Vergleiche der Markerpositionen.
-    Für Testzwecke werden nur zwei Modelle unterschieden: Loc und LocRot.
+
+    Rückgabe:
+      - "Loc"       : reine Translation
+      - "LocRot"    : Rotation (Abweichung in Bewegungsrichtung)
+      - "LocScale"  : Abstandsänderung zwischen Markern
     """
     if len(all_positions) < 2:
         print("[EvalPairwise] Zu wenige Marker – return Loc")
         return "Loc"
 
+    # --- Bewegungsdifferenzen berechnen ---
     diffs = []
+    distances = []
     for i in range(len(all_positions) - 1):
         (x1, y1), (x2, y2) = all_positions[i], all_positions[i + 1]
         diffs.append(((x2 - x1), (y2 - y1)))
+        distances.append(math.sqrt((x2 - x1)**2 + (y2 - y1)**2))
 
     if not diffs:
         print("[EvalPairwise] Keine gültigen Differenzen – return Loc")
         return "Loc"
 
+    # --- Mittelwerte und Varianz ---
     mean_dx = sum(abs(dx) for dx, _ in diffs) / len(diffs)
     mean_dy = sum(abs(dy) for _, dy in diffs) / len(diffs)
     dev_xy = abs(mean_dx - mean_dy)
 
-    print(f"[EvalPairwise] mean_dx={mean_dx:.5f}, mean_dy={mean_dy:.5f}, dev_xy={dev_xy:.5f}")
+    mean_dist = sum(distances) / len(distances)
+    dev_dist = max(distances) - min(distances)
 
-    # Nur Loc und LocRot zulassen
-    if dev_xy < thresh_rot:
-        return "Loc"
-    else:
+    print(f"[EvalPairwise] mean_dx={mean_dx:.5f}, mean_dy={mean_dy:.5f}, dev_xy={dev_xy:.5f}, "
+          f"mean_dist={mean_dist:.5f}, dev_dist={dev_dist:.5f}")
+
+    # --- Klassifikation ---
+    if dev_dist > thresh_scale:
+        return "LocScale"
+    elif dev_xy > thresh_rot:
         return "LocRot"
+    else:
+        return "Loc"
 
+
+# ==========================================================
+# Hilfsfunktionen & Logging
+# ==========================================================
 
 def _estimate_affine_from_points(pts):
     """Fallback: einfache Translation aus Start- und Endpunkt."""
@@ -58,7 +77,6 @@ def _estimate_affine_from_points(pts):
     return H
 
 
-# Globaler Schalter zum schnellen (De-)Aktivieren der Glättung.
 ENABLE_FORMULA_SMOOTHING = True
 logger = logging.getLogger(__name__)
 
@@ -96,8 +114,12 @@ def _linear_regression(frames: List[int], values: List[float]) -> Tuple[float, f
     return intercept, slope
 
 
-def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 50) -> None:
-    """Analysiert die Markerbewegung und setzt das passende Motion Model (nur Loc / LocRot)."""
+# ==========================================================
+# Hauptlogik – Auswertung der ausgewählten Marker
+# ==========================================================
+
+def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
+    """Analysiert die Markerbewegung und setzt das passende Motion Model (Loc / LocRot / LocScale)."""
     
     if not ENABLE_FORMULA_SMOOTHING:
         print("[FormulaHelper] Glättung deaktiviert – überspringe.")
@@ -144,7 +166,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         motion_model = _evaluate_motion_model_pairwise(
             all_positions,
             getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
-            getattr(scene, "kaiserlich_rot_thresh_y", 0.01)
+            getattr(scene, "kaiserlich_scale_thresh", 0.005)
         )
 
         print(f"[FormulaHelper] Gemeinsames Modell erkannt: {motion_model}")
