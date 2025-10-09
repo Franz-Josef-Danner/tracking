@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import bpy
-import logging
 from typing import List, Tuple
 import numpy as np
 import math
@@ -20,19 +19,10 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
                                     thresh_scale: float = 0.005,
                                     thresh_rot_scale_rot: float = 0.002,
                                     thresh_rot_scale_scale: float = 0.005) -> str:
-    """
-    Bestimmt das Bewegungsmodell anhand paarweiser Vergleiche der Markerpositionen.
-
-    Rückgabe:
-      - "Loc"          : reine Translation
-      - "LocRot"       : Rotation (Abweichung in Bewegungsrichtung)
-      - "LocScale"     : Abstandsänderung (relativer Abstand verändert sich)
-      - "LocRotScale"  : Kombination aus beidem (Rotation UND Skalierung aktiv)
-    """
+    """Bestimmt das Bewegungsmodell anhand paarweiser Vergleiche der Markerpositionen."""
     if len(all_positions) < 2:
         return "Loc"
 
-    # --- Bewegungsdifferenzen und relative Abstände ---
     rel_distances = []
     avg_x_values = []
     avg_y_values = []
@@ -41,7 +31,6 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
         (x1, y1), (x2, y2) = all_positions[i], all_positions[i + 1]
         avg_x = (x1 + x2) / 2.0
         avg_y = (y1 + y2) / 2.0
-        # neue, saubere Distanzformel
         rel_dist = (abs(x1 - x2) + abs(y1 - y2)) / 2.0
         avg_x_values.append(avg_x)
         avg_y_values.append(avg_y)
@@ -50,36 +39,25 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     if not rel_distances:
         return "Loc"
 
-    # --- Varianzberechnung ---
     dx_var = max(avg_x_values) - min(avg_x_values)
     dy_var = max(avg_y_values) - min(avg_y_values)
     rel_var = max(rel_distances) - min(rel_distances)
 
-    # ==========================================================
-    # Entscheidungslogik (ohne Debug-Spam)
-    # ==========================================================
     if (
         rel_var > thresh_rot_scale_scale
         and (dx_var > thresh_rot_scale_rot or dy_var > thresh_rot_scale_rot)
     ):
-        print("[FormulaHelper] → LocRotScale (Rotation + Skalierung erkannt)")
         return "LocRotScale"
-
     elif rel_var > thresh_scale:
-        print("[FormulaHelper] → LocScale (Skalierung erkannt)")
         return "LocScale"
-
     elif dx_var > thresh_rot or dy_var > thresh_rot:
-        print("[FormulaHelper] → LocRot (Rotation erkannt)")
         return "LocRot"
-
     else:
-        print("[FormulaHelper] → Loc (stabile Bewegung)")
         return "Loc"
 
 
 # ==========================================================
-# Hilfsfunktionen & Logging
+# Logging-Funktion (nur Motion Model)
 # ==========================================================
 
 def _emit_fit(track_name: str, motion_model: str) -> None:
@@ -87,21 +65,11 @@ def _emit_fit(track_name: str, motion_model: str) -> None:
     print(f"[FormulaHelper] {track_name}: {motion_model}")
 
 
-
-ENABLE_FORMULA_SMOOTHING = True
-logger = logging.getLogger(__name__)
-
-def _emit_fit(track_name: str,
-              frames: list[int],
-              modeled_positions: list[tuple[int, tuple[float, float]]],
-              intercept_x: float, slope_x: float,
-              intercept_y: float, slope_y: float,
-              motion_model: str) -> None:
-    """Minimaler Logausgabe: nur Motion Model, keine Fit-Daten."""
-
+# ==========================================================
+# Hilfsfunktionen
+# ==========================================================
 
 def _linear_regression(frames: List[int], values: List[float]) -> Tuple[float, float]:
-    """Compute slope and intercept for a simple linear regression."""
     n = len(frames)
     if n == 0:
         return 0.0, 0.0
@@ -120,24 +88,19 @@ def _linear_regression(frames: List[int], values: List[float]) -> Tuple[float, f
 # ==========================================================
 
 def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
-    """
-    Analysiert die Markerbewegung und setzt das passende Motion Model (Loc / LocRot / LocScale / LocRotScale).
-    Hybrid-Variante: Globales Modell + individuelle Korrektur pro Marker bei Abweichung.
-    """
-    
-    if not ENABLE_FORMULA_SMOOTHING:
-        return
-
-    scene = context.scene
+    """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
         return
 
+    scene = context.scene
     selected_tracks = [t for t in clip.tracking.tracks if t.select]
     if not selected_tracks:
         active_track = clip.tracking.tracks.active
         if active_track:
             selected_tracks = [active_track]
+    if not selected_tracks:
+        return
 
     current_frame = scene.frame_current
 
@@ -145,16 +108,13 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     marker_positions = {}
     for track in selected_tracks:
         positions = get_positions(track, current_frame, max_frames=max_frames)
-        if len(positions) < 2:
-            continue
-        marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
+        if len(positions) >= 2:
+            marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
 
-    # --- 1. Globales Modell bestimmen ---
+    # --- Globales Modell ---
     try:
         all_positions = []
         for pts in marker_positions.values():
-            if not pts:
-                continue
             mean_x = sum(x for x, _ in pts) / len(pts)
             mean_y = sum(y for _, y in pts) / len(pts)
             all_positions.append((mean_x, mean_y))
@@ -167,9 +127,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
         )
 
-        print(f"[FormulaHelper] Globales Modell erkannt: {global_model}")
-
-        # --- 2. Pro Marker Abweichung prüfen ---
+        # --- Pro Track ---
         for track in selected_tracks:
             positions = get_positions(track, current_frame, max_frames=max_frames)
             if len(positions) < 2:
@@ -183,42 +141,21 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
                 getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
             )
 
-            # Wenn Marker deutlich abweicht → eigenes Modell übernehmen
-            if individual_model != global_model:
-                print(f"[FormulaHelper] {track.name}: individuelle Abweichung → {individual_model}")
-                motion_model = individual_model
-            else:
-                motion_model = global_model
+            motion_model = individual_model if individual_model != global_model else global_model
 
-            # --- Lineare Regression & Anwendung ---
-            frames: List[int] = [frame for frame, _co in positions]
-            xs: List[float] = [co[0] for _, co in positions]
-            ys: List[float] = [co[1] for _, co in positions]
+            frames = [frame for frame, _ in positions]
+            xs = [co[0] for _, co in positions]
+            ys = [co[1] for _, co in positions]
 
             intercept_x, slope_x = _linear_regression(frames, xs)
             intercept_y, slope_y = _linear_regression(frames, ys)
 
-            modeled_positions: list[tuple[int, tuple[float, float]]] = []
-            for f in frames:
-                x_pred = intercept_x + slope_x * f
-                y_pred = intercept_y + slope_y * f
-                modeled_positions.append((f, (x_pred, y_pred)))
+            modeled_positions = [(f, (intercept_x + slope_x * f, intercept_y + slope_y * f))
+                                 for f in frames]
 
             apply_motion_model(track, modeled_positions, motion_model=motion_model)
-            print(f"[FormulaHelper] {track.name}: angewendet → {motion_model}")
-
-            _emit_fit(
-                track.name,
-                frames,
-                modeled_positions,
-                intercept_x,
-                slope_x,
-                intercept_y,
-                slope_y,
-            )
+            _emit_fit(track.name, motion_model)
 
     except Exception as e:
-        print("[FormulaHelper] *** motion_model_eval Exception ***")
-        print(f"Type: {type(e).__name__}, Message: {e}")
+        print(f"[FormulaHelper] Fehler: {e}")
         print(traceback.format_exc())
-        return
