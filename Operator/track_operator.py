@@ -84,10 +84,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
     )
 
 
-    def _log(self, *msg):
-        if self.verbose:
-            print("[Kaiserlich Tracker][Track]", *msg)
-
     # --------------------------------------------------------
 
     def execute(self, context):
@@ -119,22 +115,6 @@ if __name__ == "__main__":
 # ---------------------------------------------------------------------------
 
 def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn=None):
-    """Implementiert den in der Spezifikation beschriebenen Tracking-Zyklus.
-
-    Schritte:
-        INIT scene, clip, tracking
-        Validierungen – bei Fehler → CANCELLED
-        Start-/End-Frames ermitteln
-        Selektierte Tracks sammeln
-        Clip-Editor-Kontext finden für Override
-        Schleife: frameweise track_markers aufrufen
-            - Bewegungsmodell aus letzten N (≤10) Frames jedes aktiven Tracks evaluieren
-            - Abbruchbedingungen prüfen
-            - verlorene Tracks entfernen
-    """
-    def _log(*a):
-        if verbose:
-            print("[Kaiserlich Tracker][Cycle]", *a)
 
     scene = context.scene
     clip = getattr(context.space_data, "clip", None)
