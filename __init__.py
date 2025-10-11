@@ -11,7 +11,7 @@ bl_info = {
 import bpy
 from .UI.ui import KAISERLICHTRACKER_PT_panel
 from .Operator.detect_operator import KAISERLICHTRACKER_OT_detect_cycle
-from .Operator.track_operator import KAISERLICHTRACKER_OT_track_cycle
+from .Operator.track_operator import KAISERLICHTRACKER_OT_auto_calibrate
 from .Operator.auto_calibrate_operator import KAISERLICHTRACKER_OT_auto_calibrate
 classes = (
     KAISERLICHTRACKER_OT_detect_cycle,
