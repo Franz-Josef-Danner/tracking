@@ -71,7 +71,15 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         reset_to_frame(context, start_frame)
 
         try:
-            bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+            from ..Helper.delete import _find_clip_editor_area
+            
+            window, area, region, space = _find_clip_editor_area(context.space_data.clip)
+            if window and area and region:
+                override = {"window": window, "screen": window.screen,
+                            "area": area, "region": region, "space_data": space}
+                bpy.ops.kaiserlich_tracker.track_cycle(override, max_frames=0, verbose=False)
+            else:
+                self._log("Warnung: Kein CLIP_EDITOR-Kontext für track_cycle gefunden")
         except Exception as e:
             self._log("Fehler beim initialen Tracking:", e)
             return {"CANCELLED"}
