@@ -152,53 +152,72 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 cycle = 1
                 self._log(f"\n--- Stufe {step:+.0%} gestartet ---")
 
-                while True:
-                    current_value = getattr(scene, prop_name)
-                    new_value = max(current_value * factor, self.MIN_THRESHOLD)
-                    setattr(scene, prop_name, new_value)
+               while True:
+                   current_value = getattr(scene, prop_name)
+                   new_value = max(current_value * factor, self.MIN_THRESHOLD)
+                   setattr(scene, prop_name, new_value)
+               
+                   _restore_selection()
+                   reset_to_frame(context, start_frame)
+                   try:
+                       bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                   except Exception as e:
+                       self._log(f"Fehler in {prop_name} Stufe {step:+.0%}: {e}")
+                       setattr(scene, prop_name, best_value)
+                       break
+               
+                   new_length = get_total_track_length(context, start_frame)
+                   self._log(
+                       f"{prop_name} Stufe {step:+.0%} Zyklus {cycle}: "
+                       f"Wert {new_value:.6f} → Länge {new_length}"
+                   )
+               
+                   # -----------------------------------------
+                   # Zyklus 1: Beobachte erste Veränderung
+                   # -----------------------------------------
+                   if cycle == 1:
+                       # Wenn sofort eine Verbesserung (größer als vorherige Stufenlänge):
+                       if new_length > best_length:
+                           self._log("→ sofortige Verbesserung erkannt → Wechsel zu Zyklus 2")
+                           best_length = new_length
+                           best_value = new_value
+                           cycle = 2
+                           continue
+               
+                       # Wenn kleiner → abbrechen, nächste Stufe
+                       elif new_length < best_length:
+                           self._log("→ Länge kleiner → nächste Stufe")
+                           setattr(scene, prop_name, best_value)
+                           break
+               
+                       # Wenn gleich → wiederhole Zyklus 1
+                       else:
+                           self._log("→ keine Änderung, wiederhole Zyklus 1")
+                           continue
+               
+                   # -----------------------------------------
+                   # Zyklus 2: Beobachte Stabilität oder Rückgang
+                   # -----------------------------------------
+                   elif cycle == 2:
+                       # Wenn gleiche Länge (keine weitere Verbesserung) → nächste Stufe
+                       if new_length == best_length:
+                           self._log("→ Länge unverändert → nächste Stufe")
+                           setattr(scene, prop_name, best_value)
+                           break
+               
+                       # Wenn kleiner → ebenfalls nächste Stufe
+                       elif new_length < best_length:
+                           self._log("→ Länge kleiner → nächste Stufe")
+                           setattr(scene, prop_name, best_value)
+                           break
+               
+                       # Wenn größer → weiter wiederholen
+                       else:
+                           best_length = new_length
+                           best_value = new_value
+                           self._log("→ Länge größer, wiederhole Zyklus 2")
+                           continue
 
-                    _restore_selection()
-                    reset_to_frame(context, start_frame)
-                    try:
-                        bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-                    except Exception as e:
-                        self._log(f"Fehler in {prop_name} Stufe {step:+.0%}: {e}")
-                        setattr(scene, prop_name, best_value)
-                        break
-
-                    new_length = get_total_track_length(context, start_frame)
-                    self._log(
-                        f"{prop_name} Stufe {step:+.0%} Zyklus {cycle}: "
-                        f"Wert {new_value:.6f} → Länge {new_length}"
-                    )
-
-                    # Zyklus 1: warte auf Veränderung
-                    if cycle == 1:
-                        if new_length > best_length:
-                            self._log("→ Länge größer → gehe zu Zyklus 2")
-                            best_length = new_length
-                            best_value = new_value
-                            cycle = 2
-                            continue
-                        elif new_length < best_length:
-                            self._log("→ Länge kleiner → nächste Stufe")
-                            setattr(scene, prop_name, best_value)
-                            break
-                        else:
-                            self._log("→ keine Änderung, wiederhole Zyklus 1")
-                            continue
-
-                    # Zyklus 2: warte bis kleiner oder gleichbleibend
-                    if cycle == 2:
-                        if new_length <= best_length:
-                            self._log("→ Länge kleiner oder gleich → nächste Stufe")
-                            setattr(scene, prop_name, best_value)
-                            break
-                        else:
-                            best_length = new_length
-                            best_value = new_value
-                            self._log("→ Länge größer, wiederhole Zyklus 2")
-                            continue
 
                 # Ende einer Stufe
                 setattr(scene, prop_name, best_value)
