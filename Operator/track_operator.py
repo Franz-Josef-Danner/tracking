@@ -158,7 +158,6 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
         name: deque(maxlen=10) for name in track_names
     }
 
-    _log("Start Tracking-Zyklus", f"Start={start_frame}", f"End={end_frame}", f"Tracks={len(track_names)}")
 
     # Nur selektierte markieren
     for tr in tracking.tracks:
@@ -166,19 +165,6 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
 
     frames_processed = 0
     failures_total = 0
-
-    while True:
-        if current_frame > end_frame:
-            _log("End-Frame erreicht → Ende")
-            break
-        if not track_names:
-            _log("Keine aktiven Tracks mehr → Ende")
-            break
-        if max_frames > 0 and frames_processed >= max_frames:
-            _log("Max Frames erreicht → Ende")
-            break
-
-        _log(f"Track Step @Frame {current_frame} (Aktive: {len(track_names)})")
 
         # Bewegungsmodell vorbereiten: vorhandene Marker-Positionen einsammeln
         for name in list(track_names):
@@ -196,14 +182,12 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception as e:
-            _log("Fehler beim Anwenden der Formel:", e)
 
         # Tracking-Schritt ausführen
         with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
             try:
                 bpy.ops.clip.track_markers(backwards=False, sequence=False)
             except Exception as e:
-                _log("Fehler beim track_markers", e)
                 break
 
         # Frame Synchronisation
@@ -215,9 +199,7 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
 
         # Aktive Tracks nach neuem Frame prüfen
         track_names, dropped = _filter_active_tracks_at_frame(context, track_names, current_frame)
-        if dropped:
-            failures_total += dropped
-            _log(f"Verlorene Tracks: {dropped} (verbleibend {len(track_names)})")
+
 
         # Selektion aktualisieren
         for tr in tracking.tracks:
@@ -227,7 +209,6 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
         f"Start={start_frame} Ende={current_frame} "
         f"Schritte={frames_processed} Aktiv={len(track_names)} Verloren={failures_total}"
     )
-    _log("Tracking beendet", summary)
     if report_fn:
         report_fn({'INFO'}, f"Track-Zyklus: {summary}")
     return {'FINISHED'}
