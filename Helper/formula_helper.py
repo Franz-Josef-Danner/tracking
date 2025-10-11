@@ -116,30 +116,8 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
     return center_marker, max_dev, per_marker_dev
 
 
-# ==========================================================
-# Minimal-Logging (nur angewendetes Motion Model)
-# ==========================================================
-
-def _emit_fit(track_name: str, motion_model: str) -> None:
-    print(f"[FormulaHelper] {track_name}: {motion_model}")
 
 
-# ==========================================================
-# Hilfsfunktionen
-# ==========================================================
-
-def _linear_regression(frames: List[int], values: List[float]) -> Tuple[float, float]:
-    n = len(frames)
-    if n == 0:
-        return 0.0, 0.0
-    f_avg = sum(frames) / n
-    v_avg = sum(values) / n
-    denom = sum((f - f_avg) ** 2 for f in frames)
-    if denom == 0.0:
-        return v_avg, 0.0
-    slope = sum((f - f_avg) * (v - v_avg) for f, v in zip(frames, values)) / denom
-    intercept = v_avg - slope * f_avg
-    return intercept, slope
 
 
 # ==========================================================
@@ -224,13 +202,8 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             xs = [co[0] for _, co in positions]
             ys = [co[1] for _, co in positions]
 
-            ix, sx = _linear_regression(frames, xs)
-            iy, sy = _linear_regression(frames, ys)
-
-            modeled_positions = [(f, (ix + sx * f, iy + sy * f)) for f in frames]
-
-            apply_motion_model(track, modeled_positions, motion_model=motion_model)
-            _emit_fit(track.name, motion_model)
+            # Die lineare Regression und das Logging werden entfernt, da sie nicht funktionsnotwendig sind.
+            apply_motion_model(track, positions, motion_model=motion_model)
 
     except Exception as e:
         print(f"[FormulaHelper] Fehler: {e}")
