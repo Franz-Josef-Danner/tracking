@@ -141,6 +141,17 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         baseline_length = get_total_track_length(context, start_frame)
         self._log(f"Baseline Länge: {baseline_length}")
 
+        # Log initial threshold values for progress monitoring.  This helps track the
+        # starting point of each parameter before tuning begins.  We catch any
+        # exceptions in case a property is missing or cannot be formatted.
+        try:
+            init_vals = ", ".join(
+                f"{prop}={getattr(scene, prop):.6f}" for prop in self._threshold_props if hasattr(scene, prop)
+            )
+            self._log(f"Initiale Schwellwerte: {init_vals}")
+        except Exception:
+            self._log("Initiale Schwellwerte konnten nicht vollständig ermittelt werden.")
+
         # Kalibrierung pro Schwellenwert
         for prop_name in self._threshold_props:
             # Überspringe nicht existierende Properties.
@@ -150,6 +161,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # Aktueller bester Wert und Länge
             best_value = getattr(scene, prop_name)
             best_length = baseline_length
+            # Log start of tuning for this property
+            self._log(
+                f"Starte Tuning für {prop_name}: Ausgangswert {best_value:.6f}, Baseline {best_length}"
+            )
             equal_counter = 0
             iteration = 0
             while True:
