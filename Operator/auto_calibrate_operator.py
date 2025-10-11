@@ -1,13 +1,20 @@
 # ==========================================================
-# Kaiserlich Tracker – Auto-Calibrate Operator
+# Kaiserlich Tracker – Auto-Calibrate Operator (7-Step Version)
 # ==========================================================
 # Ablauf:
-# st = 1: -90%, 2: +50%, 3: -25%, 4: +10%, 5: -5%, 6: +2%, 7: -1%
-# Für jeden Schritt:
-#   - Führe Tracking aus (KAISERLICHTRACKER_OT_track_cycle)
-#   - Vergleiche Segmentlänge (sg → sgn)
-#   - Wiederhole solange sich die Länge verändert
-#   - Wenn Verschlechterung oder Stagnation → nächster Schritt
+#   Schritt 1: -90%  → Faktor 0.1
+#   Schritt 2: +50%  → Faktor 1.5
+#   Schritt 3: -25%  → Faktor 0.75
+#   Schritt 4: +10%  → Faktor 1.1
+#   Schritt 5: -5%   → Faktor 0.95
+#   Schritt 6: +2%   → Faktor 1.02
+#   Schritt 7: -1%   → Faktor 0.99
+#
+# Logik:
+#   - Jeder Schritt läuft, bis sich die Segmentlänge verändert
+#   - Danach weiter, bis Stagnation oder Verschlechterung
+#   - Danach nächster Schritt
+#   - Threshold-Werte werden kumulativ fortgeführt, kein Reset auf 1.0
 # ==========================================================
 
 from __future__ import annotations
@@ -18,12 +25,12 @@ from ..Helper.playhead_helper import get_start_frame, reset_to_frame
 
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
-    """Automatische Kalibrierung der Threshold-Parameter (7-Stufen-Logik)."""
+    """Automatische Kalibrierung der Bewegungsmodell-Schwellenwerte mit 7-Stufen-Logik."""
 
     bl_idname = "kaiserlich_tracker.auto_calibrate"
     bl_label = "Auto-Calibrate Thresholds"
     bl_description = (
-        "Kalibriert automatisch die Bewegungsmodell-Schwellenwerte "
+        "Kalibriert automatisch die Schwellenwerte für die Bewegungsmodelle "
         "in 7 festen Schritten (-90%, +50%, -25%, +10%, -5%, +2%, -1%)."
     )
     bl_options = {"REGISTER", "UNDO"}
@@ -34,12 +41,14 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         description="Ausführliches Logging in der Konsole während der Kalibrierung",
     )
 
-    # Feste Schritte: Prozentuale Veränderung in Multiplikatoren
+    # Feste Schrittfaktoren
     STEP_FACTORS = [0.1, 1.5, 0.75, 1.1, 0.95, 1.02, 0.99]
 
-    # Minimaler Grenzwert (Sicherheitslimit)
+    # Grenzen für Werte
     MIN_THRESHOLD: float = 1e-5
+    MAX_THRESHOLD: float = 10.0
 
+    # Reihenfolge der Threshold-Parameter
     _threshold_props = [
         "kaiserlich_rot_thresh_x",
         "kaiserlich_rot_thresh_y",
@@ -51,7 +60,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     ]
 
     # ==========================================================
-    # Logging-Hilfsfunktion
+    # Logging Helper
     # ==========================================================
     def _log(self, *msg):
         if self.verbose:
@@ -72,7 +81,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             self.report({'WARNING'}, "Clip besitzt kein tracking-Attribut.")
             return {'CANCELLED'}
 
-        # Auswahl der Marker sichern
+        # Marker-Auswahl sichern
         selected_names = [t.name for t in tracking.tracks if getattr(t, 'select', False)]
         if not selected_names:
             self.report({'WARNING'}, "Keine selektierten Tracks gefunden.")
@@ -86,12 +95,12 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         start_frame = get_start_frame(context)
         self._log(f"Startframe: {start_frame}")
 
-        # Alle Thresholds initialisieren
+        # Thresholds initialisieren
         for prop_name in self._threshold_props:
             if hasattr(scene, prop_name):
                 setattr(scene, prop_name, 1.0)
 
-        # Erste Baseline
+        # Baseline bestimmen
         _restore_selection()
         reset_to_frame(context, start_frame)
         bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
@@ -99,7 +108,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         self._log(f"Baseline-Länge: {baseline_length}")
 
         # ==========================================================
-        # Durchlauf über alle Threshold-Properties
+        # Kalibrierung über alle Thresholds
         # ==========================================================
         for prop_name in self._threshold_props:
             if not hasattr(scene, prop_name):
@@ -110,27 +119,18 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             best_length = baseline_length
             self._log(f"\n--- Kalibriere {prop_name} (Startwert {best_value:.6f}) ---")
 
-            # ======================================================
-            # 7 Stufen gemäß Spezifikation
-            # ======================================================
+            # 7 Stufen
             for step_index, factor in enumerate(self.STEP_FACTORS, start=1):
                 self._log(f"{prop_name}: Starte Schritt {step_index} mit Faktor {factor}")
 
                 previous_length = best_length
-                improved = False
 
-                # ==============================
-                # Schritt-Loop (Wiederholung bis Stagnation)
-                # ==============================
                 while True:
                     current_value = getattr(scene, prop_name)
                     new_value = current_value * factor
 
-                    # Untere Grenze absichern
-                    if new_value <= self.MIN_THRESHOLD:
-                        self._log(f"{prop_name}: Untergrenze erreicht ({new_value:.6f}) → Abbruch")
-                        setattr(scene, prop_name, best_value)
-                        break
+                    # Clamp innerhalb Grenzen
+                    new_value = max(min(new_value, self.MAX_THRESHOLD), self.MIN_THRESHOLD)
 
                     setattr(scene, prop_name, new_value)
                     _restore_selection()
@@ -140,15 +140,14 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
                     except Exception as e:
                         self._log(f"{prop_name}: Fehler beim track_cycle:", e)
-                        setattr(scene, prop_name, best_value)
                         break
 
                     new_length = get_total_track_length(context, start_frame)
                     self._log(f"{prop_name} [Schritt {step_index}] Wert {new_value:.6f} → Länge {new_length:.3f}")
 
-                    # Vergleich mit vorherigem
+                    # Analyse
                     if new_length == previous_length:
-                        self._log(f"{prop_name} [Schritt {step_index}] keine Veränderung → weiter testen")
+                        self._log(f"{prop_name} [Schritt {step_index}] keine Veränderung → weiter")
                         continue
 
                     if new_length > previous_length:
@@ -156,32 +155,28 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         best_length = new_length
                         best_value = new_value
                         previous_length = new_length
-                        improved = True
                         continue
                     else:
-                        # Schlechter oder gleich → abbrechen, nächster Schritt
-                        self._log(f"{prop_name} [Schritt {step_index}] Verschlechterung/Stagnation erkannt → Schrittende")
-                        setattr(scene, prop_name, best_value)
+                        # Verschlechterung → Schrittende
+                        self._log(f"{prop_name} [Schritt {step_index}] Verschlechterung erkannt → Abbruch des Schritts")
                         break
 
-                # Ende dieses Schritts
-                self._log(f"{prop_name} Schritt {step_index} abgeschlossen (aktuell bester Wert: {best_value:.6f})")
+                # Zwischenstand nach jedem Schritt
+                self._log(f"{prop_name} Schritt {step_index} abgeschlossen – aktueller Wert: {new_value:.6f}")
 
-            # ======================================================
-            # Nach 7 Schritten: finaler Wert übernehmen und Baseline erneuern
-            # ======================================================
+            # Nach 7 Schritten finalisieren
             setattr(scene, prop_name, best_value)
             _restore_selection()
             reset_to_frame(context, start_frame)
             bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
             baseline_length = get_total_track_length(context, start_frame)
 
-            self._log(f"{prop_name}: Kalibrierung abgeschlossen. "
-                      f"Bester Wert {best_value:.6f}, neue Baseline {baseline_length:.3f}")
+            self._log(f"{prop_name}: Fertig. Bester Wert {best_value:.6f}, neue Baseline {baseline_length:.3f}")
 
+        # Ende
         reset_to_frame(context, start_frame)
         _restore_selection()
-        self.report({'INFO'}, "Auto-Kalibrierung abgeschlossen.")
+        self.report({'INFO'}, "Auto-Kalibrierung (7-Stufen-Schema) abgeschlossen.")
         return {'FINISHED'}
 
 
