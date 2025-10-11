@@ -159,146 +159,84 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         except Exception:
             self._log("Initiale Schwellwerte konnten nicht vollständig ermittelt werden.")
 
-        # Kalibrierung pro Schwellenwert
+        # ==========================================================
+        # Neues Evaluierungsschema pro Threshold
+        # ==========================================================
+        steps = [-0.9, +0.5, -0.25, +0.1, -0.05, +0.02, -0.01]
         for prop_name in self._threshold_props:
-            # Überspringe nicht existierende Properties.
             if not hasattr(scene, prop_name):
                 self._log(f"Überspringe unbekannte Property '{prop_name}'.")
                 continue
-
-            # Merke den ursprünglichen Wert dieses Schwellenwerts.  Während
-            # der Kalibrierung wird er mehrfach verändert und am Ende auf
-            # den besten gefundenen Wert gesetzt.
+        
             original_value = getattr(scene, prop_name)
-
-            # -------------------------------------------------------------
-            # Schnelltest: Prüfe, ob dieser Parameter überhaupt Einfluss
-            # auf die Track-Länge hat.  Es werden zwei Tracking-Zyklen
-            # ausgeführt: einmal mit minimalem Threshold (MIN_THRESHOLD) und
-            # einmal mit dem ursprünglichen Wert.  Nur wenn sich die
-            # Gesamt-Länge unterscheidet, wird der eigentliche Feintest
-            # durchgeführt.  Andernfalls wird das Tuning für diesen
-            # Parameter übersprungen.
-            # -------------------------------------------------------------
-            # Test mit minimalem Schwellenwert
-            setattr(scene, prop_name, self.MIN_THRESHOLD)
-            _restore_selection()
-            reset_to_frame(context, start_frame)
-            try:
-                bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-            except Exception as e:
-                self._log(f"Fehler beim Schnelltest (min) für {prop_name}:", e)
-                # Bei einem Fehler stellen wir den ursprünglichen Wert
-                # wieder her und überspringen die Kalibrierung.
-                setattr(scene, prop_name, original_value)
-                continue
-            length_min = get_total_track_length(context, start_frame)
-
-            # Test mit ursprünglichem (maximalem) Schwellenwert
-            setattr(scene, prop_name, original_value)
-            _restore_selection()
-            reset_to_frame(context, start_frame)
-            try:
-                bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-            except Exception as e:
-                self._log(f"Fehler beim Schnelltest (max) für {prop_name}:", e)
-                continue
-            length_max = get_total_track_length(context, start_frame)
-
-            diff = abs(length_max - length_min)
-            self._log(
-                f"{prop_name}: Schnelltest → Länge_min {length_min}, Länge_max {length_max}, Unterschied {diff}"
-            )
-            # Wenn kein Unterschied festgestellt wird, überspringen wir die
-            # weitere Kalibrierung dieses Parameters.  Die Baseline wird
-            # dabei auf length_max gesetzt, da der ursprüngliche Wert
-            # verwendet werden soll.
-            if diff < 1:
-                self._log(
-                    f"{prop_name}: Kein relevanter Einfluss festgestellt → überspringe Kalibrierung"
-                )
-                baseline_length = length_max
-                # Stelle sicher, dass der ursprüngliche Wert gesetzt bleibt
-                setattr(scene, prop_name, original_value)
-                # Baseline für nächste Schwelle aktualisieren
-                # (bereits durch length_max gegeben).  Keine weitere
-                # Kalibrierung nötig.
-                continue
-
-            # Unterschied festgestellt – Baseline auf length_max setzen und
-            # Feintuning durchführen.
-            baseline_length = length_max
-            # Aktueller bester Wert (Startwert) und Länge
             best_value = original_value
             best_length = baseline_length
-            self._log(
-                f"Starte Tuning für {prop_name}: Ausgangswert {best_value:.6f}, Baseline {best_length}"
-            )
-            iteration = 0
-            while True:
-                iteration += 1
-                # Berechne neuen Wert (5‑% Reduktion)
-                current_value = getattr(scene, prop_name)
-                new_value = current_value * 0.95
-                # Vermeide negative oder zu kleine Werte.  Wenn die
-                # Untergrenze erreicht wird, brechen wir die Kalibrierung für
-                # diesen Parameter ab und kehren auf den besten Wert zurück.
-                if new_value <= self.MIN_THRESHOLD:
-                    # Setze den bestmöglichen gefundenen Wert (oder lasse den
-                    # Wert unverändert, falls noch keine Verbesserung gefunden
-                    # wurde) und beende das Tuning dieser Property.
-                    setattr(scene, prop_name, best_value)
-                    self._log(
-                        f"{prop_name}: Untergrenze {self.MIN_THRESHOLD:.5f} erreicht → zurücksetzen auf {best_value:.6f} und weiterspringen"
-                    )
-                    break
-                # Ansonsten schreibe den neuen Schwellenwert und fahre fort
-                setattr(scene, prop_name, new_value)
-                self._log(f"{prop_name} Runde {iteration}: teste Wert {new_value:.6f}")
-
-                # Tracking ausführen
+            self._log(f"\n=== Kalibriere {prop_name} ===")
+            self._log(f"Startwert: {original_value:.6f}, Baseline: {baseline_length}")
+        
+            for step in steps:
+                factor = 1.0 + step
+                cycle = 1
+                self._log(f"\n--- Stufe {step:+.0%} gestartet ---")
+        
+                while True:
+                    current_value = getattr(scene, prop_name)
+                    new_value = max(current_value * factor, self.MIN_THRESHOLD)
+                    setattr(scene, prop_name, new_value)
+        
+                    _restore_selection()
+                    reset_to_frame(context, start_frame)
+                    try:
+                        bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                    except Exception as e:
+                        self._log(f"Fehler in {prop_name} Stufe {step:+.0%}: {e}")
+                        setattr(scene, prop_name, best_value)
+                        break
+        
+                    new_length = get_total_track_length(context, start_frame)
+                    self._log(f"{prop_name} Stufe {step:+.0%} Zyklus {cycle}: "
+                              f"Wert {new_value:.6f} → Länge {new_length}")
+        
+                    # Zyklus 1: warte auf Veränderung
+                    if cycle == 1:
+                        if new_length > best_length:
+                            self._log("→ Länge größer → gehe zu Zyklus 2")
+                            best_length = new_length
+                            best_value = new_value
+                            cycle = 2
+                            continue
+                        elif new_length < best_length:
+                            self._log("→ Länge kleiner → nächste Stufe")
+                            setattr(scene, prop_name, best_value)
+                            break
+                        else:
+                            self._log("→ keine Änderung, wiederhole Zyklus 1")
+                            continue
+        
+                    # Zyklus 2: warte bis kleiner oder gleichbleibend
+                    if cycle == 2:
+                        if new_length <= best_length:
+                            self._log("→ Länge kleiner oder gleich → nächste Stufe")
+                            setattr(scene, prop_name, best_value)
+                            break
+                        else:
+                            best_length = new_length
+                            best_value = new_value
+                            self._log("→ Länge größer, wiederhole Zyklus 2")
+                            continue
+        
+                # Ende einer Stufe
+                setattr(scene, prop_name, best_value)
                 _restore_selection()
                 reset_to_frame(context, start_frame)
                 try:
                     bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
                 except Exception as e:
-                    self._log(f"Fehler beim track_cycle in {prop_name} Runde {iteration}:", e)
-                    # Im Fehlerfall beenden und den besten Wert beibehalten
-                    setattr(scene, prop_name, best_value)
+                    self._log(f"Fehler nach Stufe {step:+.0%}: {e}")
                     break
-                new_length = get_total_track_length(context, start_frame)
-                self._log(f"{prop_name} Runde {iteration}: Länge {new_length}")
+                baseline_length = get_total_track_length(context, start_frame)
+                self._log(f"Stufe {step:+.0%} abgeschlossen → neue Baseline {baseline_length}")
 
-                # Wenn das Ergebnis nicht schlechter ist als das bislang beste, fahre fort.
-                # Gleichbleibende Länge wird nicht mehr als Abbruchbedingung genutzt.
-                if new_length >= best_length:
-                    if new_length > best_length:
-                        # Verbesserung gefunden
-                        best_length = new_length
-                        best_value = new_value
-                        self._log(f"{prop_name}: Verbesserung → Wert {new_value:.6f}, Länge {new_length}")
-                    else:
-                        # Keine Veränderung – fahre mit weiterer Reduktion fort
-                        self._log(f"{prop_name}: keine Veränderung (gleichbleibend)")
-                    # Mit dem nächsten Iterationsschritt fortfahren
-                    continue
-                else:
-                    # Verschlechterung → letzten guten Wert zurücksetzen und abbrechen
-                    setattr(scene, prop_name, best_value)
-                    self._log(f"{prop_name}: Verschlechterung (Länge {new_length} < {best_length}) → zurücksetzen auf {best_value}")
-                    break
-            # Nach Abschluss des Loops: sichergehen, dass der beste Wert gesetzt ist
-            setattr(scene, prop_name, best_value)
-            # Baseline für nächste Schwelle aktualisieren: Führe Tracking erneut aus
-            _restore_selection()
-            reset_to_frame(context, start_frame)
-            try:
-                bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-            except Exception as e:
-                self._log(f"Fehler beim track_cycle nach Beenden von {prop_name}:", e)
-                return {'CANCELLED'}
-            baseline_length = get_total_track_length(context, start_frame)
-            self._log(f"{prop_name}: Fertig. Bester Wert {best_value}, neue Baseline {baseline_length}")
 
         # Fertig: Playhead zurücksetzen und ursprüngliche Auswahl wiederherstellen
         reset_to_frame(context, start_frame)
