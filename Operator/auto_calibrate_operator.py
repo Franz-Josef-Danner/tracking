@@ -151,7 +151,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             for step in steps:
                 factor = 1.0 + step
                 cycle = 1
+                # Wert immer direkt aus Szene lesen, damit er nicht auf alten Zustand zurückfällt
+                current_value = getattr(scene, prop_name)
                 self._log(f"\n--- Stufe {step:+.0%} gestartet (Startwert {current_value:.6f}) ---")
+
             
                 while True:
                     new_value = max(current_value * factor, self.MIN_THRESHOLD)
