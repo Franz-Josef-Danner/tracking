@@ -165,10 +165,72 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             if not hasattr(scene, prop_name):
                 self._log(f"Überspringe unbekannte Property '{prop_name}'.")
                 continue
-            # Aktueller bester Wert und Länge
-            best_value = getattr(scene, prop_name)
+
+            # Merke den ursprünglichen Wert dieses Schwellenwerts.  Während
+            # der Kalibrierung wird er mehrfach verändert und am Ende auf
+            # den besten gefundenen Wert gesetzt.
+            original_value = getattr(scene, prop_name)
+
+            # -------------------------------------------------------------
+            # Schnelltest: Prüfe, ob dieser Parameter überhaupt Einfluss
+            # auf die Track-Länge hat.  Es werden zwei Tracking-Zyklen
+            # ausgeführt: einmal mit minimalem Threshold (MIN_THRESHOLD) und
+            # einmal mit dem ursprünglichen Wert.  Nur wenn sich die
+            # Gesamt-Länge unterscheidet, wird der eigentliche Feintest
+            # durchgeführt.  Andernfalls wird das Tuning für diesen
+            # Parameter übersprungen.
+            # -------------------------------------------------------------
+            # Test mit minimalem Schwellenwert
+            setattr(scene, prop_name, self.MIN_THRESHOLD)
+            _restore_selection()
+            reset_to_frame(context, start_frame)
+            try:
+                bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+            except Exception as e:
+                self._log(f"Fehler beim Schnelltest (min) für {prop_name}:", e)
+                # Bei einem Fehler stellen wir den ursprünglichen Wert
+                # wieder her und überspringen die Kalibrierung.
+                setattr(scene, prop_name, original_value)
+                continue
+            length_min = get_total_track_length(context, start_frame)
+
+            # Test mit ursprünglichem (maximalem) Schwellenwert
+            setattr(scene, prop_name, original_value)
+            _restore_selection()
+            reset_to_frame(context, start_frame)
+            try:
+                bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+            except Exception as e:
+                self._log(f"Fehler beim Schnelltest (max) für {prop_name}:", e)
+                continue
+            length_max = get_total_track_length(context, start_frame)
+
+            diff = abs(length_max - length_min)
+            self._log(
+                f"{prop_name}: Schnelltest → Länge_min {length_min}, Länge_max {length_max}, Unterschied {diff}"
+            )
+            # Wenn kein Unterschied festgestellt wird, überspringen wir die
+            # weitere Kalibrierung dieses Parameters.  Die Baseline wird
+            # dabei auf length_max gesetzt, da der ursprüngliche Wert
+            # verwendet werden soll.
+            if diff < 1:
+                self._log(
+                    f"{prop_name}: Kein relevanter Einfluss festgestellt → überspringe Kalibrierung"
+                )
+                baseline_length = length_max
+                # Stelle sicher, dass der ursprüngliche Wert gesetzt bleibt
+                setattr(scene, prop_name, original_value)
+                # Baseline für nächste Schwelle aktualisieren
+                # (bereits durch length_max gegeben).  Keine weitere
+                # Kalibrierung nötig.
+                continue
+
+            # Unterschied festgestellt – Baseline auf length_max setzen und
+            # Feintuning durchführen.
+            baseline_length = length_max
+            # Aktueller bester Wert (Startwert) und Länge
+            best_value = original_value
             best_length = baseline_length
-            # Log start of tuning for this property
             self._log(
                 f"Starte Tuning für {prop_name}: Ausgangswert {best_value:.6f}, Baseline {best_length}"
             )
