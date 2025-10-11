@@ -18,6 +18,7 @@ from __future__ import annotations
 import bpy
 from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
+from ..Helper.delete import _find_clip_editor_area
 
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
@@ -105,7 +106,18 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             _restore_selection()
             reset_to_frame(context, start_frame)
             try:
-                bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                window, area, region, space = _find_clip_editor_area(context.space_data.clip)
+                if window and area and region:
+                    override = {
+                        "window": window,
+                        "screen": window.screen,
+                        "area": area,
+                        "region": region,
+                        "space_data": space,
+                    }
+                    bpy.ops.kaiserlich_tracker.track_cycle(override, max_frames=0, verbose=False)
+                else:
+                    self._log("Kein CLIP_EDITOR-Kontext für track_cycle gefunden – überspringe Durchlauf.")
             except Exception as e:
                 self._log(f"{prop_name}: Schnelltest min Fehler:", e)
                 setattr(scene, prop_name, base_value)
@@ -116,7 +128,18 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             _restore_selection()
             reset_to_frame(context, start_frame)
             try:
-                bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                window, area, region, space = _find_clip_editor_area(context.space_data.clip)
+                if window and area and region:
+                    override = {
+                        "window": window,
+                        "screen": window.screen,
+                        "area": area,
+                        "region": region,
+                        "space_data": space,
+                    }
+                    bpy.ops.kaiserlich_tracker.track_cycle(override, max_frames=0, verbose=False)
+                else:
+                    self._log("Kein CLIP_EDITOR-Kontext für track_cycle gefunden – überspringe Durchlauf.")
             except Exception as e:
                 self._log(f"{prop_name}: Schnelltest max Fehler:", e)
                 setattr(scene, prop_name, base_value)
@@ -154,7 +177,18 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     reset_to_frame(context, start_frame)
 
                     try:
-                        bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                        window, area, region, space = _find_clip_editor_area(context.space_data.clip)
+                        if window and area and region:
+                            override = {
+                                "window": window,
+                                "screen": window.screen,
+                                "area": area,
+                                "region": region,
+                                "space_data": space,
+                            }
+                            bpy.ops.kaiserlich_tracker.track_cycle(override, max_frames=0, verbose=False)
+                        else:
+                            self._log("Kein CLIP_EDITOR-Kontext für track_cycle gefunden – überspringe Durchlauf.")
                     except Exception as e:
                         self._log(f"{prop_name}: Fehler beim track_cycle:", e)
                         setattr(scene, prop_name, best_value)
@@ -188,7 +222,18 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             _restore_selection()
             reset_to_frame(context, start_frame)
             try:
-                bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                window, area, region, space = _find_clip_editor_area(context.space_data.clip)
+                if window and area and region:
+                    override = {
+                        "window": window,
+                        "screen": window.screen,
+                        "area": area,
+                        "region": region,
+                        "space_data": space,
+                    }
+                    bpy.ops.kaiserlich_tracker.track_cycle(override, max_frames=0, verbose=False)
+                else:
+                    self._log("Kein CLIP_EDITOR-Kontext für track_cycle gefunden – überspringe Durchlauf.")
             except Exception as e:
                 self._log(f"{prop_name}: Fehler beim Abschluss-Tracking:", e)
                 continue
