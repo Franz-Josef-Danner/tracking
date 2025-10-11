@@ -73,6 +73,13 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         description="Ausführliches Logging in der Konsole während der Kalibrierung",
     )
 
+    # Minimaler Schwellenwert, unter dem die Kalibrierung für einen Parameter
+    # automatisch beendet wird.  Ist der neue Wert kleiner oder gleich diesem
+    # Grenzwert, wird zum letzten guten Wert zurückgekehrt und die Kalibrierung
+    # springt zum nächsten Parameter.  Dies verhindert endlose Reduktionen
+    # ohne nennenswerten Nutzen.
+    MIN_THRESHOLD: float = 1e-5
+
     def _log(self, *msg) -> None:
         if self.verbose:
             print("[Kaiserlich Tracker][AutoCalibrate]", *msg)
@@ -165,17 +172,25 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             self._log(
                 f"Starte Tuning für {prop_name}: Ausgangswert {best_value:.6f}, Baseline {best_length}"
             )
-            equal_counter = 0
             iteration = 0
             while True:
                 iteration += 1
                 # Berechne neuen Wert (5‑% Reduktion)
                 current_value = getattr(scene, prop_name)
                 new_value = current_value * 0.95
-                # Vermeide negative oder zu kleine Werte
-                if new_value <= 0.0:
-                    self._log(f"{prop_name}: Wert würde <= 0, Abbruch.")
+                # Vermeide negative oder zu kleine Werte.  Wenn die
+                # Untergrenze erreicht wird, brechen wir die Kalibrierung für
+                # diesen Parameter ab und kehren auf den besten Wert zurück.
+                if new_value <= self.MIN_THRESHOLD:
+                    # Setze den bestmöglichen gefundenen Wert (oder lasse den
+                    # Wert unverändert, falls noch keine Verbesserung gefunden
+                    # wurde) und beende das Tuning dieser Property.
+                    setattr(scene, prop_name, best_value)
+                    self._log(
+                        f"{prop_name}: Untergrenze {self.MIN_THRESHOLD:.5f} erreicht → zurücksetzen auf {best_value:.6f} und weiterspringen"
+                    )
                     break
+                # Ansonsten schreibe den neuen Schwellenwert und fahre fort
                 setattr(scene, prop_name, new_value)
                 self._log(f"{prop_name} Runde {iteration}: teste Wert {new_value:.6f}")
 
@@ -192,18 +207,19 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 new_length = get_total_track_length(context, start_frame)
                 self._log(f"{prop_name} Runde {iteration}: Länge {new_length}")
 
-                if new_length > best_length:
-                    # Verbesserung gefunden
-                    best_length = new_length
-                    best_value = new_value
-                    equal_counter = 0
-                    self._log(f"{prop_name}: Verbesserung → Wert {new_value:.6f}, Länge {new_length}")
-                elif new_length == best_length:
-                    equal_counter += 1
-                    self._log(f"{prop_name}: keine Veränderung (gleich), Zähler {equal_counter}")
-                    if equal_counter >= 4:
-                        self._log(f"{prop_name}: Viermal gleiche Länge erreicht → stoppe Tuning.")
-                        break
+                # Wenn das Ergebnis nicht schlechter ist als das bislang beste, fahre fort.
+                # Gleichbleibende Länge wird nicht mehr als Abbruchbedingung genutzt.
+                if new_length >= best_length:
+                    if new_length > best_length:
+                        # Verbesserung gefunden
+                        best_length = new_length
+                        best_value = new_value
+                        self._log(f"{prop_name}: Verbesserung → Wert {new_value:.6f}, Länge {new_length}")
+                    else:
+                        # Keine Veränderung – fahre mit weiterer Reduktion fort
+                        self._log(f"{prop_name}: keine Veränderung (gleichbleibend)")
+                    # Mit dem nächsten Iterationsschritt fortfahren
+                    continue
                 else:
                     # Verschlechterung → letzten guten Wert zurücksetzen und abbrechen
                     setattr(scene, prop_name, best_value)
