@@ -246,8 +246,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # Ende aller Stufen
             self._log(f"{prop_name}: Haupttest abgeschlossen → optimaler Wert {best_value:.6f}")
             setattr(scene, prop_name, best_value)
-                    self._log(f"{prop_name}: Verschlechterung (Länge {new_length} < {best_length}) → zurücksetzen auf {best_value}")
-                    break
             # Nach Abschluss des Loops: sichergehen, dass der beste Wert gesetzt ist
             setattr(scene, prop_name, best_value)
             # Baseline für nächste Schwelle aktualisieren: Führe Tracking erneut aus
