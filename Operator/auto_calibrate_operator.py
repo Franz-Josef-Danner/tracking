@@ -95,10 +95,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             )
 
 
-        reset_to_frame(context, start_frame)
-        _restore_selection()
-        self.report({'INFO'}, "Auto-Calibrate abgeschlossen.")
-        return {'FINISHED'}
+            reset_to_frame(context, start_frame)
+            _restore_selection()
+            self.report({'INFO'}, "Auto-Calibrate abgeschlossen.")
+            return {'FINISHED'}
 
 
 def register():
