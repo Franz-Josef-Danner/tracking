@@ -241,7 +241,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
             for step in steps:
                 self._log(f"{prop_name}: Starte Stufe {step:+.2f}")
+                # Neue dynamische Stufenlogik nach gewünschtem Verhalten
                 stagnation_count = 0
+                change_detected = False
                 improved = False
                 sg_prev = best_length
 
@@ -252,65 +254,58 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         self._log(f"{prop_name}: Untergrenze erreicht → Abbruch Stufe {step:+.2f}")
                         break
 
-                    # =====================================================
-                    # DEBUG: Threshold-Tracking rund um track_cycle
-                    # =====================================================
+                    # Threshold anwenden und Tracking durchführen
                     setattr(scene, prop_name, new_value)
-                    self._log(f"[DEBUG] {prop_name} vor scene.update_tag(): {getattr(scene, prop_name)}")
                     scene.update_tag()
-                    self._log(f"[DEBUG] {prop_name} nach scene.update_tag(): {getattr(scene, prop_name)}")
-
                     reset_to_frame(context, start_frame)
-                    # Vor Tracking in Feintuning: aktuelle Tracks aufnehmen und neue Merkmale detektieren
+
                     old_track_names = [tr.name for tr in tracking.tracks]
-                    try:
-                        snapshot_active_markers(context)
-                    except Exception as e:
-                        self._log(f"Warnung: Snapshot in Stufe {step:+.2f}, Runde {iteration} fehlgeschlagen: {e}")
-                    try:
-                        detect_features(context)
-                    except Exception as e:
-                        self._log(f"{prop_name} Fehler bei detect_features in Stufe {step:+.2f}, Runde {iteration}: {e}")
-                        setattr(scene, prop_name, best_value)
-                        # Neue Tracks ggf. bereinigen und Feintuning-Stufe abbrechen
-                        for tr in list(tracking.tracks):
-                            if tr.name not in old_track_names:
-                                tracking.tracks.remove(tr)
-                        break
+                    snapshot_active_markers(context)
+                    detect_features(context)
                     new_track_names = [tr.name for tr in tracking.tracks if tr.name not in old_track_names]
                     for tr in tracking.tracks:
                         tr.select = (tr.name in new_track_names)
-                    try:
-                        bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-                    except Exception as e:
-                        self._log(f"{prop_name} Fehler bei track_cycle in Stufe {step:+.2f}, Runde {iteration}:", e)
-                        delete_tracks_by_names(context, new_track_names)
-                        setattr(scene, prop_name, best_value)
-                        break
+
+                    bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
                     sgn = get_total_track_length(context, start_frame)
                     delete_tracks_by_names(context, new_track_names)
 
-                    self._log(f"[DEBUG] {prop_name} unmittelbar nach track_cycle(): {getattr(scene, prop_name)}")
-
                     self._log(f"{prop_name} Stufe {step:+.2f} Runde {iteration}: Wert {new_value:.6f} → Segmentlänge {sgn}")
 
-                    if sgn == sg_prev:
-                        stagnation_count += 1
-                        self._log(f"{prop_name}: keine Veränderung ({stagnation_count}×)")
-                        if stagnation_count >= 2:
-                            break
-                    elif sgn > sg_prev:
+                    # === Phase 1: Warte auf erste Veränderung ===
+                    if not change_detected:
+                        if sgn != sg_prev:
+                            change_detected = True
+                            if sgn > sg_prev:
+                                improved = True
+                                best_length = sgn
+                                best_value = new_value
+                                sg_prev = sgn
+                                self._log(f"{prop_name}: erste Verbesserung erkannt → aktiviere Feintuning")
+                            else:
+                                self._log(f"{prop_name}: erste Veränderung ist Verschlechterung → Stufe abbrechen")
+                                break
+                        else:
+                            continue  # Keine Veränderung → weiter prüfen
+
+                    # === Phase 2: Nach erster Änderung aktiv ===
+                    if sgn > sg_prev:
                         improved = True
                         best_length = sgn
                         best_value = new_value
                         sg_prev = sgn
                         stagnation_count = 0
                         self._log(f"{prop_name}: Verbesserung → Länge {sgn}")
+                    elif sgn == sg_prev:
+                        stagnation_count += 1
+                        self._log(f"{prop_name}: keine Veränderung ({stagnation_count}×)")
+                        if stagnation_count >= 2:
+                            self._log(f"{prop_name}: Stagnation erreicht → beende Stufe")
+                            break
                     else:
-                        # Verschlechterung → wenn vorherige Verbesserung vorhanden, abbrechen
                         if improved:
                             setattr(scene, prop_name, best_value)
-                            self._log(f"{prop_name}: Verschlechterung → Rückkehr zu {best_value:.6f}")
+                            self._log(f"{prop_name}: Verschlechterung erkannt → Rückkehr zu {best_value:.6f}")
                         break
 
                     current_value = new_value
