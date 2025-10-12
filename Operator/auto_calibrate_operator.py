@@ -1,7 +1,7 @@
 import bpy
 from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
-from ..Helper.detect import run_detect_cycle
+from ..Helper.detect import detect_features
 from ..Helper.delete import delete_tracks_by_names
 
 
@@ -48,7 +48,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         # Snapshot vor Detect
         snapshot_names = {t.name for t in tracking.tracks}
         try:
-            run_detect_cycle(context)
+            detect_features(context)
         except Exception as e:
             self._log("Fehler beim Detect-Zyklus:", e)
             return 0.0
