@@ -445,7 +445,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     
                     # Fallback: falls detect_features nur eine Zahl liefert
                     if isinstance(created_count, int) and not new_names:
-                        # Versuche, die letzten 'created_count' Namen zu nehmen (typischer Blender-Stil)
                         new_names = [t.name for t in list(tracking.tracks)[-created_count:]]
                     
                     self._log(f"detect_features(): {created_count} neue Tracks, {len(new_names)} identifiziert.")
@@ -467,6 +466,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         delete_tracks_by_names(context, detected_tracks)
                     except Exception as e:
                         self._log(f"{prop_name}: Fehler bei delete_tracks_by_names() nach finalem Tracking:", e)
+
+            except Exception as e:
+                self._log(f"Fehler beim track_cycle nach Beenden von {prop_name}:", e)
+                return {'CANCELLED'}
         # Fertig: Playhead zurücksetzen und ursprüngliche Auswahl wiederherstellen
         reset_to_frame(context, start_frame)
         _restore_selection()
