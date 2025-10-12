@@ -157,25 +157,28 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 continue
             length_max = get_total_track_length(context, start_frame)
 
-            diff = abs(length_max - length_min)
             self._log(
-                f"{prop_name}: Schnelltest → Länge_min {length_min}, Länge_max {length_max}, Unterschied {diff}"
+                f"{prop_name}: Schnelltest → Länge_min {length_min}, Länge_max {length_max}"
             )
-            # Wenn kein Unterschied festgestellt wird, überspringen wir die
-            # weitere Kalibrierung dieses Parameters.  Die Baseline wird
-            # dabei auf length_max gesetzt, da der ursprüngliche Wert
-            # verwendet werden soll.
-            if diff < 1:
+            
+            # Wenn kleinerer Threshold schlechter oder gleich ist → überspringen
+            if length_min <= length_max:
                 self._log(
-                    f"{prop_name}: Kein relevanter Einfluss festgestellt → überspringe Kalibrierung"
+                    f"{prop_name}: kleinerer Threshold bringt keine Verbesserung → überspringe Kalibrierung"
                 )
                 baseline_length = length_max
-                # Stelle sicher, dass der ursprüngliche Wert gesetzt bleibt
                 setattr(scene, prop_name, original_value)
-                # Baseline für nächste Schwelle aktualisieren
-                # (bereits durch length_max gegeben).  Keine weitere
-                # Kalibrierung nötig.
                 continue
+            
+            # Nur wenn der kleine Threshold besser ist → Haupttest freigeben
+            improvement = length_min - length_max
+            self._log(
+                f"{prop_name}: Verbesserung erkannt ({improvement:+.2f}) → starte Haupttest"
+            )
+            baseline_length = length_min
+            best_value = self.MIN_THRESHOLD
+            best_length = length_min
+
 
             # Unterschied festgestellt – Baseline auf length_max setzen und
             # Feintuning durchführen.
