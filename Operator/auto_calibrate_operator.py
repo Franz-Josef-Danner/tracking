@@ -232,7 +232,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         new_tracks = _diff_tracks(before, after)
                         sgn = get_total_track_length(context, start_frame)
                         delete_tracks_by_names(context, new_tracks)
-                        self._log(f"{prop_name}: Tracks gelöscht ({len(new_tracks)})")                    except Exception as e:
+                        self._log(f"{prop_name}: Tracks gelöscht ({len(new_tracks)})")
+                    except Exception as e:
                         self._log(f"{prop_name} Fehler bei track_cycle in Stufe {step:+.2f}, Runde {iteration}:", e)
                         setattr(scene, prop_name, best_value)
                         break
