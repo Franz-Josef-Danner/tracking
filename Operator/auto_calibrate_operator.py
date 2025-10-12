@@ -4,7 +4,8 @@ import bpy
 
 from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
-
+from ..Helper.detect import detect_features
+from ..Helper.delete import delete_detected
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
@@ -90,8 +91,13 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         # max_frames=0 bedeutet kein künstliches Limit.  verbose=False unterdrückt
         # dessen eigene Logs.
         try:
-            scene.update_tag()  # Force Blender to recognize new property values before operator call
+            scene.update_tag()
+            # ------------------------------------------------------------
+            # Neuer Ablauf: Detect → Track → Delete
+            # ------------------------------------------------------------
+            detect_features(context)
             bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+            delete_detected(context)
         except Exception as e:
             self._log("Fehler beim ersten Tracking-Durchlauf:", e)
             return {'CANCELLED'}
