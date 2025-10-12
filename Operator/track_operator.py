@@ -166,14 +166,14 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
     frames_processed = 0
     failures_total = 0
 
-    # Bewegungsmodell vorbereiten: vorhandene Marker-Positionen einsammeln
-    for name in list(track_names):
-        tr = tracking.tracks.get(name)
-        if not tr:
-            continue
-        mk = tr.markers.find_frame(current_frame)
-        if mk:
-            histories[name].append((current_frame, mk.co[0], mk.co[1]))
+        # Bewegungsmodell vorbereiten: vorhandene Marker-Positionen einsammeln
+        for name in list(track_names):
+            tr = tracking.tracks.get(name)
+            if not tr:
+                continue
+            mk = tr.markers.find_frame(current_frame)
+            if mk:
+                histories[name].append((current_frame, mk.co[0], mk.co[1]))
 
         # Beispiel-Auswertung (optional): Modellklassifikation pro Track
         # Frühere (fehlerhafte) Version hat apply_formula_on_selected_tracks mit einer History-Liste
