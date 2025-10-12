@@ -35,19 +35,40 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             print("[Kaiserlich Tracker][AutoCalibrate]", *msg)
 
     # ---- CLIP_EDITOR Kontext finden (für detect_features/Delete) ----------------
-    def _find_clip_editor_context(self, context) -> Tuple[object, object, object, object]:
-        """Sucht eine gültige CLIP_EDITOR Area für Context-Override."""
+    def _find_clip_editor_context(self, context, target_clip) -> Tuple[object, object, object, object]:
+        """Finde/erzeuge einen gültigen CLIP_EDITOR-Override, der target_clip trägt."""
+        # 1) Bevorzugt eine Area mit exakt diesem Clip
         for window in bpy.context.window_manager.windows:
             screen = window.screen
             for area in screen.areas:
                 if area.type != 'CLIP_EDITOR':
                     continue
+                region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                if not region:
+                    continue
                 for space in area.spaces:
                     if getattr(space, "type", None) != 'CLIP_EDITOR':
                         continue
-                    region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-                    if region:
+                    # Falls der Space bereits den Clip zeigt: perfekt
+                    if getattr(space, "clip", None) == target_clip:
                         return window, area, region, space
+        # 2) Sonst erste passende CLIP_EDITOR-Area nehmen und Clip zuweisen
+        for window in bpy.context.window_manager.windows:
+            screen = window.screen
+            for area in screen.areas:
+                if area.type != 'CLIP_EDITOR':
+                    continue
+                region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                if not region:
+                    continue
+                for space in area.spaces:
+                    if getattr(space, "type", None) != 'CLIP_EDITOR':
+                        continue
+                    try:
+                        setattr(space, "clip", target_clip)
+                        return window, area, region, space
+                    except Exception:
+                        continue
         return None, None, None, None
 
     # ---- Ein Mess-Durchlauf: snapshot → detect → length → delete ----------------
@@ -62,8 +83,15 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         space_data = getattr(context, "space_data", None)
         clip = getattr(space_data, "clip", None)
         if clip is None:
-            self._log("Kein aktiver Clip für Messung.")
-            return 0.0
+            self._log("Kein aktiver Clip für Messung – versuche CLIP_EDITOR mit gültigem Clip zu binden.")
+            # Versuche, Clip aus erstem MovieClip-Block der Szene zu ermitteln (Fallback)
+            try:
+                clip = bpy.data.movieclips[0]
+                if space_data and getattr(space_data, "type", "") == 'CLIP_EDITOR':
+                    space_data.clip = clip
+            except Exception:
+                self._log("Kein MovieClip in bpy.data.movieclips gefunden.")
+                return 0.0
 
         tracking = getattr(clip, "tracking", None)
         if tracking is None:
@@ -73,13 +101,13 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         # 1) Snapshot (alte Marker/Tracks merken)
         old_names = set(snapshot_active_markers(context) or [])
 
-        # 2) Detect Features (richtiger Kontext)
-        win, area, region, space = self._find_clip_editor_context(context)
+        # 2) Detect Features (richtiger Kontext + Clip)
+        win, area, region, space = self._find_clip_editor_context(context, clip)
         if all((win, area, region, space)):
             override = {'window': win, 'area': area, 'region': region, 'space_data': space}
             try:
-                # detect_features: Helper, der intern bpy.ops.clip.detect_features korrekt nutzt
-                detect_features(context=override if 'space_data' in override else context)
+                # Helper nutzt bpy.ops.clip.detect_features; Override sorgt für gültigen space.clip
+                detect_features(context=override)
             except Exception as e:
                 self._log("detect_features fehlgeschlagen:", e)
         else:
