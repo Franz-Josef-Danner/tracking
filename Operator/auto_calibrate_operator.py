@@ -215,8 +215,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 # ==============================================
                 # LÄNGENMESSUNG vor der Löschung
                 # ==============================================
-                length_min = get_total_track_length(context, start_frame)
-
                 # Danach Delete
                 if detected_tracks:
                     self._log(f"{prop_name}: Lösche {len(detected_tracks)} Tracks nach Schnelltest (min)")
@@ -469,11 +467,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         delete_tracks_by_names(context, detected_tracks)
                     except Exception as e:
                         self._log(f"{prop_name}: Fehler bei delete_tracks_by_names() nach finalem Tracking:", e)
-        # Fertig: Playhead zurücksetzen und ursprüngliche Auswahl wiederherstellen
-        reset_to_frame(context, start_frame)
-        _restore_selection()
-        self.report({'INFO'}, "Schwellenwert-Kalibrierung abgeschlossen.")
-
         # Fertig: Playhead zurücksetzen und ursprüngliche Auswahl wiederherstellen
         reset_to_frame(context, start_frame)
         _restore_selection()
