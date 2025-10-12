@@ -98,7 +98,25 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # ==========================================================
             self._log("Starte detect_features() für Baseline …")
             try:
-                detected_tracks = detect_features(context)
+                # ==============================================
+                # Snapshot vor detect_features()
+                # ==============================================
+                prev_names = {t.name for t in tracking.tracks}
+                
+                created_count = detect_features(context)
+                
+                # ==============================================
+                # Differenz der Tracknamen nach detect_features()
+                # ==============================================
+                new_names = [t.name for t in tracking.tracks if t.name not in prev_names]
+                
+                # Fallback: falls detect_features nur eine Zahl liefert
+                if isinstance(created_count, int) and not new_names:
+                    # Versuche, die letzten 'created_count' Namen zu nehmen (typischer Blender-Stil)
+                    new_names = [t.name for t in list(tracking.tracks)[-created_count:]]
+                
+                self._log(f"detect_features(): {created_count} neue Tracks, {len(new_names)} identifiziert.")
+                detected_tracks = new_names
                 if not detected_tracks:
                     self._log("Warnung: detect_features() hat keine Tracks erzeugt.")
                     detected_tracks = []
@@ -168,7 +186,25 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 # ==============================================
                 self._log(f"{prop_name}: detect_features() vor Schnelltest (min)")
                 try:
-                    detected_tracks = detect_features(context)
+                    # ==============================================
+                    # Snapshot vor detect_features()
+                    # ==============================================
+                    prev_names = {t.name for t in tracking.tracks}
+                    
+                    created_count = detect_features(context)
+                    
+                    # ==============================================
+                    # Differenz der Tracknamen nach detect_features()
+                    # ==============================================
+                    new_names = [t.name for t in tracking.tracks if t.name not in prev_names]
+                    
+                    # Fallback: falls detect_features nur eine Zahl liefert
+                    if isinstance(created_count, int) and not new_names:
+                        # Versuche, die letzten 'created_count' Namen zu nehmen (typischer Blender-Stil)
+                        new_names = [t.name for t in list(tracking.tracks)[-created_count:]]
+                    
+                    self._log(f"detect_features(): {created_count} neue Tracks, {len(new_names)} identifiziert.")
+                    detected_tracks = new_names
                 except Exception as e:
                     self._log(f"{prop_name}: Fehler bei detect_features():", e)
                     detected_tracks = []
@@ -200,7 +236,25 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 # Detect vor Schnelltest (max)
                 self._log(f"{prop_name}: detect_features() vor Schnelltest (max)")
                 try:
-                    detected_tracks = detect_features(context)
+                    # ==============================================
+                    # Snapshot vor detect_features()
+                    # ==============================================
+                    prev_names = {t.name for t in tracking.tracks}
+                    
+                    created_count = detect_features(context)
+                    
+                    # ==============================================
+                    # Differenz der Tracknamen nach detect_features()
+                    # ==============================================
+                    new_names = [t.name for t in tracking.tracks if t.name not in prev_names]
+                    
+                    # Fallback: falls detect_features nur eine Zahl liefert
+                    if isinstance(created_count, int) and not new_names:
+                        # Versuche, die letzten 'created_count' Namen zu nehmen (typischer Blender-Stil)
+                        new_names = [t.name for t in list(tracking.tracks)[-created_count:]]
+                    
+                    self._log(f"detect_features(): {created_count} neue Tracks, {len(new_names)} identifiziert.")
+                    detected_tracks = new_names
                 except Exception as e:
                     self._log(f"{prop_name}: Fehler bei detect_features():", e)
                     detected_tracks = []
@@ -284,7 +338,25 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     try:
                         # Detect vor jedem Iterations-Durchlauf
                         try:
-                            detected_tracks = detect_features(context)
+                            # ==============================================
+                            # Snapshot vor detect_features()
+                            # ==============================================
+                            prev_names = {t.name for t in tracking.tracks}
+                            
+                            created_count = detect_features(context)
+                            
+                            # ==============================================
+                            # Differenz der Tracknamen nach detect_features()
+                            # ==============================================
+                            new_names = [t.name for t in tracking.tracks if t.name not in prev_names]
+                            
+                            # Fallback: falls detect_features nur eine Zahl liefert
+                            if isinstance(created_count, int) and not new_names:
+                                # Versuche, die letzten 'created_count' Namen zu nehmen (typischer Blender-Stil)
+                                new_names = [t.name for t in list(tracking.tracks)[-created_count:]]
+                            
+                            self._log(f"detect_features(): {created_count} neue Tracks, {len(new_names)} identifiziert.")
+                            detected_tracks = new_names
                         except Exception as e:
                             self._log(f"{prop_name}: Fehler bei detect_features() in Stufe {step:+.2f}:", e)
                             detected_tracks = []
@@ -348,7 +420,25 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
                 # Detect vor finalem Baseline-Tracking
                 try:
-                    detected_tracks = detect_features(context)
+                    # ==============================================
+                    # Snapshot vor detect_features()
+                    # ==============================================
+                    prev_names = {t.name for t in tracking.tracks}
+                    
+                    created_count = detect_features(context)
+                    
+                    # ==============================================
+                    # Differenz der Tracknamen nach detect_features()
+                    # ==============================================
+                    new_names = [t.name for t in tracking.tracks if t.name not in prev_names]
+                    
+                    # Fallback: falls detect_features nur eine Zahl liefert
+                    if isinstance(created_count, int) and not new_names:
+                        # Versuche, die letzten 'created_count' Namen zu nehmen (typischer Blender-Stil)
+                        new_names = [t.name for t in list(tracking.tracks)[-created_count:]]
+                    
+                    self._log(f"detect_features(): {created_count} neue Tracks, {len(new_names)} identifiziert.")
+                    detected_tracks = new_names
                 except Exception as e:
                     self._log(f"{prop_name}: Fehler bei detect_features() vor finalem Tracking:", e)
                     detected_tracks = []
