@@ -206,17 +206,27 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         self._log(f"{prop_name}: Untergrenze erreicht → Abbruch Stufe {step:+.2f}")
                         break
 
+                    # =====================================================
+                    # DEBUG: Threshold-Tracking rund um track_cycle
+                    # =====================================================
                     setattr(scene, prop_name, new_value)
+                    self._log(f"[DEBUG] {prop_name} vor scene.update_tag(): {getattr(scene, prop_name)}")
+                    scene.update_tag()
+                    self._log(f"[DEBUG] {prop_name} nach scene.update_tag(): {getattr(scene, prop_name)}")
+
                     _restore_selection()
                     reset_to_frame(context, start_frame)
 
+                    self._log(f"[DEBUG] {prop_name} unmittelbar vor track_cycle(): {getattr(scene, prop_name)}")
                     try:
-                        scene.update_tag()  # Force Blender to recognize new property values before operator call
                         bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
                     except Exception as e:
                         self._log(f"{prop_name} Fehler bei track_cycle in Stufe {step:+.2f}, Runde {iteration}:", e)
                         setattr(scene, prop_name, best_value)
                         break
+
+                    self._log(f"[DEBUG] {prop_name} unmittelbar nach track_cycle(): {getattr(scene, prop_name)}")
+
 
                     sgn = get_total_track_length(context, start_frame)
                     self._log(f"{prop_name} Stufe {step:+.2f} Runde {iteration}: Wert {new_value:.6f} → Segmentlänge {sgn}")
@@ -256,8 +266,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             _restore_selection()
             reset_to_frame(context, start_frame)
             try:
-                scene.update_tag()  # Force Blender to recognize new property values before operator call
+                self._log(f"[DEBUG] Baseline vor track_cycle für {prop_name}: {getattr(scene, prop_name)}")
+                scene.update_tag()
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                self._log(f"[DEBUG] Baseline nach track_cycle für {prop_name}: {getattr(scene, prop_name)}")
+
             except Exception as e:
                 self._log(f"Fehler beim track_cycle nach Beenden von {prop_name}:", e)
                 return {'CANCELLED'}
