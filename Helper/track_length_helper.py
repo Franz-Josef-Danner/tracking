@@ -1,82 +1,42 @@
-"""
-track_length_helper
-====================
-
-This helper provides a small utility for computing the total length of
-tracked segments for a set of selected markers in Blender’s Movie Clip
-Editor.  In the context of the auto‑calibration process, a “tracked
-segment” is defined as the contiguous sequence of frames beginning at
-the frame where tracking starts (the playhead position) and ending at
-the last frame on which a marker still exists for that track.  For each
-selected track we measure the distance between the start frame and the
-maximum frame index of its markers.  These per‑track lengths are then
-summed to produce a single scalar value representing how long the
-tracking operator was able to follow all selected markers.
-
-Usage example::
-
-    import bpy
-    from .track_length_helper import get_total_track_length
-
-    # Assume tracking has just been run from frame ``start_frame``.
-    total_len = get_total_track_length(bpy.context, start_frame)
-    print(f"Total tracked frames: {total_len}")
-
-Note
-----
-This helper does not attempt to determine whether a track contains
-multiple disjoint segments.  If a track contains gaps (frames without
-a marker), those gaps are implicitly counted in the length because the
-distance between the first and last marker frame is used.  This simple
-metric is adequate for the auto‑calibration procedure where the goal is
-to maximise the overall span of frames tracked, not the number of
-continuous frames.
-"""
-
 from __future__ import annotations
-
 import bpy
 
 def get_total_track_length(context: bpy.types.Context, start_frame: int) -> int:
-    """Return the sum of tracked segment lengths for all selected tracks.
-
-    Parameters
-    ----------
-    context : bpy.types.Context
-        The Blender context from which to derive the current clip and
-        selection of tracks.  Selected tracks are determined by the
-        ``select`` property on each ``MovieTrackingTrack``.
-    start_frame : int
-        The frame at which tracking began.  Lengths are measured
-        relative to this frame.
-
-    Returns
-    -------
-    int
-        The sum of (max_frame - start_frame + 1) for each selected track
-        that contains at least one marker at or beyond ``start_frame``.
-    """
+    """Return the sum of tracked segment lengths for all selected tracks."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
+        print(f"[track_length_helper] Kein Clip gefunden (space_data.clip ist None).")
         return 0
+
     tracking = getattr(clip, "tracking", None)
     if tracking is None:
+        print(f"[track_length_helper] Kein tracking-Attribut im Clip vorhanden.")
         return 0
 
     total_length = 0
-    # Iterate over tracks that are currently selected.  The selection is
-    # controlled externally by the calling operator.
-    for tr in tracking.tracks:
+    print(f"[track_length_helper] Startframe: {start_frame}")
+    print(f"[track_length_helper] Anzahl Tracks insgesamt: {len(tracking.tracks)}")
+
+    # Iteriere über alle Tracks, die ausgewählt sind
+    for i, tr in enumerate(tracking.tracks):
         if not getattr(tr, "select", False):
+            # Optional: Log nicht gewählter Tracks
+            # print(f"[track_length_helper] Track {i}: nicht selektiert, überspringe.")
             continue
-        # Gather all marker frame numbers on or after start_frame.  We
-        # assume marker frames are sorted in ascending order as
-        # maintained by Blender.
+
+        # Alle Markerframes ab Startframe sammeln
         marker_frames = [mk.frame for mk in tr.markers if mk.frame >= start_frame]
+        print(f"[track_length_helper] Track {i} (Name: {tr.name}): Marker-Frames ≥ {start_frame}: {marker_frames}")
+
         if not marker_frames:
+            print(f"[track_length_helper] Track {i} hat keine Marker am oder nach Frame {start_frame}, übersprungen.")
             continue
+
         max_frame = max(marker_frames)
-        # Length is inclusive: if the last marker is on the same frame as
-        # start_frame the length is 1.
-        total_length += (max_frame - start_frame + 1)
+        length = (max_frame - start_frame + 1)
+        print(f"[track_length_helper] Track {i}: max_frame = {max_frame}, Länge = {length}")
+
+        total_length += length
+
+    print(f"[track_length_helper] Gesamt-Track-Länge: {total_length}")
     return total_length
