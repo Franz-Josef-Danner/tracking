@@ -119,23 +119,33 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
     scene = context.scene
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
+        if report_fn:
+            report_fn({'WARNING'}, "Kein aktiver Clip.")
         return {'CANCELLED'}
 
     tracking = getattr(clip, 'tracking', None)
     if tracking is None:
+        if report_fn:
+            report_fn({'WARNING'}, "Clip hat kein Tracking-Objekt.")
         return {'CANCELLED'}
 
     end_frame = getattr(scene, 'frame_end', None)
     if end_frame is None:
+        if report_fn:
+            report_fn({'WARNING'}, "Kein Szenen-Endframe gesetzt.")
         return {'CANCELLED'}
 
     start_frame = scene.frame_current
     track_names = _collect_selected_track_names(context)
     if not track_names:
+        if report_fn:
+            report_fn({'WARNING'}, "Keine selektierten Tracks.")
         return {'CANCELLED'}
 
     window, area, region, space = _find_clip_editor_area(clip)
     if not window:
+        if report_fn:
+            report_fn({'WARNING'}, "Kein CLIP_EDITOR Kontext gefunden.")
         return {'CANCELLED'}
 
     # Kontext initialisieren
@@ -172,7 +182,7 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception as e:
-            pass
+            print(f"Fehler bei apply_formula_on_selected_tracks: {e}")
 
         # Tracking-Schritt ausführen
         with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
@@ -196,4 +206,10 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
         for tr in tracking.tracks:
             tr.select = tr.name in track_names
 
+    summary = (
+        f"Start={start_frame} Ende={current_frame} "
+        f"Schritte={frames_processed} Aktiv={len(track_names)} Verloren={failures_total}"
+    )
+    if report_fn:
+        report_fn({'INFO'}, f"Track-Zyklus: {summary}")
     return {'FINISHED'}
