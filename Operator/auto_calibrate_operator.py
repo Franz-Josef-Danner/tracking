@@ -23,6 +23,17 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         description="Ausführliches Logging in der Konsole während der Kalibrierung",
     )
 
+    # ------------------------------------------------------------
+    # Truncation-Funktion: schneidet Dezimalstellen präzise ab
+    # ------------------------------------------------------------
+    def _truncate(self, value: float, decimals: int = 8) -> float:
+        factor = 10.0 ** decimals
+        return int(value * factor) / factor
+
+    def _log(self, *msg) -> None:
+        if self.verbose:
+            print("[Kaiserlich Tracker][AutoCalibrate]", *msg)
+
     # Minimaler Schwellenwert, unter dem die Kalibrierung für einen Parameter
     # automatisch beendet wird. Ist der neue Wert kleiner oder gleich diesem
     # Grenzwert, wird zum letzten guten Wert zurückgekehrt und die Kalibrierung
@@ -232,16 +243,15 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             setattr(scene, prop_name, 1.0)
             scene.update_tag()
 
-            # -------------------------------------------------------------
-            # Haupttest mit Stufenlogik
-            # -------------------------------------------------------------
+    # -------------------------------------------------------------
+    # Haupttest mit Stufenlogik (angepasst auf Truncation)
+    # -------------------------------------------------------------
             steps = [-0.90, +0.50, -0.25, +0.10, -0.05, +0.02, -0.01]
             current_value = getattr(scene, prop_name)
             iteration = 0
 
             for step in steps:
                 self._log(f"{prop_name}: Starte Stufe {step:+.2f}")
-                # Neue dynamische Stufenlogik nach gewünschtem Verhalten
                 stagnation_count = 0
                 change_detected = False
                 improved = False
@@ -249,16 +259,35 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
                 while True:
                     iteration += 1
-                    new_value = current_value * (1.0 + step)
+
+                    # -----------------------------
+                    # Threshold-Berechnung + Schnitt
+                    # -----------------------------
+                    raw_value = current_value * (1.0 + step)
+                    new_value = self._truncate(raw_value, 8)  # Abschneiden statt Runden
+
+                    # Sicherheits-Check auf keine Änderung
+                    if new_value == current_value:
+                        self._log(f"{prop_name}: Truncation-Stagnation erkannt → minimale Korrektur erzwungen")
+                        new_value = self._truncate(current_value * (1.0 + step * 1.01), 8)
+
                     if new_value <= self.MIN_THRESHOLD:
-                        self._log(f"{prop_name}: Untergrenze erreicht → Abbruch Stufe {step:+.2f}")
+                        self._log(f"{prop_name}: Untergrenze erreicht ({new_value:.8f}) → Abbruch Stufe {step:+.2f}")
+                        break
+                    if new_value >= self.MAX_THRESHOLD:
+                        self._log(f"{prop_name}: Obergrenze erreicht ({new_value:.8f}) → Abbruch Stufe {step:+.2f}")
                         break
 
-                    # Threshold anwenden und Tracking durchführen
+                    # -----------------------------
+                    # Threshold anwenden
+                    # -----------------------------
                     setattr(scene, prop_name, new_value)
                     scene.update_tag()
                     reset_to_frame(context, start_frame)
 
+                    # -----------------------------
+                    # Tracking-Zyklus
+                    # -----------------------------
                     old_track_names = [tr.name for tr in tracking.tracks]
                     snapshot_active_markers(context)
                     detect_features(context)
@@ -270,7 +299,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     sgn = get_total_track_length(context, start_frame)
                     delete_tracks_by_names(context, new_track_names)
 
-                    self._log(f"{prop_name} Stufe {step:+.2f} Runde {iteration}: Wert {new_value:.6f} → Segmentlänge {sgn}")
+                    self._log(
+                        f"{prop_name} Stufe {step:+.2f} Runde {iteration}: "
+                        f"Wert {new_value:.8f} → Segmentlänge {sgn}"
+                    )
 
                     # === Phase 1: Warte auf erste Veränderung ===
                     if not change_detected:
@@ -286,7 +318,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                                 self._log(f"{prop_name}: erste Veränderung ist Verschlechterung → Stufe abbrechen")
                                 break
                         else:
-                            continue  # Keine Veränderung → weiter prüfen
+                            continue
 
                     # === Phase 2: Nach erster Änderung aktiv ===
                     if sgn > sg_prev:
@@ -305,14 +337,17 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     else:
                         if improved:
                             setattr(scene, prop_name, best_value)
-                            self._log(f"{prop_name}: Verschlechterung erkannt → Rückkehr zu {best_value:.6f}")
+                            self._log(f"{prop_name}: Verschlechterung erkannt → Rückkehr zu {best_value:.8f}")
                         break
 
                     current_value = new_value
 
+                # -----------------------------
+                # Nach jeder Stufe sichern
+                # -----------------------------
                 setattr(scene, prop_name, best_value)
                 current_value = best_value
-                self._log(f"{prop_name}: Ende Stufe {step:+.2f} → bester Wert {best_value:.6f}, Länge {best_length}")
+                self._log(f"{prop_name}: Ende Stufe {step:+.2f} → bester Wert {best_value:.8f}, Länge {best_length}")
 
             # Ende aller Stufen
             self._log(f"{prop_name}: Haupttest abgeschlossen → optimaler Wert {best_value:.6f}")
