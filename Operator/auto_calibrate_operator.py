@@ -20,7 +20,7 @@ STEPS: List[float] = [
 ]
 
 
-@@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
+class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
              # Unterschied festgestellt – Baseline auf length_max setzen und
              # Feintuning durchführen.
              baseline_length = length_max
