@@ -21,36 +21,14 @@ STEPS: List[float] = [
 
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
-    """Auto‑Calibrate per explicit staged multipliers.
-
-    Kernlogik (pro Threshold-Parameter):
-        - sg := Segmentlängen‑Summe nach einem Referenz‑Cycle (cyclus 1)
-        - Für jede Stufe st in STEPS:
-            * Setze th := th * st (ohne Reset zwischendurch)
-            * Führe cyclus 1 aus → sgn := neue Segmentlängen‑Summe
-            * Wenn sgn == sg → weiter zur nächsten Stufe (keine Änderung)
-            * Wenn sgn  > sg → betrete cyclus 2:
-                - Führe erneut track_cycle aus
-                - Wenn neue Länge <= vorheriger sg → "threshold wechsel" (Rollback auf vorher bestes th) und zurück zu cyclus 1
-                - Sonst bleibe in cyclus 2 (besser), setze sg := sgn, und gehe zur nächsten Stufe
-            * Wenn sgn  < sg → Verschlechterung → Rollback auf vorher bestes th, zur nächsten Stufe
-        - Der über alle Stufen beste Wert bleibt gesetzt.
-        - Während der Zyklen erfolgt KEIN Reset der Threshold‑Properties – nur Multiplikation gemäß STEPS.
-    """
-
     bl_idname = "kaiserlich_tracker.auto_calibrate"
-    bl_label = "Auto‑Calibrate (Staged)"
-    bl_description = "Kalibriert Schwellenwerte mit festen Stufen: -90%, +50%, -25%, +10%, -5%, +2%, -1%"
+    bl_label = "Auto-Calibrate Thresholds"
+    bl_description = "Führt eine automatische Schwellenwert-Kalibrierung durch"
     bl_options = {"REGISTER", "UNDO"}
 
-    verbose: bpy.props.BoolProperty(  # type: ignore
-        name="Verbose Log",
-        default=True,
-        description="Ausführliches Logging der Stufenlogik",
-    )
+    verbose: bpy.props.BoolProperty(default=True)
 
-    # Reihenfolge der zu optimierenden Scene-Properties (anpassen an UI)
-    threshold_props = [
+    _threshold_props = [
         "kaiserlich_rot_thresh_x",
         "kaiserlich_rot_thresh_y",
         "kaiserlich_scale_thresh_min",
@@ -60,157 +38,105 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         "kaiserlich_perspective_thresh",
     ]
 
-    MIN_VALUE: float = 1e-8
-    MAX_VALUE: float = 1e+6
+    _steps = [-0.90, +0.50, -0.25, +0.10, -0.05, +0.02, -0.01]
+    MIN_THRESHOLD = 1e-5
 
-    def _log(self, *msg) -> None:
+    def _log(self, *msg):
         if self.verbose:
-            print("[Kaiserlich Tracker][AutoCalibrate Staged]", *msg)
+            print("[AutoCalibrate]", *msg)
 
-    def _safe_mul(self, val: float, mul: float) -> float:
-        out = val * mul
-        if out < self.MIN_VALUE:
-            out = self.MIN_VALUE
-        if out > self.MAX_VALUE:
-            out = self.MAX_VALUE
-        return out
-
-    def _run_cycle_and_measure(self, context: bpy.types.Context, start_frame: int) -> float:
-        # cyclus 1 / 2 wird über denselben Operator gefahren
-        bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-        return get_total_track_length(context, start_frame)
-
-    def execute(self, context: bpy.types.Context):
+    def execute(self, context):
+        scene = context.scene
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
-            self.report({'WARNING'}, "Kein aktiver Clip im Clip Editor.")
+            self.report({'WARNING'}, "Kein Clip aktiv.")
             return {'CANCELLED'}
-
         tracking = getattr(clip, "tracking", None)
-        if tracking is None or not tracking.tracks:
-            self.report({'WARNING'}, "Keine Tracking-Daten im Clip gefunden.")
+        if tracking is None:
+            self.report({'WARNING'}, "Kein Tracking im Clip.")
             return {'CANCELLED'}
 
-        # Merke Auswahl
         selected_names = [t.name for t in tracking.tracks if getattr(t, 'select', False)]
         if not selected_names:
-            self.report({'WARNING'}, "Keine selektierten Tracks gefunden.")
+            self.report({'WARNING'}, "Keine selektierten Marker.")
             return {'CANCELLED'}
 
-        def restore_selection():
+        def _restore_selection():
             for tr in tracking.tracks:
-                tr.select = (tr.name in selected_names)
+                tr.select = tr.name in selected_names
 
         start_frame = get_start_frame(context)
-        self._log(f"Startframe: {start_frame}")
 
-        # Baseline vor Start jeder Property
-        restore_selection()
+        # --- Baseline vorbereiten ---
+        _restore_selection()
         reset_to_frame(context, start_frame)
-        try:
-            baseline_len_global = self._run_cycle_and_measure(context, start_frame)
-        except Exception as e:
-            self._log("Fehler beim initialen track_cycle:", e)
-            return {'CANCELLED'}
-        self._log(f"Global Baseline: {baseline_len_global}")
+        bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+        baseline_length = get_total_track_length(context, start_frame)
+        self._log(f"Initiale Baseline: {baseline_length}")
 
-        # === Hauptschleife über alle Threshold-Properties ===
-        for prop in self.threshold_props:
-            if not hasattr(context.scene, prop):
-                self._log(f"Überspringe unbekannte Property: {prop}")
+        # --- Kalibrierung pro Parameter ---
+        for prop in self._threshold_props:
+            if not hasattr(scene, prop):
+                self._log(f"Überspringe fehlendes Property: {prop}")
                 continue
 
-            th_current = float(getattr(context.scene, prop))
-            best_value = th_current
-            restore_selection()
-            reset_to_frame(context, start_frame)
+            th_val = getattr(scene, prop)
+            best_val, best_len = th_val, baseline_length
+            self._log(f"Start Kalibrierung: {prop} = {th_val}")
 
-            # sg: Referenzlänge (cyclus 1) unter aktuellem th
-            try:
-                sg = self._run_cycle_and_measure(context, start_frame)
-            except Exception as e:
-                self._log(f"{prop}: Fehler beim Referenz‑Cycle:", e)
-                continue
-            best_length = sg
-            self._log(f"{prop}: Start th={th_current:.6f}, sg={sg}")
+            for st_i, st_change in enumerate(self._steps, 1):
+                improved = False
+                stagnation_count = 0
+                self._log(f"[{prop}] Stufe {st_i}: {st_change:+.2%}")
 
-            # Stufenverarbeitung
-            for idx, mul in enumerate(STEPS, start=1):
-                restore_selection()
-                reset_to_frame(context, start_frame)
+                while True:
+                    # neuen Threshold berechnen
+                    new_val = th_val * (1.0 + st_change)
+                    if new_val <= self.MIN_THRESHOLD:
+                        self._log(f"{prop}: Mindestwert erreicht → Abbruch Stufe.")
+                        break
 
-                # th := th * st  (ohne Reset)
-                prev_th = float(getattr(context.scene, prop))
-                th_new = self._safe_mul(prev_th, mul)
-                setattr(context.scene, prop, th_new)
-                self._log(f"{prop}: st={idx}, mul={mul}, th: {prev_th:.6f} → {th_new:.6f}")
-
-                # cyclus 1 → sgn
-                try:
-                    sgn = self._run_cycle_and_measure(context, start_frame)
-                except Exception as e:
-                    self._log(f"{prop}: Fehler in cyclus 1 (st={idx}):", e)
-                    # Rollback auf previous best
-                    setattr(context.scene, prop, best_value)
-                    continue
-
-                self._log(f"{prop}: st={idx}, cyclus1 sgn={sgn} (sg={sg})")
-
-                if sgn == sg:
-                    # Keine Veränderung → nächste Stufe
-                    self._log(f"{prop}: st={idx}, keine Veränderung → weiter")
-                    continue
-
-                if sgn > sg:
-                    # Verbesserung → cyclus 2 prüfen
-                    self._log(f"{prop}: st={idx}, Verbesserung → cyclus 2")
-                    restore_selection()
+                    setattr(scene, prop, new_val)
+                    _restore_selection()
                     reset_to_frame(context, start_frame)
-                    try:
-                        sgn2 = self._run_cycle_and_measure(context, start_frame)
-                    except Exception as e:
-                        self._log(f"{prop}: Fehler in cyclus 2 (st={idx}):", e)
-                        # Rollback auf previous best
-                        setattr(context.scene, prop, best_value)
-                        continue
+                    bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                    new_len = get_total_track_length(context, start_frame)
+                    self._log(f"{prop}: Test={new_val:.6f}, Länge={new_len}")
 
-                    self._log(f"{prop}: st={idx}, cyclus2 sgn2={sgn2}, vorher sg={sg}")
-
-                    if sgn2 <= sg:
-                        # threshold wechsel → Rollback
-                        setattr(context.scene, prop, best_value)
-                        self._log(f"{prop}: st={idx}, threshold wechsel → Rollback auf {best_value:.6f}")
-                        # zurück zu cyclus 1 mit altem sg (kein Reset nötig)
+                    if new_len > best_len:
+                        self._log(f"{prop}: Verbesserung ({new_len} > {best_len})")
+                        best_len = new_len
+                        best_val = new_val
+                        th_val = new_val
+                        improved = True
+                        stagnation_count = 0
                         continue
+                    elif new_len == best_len:
+                        stagnation_count += 1
+                        if stagnation_count >= 2:
+                            self._log(f"{prop}: Stagnation → nächste Stufe")
+                            break
+                        else:
+                            continue
                     else:
-                        # Verbesserung bestätigt → übernehmen
-                        sg = sgn2
-                        if sg > best_length:
-                            best_length = sg
-                            best_value = float(getattr(context.scene, prop))
-                            self._log(f"{prop}: st={idx}, neuer Bestwert th={best_value:.6f}, len={best_length}")
-                        continue
+                        self._log(f"{prop}: Verschlechterung → nächste Stufe")
+                        break
 
-                # sgn < sg → Verschlechterung → Rollback und weiter
-                setattr(context.scene, prop, best_value)
-                self._log(f"{prop}: st={idx}, Verschlechterung → Rollback auf th={best_value:.6f}")
+                # nach jeder Stufe aktuellen besten Wert setzen
+                setattr(scene, prop, best_val)
+                th_val = best_val
 
-            # Nach allen Stufen sicherstellen, dass bester Wert gesetzt bleibt
-            setattr(context.scene, prop, best_value)
-            self._log(f"{prop}: abgeschlossen, bester th={best_value:.6f}, best_len={best_length}")
-
-            # Optionale Aktualisierung der globalen Baseline
-            restore_selection()
+            # finalen Wert übernehmen und Baseline updaten
+            setattr(scene, prop, best_val)
+            _restore_selection()
             reset_to_frame(context, start_frame)
-            try:
-                baseline_len_global = self._run_cycle_and_measure(context, start_frame)
-                self._log(f"{prop}: neue globale Baseline nach Abschluss: {baseline_len_global}")
-            except Exception as e:
-                self._log(f"{prop}: Fehler bei Baseline‑Aktualisierung:", e)
+            bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+            baseline_length = get_total_track_length(context, start_frame)
+            self._log(f"{prop}: Finaler Wert {best_val:.6f}, neue Baseline={baseline_length}")
 
         reset_to_frame(context, start_frame)
-        restore_selection()
-        self.report({'INFO'}, "Auto‑Calibrate (Staged) abgeschlossen.")
+        _restore_selection()
+        self.report({'INFO'}, "Auto-Calibrate abgeschlossen.")
         return {'FINISHED'}
 
 
