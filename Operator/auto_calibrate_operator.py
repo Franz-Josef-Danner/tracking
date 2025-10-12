@@ -296,7 +296,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                             try:
                                 delete_tracks_by_names(context, detected_tracks)
                             except Exception as e:
-                                self._log(f"{prop_name}: Fehler bei delete_tracks_by_names() in Stufe {step:+.2f}:", e)                    except Exception as e:
+                                self._log(f"{prop_name}: Fehler bei delete_tracks_by_names() in Stufe {step:+.2f}:", e)                    
+                    except Exception as e:
                         self._log(f"{prop_name} Fehler bei track_cycle in Stufe {step:+.2f}, Runde {iteration}:", e)
                         setattr(scene, prop_name, best_value)
                         break
