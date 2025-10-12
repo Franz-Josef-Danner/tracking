@@ -182,7 +182,6 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception as e:
-            print(f"Fehler bei apply_formula_on_selected_tracks: {e}")
 
         # Tracking-Schritt ausführen
         with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
