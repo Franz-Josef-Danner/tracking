@@ -126,10 +126,12 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
             # Haupt-Tracking-Zyklus
             bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+            # ==========================================================
+            # Baseline: zuerst Längenmessung, dann Cleanup
+            # ==========================================================
+            baseline_length = get_total_track_length(context, start_frame)
+            self._log(f"Baseline Länge: {baseline_length}")
 
-            # ==========================================================
-            # Cleanup nach Baseline: alle erzeugten Tracks löschen
-            # ==========================================================
             if detected_tracks:
                 self._log(f"Lösche {len(detected_tracks)} Baseline-Tracks …")
                 try:
@@ -210,10 +212,12 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     detected_tracks = []
 
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                # ==============================================
+                # LÄNGENMESSUNG vor der Löschung
+                # ==============================================
+                length_min = get_total_track_length(context, start_frame)
 
-                # ==============================================
-                # DELETE nach jedem Tracking-Durchlauf
-                # ==============================================
+                # Danach Delete
                 if detected_tracks:
                     self._log(f"{prop_name}: Lösche {len(detected_tracks)} Tracks nach Schnelltest (min)")
                     try:
@@ -260,8 +264,12 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     detected_tracks = []
 
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                # ==============================================
+                # LÄNGENMESSUNG vor der Löschung
+                # ==============================================
+                length_max = get_total_track_length(context, start_frame)
 
-                # Delete nach Schnelltest (max)
+                # Danach Delete
                 if detected_tracks:
                     self._log(f"{prop_name}: Lösche {len(detected_tracks)} Tracks nach Schnelltest (max)")
                     try:
@@ -362,13 +370,18 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                             detected_tracks = []
 
                         bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                        # ==================================================
+                        # LÄNGENMESSUNG vor der Löschung
+                        # ==================================================
+                        sgn = get_total_track_length(context, start_frame)
+                        self._log(f"{prop_name} Stufe {step:+.2f} Runde {iteration}: Wert {new_value:.6f} → Segmentlänge {sgn}")
 
-                        # Delete nach jedem Iterations-Durchlauf
+                        # Danach Delete
                         if detected_tracks:
                             try:
                                 delete_tracks_by_names(context, detected_tracks)
                             except Exception as e:
-                                self._log(f"{prop_name}: Fehler bei delete_tracks_by_names() in Stufe {step:+.2f}:", e)                    
+                                self._log(f"{prop_name}: Fehler bei delete_tracks_by_names() in Stufe {step:+.2f}:", e)
                     except Exception as e:
                         self._log(f"{prop_name} Fehler bei track_cycle in Stufe {step:+.2f}, Runde {iteration}:", e)
                         setattr(scene, prop_name, best_value)
@@ -444,20 +457,18 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     detected_tracks = []
 
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                # ==================================================
+                # LÄNGENMESSUNG vor der Löschung
+                # ==================================================
+                baseline_length = get_total_track_length(context, start_frame)
+                self._log(f"{prop_name}: Fertig. Bester Wert {best_value}, neue Baseline {baseline_length}")
 
-                # Delete nach finalem Baseline-Tracking
+                # Danach Delete
                 if detected_tracks:
                     try:
                         delete_tracks_by_names(context, detected_tracks)
                     except Exception as e:
                         self._log(f"{prop_name}: Fehler bei delete_tracks_by_names() nach finalem Tracking:", e)
-
-            except Exception as e:
-                self._log(f"Fehler beim track_cycle nach Beenden von {prop_name}:", e)
-                return {'CANCELLED'}
-            baseline_length = get_total_track_length(context, start_frame)
-            self._log(f"{prop_name}: Fertig. Bester Wert {best_value}, neue Baseline {baseline_length}")
-
         # Fertig: Playhead zurücksetzen und ursprüngliche Auswahl wiederherstellen
         reset_to_frame(context, start_frame)
         _restore_selection()
