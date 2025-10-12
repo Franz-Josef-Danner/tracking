@@ -52,21 +52,21 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             self.report({'WARNING'}, "Kein aktiver Clip im Clip Editor.")
             return {'CANCELLED'}
 
-        # Sammle die Namen der aktuell selektierten Tracks, damit wir die Auswahl
-        # zwischen den Tracking‑Durchläufen wiederherstellen können.  Ohne dies
-        # würden abgebrochene Tracks aus der Auswahl verschwinden und das
-        # Messkriterium verfälschen.
+        # Sammle die Namen der aktuell selektierten Tracks (optional)
         tracking = getattr(clip, "tracking", None)
         if tracking is None:
             self.report({'WARNING'}, "Clip besitzt kein tracking-Attribut.")
             return {'CANCELLED'}
-        selected_names = [t.name for t in tracking.tracks if getattr(t, 'select', False)]
-        if not selected_names:
-            self.report({'WARNING'}, "Keine selektierten Tracks gefunden.")
-            return {'CANCELLED'}
 
-        # Hilfsfunktion: Auswahl der ursprünglichen Tracks wiederherstellen.
+        selected_names = [t.name for t in tracking.tracks if getattr(t, 'select', False)]
+
+        # Falls keine Selektion existiert, arbeite einfach mit leerer Liste.
+        self._log(f"Selektierte Tracks: {len(selected_names)}")
+
+        # Hilfsfunktion: Auswahl wiederherstellen (wenn vorhanden)
         def _restore_selection() -> None:
+            if not tracking.tracks:
+                return
             for tr in tracking.tracks:
                 tr.select = tr.name in selected_names
 
