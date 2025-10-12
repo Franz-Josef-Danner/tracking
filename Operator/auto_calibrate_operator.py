@@ -9,7 +9,7 @@ from ..Helper.delete import delete_tracks_by_names
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
-    bl_idname = "kaiserlich_tracker.auto_calibrate"
+    bl_idname = "auto_calibrate"
     bl_label = "Auto‑Calibrate Thresholds"
     bl_description = (
         "Kalibriert automatisch die Schwellenwerte für die Bewegungsmodelle "
@@ -83,11 +83,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         # Snapshot current tracks and detect new features for baseline tracking
         old_track_names = [tr.name for tr in tracking.tracks]
         try:
-            bpy.ops.kaiserlich_tracker.snapshot_active_markers()
+            bpy.ops.snapshot_active_markers()
         except Exception as e:
             self._log(f"Warnung: Konnte Snapshot vor Baseline nicht ausführen: {e}")
         try:
-            bpy.ops.kaiserlich_tracker.detect_features()
+            bpy.ops.detect_features()
         except Exception as e:
             self._log(f"Fehler bei detect_features vor Baseline: {e}")
             # Remove newly added tracks and cancel calibration
@@ -100,7 +100,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             tr.select = (tr.name in new_track_names)
         try:
             scene.update_tag()
-            bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+            bpy.ops.track_cycle(max_frames=0, verbose=False)
         except Exception as e:
             self._log("Fehler beim ersten Tracking-Durchlauf:", e)
             # Neu detektierte Tracks entfernen und Abbruch
@@ -143,11 +143,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # Feature-Detection vor Schnelltest (min) für diesen Parameter
             old_track_names = [tr.name for tr in tracking.tracks]
             try:
-                bpy.ops.kaiserlich_tracker.snapshot_active_markers()
+                bpy.ops.snapshot_active_markers()
             except Exception as e:
                 self._log(f"Warnung: Snapshot vor Schnelltest (min) für {prop_name} fehlgeschlagen: {e}")
             try:
-                bpy.ops.kaiserlich_tracker.detect_features()
+                bpy.ops.detect_features()
             except Exception as e:
                 self._log(f"Fehler bei detect_features (min) für {prop_name}: {e}")
                 # Neue Tracks bereinigen und Kalibrierung abbrechen
@@ -160,7 +160,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 tr.select = (tr.name in new_track_names)
             try:
                 scene.update_tag()
-                bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                bpy.ops.track_cycle(max_frames=0, verbose=False)
             except Exception as e:
                 self._log(f"Fehler beim Schnelltest (min) für {prop_name}:", e)
                 # Neue Tracks entfernen, Threshold zurücksetzen und Parameter überspringen
@@ -177,11 +177,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # Feature-Detection vor Schnelltest (max) für diesen Parameter
             old_track_names = [tr.name for tr in tracking.tracks]
             try:
-                bpy.ops.kaiserlich_tracker.snapshot_active_markers()
+                bpy.ops.snapshot_active_markers()
             except Exception as e:
                 self._log(f"Warnung: Snapshot vor Schnelltest (max) für {prop_name} fehlgeschlagen: {e}")
             try:
-                bpy.ops.kaiserlich_tracker.detect_features()
+                bpy.ops.detect_features()
             except Exception as e:
                 self._log(f"Fehler bei detect_features (max) für {prop_name}: {e}")
                 # Neue Tracks bereinigen und Kalibrierung abbrechen
@@ -194,7 +194,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 tr.select = (tr.name in new_track_names)
             try:
                 scene.update_tag()
-                bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                bpy.ops.track_cycle(max_frames=0, verbose=False)
             except Exception as e:
                 self._log(f"Fehler beim Schnelltest (max) für {prop_name}:", e)
                 # Neue Tracks entfernen und Parameter überspringen
@@ -264,11 +264,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     # Vor Tracking in Feintuning: aktuelle Tracks aufnehmen und neue Merkmale detektieren
                     old_track_names = [tr.name for tr in tracking.tracks]
                     try:
-                        bpy.ops.kaiserlich_tracker.snapshot_active_markers()
+                        bpy.ops.snapshot_active_markers()
                     except Exception as e:
                         self._log(f"Warnung: Snapshot in Stufe {step:+.2f}, Runde {iteration} fehlgeschlagen: {e}")
                     try:
-                        bpy.ops.kaiserlich_tracker.detect_features()
+                        bpy.ops.detect_features()
                     except Exception as e:
                         self._log(f"{prop_name} Fehler bei detect_features in Stufe {step:+.2f}, Runde {iteration}: {e}")
                         setattr(scene, prop_name, best_value)
@@ -281,7 +281,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     for tr in tracking.tracks:
                         tr.select = (tr.name in new_track_names)
                     try:
-                        bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                        bpy.ops.track_cycle(max_frames=0, verbose=False)
                     except Exception as e:
                         self._log(f"{prop_name} Fehler bei track_cycle in Stufe {step:+.2f}, Runde {iteration}:", e)
                         delete_tracks_by_names(context, new_track_names)
@@ -329,11 +329,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # Vor erneutem Tracking: aktuelle Tracks aufnehmen und neue Merkmale detektieren
             old_track_names = [tr.name for tr in tracking.tracks]
             try:
-                bpy.ops.kaiserlich_tracker.snapshot_active_markers()
+                bpy.ops.snapshot_active_markers()
             except Exception as e:
                 self._log(f"Warnung: Snapshot vor abschließendem Tracking für {prop_name} fehlgeschlagen: {e}")
             try:
-                bpy.ops.kaiserlich_tracker.detect_features()
+                bpy.ops.detect_features()
             except Exception as e:
                 self._log(f"Fehler beim abschließenden detect_features für {prop_name}: {e}")
                 for tr in list(tracking.tracks):
@@ -345,7 +345,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 tr.select = (tr.name in new_track_names)
             try:
                 scene.update_tag()
-                bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+                bpy.ops.track_cycle(max_frames=0, verbose=False)
             except Exception as e:
                 self._log(f"Fehler beim abschließenden track_cycle für {prop_name}:", e)
                 delete_tracks_by_names(context, new_track_names)
