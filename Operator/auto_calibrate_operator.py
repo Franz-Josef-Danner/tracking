@@ -281,35 +281,14 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         _restore_selection()
         self.report({'INFO'}, "Schwellenwert-Kalibrierung abgeschlossen.")
 
-        # ==========================================================
-        # Final: Schwellenwerte bestätigen und Tracking neu starten
-        # ==========================================================
-        try:
-            scene.update_tag()
+        # Fertig: Playhead zurücksetzen und ursprüngliche Auswahl wiederherstellen
+        reset_to_frame(context, start_frame)
+        _restore_selection()
+        self.report({'INFO'}, "Schwellenwert-Kalibrierung abgeschlossen.")
 
-            # Finalwerte nochmals ausgeben
-            print("\n[Kaiserlich Tracker][AutoCalibrate] Final angewendete Thresholds:")
-            for prop_name in self._threshold_props:
-                if hasattr(scene, prop_name):
-                    print(f"   {prop_name} = {getattr(scene, prop_name):.6f}")
-                else:
-                    print(f"   {prop_name} fehlt in Szene-Properties.")
-
-            self._log("Finale Schwellenwerte wurden angewendet. Starte Haupt-Tracking-Durchlauf …")
-
-            # Haupt-Tracking mit den neuen Werten ausführen
-            reset_to_frame(context, start_frame)
-            bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-
-            self._log("Haupt-Tracking nach Auto-Kalibrierung abgeschlossen.")
-            self.report({'INFO'}, "Auto-Kalibrierung abgeschlossen und Tracking neu ausgeführt.")
-
-        except Exception as e:
-            self._log(f"[ERROR] Fehler beim Anwenden oder Neustarten des Trackings: {e}")
-            self.report({'WARNING'}, f"Fehler beim Neustart des Trackings: {e}")
-
+        # Kein abschließender Tracking-Lauf (Testmodus)
+        self._log("Auto-Calibrate abgeschlossen (Testmodus, kein King-Run ausgeführt).")
         return {'FINISHED'}
-
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate)
