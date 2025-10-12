@@ -90,6 +90,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         # max_frames=0 bedeutet kein künstliches Limit.  verbose=False unterdrückt
         # dessen eigene Logs.
         try:
+            scene.update_tag()  # Force Blender to recognize new property values before operator call
             bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
         except Exception as e:
             self._log("Fehler beim ersten Tracking-Durchlauf:", e)
@@ -134,6 +135,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             _restore_selection()
             reset_to_frame(context, start_frame)
             try:
+                scene.update_tag()  # Force Blender to recognize new property values before operator call
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
             except Exception as e:
                 self._log(f"Fehler beim Schnelltest (min) für {prop_name}:", e)
@@ -148,6 +150,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             _restore_selection()
             reset_to_frame(context, start_frame)
             try:
+                scene.update_tag()  # Force Blender to recognize new property values before operator call
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
             except Exception as e:
                 self._log(f"Fehler beim Schnelltest (max) für {prop_name}:", e)
@@ -208,6 +211,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     reset_to_frame(context, start_frame)
 
                     try:
+                        scene.update_tag()  # Force Blender to recognize new property values before operator call
                         bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
                     except Exception as e:
                         self._log(f"{prop_name} Fehler bei track_cycle in Stufe {step:+.2f}, Runde {iteration}:", e)
@@ -252,6 +256,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             _restore_selection()
             reset_to_frame(context, start_frame)
             try:
+                scene.update_tag()  # Force Blender to recognize new property values before operator call
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
             except Exception as e:
                 self._log(f"Fehler beim track_cycle nach Beenden von {prop_name}:", e)
