@@ -1,11 +1,8 @@
-from __future__ import annotations
-
 import bpy
 
 from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
-from ..Helper.detect import detect_features
-from ..Helper.delete import delete_tracks_by_names
+
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
@@ -52,21 +49,21 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             self.report({'WARNING'}, "Kein aktiver Clip im Clip Editor.")
             return {'CANCELLED'}
 
-        # Sammle die Namen der aktuell selektierten Tracks (optional)
+        # Sammle die Namen der aktuell selektierten Tracks, damit wir die Auswahl
+        # zwischen den Tracking‑Durchläufen wiederherstellen können.  Ohne dies
+        # würden abgebrochene Tracks aus der Auswahl verschwinden und das
+        # Messkriterium verfälschen.
         tracking = getattr(clip, "tracking", None)
         if tracking is None:
             self.report({'WARNING'}, "Clip besitzt kein tracking-Attribut.")
             return {'CANCELLED'}
-
         selected_names = [t.name for t in tracking.tracks if getattr(t, 'select', False)]
+        if not selected_names:
+            self.report({'WARNING'}, "Keine selektierten Tracks gefunden.")
+            return {'CANCELLED'}
 
-        # Falls keine Selektion existiert, arbeite einfach mit leerer Liste.
-        self._log(f"Selektierte Tracks: {len(selected_names)}")
-
-        # Hilfsfunktion: Auswahl wiederherstellen (wenn vorhanden)
+        # Hilfsfunktion: Auswahl der ursprünglichen Tracks wiederherstellen.
         def _restore_selection() -> None:
-            if not tracking.tracks:
-                return
             for tr in tracking.tracks:
                 tr.select = tr.name in selected_names
 
@@ -91,53 +88,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         # max_frames=0 bedeutet kein künstliches Limit.  verbose=False unterdrückt
         # dessen eigene Logs.
         try:
-            scene.update_tag()
-
-            # ==========================================================
-            # Baseline-Detect: neue Marker erzeugen
-            # ==========================================================
-            self._log("Starte detect_features() für Baseline …")
-            try:
-                # ==============================================
-                # Snapshot vor detect_features()
-                # ==============================================
-                prev_names = {t.name for t in tracking.tracks}
-                
-                created_count = detect_features(context)
-                
-                # ==============================================
-                # Differenz der Tracknamen nach detect_features()
-                # ==============================================
-                new_names = [t.name for t in tracking.tracks if t.name not in prev_names]
-                
-                # Fallback: falls detect_features nur eine Zahl liefert
-                if isinstance(created_count, int) and not new_names:
-                    # Versuche, die letzten 'created_count' Namen zu nehmen (typischer Blender-Stil)
-                    new_names = [t.name for t in list(tracking.tracks)[-created_count:]]
-                
-                self._log(f"detect_features(): {created_count} neue Tracks, {len(new_names)} identifiziert.")
-                detected_tracks = new_names
-                if not detected_tracks:
-                    self._log("Warnung: detect_features() hat keine Tracks erzeugt.")
-                    detected_tracks = []
-            except Exception as e:
-                self._log("Fehler bei detect_features():", e)
-                detected_tracks = []
-
-            # Haupt-Tracking-Zyklus
+            scene.update_tag()  # Force Blender to recognize new property values before operator call
             bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-            # ==========================================================
-            # Baseline: zuerst Längenmessung, dann Cleanup
-            # ==========================================================
-            baseline_length = get_total_track_length(context, start_frame)
-            self._log(f"Baseline Länge: {baseline_length}")
-
-            if detected_tracks:
-                self._log(f"Lösche {len(detected_tracks)} Baseline-Tracks …")
-                try:
-                    delete_tracks_by_names(context, detected_tracks)
-                except Exception as e:
-                    self._log("Fehler bei delete_tracks_by_names:", e)
         except Exception as e:
             self._log("Fehler beim ersten Tracking-Durchlauf:", e)
             return {'CANCELLED'}
@@ -182,46 +134,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             reset_to_frame(context, start_frame)
             try:
                 scene.update_tag()
-
-                # ==============================================
-                # DETECT vor jedem Tracking-Durchlauf
-                # ==============================================
-                self._log(f"{prop_name}: detect_features() vor Schnelltest (min)")
-                try:
-                    # ==============================================
-                    # Snapshot vor detect_features()
-                    # ==============================================
-                    prev_names = {t.name for t in tracking.tracks}
-                    
-                    created_count = detect_features(context)
-                    
-                    # ==============================================
-                    # Differenz der Tracknamen nach detect_features()
-                    # ==============================================
-                    new_names = [t.name for t in tracking.tracks if t.name not in prev_names]
-                    
-                    # Fallback: falls detect_features nur eine Zahl liefert
-                    if isinstance(created_count, int) and not new_names:
-                        # Versuche, die letzten 'created_count' Namen zu nehmen (typischer Blender-Stil)
-                        new_names = [t.name for t in list(tracking.tracks)[-created_count:]]
-                    
-                    self._log(f"detect_features(): {created_count} neue Tracks, {len(new_names)} identifiziert.")
-                    detected_tracks = new_names
-                except Exception as e:
-                    self._log(f"{prop_name}: Fehler bei detect_features():", e)
-                    detected_tracks = []
-
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-                # ==============================================
-                # LÄNGENMESSUNG vor der Löschung
-                # ==============================================
-                # Danach Delete
-                if detected_tracks:
-                    self._log(f"{prop_name}: Lösche {len(detected_tracks)} Tracks nach Schnelltest (min)")
-                    try:
-                        delete_tracks_by_names(context, detected_tracks)
-                    except Exception as e:
-                        self._log(f"{prop_name}: Fehler bei delete_tracks_by_names():", e)
             except Exception as e:
                 self._log(f"Fehler beim Schnelltest (min) für {prop_name}:", e)
                 setattr(scene, prop_name, original_value)
@@ -234,46 +147,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             reset_to_frame(context, start_frame)
             try:
                 scene.update_tag()
-
-                # Detect vor Schnelltest (max)
-                self._log(f"{prop_name}: detect_features() vor Schnelltest (max)")
-                try:
-                    # ==============================================
-                    # Snapshot vor detect_features()
-                    # ==============================================
-                    prev_names = {t.name for t in tracking.tracks}
-                    
-                    created_count = detect_features(context)
-                    
-                    # ==============================================
-                    # Differenz der Tracknamen nach detect_features()
-                    # ==============================================
-                    new_names = [t.name for t in tracking.tracks if t.name not in prev_names]
-                    
-                    # Fallback: falls detect_features nur eine Zahl liefert
-                    if isinstance(created_count, int) and not new_names:
-                        # Versuche, die letzten 'created_count' Namen zu nehmen (typischer Blender-Stil)
-                        new_names = [t.name for t in list(tracking.tracks)[-created_count:]]
-                    
-                    self._log(f"detect_features(): {created_count} neue Tracks, {len(new_names)} identifiziert.")
-                    detected_tracks = new_names
-                except Exception as e:
-                    self._log(f"{prop_name}: Fehler bei detect_features():", e)
-                    detected_tracks = []
-
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-                # ==============================================
-                # LÄNGENMESSUNG vor der Löschung
-                # ==============================================
-                length_max = get_total_track_length(context, start_frame)
-
-                # Danach Delete
-                if detected_tracks:
-                    self._log(f"{prop_name}: Lösche {len(detected_tracks)} Tracks nach Schnelltest (max)")
-                    try:
-                        delete_tracks_by_names(context, detected_tracks)
-                    except Exception as e:
-                        self._log(f"{prop_name}: Fehler bei delete_tracks_by_names():", e)
             except Exception as e:
                 self._log(f"Fehler beim Schnelltest (max) für {prop_name}:", e)
                 continue
@@ -342,44 +216,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
                     self._log(f"[DEBUG] {prop_name} unmittelbar vor track_cycle(): {getattr(scene, prop_name)}")
                     try:
-                        # Detect vor jedem Iterations-Durchlauf
-                        try:
-                            # ==============================================
-                            # Snapshot vor detect_features()
-                            # ==============================================
-                            prev_names = {t.name for t in tracking.tracks}
-                            
-                            created_count = detect_features(context)
-                            
-                            # ==============================================
-                            # Differenz der Tracknamen nach detect_features()
-                            # ==============================================
-                            new_names = [t.name for t in tracking.tracks if t.name not in prev_names]
-                            
-                            # Fallback: falls detect_features nur eine Zahl liefert
-                            if isinstance(created_count, int) and not new_names:
-                                # Versuche, die letzten 'created_count' Namen zu nehmen (typischer Blender-Stil)
-                                new_names = [t.name for t in list(tracking.tracks)[-created_count:]]
-                            
-                            self._log(f"detect_features(): {created_count} neue Tracks, {len(new_names)} identifiziert.")
-                            detected_tracks = new_names
-                        except Exception as e:
-                            self._log(f"{prop_name}: Fehler bei detect_features() in Stufe {step:+.2f}:", e)
-                            detected_tracks = []
-
                         bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-                        # ==================================================
-                        # LÄNGENMESSUNG vor der Löschung
-                        # ==================================================
-                        sgn = get_total_track_length(context, start_frame)
-                        self._log(f"{prop_name} Stufe {step:+.2f} Runde {iteration}: Wert {new_value:.6f} → Segmentlänge {sgn}")
-
-                        # Danach Delete
-                        if detected_tracks:
-                            try:
-                                delete_tracks_by_names(context, detected_tracks)
-                            except Exception as e:
-                                self._log(f"{prop_name}: Fehler bei delete_tracks_by_names() in Stufe {step:+.2f}:", e)
                     except Exception as e:
                         self._log(f"{prop_name} Fehler bei track_cycle in Stufe {step:+.2f}, Runde {iteration}:", e)
                         setattr(scene, prop_name, best_value)
@@ -428,48 +265,20 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             try:
                 self._log(f"[DEBUG] Baseline vor track_cycle für {prop_name}: {getattr(scene, prop_name)}")
                 scene.update_tag()
-
-                # Detect vor finalem Baseline-Tracking
-                try:
-                    # ==============================================
-                    # Snapshot vor detect_features()
-                    # ==============================================
-                    prev_names = {t.name for t in tracking.tracks}
-                    
-                    created_count = detect_features(context)
-                    
-                    # ==============================================
-                    # Differenz der Tracknamen nach detect_features()
-                    # ==============================================
-                    new_names = [t.name for t in tracking.tracks if t.name not in prev_names]
-                    
-                    # Fallback: falls detect_features nur eine Zahl liefert
-                    if isinstance(created_count, int) and not new_names:
-                        new_names = [t.name for t in list(tracking.tracks)[-created_count:]]
-                    
-                    self._log(f"detect_features(): {created_count} neue Tracks, {len(new_names)} identifiziert.")
-                    detected_tracks = new_names
-                except Exception as e:
-                    self._log(f"{prop_name}: Fehler bei detect_features() vor finalem Tracking:", e)
-                    detected_tracks = []
-
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-                # ==================================================
-                # LÄNGENMESSUNG vor der Löschung
-                # ==================================================
-                baseline_length = get_total_track_length(context, start_frame)
-                self._log(f"{prop_name}: Fertig. Bester Wert {best_value}, neue Baseline {baseline_length}")
-
-                # Danach Delete
-                if detected_tracks:
-                    try:
-                        delete_tracks_by_names(context, detected_tracks)
-                    except Exception as e:
-                        self._log(f"{prop_name}: Fehler bei delete_tracks_by_names() nach finalem Tracking:", e)
+                self._log(f"[DEBUG] Baseline nach track_cycle für {prop_name}: {getattr(scene, prop_name)}")
 
             except Exception as e:
                 self._log(f"Fehler beim track_cycle nach Beenden von {prop_name}:", e)
                 return {'CANCELLED'}
+            baseline_length = get_total_track_length(context, start_frame)
+            self._log(f"{prop_name}: Fertig. Bester Wert {best_value}, neue Baseline {baseline_length}")
+
+        # Fertig: Playhead zurücksetzen und ursprüngliche Auswahl wiederherstellen
+        reset_to_frame(context, start_frame)
+        _restore_selection()
+        self.report({'INFO'}, "Schwellenwert-Kalibrierung abgeschlossen.")
+
         # Fertig: Playhead zurücksetzen und ursprüngliche Auswahl wiederherstellen
         reset_to_frame(context, start_frame)
         _restore_selection()
