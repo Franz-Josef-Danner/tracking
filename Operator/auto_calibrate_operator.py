@@ -126,69 +126,65 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # auf die Track-Länge hat.  Es werden zwei Tracking-Zyklen
             # ausgeführt: einmal mit minimalem Threshold (MIN_THRESHOLD) und
             # einmal mit dem ursprünglichen Wert.  Nur wenn sich die
-            # Gesamt-Länge unterscheidet, wird der eigentliche Feintest
-            # durchgeführt.  Andernfalls wird das Tuning für diesen
-            # Parameter übersprungen.
+            # Gesamt-Länge verbessert, wird der eigentliche Feintest
+            # durchgeführt.  Andernfalls wird der Parameter übersprungen.
             # -------------------------------------------------------------
+            
             # Test mit minimalem Schwellenwert
             setattr(scene, prop_name, self.MIN_THRESHOLD)
             _restore_selection()
             reset_to_frame(context, start_frame)
             try:
-                scene.update_tag()  # Force Blender to recognize new property values before operator call
+                scene.update_tag()
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
             except Exception as e:
                 self._log(f"Fehler beim Schnelltest (min) für {prop_name}:", e)
-                # Bei einem Fehler stellen wir den ursprünglichen Wert
-                # wieder her und überspringen die Kalibrierung.
                 setattr(scene, prop_name, original_value)
                 continue
             length_min = get_total_track_length(context, start_frame)
-
+            
             # Test mit ursprünglichem (maximalem) Schwellenwert
             setattr(scene, prop_name, original_value)
             _restore_selection()
             reset_to_frame(context, start_frame)
             try:
-                scene.update_tag()  # Force Blender to recognize new property values before operator call
+                scene.update_tag()
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
             except Exception as e:
                 self._log(f"Fehler beim Schnelltest (max) für {prop_name}:", e)
                 continue
             length_max = get_total_track_length(context, start_frame)
-
+            
+            # Vergleich und Entscheidung
             self._log(
-                f"{prop_name}: Schnelltest → Länge_min {length_min}, Länge_max {length_max}"
+                f"{prop_name}: Schnelltest → Länge_min {length_min:.2f}, Länge_max {length_max:.2f}"
             )
             
-            # Wenn kleinerer Threshold schlechter oder gleich ist → überspringen
             if length_min <= length_max:
+                # Kein positiver Effekt durch kleineren Threshold
                 self._log(
                     f"{prop_name}: kleinerer Threshold bringt keine Verbesserung → überspringe Kalibrierung"
                 )
+                setattr(scene, prop_name, 1.0)  # Rücksetzen für nächsten Parameter
+                scene.update_tag()
                 baseline_length = length_max
-                setattr(scene, prop_name, original_value)
                 continue
             
-            # Nur wenn der kleine Threshold besser ist → Haupttest freigeben
+            # Verbesserung erkannt
             improvement = length_min - length_max
             self._log(
-                f"{prop_name}: Verbesserung erkannt ({improvement:+.2f}) → starte Haupttest"
+                f"{prop_name}: Verbesserung erkannt (+{improvement:.2f}) → starte Haupttest"
             )
+            
+            # Vorbereitung für Haupttest
             baseline_length = length_min
             best_value = self.MIN_THRESHOLD
             best_length = length_min
+            
+            # Threshold für Haupttest auf 1.0 zurücksetzen
+            setattr(scene, prop_name, 1.0)
+            scene.update_tag()
 
-
-            # Unterschied festgestellt – Baseline auf length_max setzen und
-            # Feintuning durchführen.
-            baseline_length = length_max
-            # Aktueller bester Wert (Startwert) und Länge
-            best_value = original_value
-            best_length = baseline_length
-            self._log(
-                f"Starte Tuning für {prop_name}: Ausgangswert {best_value:.6f}, Baseline {best_length}"
-            )
              # -------------------------------------------------------------
             # Haupttest mit Stufenlogik
             # -------------------------------------------------------------
