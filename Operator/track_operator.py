@@ -157,6 +157,7 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
 
     start_frame = scene.frame_current
     track_names = _collect_selected_track_names(context)
+    initial_selected_tracks = list(track_names)
     if not track_names:
         if report_fn:
             report_fn({'WARNING'}, "Keine selektierten Tracks.")
@@ -250,4 +251,11 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
     _log("Tracking beendet", summary)
     if report_fn:
         report_fn({'INFO'}, f"Track-Zyklus: {summary}")
+    # ------------------------------------------------------------
+    # Nachverarbeitung: ursprüngliche Track-Selektion wiederherstellen
+    # ------------------------------------------------------------
+    _log("Ursprüngliche Track-Selektion wiederherstellen ...")
+    for tr in tracking.tracks:
+        tr.select = tr.name in initial_selected_tracks
+    _log(f"{len(initial_selected_tracks)} ursprüngliche Tracks wieder selektiert.")
     return {'FINISHED'}
