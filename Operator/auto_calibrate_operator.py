@@ -40,7 +40,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     # springt zum nächsten Parameter. Dies verhindert endlose Reduktionen
     # ohne nennenswerten Nutzen.
     MIN_THRESHOLD: float = 1e-5
-
+    MAX_THRESHOLD: float = 1.0
     def _log(self, *msg) -> None:
         if self.verbose:
             print("[Kaiserlich Tracker][AutoCalibrate]", *msg)
