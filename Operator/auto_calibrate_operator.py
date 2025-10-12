@@ -5,7 +5,7 @@ import bpy
 from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
 from ..Helper.detect import detect_features
-from ..Helper.delete import delete_detected
+from ..Helper.delete import delete_tracks_by_names
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
@@ -92,12 +92,32 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         # dessen eigene Logs.
         try:
             scene.update_tag()
-            # ------------------------------------------------------------
-            # Neuer Ablauf: Detect → Track → Delete
-            # ------------------------------------------------------------
-            detect_features(context)
+
+            # ==========================================================
+            # Baseline-Detect: neue Marker erzeugen
+            # ==========================================================
+            self._log("Starte detect_features() für Baseline …")
+            try:
+                detected_tracks = detect_features(context)
+                if not detected_tracks:
+                    self._log("Warnung: detect_features() hat keine Tracks erzeugt.")
+                    detected_tracks = []
+            except Exception as e:
+                self._log("Fehler bei detect_features():", e)
+                detected_tracks = []
+
+            # Haupt-Tracking-Zyklus
             bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-            delete_detected(context)
+
+            # ==========================================================
+            # Cleanup nach Baseline: alle erzeugten Tracks löschen
+            # ==========================================================
+            if detected_tracks:
+                self._log(f"Lösche {len(detected_tracks)} Baseline-Tracks …")
+                try:
+                    delete_tracks_by_names(context, detected_tracks)
+                except Exception as e:
+                    self._log("Fehler bei delete_tracks_by_names:", e)
         except Exception as e:
             self._log("Fehler beim ersten Tracking-Durchlauf:", e)
             return {'CANCELLED'}
@@ -142,7 +162,28 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             reset_to_frame(context, start_frame)
             try:
                 scene.update_tag()
+
+                # ==============================================
+                # DETECT vor jedem Tracking-Durchlauf
+                # ==============================================
+                self._log(f"{prop_name}: detect_features() vor Schnelltest (min)")
+                try:
+                    detected_tracks = detect_features(context)
+                except Exception as e:
+                    self._log(f"{prop_name}: Fehler bei detect_features():", e)
+                    detected_tracks = []
+
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+
+                # ==============================================
+                # DELETE nach jedem Tracking-Durchlauf
+                # ==============================================
+                if detected_tracks:
+                    self._log(f"{prop_name}: Lösche {len(detected_tracks)} Tracks nach Schnelltest (min)")
+                    try:
+                        delete_tracks_by_names(context, detected_tracks)
+                    except Exception as e:
+                        self._log(f"{prop_name}: Fehler bei delete_tracks_by_names():", e)
             except Exception as e:
                 self._log(f"Fehler beim Schnelltest (min) für {prop_name}:", e)
                 setattr(scene, prop_name, original_value)
@@ -155,7 +196,24 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             reset_to_frame(context, start_frame)
             try:
                 scene.update_tag()
+
+                # Detect vor Schnelltest (max)
+                self._log(f"{prop_name}: detect_features() vor Schnelltest (max)")
+                try:
+                    detected_tracks = detect_features(context)
+                except Exception as e:
+                    self._log(f"{prop_name}: Fehler bei detect_features():", e)
+                    detected_tracks = []
+
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+
+                # Delete nach Schnelltest (max)
+                if detected_tracks:
+                    self._log(f"{prop_name}: Lösche {len(detected_tracks)} Tracks nach Schnelltest (max)")
+                    try:
+                        delete_tracks_by_names(context, detected_tracks)
+                    except Exception as e:
+                        self._log(f"{prop_name}: Fehler bei delete_tracks_by_names():", e)
             except Exception as e:
                 self._log(f"Fehler beim Schnelltest (max) für {prop_name}:", e)
                 continue
@@ -224,8 +282,21 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
                     self._log(f"[DEBUG] {prop_name} unmittelbar vor track_cycle(): {getattr(scene, prop_name)}")
                     try:
+                        # Detect vor jedem Iterations-Durchlauf
+                        try:
+                            detected_tracks = detect_features(context)
+                        except Exception as e:
+                            self._log(f"{prop_name}: Fehler bei detect_features() in Stufe {step:+.2f}:", e)
+                            detected_tracks = []
+
                         bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-                    except Exception as e:
+
+                        # Delete nach jedem Iterations-Durchlauf
+                        if detected_tracks:
+                            try:
+                                delete_tracks_by_names(context, detected_tracks)
+                            except Exception as e:
+                                self._log(f"{prop_name}: Fehler bei delete_tracks_by_names() in Stufe {step:+.2f}:", e)                    except Exception as e:
                         self._log(f"{prop_name} Fehler bei track_cycle in Stufe {step:+.2f}, Runde {iteration}:", e)
                         setattr(scene, prop_name, best_value)
                         break
@@ -273,8 +344,22 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             try:
                 self._log(f"[DEBUG] Baseline vor track_cycle für {prop_name}: {getattr(scene, prop_name)}")
                 scene.update_tag()
+
+                # Detect vor finalem Baseline-Tracking
+                try:
+                    detected_tracks = detect_features(context)
+                except Exception as e:
+                    self._log(f"{prop_name}: Fehler bei detect_features() vor finalem Tracking:", e)
+                    detected_tracks = []
+
                 bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-                self._log(f"[DEBUG] Baseline nach track_cycle für {prop_name}: {getattr(scene, prop_name)}")
+
+                # Delete nach finalem Baseline-Tracking
+                if detected_tracks:
+                    try:
+                        delete_tracks_by_names(context, detected_tracks)
+                    except Exception as e:
+                        self._log(f"{prop_name}: Fehler bei delete_tracks_by_names() nach finalem Tracking:", e)
 
             except Exception as e:
                 self._log(f"Fehler beim track_cycle nach Beenden von {prop_name}:", e)
