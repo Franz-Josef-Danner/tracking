@@ -1,5 +1,4 @@
 import bpy
-from typing import List, Tuple
 
 from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
@@ -7,13 +6,15 @@ from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.detect import detect_features
 from ..Helper.delete import delete_tracks_by_names
 
+
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
+    """Automatische Kalibrierung der Schwellenwerte durch iterative Tracking-Durchläufe"""
 
     bl_idname = "kaiserlich_tracker.auto_calibrate"
-    bl_label = "Auto‑Calibrate Thresholds"
+    bl_label = "Auto-Calibrate Thresholds"
     bl_description = (
         "Kalibriert automatisch die Schwellenwerte für die Bewegungsmodelle "
-        "durch wiederholtes Tracking und Längenmessung."
+        "durch wiederholtes Tracking, Längenmessung und Bereinigung."
     )
     bl_options = {"REGISTER", "UNDO"}
 
@@ -23,114 +24,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         description="Ausführliches Logging in der Konsole während der Kalibrierung",
     )
 
-    # Minimaler Schwellenwert, unter dem die Kalibrierung für einen Parameter
-    # automatisch beendet wird.  Ist der neue Wert kleiner oder gleich diesem
-    # Grenzwert, wird zum letzten guten Wert zurückgekehrt und die Kalibrierung
-    # springt zum nächsten Parameter.  Dies verhindert endlose Reduktionen
-    # ohne nennenswerten Nutzen.
     MIN_THRESHOLD: float = 1e-5
 
-    def _log(self, *msg) -> None:
-        if self.verbose:
-            print("[Kaiserlich Tracker][AutoCalibrate]", *msg)
-
-    # ---- CLIP_EDITOR Kontext finden (für detect_features/Delete) ----------------
-    def _find_clip_editor_context(self, context, target_clip) -> Tuple[object, object, object, object]:
-        """Finde/erzeuge einen gültigen CLIP_EDITOR-Override, der target_clip trägt."""
-        # 1) Bevorzugt eine Area mit exakt diesem Clip
-        for window in bpy.context.window_manager.windows:
-            screen = window.screen
-            for area in screen.areas:
-                if area.type != 'CLIP_EDITOR':
-                    continue
-                region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-                if not region:
-                    continue
-                for space in area.spaces:
-                    if getattr(space, "type", None) != 'CLIP_EDITOR':
-                        continue
-                    # Falls der Space bereits den Clip zeigt: perfekt
-                    if getattr(space, "clip", None) == target_clip:
-                        return window, area, region, space
-        # 2) Sonst erste passende CLIP_EDITOR-Area nehmen und Clip zuweisen
-        for window in bpy.context.window_manager.windows:
-            screen = window.screen
-            for area in screen.areas:
-                if area.type != 'CLIP_EDITOR':
-                    continue
-                region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-                if not region:
-                    continue
-                for space in area.spaces:
-                    if getattr(space, "type", None) != 'CLIP_EDITOR':
-                        continue
-                    try:
-                        setattr(space, "clip", target_clip)
-                        return window, area, region, space
-                    except Exception:
-                        continue
-        return None, None, None, None
-
-    # ---- Ein Mess-Durchlauf: snapshot → detect → length → delete ----------------
-    def _measure_with_detect_then_cleanup(self, context, start_frame: int) -> float:
-        """
-        Führt einen vollständigen Messzyklus aus:
-        1) Snapshot aktiver Marker → set(old_names)
-        2) Detect Features im gültigen CLIP_EDITOR-Kontext
-        3) Messung der Gesamtlänge
-        4) Löschen der neu hinzugekommenen Tracks anhand der Namen
-        """
-        space_data = getattr(context, "space_data", None)
-        clip = getattr(space_data, "clip", None)
-        if clip is None:
-            self._log("Kein aktiver Clip für Messung – versuche CLIP_EDITOR mit gültigem Clip zu binden.")
-            # Versuche, Clip aus erstem MovieClip-Block der Szene zu ermitteln (Fallback)
-            try:
-                clip = bpy.data.movieclips[0]
-                if space_data and getattr(space_data, "type", "") == 'CLIP_EDITOR':
-                    space_data.clip = clip
-            except Exception:
-                self._log("Kein MovieClip in bpy.data.movieclips gefunden.")
-                return 0.0
-
-        tracking = getattr(clip, "tracking", None)
-        if tracking is None:
-            self._log("Clip hat kein tracking-Attribut.")
-            return 0.0
-
-        # 1) Snapshot (alte Marker/Tracks merken)
-        old_names = set(snapshot_active_markers(context) or [])
-
-        # 2) Detect Features (richtiger Kontext + Clip)
-        win, area, region, space = self._find_clip_editor_context(context, clip)
-        if all((win, area, region, space)):
-            override = {'window': win, 'area': area, 'region': region, 'space_data': space}
-            try:
-                # Helper nutzt bpy.ops.clip.detect_features; Override sorgt für gültigen space.clip
-                detect_features(context=override)
-            except Exception as e:
-                self._log("detect_features fehlgeschlagen:", e)
-        else:
-            # Fallback: versuche ohne Override
-            try:
-                detect_features(context=context)
-            except Exception as e:
-                self._log("detect_features ohne Override fehlgeschlagen:", e)
-
-        # 3) Gesamtlänge messen (Playhead vorher zurücksetzen)
-        reset_to_frame(context, start_frame)
-        segment_length = get_total_track_length(context, start_frame)
-
-        # 4) Neu entstandene Track-Namen bestimmen und löschen
-        try:
-            current_names = [t.name for t in tracking.tracks]
-            new_names = [n for n in current_names if n not in old_names]
-            if new_names:
-                delete_tracks_by_names(context, new_names)
-        except Exception as e:
-            self._log("Löschen der neuen Tracks fehlgeschlagen:", e)
-
-        return float(segment_length)    # Liste der Schwellenwerte (Property‑Namen) in der Reihenfolge der Tuning‑Reihenfolge.
     _threshold_props = [
         "kaiserlich_rot_thresh_x",
         "kaiserlich_rot_thresh_y",
@@ -141,6 +36,16 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         "kaiserlich_perspective_thresh",
     ]
 
+    # -------------------------------------------------------------
+    # Logging
+    # -------------------------------------------------------------
+    def _log(self, *msg) -> None:
+        if self.verbose:
+            print("[Kaiserlich Tracker][AutoCalibrate]", *msg)
+
+    # -------------------------------------------------------------
+    # Hauptausführung
+    # -------------------------------------------------------------
     def execute(self, context: bpy.types.Context):
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
@@ -148,35 +53,48 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             self.report({'WARNING'}, "Kein aktiver Clip im Clip Editor.")
             return {'CANCELLED'}
 
-        # Entfernt: "selected Marker Schranke" und Selektions-Wiederherstellung.
         tracking = getattr(clip, "tracking", None)
         if tracking is None:
             self.report({'WARNING'}, "Clip besitzt kein tracking-Attribut.")
             return {'CANCELLED'}
 
-        # Speichere Start-Frame (Playhead), um nach jedem Tracking‑Zyklus
-        # zurückzukehren.  Dies muss vor der ersten Änderung der Thresholds
-        # erfolgen, da das Tracking den Playhead verschiebt.
         start_frame = get_start_frame(context)
         self._log(f"Startframe erfasst: {start_frame}")
 
-        # Setze alle Schwellenwerte initial auf 1.0.  Die Kalibrierung
-        # beginnt mit maximal permissiven Grenzen.
+        # Alle Schwellenwerte initialisieren
         for prop_name in self._threshold_props:
             if hasattr(scene, prop_name):
                 setattr(scene, prop_name, 1.0)
             else:
                 self._log(f"Warnung: Property '{prop_name}' existiert nicht auf der Szene.")
 
-        # Erste Baseline: detect → messen → delete (keine track_cycle-Nutzung mehr)
+        # ==============================================================
+        # Baseline: SNAPSHOT → DETECT → MESSUNG → DELETE
+        # ==============================================================
         reset_to_frame(context, start_frame)
-        scene.update_tag()
-        baseline_length = self._measure_with_detect_then_cleanup(context, start_frame)
-        self._log(f"Baseline Länge: {baseline_length}")
+        try:
+            old_tracks = snapshot_active_markers(context)
+            detect_features(context)
+            baseline_length = get_total_track_length(context, start_frame)
 
-        # Log initial threshold values for progress monitoring.  This helps track the
-        # starting point of each parameter before tuning begins.  We catch any
-        # exceptions in case a property is missing or cannot be formatted.
+            current_names = [t.name for t in tracking.tracks]
+            new_names = [n for n in current_names if n not in old_tracks]
+
+            if new_names:
+                delete_tracks_by_names(context, new_names)
+                self._log(f"Baseline-Cleanup: {len(new_names)} neue Tracks gelöscht.")
+            else:
+                self._log("Baseline-Cleanup: keine neuen Tracks erkannt.")
+
+            self._log(f"Baseline Länge: {baseline_length}")
+
+        except Exception as e:
+            self._log("Fehler im Baseline-Detect-Zyklus:", e)
+            return {'CANCELLED'}
+
+        # -------------------------------------------------------------
+        # Initialwerte ausgeben
+        # -------------------------------------------------------------
         try:
             init_vals = ", ".join(
                 f"{prop}={getattr(scene, prop):.6f}" for prop in self._threshold_props if hasattr(scene, prop)
@@ -185,81 +103,73 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         except Exception:
             self._log("Initiale Schwellwerte konnten nicht vollständig ermittelt werden.")
 
-        # Kalibrierung pro Schwellenwert
+        # ==============================================================
+        # Kalibrierung pro Parameter
+        # ==============================================================
         for prop_name in self._threshold_props:
-            # Überspringe nicht existierende Properties.
             if not hasattr(scene, prop_name):
                 self._log(f"Überspringe unbekannte Property '{prop_name}'.")
                 continue
 
-            # Merke den ursprünglichen Wert dieses Schwellenwerts.  Während
-            # der Kalibrierung wird er mehrfach verändert und am Ende auf
-            # den besten gefundenen Wert gesetzt.
             original_value = getattr(scene, prop_name)
 
             # -------------------------------------------------------------
-            # Schnelltest: Prüfe, ob dieser Parameter überhaupt Einfluss
-            # auf die Track-Länge hat.  Es werden zwei Tracking-Zyklen
-            # ausgeführt: einmal mit minimalem Threshold (MIN_THRESHOLD) und
-            # einmal mit dem ursprünglichen Wert.  Nur wenn sich die
-            # Gesamt-Länge verbessert, wird der eigentliche Feintest
-            # durchgeführt.  Andernfalls wird der Parameter übersprungen.
+            # Schnelltest: Minimalwert vs. Ursprungswert
             # -------------------------------------------------------------
-            
-            # Test mit minimalem Schwellenwert
-            setattr(scene, prop_name, self.MIN_THRESHOLD)
-            
-            reset_to_frame(context, start_frame)
             try:
+                # Test mit minimalem Threshold
+                setattr(scene, prop_name, self.MIN_THRESHOLD)
                 scene.update_tag()
-                length_min = self._measure_with_detect_then_cleanup(context, start_frame)
-            except Exception as e:
-                self._log(f"Fehler beim Schnelltest (min) für {prop_name}:", e)
+
+                reset_to_frame(context, start_frame)
+                old_tracks = snapshot_active_markers(context)
+                detect_features(context)
+                length_min = get_total_track_length(context, start_frame)
+
+                current_names = [t.name for t in tracking.tracks]
+                new_names = [n for n in current_names if n not in old_tracks]
+                if new_names:
+                    delete_tracks_by_names(context, new_names)
+                    self._log(f"{prop_name}: Schnelltest(min) – {len(new_names)} neue Tracks gelöscht.")
+
+                # Test mit ursprünglichem Threshold
                 setattr(scene, prop_name, original_value)
-                continue
-            
-            # Test mit ursprünglichem (maximalem) Schwellenwert
-            setattr(scene, prop_name, original_value)
-            
-            reset_to_frame(context, start_frame)
-            try:
                 scene.update_tag()
-                length_max = self._measure_with_detect_then_cleanup(context, start_frame)
+
+                reset_to_frame(context, start_frame)
+                old_tracks = snapshot_active_markers(context)
+                detect_features(context)
+                length_max = get_total_track_length(context, start_frame)
+
+                current_names = [t.name for t in tracking.tracks]
+                new_names = [n for n in current_names if n not in old_tracks]
+                if new_names:
+                    delete_tracks_by_names(context, new_names)
+                    self._log(f"{prop_name}: Schnelltest(max) – {len(new_names)} neue Tracks gelöscht.")
+
             except Exception as e:
-                self._log(f"Fehler beim Schnelltest (max) für {prop_name}:", e)
+                self._log(f"Fehler im Schnelltest für {prop_name}:", e)
                 continue
-            
-            # Vergleich und Entscheidung
-            self._log(
-                f"{prop_name}: Schnelltest → Länge_min {length_min:.2f}, Länge_max {length_max:.2f}"
-            )
-            
+
+            self._log(f"{prop_name}: Schnelltest → Länge_min={length_min:.2f}, Länge_max={length_max:.2f}")
+
             if length_min <= length_max:
-                # Kein positiver Effekt durch kleineren Threshold
-                self._log(
-                    f"{prop_name}: kleinerer Threshold bringt keine Verbesserung → überspringe Kalibrierung"
-                )
-                setattr(scene, prop_name, 1.0)  # Rücksetzen für nächsten Parameter
+                self._log(f"{prop_name}: Kein positiver Effekt → Überspringe Kalibrierung.")
+                setattr(scene, prop_name, 1.0)
                 scene.update_tag()
                 baseline_length = length_max
                 continue
-            
-            # Verbesserung erkannt
+
             improvement = length_min - length_max
-            self._log(
-                f"{prop_name}: Verbesserung erkannt (+{improvement:.2f}) → starte Haupttest"
-            )
-            
-            # Vorbereitung für Haupttest
+            self._log(f"{prop_name}: Verbesserung erkannt (+{improvement:.2f}) → starte Haupttest")
+
             baseline_length = length_min
             best_value = self.MIN_THRESHOLD
             best_length = length_min
-            
-            # Threshold für Haupttest auf 1.0 zurücksetzen
             setattr(scene, prop_name, 1.0)
             scene.update_tag()
 
-             # -------------------------------------------------------------
+            # -------------------------------------------------------------
             # Haupttest mit Stufenlogik
             # -------------------------------------------------------------
             steps = [-0.90, +0.50, -0.25, +0.10, -0.05, +0.02, -0.01]
@@ -279,30 +189,30 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         self._log(f"{prop_name}: Untergrenze erreicht → Abbruch Stufe {step:+.2f}")
                         break
 
-                    # =====================================================
-                    # DEBUG: Threshold-Tracking rund um track_cycle
-                    # =====================================================
                     setattr(scene, prop_name, new_value)
-                    self._log(f"[DEBUG] {prop_name} vor scene.update_tag(): {getattr(scene, prop_name)}")
                     scene.update_tag()
-                    self._log(f"[DEBUG] {prop_name} nach scene.update_tag(): {getattr(scene, prop_name)}")
 
-                    
                     reset_to_frame(context, start_frame)
-
-                    # detect → measure → delete
                     try:
-                        sgn = self._measure_with_detect_then_cleanup(context, start_frame)
+                        old_tracks = snapshot_active_markers(context)
+                        detect_features(context)
+                        sgn = get_total_track_length(context, start_frame)
+
+                        current_names = [t.name for t in tracking.tracks]
+                        new_names = [n for n in current_names if n not in old_tracks]
+                        if new_names:
+                            delete_tracks_by_names(context, new_names)
+                            self._log(f"{prop_name}: Stufe {step:+.2f} Runde {iteration} – {len(new_names)} neue Tracks gelöscht.")
+
                     except Exception as e:
-                        self._log(f"{prop_name} Fehler im Messzyklus Stufe {step:+.2f}, Runde {iteration}:", e)
+                        self._log(f"{prop_name}: Fehler bei Detect-Zyklus in Stufe {step:+.2f}, Runde {iteration}:", e)
                         setattr(scene, prop_name, best_value)
                         break
 
-                    self._log(f"{prop_name} Stufe {step:+.2f} Runde {iteration}: Wert {new_value:.6f} → Segmentlänge {sgn}")
+                    self._log(f"{prop_name} Stufe {step:+.2f} Runde {iteration}: Wert {new_value:.6f} → Segmentlänge {sgn:.2f}")
 
                     if sgn == sg_prev:
                         stagnation_count += 1
-                        self._log(f"{prop_name}: keine Veränderung ({stagnation_count}×)")
                         if stagnation_count >= 2:
                             break
                     elif sgn > sg_prev:
@@ -313,7 +223,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         stagnation_count = 0
                         self._log(f"{prop_name}: Verbesserung → Länge {sgn}")
                     else:
-                        # Verschlechterung → wenn vorherige Verbesserung vorhanden, abbrechen
                         if improved:
                             setattr(scene, prop_name, best_value)
                             self._log(f"{prop_name}: Verschlechterung → Rückkehr zu {best_value:.6f}")
@@ -321,37 +230,36 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
                     current_value = new_value
 
-                # Nach jeder Stufe den aktuellen besten Wert fixieren
                 setattr(scene, prop_name, best_value)
                 current_value = best_value
                 self._log(f"{prop_name}: Ende Stufe {step:+.2f} → bester Wert {best_value:.6f}, Länge {best_length}")
 
-            # Ende aller Stufen
-            self._log(f"{prop_name}: Haupttest abgeschlossen → optimaler Wert {best_value:.6f}")
+            # Nach Abschluss der Stufen erneut Baseline
             setattr(scene, prop_name, best_value)
-            # Nach Abschluss des Loops: sichergehen, dass der beste Wert gesetzt ist
-            setattr(scene, prop_name, best_value)
-            # Baseline für nächste Schwelle aktualisieren: Führe Tracking erneut aus
-            
             reset_to_frame(context, start_frame)
             try:
-                self._log(f"[DEBUG] Baseline vor track_cycle für {prop_name}: {getattr(scene, prop_name)}")
-                baseline_length = self._measure_with_detect_then_cleanup(context, start_frame)
-                self._log(f"[DEBUG] Baseline nach Messzyklus für {prop_name}: {getattr(scene, prop_name)}")
-
+                old_tracks = snapshot_active_markers(context)
+                detect_features(context)
+                baseline_length = get_total_track_length(context, start_frame)
+                current_names = [t.name for t in tracking.tracks]
+                new_names = [n for n in current_names if n not in old_tracks]
+                if new_names:
+                    delete_tracks_by_names(context, new_names)
+                    self._log(f"{prop_name}: Nachtest – {len(new_names)} neue Tracks gelöscht.")
             except Exception as e:
-                self._log(f"Fehler beim Messzyklus nach Beenden von {prop_name}:", e)
-                return {'CANCELLED'}
-            self._log(f"{prop_name}: Fertig. Bester Wert {best_value}, neue Baseline {baseline_length}")
+                self._log(f"Fehler beim finalen Baseline-Detect für {prop_name}:", e)
+                continue
 
-        # Fertig: Playhead zurücksetzen
+            self._log(f"{prop_name}: Fertig. Bester Wert {best_value:.6f}, neue Baseline {baseline_length:.2f}")
+
+        # -------------------------------------------------------------
+        # Abschluss
+        # -------------------------------------------------------------
         reset_to_frame(context, start_frame)
-        
         self.report({'INFO'}, "Schwellenwert-Kalibrierung abgeschlossen.")
-
-        # Kein abschließender Tracking-Lauf (Testmodus)
         self._log("Auto-Calibrate abgeschlossen (Testmodus, kein King-Run ausgeführt).")
         return {'FINISHED'}
+
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate)
