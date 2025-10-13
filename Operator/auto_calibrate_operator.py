@@ -22,7 +22,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         description="Ausführliches Logging während der Kalibrierung",
     )
 
-    MIN_THRESHOLD: float = 1e-5
+    MIN_THRESHOLD: float = 1e-8
     MAX_THRESHOLD: float = 1.0
 
     _threshold_props = [
@@ -35,7 +35,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         "kaiserlich_perspective_thresh",
     ]
 
-    _steps = [-0.90, +0.50, -0.25, +0.10, -0.05, +0.02, -0.01]
+    _steps = [-0.95, +0.50, -0.25, +0.10, -0.05, +0.02, -0.01]
 
     # ---------------------------------------
     # Hilfsfunktionen
