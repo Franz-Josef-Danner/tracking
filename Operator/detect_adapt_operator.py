@@ -7,7 +7,7 @@ from ..Helper.cleaneup import cleanup_new_markers
 from ..Helper.delete import delete_tracks_by_names
 
 
-class KAISERLICHTRACKER_OT_detect_adupt(bpy.types.Operator):
+class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
     bl_idname = "kaiserlich_tracker.detect_cycle"
     bl_label = "Detect Zyklus (einmalig)"
     bl_description = (
