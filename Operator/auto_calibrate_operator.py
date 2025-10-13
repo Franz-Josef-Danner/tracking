@@ -201,8 +201,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         current_value = new_value
                         break
 
-                # Nach Stufe: sg_prev bleibt erhalten
-                self._log(f"{prop_name}: Stufe {step:+.2f} abgeschlossen (aktueller Wert {current_value:.8f})")
+                sg_prev = sgn  # ← letzter Messwert, auch wenn schlechter als vorheriger Bestwert
 
             # ---------- Abschlussmessung ----------
             reset_to_frame(context, start_frame)
