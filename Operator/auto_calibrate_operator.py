@@ -91,7 +91,49 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         for prop_name in self._threshold_props:
             if not hasattr(scene, prop_name):
                 continue
-
+            # -------------------------------------------------------------
+            # KURZTEST – prüft, ob Kalibrierung sinnvoll ist
+            # -------------------------------------------------------------
+            self._log(f"{prop_name}: Starte Kurztest (Vergleich MIN vs. 1.0)")
+        
+            # Test mit minimalem Schwellenwert
+            setattr(scene, prop_name, self.MIN_THRESHOLD)
+            scene.update_tag()
+            reset_to_frame(context, start_frame)
+            old_track_names = [t.name for t in tracking.tracks]
+            snapshot_active_markers(context)
+            detect_features(context)
+            new_track_names = [t.name for t in tracking.tracks if t.name not in old_track_names]
+            for tr in tracking.tracks:
+                tr.select = (tr.name in new_track_names)
+            bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+            length_min = get_total_track_length(context, start_frame)
+            delete_tracks_by_names(context, new_track_names)
+        
+            # Test mit neutralem Schwellenwert
+            setattr(scene, prop_name, 1.0)
+            scene.update_tag()
+            reset_to_frame(context, start_frame)
+            old_track_names = [t.name for t in tracking.tracks]
+            snapshot_active_markers(context)
+            detect_features(context)
+            new_track_names = [t.name for t in tracking.tracks if t.name not in old_track_names]
+            for tr in tracking.tracks:
+                tr.select = (tr.name in new_track_names)
+            bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+            length_neutral = get_total_track_length(context, start_frame)
+            delete_tracks_by_names(context, new_track_names)
+        
+            # Bewertung
+            self._log(
+                f"{prop_name}: Kurztest → Länge_min {length_min:.2f}, Länge_1.0 {length_neutral:.2f}"
+            )
+        
+            if length_min <= length_neutral:
+                self._log(
+                    f"{prop_name}: Kein signifikanter Einfluss – Haupttest übersprungen."
+                )
+                continue
             self._log(f"{prop_name}: Starte Haupttest")
             current_value = 1.0
             setattr(scene, prop_name, current_value)
