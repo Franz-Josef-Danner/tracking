@@ -48,8 +48,22 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
     def _detect_track_length(self, context, start_frame: int) -> int:
         """Snapshot → Detect Adapt → Track → Length → Delete."""
-        clip = context.space_data.clip
-        tracking = clip.tracking
+        # Sicheren Clip ermitteln
+        clip = None
+        if getattr(context, "space_data", None) and getattr(context.space_data, "clip", None):
+            clip = context.space_data.clip
+        elif bpy.data.movieclips:
+            clip = bpy.data.movieclips[0]  # fallback: erstes geladenes Clip-Objekt
+        
+        if clip is None:
+            self._log("⚠️ Kein aktiver Clip gefunden – Abbruch dieses Durchlaufs.")
+            return 0
+        
+        tracking = getattr(clip, "tracking", None)
+        if tracking is None:
+            self._log("⚠️ Clip hat kein tracking-Attribut – Abbruch dieses Durchlaufs.")
+            return 0
+
 
         # Snapshot der alten Marker
         old_names = [t.name for t in tracking.tracks]
