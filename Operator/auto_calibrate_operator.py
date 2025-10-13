@@ -47,54 +47,80 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             print("[Kaiserlich Tracker][AutoCalibrate]", *msg)
 
     def _detect_track_length(self, context, start_frame: int) -> int:
-        """Snapshot → Detect Adapt → Track → Length → Delete."""
-        # Sicheren Clip ermitteln
+        """Snapshot → Detect Adapt (im CLIP_EDITOR-Kontext) → Track → Length → Delete."""
+        # Sicheren Clip suchen
         clip = None
         if getattr(context, "space_data", None) and getattr(context.space_data, "clip", None):
             clip = context.space_data.clip
         elif bpy.data.movieclips:
-            clip = bpy.data.movieclips[0]  # fallback: erstes geladenes Clip-Objekt
-        
+            clip = bpy.data.movieclips[0]  # Fallback: erstes geladenes Clip-Objekt
+    
         if clip is None:
-            self._log("⚠️ Kein aktiver Clip gefunden – Abbruch dieses Durchlaufs.")
+            self._log("⚠️ Kein Clip gefunden – Abbruch.")
             return 0
-        
+    
         tracking = getattr(clip, "tracking", None)
         if tracking is None:
-            self._log("⚠️ Clip hat kein tracking-Attribut – Abbruch dieses Durchlaufs.")
+            self._log("⚠️ Clip hat kein Tracking-Attribut – Abbruch.")
             return 0
-
-
-        # Snapshot der alten Marker
+    
         old_names = [t.name for t in tracking.tracks]
+        from ..Helper.snapshot import snapshot_active_markers
         snapshot_active_markers(context)
-
-        # ⚙️ Aufruf der neuen adaptiven Detect-Version
-        try:
-            result = bpy.ops.kaiserlich_tracker.detect_adapt('INVOKE_DEFAULT')
-            self._log("Detect Adapt aufgerufen:", result)
-        except Exception as e:
-            self._log("Fehler beim Aufruf von detect_adapt:", e)
+    
+        # --- Sicheren CLIP_EDITOR-Kontext finden ---
+        area_clip = None
+        region_clip = None
+        for area in bpy.context.window.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                area_clip = area
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        region_clip = region
+                        break
+                break
+    
+        if area_clip is None or region_clip is None:
+            self._log("⚠️ Kein CLIP_EDITOR-Fenster gefunden – Abbruch dieses Durchlaufs.")
             return 0
-
-        # Warten bis Operator abgeschlossen (synchron)
+    
+        # --- Operator im Clip-Editor-Kontext ausführen ---
+        override = {
+            'window': bpy.context.window,
+            'screen': bpy.context.window.screen,
+            'area': area_clip,
+            'region': region_clip,
+            'scene': bpy.context.scene,
+            'space_data': area_clip.spaces.active,
+        }
+    
+        try:
+            result = bpy.ops.kaiserlich_tracker.detect_adapt(override)
+            self._log("Detect Adapt ausgeführt:", result)
+        except Exception as e:
+            self._log("❌ Fehler bei Detect Adapt:", e)
+            return 0
+    
         bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-
-        # Neue Marker bestimmen
+    
+        # --- Neue Marker erfassen ---
         new_names = [t.name for t in tracking.tracks if t.name not in old_names]
         for tr in tracking.tracks:
             tr.select = tr.name in new_names
-
+    
         # Tracking ausführen
         bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
-
-        # Länge bestimmen
+    
+        # Länge berechnen
+        from ..Helper.track_length_helper import get_total_track_length
         length = get_total_track_length(context, start_frame)
-
-        # Aufräumen: neu erzeugte Marker löschen
+    
+        # Aufräumen
+        from ..Helper.delete import delete_tracks_by_names
         delete_tracks_by_names(context, new_names)
-
+    
         return length
+
 
     def _set_prop(self, scene, prop_name: str, value: float) -> float:
         v = max(self.MIN_THRESHOLD, min(self.MAX_THRESHOLD, float(value)))
