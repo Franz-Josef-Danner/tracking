@@ -24,7 +24,6 @@ classes = (
 
 def register():
     for cls in classes:
-        bpy.utils.register_class(cls)
     # Property für Eingabefeld
     bpy.types.Scene.kaiserlich_markers_per_frame = bpy.props.IntProperty(
         name="Marker per Frame",
