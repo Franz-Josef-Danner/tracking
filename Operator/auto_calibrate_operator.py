@@ -153,12 +153,34 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 continue
 
             # -------------------------------------------------------------
-            # Haupttest (Stufenlogik)
+            # Haupttest (Stufenlogik) – mit eigener Baseline
             # -------------------------------------------------------------
-            best_value = self.MIN_THRESHOLD
-            best_length = length_min
+            self._log(f"{prop_name}: Starte Haupttest – erstelle neutrale Baseline mit Wert 1.0")
+            
+            # Neutraler Ausgangswert
+            setattr(scene, prop_name, 1.0)
+            scene.update_tag()
+            reset_to_frame(context, start_frame)
+            
+            # Eigene Baseline-Messung für den Haupttest
+            old_track_names = [t.name for t in tracking.tracks]
+            snapshot_active_markers(context)
+            detect_features(context)
+            new_track_names = [t.name for t in tracking.tracks if t.name not in old_track_names]
+            for tr in tracking.tracks:
+                tr.select = (tr.name in new_track_names)
+            
+            bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+            base_length_main = get_total_track_length(context, start_frame)
+            delete_tracks_by_names(context, new_track_names)
+            
+            best_value = 1.0
+            best_length = base_length_main
+            current_value = 1.0
+            self._log(f"{prop_name}: Haupttest-Basis gesetzt → Länge {base_length_main:.2f}")
+            
+            # Jetzt startet der eigentliche Stufentest
             steps = [-0.90, +0.50, -0.25, +0.10, -0.05, +0.02, -0.01]
-            current_value = getattr(scene, prop_name)
 
             for step in steps:
                 stage_best_value = current_value
