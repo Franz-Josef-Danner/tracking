@@ -3,7 +3,6 @@ from typing import List
 
 from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
-from ..Helper.detect import detect_features
 from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.delete import delete_tracks_by_names
 
@@ -48,20 +47,37 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             print("[Kaiserlich Tracker][AutoCalibrate]", *msg)
 
     def _detect_track_length(self, context, start_frame: int) -> int:
-        """Snapshot → Detect → Track → Length → Delete."""
+        """Snapshot → Detect Adapt → Track → Length → Delete."""
         clip = context.space_data.clip
         tracking = clip.tracking
 
+        # Snapshot der alten Marker
         old_names = [t.name for t in tracking.tracks]
         snapshot_active_markers(context)
-        detect_features(context)
 
+        # ⚙️ Aufruf der neuen adaptiven Detect-Version
+        try:
+            result = bpy.ops.kaiserlich_tracker.detect_adapt('INVOKE_DEFAULT')
+            self._log("Detect Adapt aufgerufen:", result)
+        except Exception as e:
+            self._log("Fehler beim Aufruf von detect_adapt:", e)
+            return 0
+
+        # Warten bis Operator abgeschlossen (synchron)
+        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+
+        # Neue Marker bestimmen
         new_names = [t.name for t in tracking.tracks if t.name not in old_names]
         for tr in tracking.tracks:
             tr.select = tr.name in new_names
 
+        # Tracking ausführen
         bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
+
+        # Länge bestimmen
         length = get_total_track_length(context, start_frame)
+
+        # Aufräumen: neu erzeugte Marker löschen
         delete_tracks_by_names(context, new_names)
 
         return length
@@ -133,7 +149,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # ---------- Haupttest ----------
             self._log(f"{prop_name}: Starte Haupttest …")
 
-            # Baseline
             reset_to_frame(context, start_frame)
             self._set_prop(scene, prop_name, 1.0)
             sg_prev = self._detect_track_length(context, start_frame)
@@ -177,7 +192,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                                 break
                         else:
                             current_value = new_value
-                            continue  # weiter suchen
+                            continue
 
                     # === 2. Zyklus: Feintuning ===
                     if sgn > sg_prev:
@@ -186,7 +201,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         stagnation_count = 0
                         current_value = new_value
                         continue
-
                     elif sgn == sg_prev:
                         stagnation_count += 1
                         current_value = new_value
@@ -195,13 +209,12 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                             break
                         else:
                             continue
-
-                    else:  # sgn < sg_prev
+                    else:
                         self._log(f"{prop_name}: Verschlechterung erkannt → Stufe beendet.")
                         current_value = new_value
                         break
 
-                sg_prev = sgn  # ← letzter Messwert, auch wenn schlechter als vorheriger Bestwert
+                sg_prev = sgn
 
             # ---------- Abschlussmessung ----------
             reset_to_frame(context, start_frame)
