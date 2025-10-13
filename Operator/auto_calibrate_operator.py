@@ -163,10 +163,12 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                                 self._log(f"{prop_name}: erste Verbesserung erkannt → Feintuning aktiv")
                             else:
                                 self._log(f"{prop_name}: erste Veränderung ist Verschlechterung → Stufe abbrechen")
+                                current_value = new_value  # trotzdem Fortschreiben
                                 break
                         else:
+                            current_value = new_value  # trotzdem fortschreiben
                             continue
-
+                    
                     if sgn > sg_prev:
                         improved = True
                         sg_prev = sgn
@@ -176,14 +178,17 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         stagnation_count += 1
                         if stagnation_count >= 2:
                             self._log(f"{prop_name}: Stagnation erreicht → Stufe beendet")
+                            current_value = new_value
                             break
                     else:
                         if improved:
                             self._log(f"{prop_name}: Verschlechterung erkannt → Stufe beendet")
+                        current_value = new_value
                         break
-
-                    # Fortlaufend aktualisieren
+                    
+                    # Fortschreibung immer zuletzt – sichert Wert auch bei continue
                     current_value = new_value
+
 
             self._log(f"{prop_name}: Haupttest abgeschlossen – finaler Wert {current_value:.8f}")
 
