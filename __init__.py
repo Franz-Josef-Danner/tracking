@@ -18,7 +18,7 @@ classes = (
     KAISERLICHTRACKER_OT_detect_cycle,
     KAISERLICHTRACKER_OT_track_cycle,
     KAISERLICHTRACKER_OT_auto_calibrate,
-    KAISERLICHTRACKER_OT_detect_adupt
+    KAISERLICHTRACKER_OT_detect_adupt,
     KAISERLICHTRACKER_PT_panel,
 )
 
