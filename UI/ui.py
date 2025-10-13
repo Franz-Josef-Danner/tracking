@@ -24,11 +24,11 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.operator("kaiserlich_tracker.track_cycle", text="Track Cycle", icon="TRACKING")
         col.operator("kaiserlich_tracker.auto_calibrate", text="Auto-Calibrate Thresholds", icon="MOD_WAVE")
 
-        # ⚙️ Neuer Button für vereinfachten Detect-Cycle
+        # ⚙️ Neuer Button für adaptiven Detect (einmaliger Durchlauf)
         layout.separator()
         box = layout.box()
-        box.label(text="Automatisierter Detect-Zyklus (vereinfacht)", icon="MOD_SIMPLIFY")
-        box.operator("kaiserlich_tracker.detect_cycle", text="Run Detect Cycle", icon="FILE_REFRESH")
+        box.label(text="Adaptiver Detect (einmalig)", icon="MOD_DYNAMICPAINT")
+        box.operator("kaiserlich_tracker.detect_adupt", text="Run Detect Adupt", icon="FILE_TICK")
 
         layout.separator()
 
@@ -67,6 +67,7 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 # ==========================================================
 
 def register():
+    def register():
     # Rotation Thresholds
     bpy.types.Scene.kaiserlich_rot_thresh_x = bpy.props.FloatProperty(
         name="ΔX Threshold",
