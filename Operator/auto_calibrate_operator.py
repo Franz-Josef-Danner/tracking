@@ -35,7 +35,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         "kaiserlich_perspective_thresh",
     ]
 
-    _steps = [-0.95, +0.50, -0.25, +0.10, -0.05, +0.02, -0.01]
+    _steps = [-0.95, +0.75, -0.40, +0.15, -0.07, +0.02, -0.01]
 
     # ---------------------------------------
     # Hilfsfunktionen
