@@ -43,7 +43,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     ]
 
     # Stufenfolge (fix im Code)
-    _steps = [-0.90, +0.50, -0.25, +0.10, -0.05, +0.02, -0.01]
+    _steps = [-0.95, +0.50, -0.25, +0.10, -0.05, +0.02, -0.01]
 
     # -----------------------------
     # Utils
