@@ -94,9 +94,19 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             'space_data': area_clip.spaces.active,
         }
     
+        # --- Operator im Clip-Editor-Kontext ausführen ---
         try:
-            result = bpy.ops.kaiserlich_tracker.detect_adapt(override)
-            self._log("Detect Adapt ausgeführt:", result)
+            # Sicheren Kontext mit temp_override herstellen (ab Blender 4.x)
+            with bpy.context.temp_override(
+                window=bpy.context.window,
+                screen=bpy.context.window.screen,
+                area=area_clip,
+                region=region_clip,
+                scene=bpy.context.scene,
+                space_data=area_clip.spaces.active,
+            ):
+                result = bpy.ops.kaiserlich_tracker.detect_adapt('EXEC_DEFAULT')
+                self._log("Detect Adapt ausgeführt:", result)
         except Exception as e:
             self._log("❌ Fehler bei Detect Adapt:", e)
             return 0
