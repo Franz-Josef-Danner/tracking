@@ -2,7 +2,7 @@ import bpy
 from typing import Optional
 
 
-def detect_features(context, *, placement='FRAME', margin: int = 16, threshold: float = 0.5, min_distance: int = 120) -> Optional[int]:
+def detect_features(context, *, placement='FRAME', margin: int = 100, threshold: float = 0.1, min_distance: int = 100) -> Optional[int]:
     """Wrap für bpy.ops.clip.detect_features mit Logging und Fehlerabfang.
 
     Parameter entsprechen der Blender-API:
