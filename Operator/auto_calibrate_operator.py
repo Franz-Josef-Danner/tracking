@@ -28,7 +28,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     )
 
     # Grenzwerte für Threshold-Parameter
-    MIN_THRESHOLD: float = 1e-5
+    MIN_THRESHOLD: float = 1e-8
     MAX_THRESHOLD: float = 1.0
 
     # Zu kalibrierende Properties (müssen in Scene existieren)
