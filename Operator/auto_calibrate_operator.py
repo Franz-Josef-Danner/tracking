@@ -6,7 +6,7 @@ from ..Helper.playhead_helper import get_start_frame, reset_to_frame
 from ..Helper.detect import detect_features
 from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.delete import delete_tracks_by_names
-
+from .Operator.track_operator import KAISERLICHTRACKER_OT_track_cycle
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Kalibriert automatisch die Schwellenwerte für Bewegungsmodelle
@@ -54,7 +54,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         old_names = [t.name for t in tracking.tracks]
         snapshot_active_markers(context)
-        detect_features(context)
+        KAISERLICHTRACKER_OT_track_cycle(context)
 
         new_names = [t.name for t in tracking.tracks if t.name not in old_names]
         for tr in tracking.tracks:
