@@ -13,10 +13,12 @@ from .UI.ui import KAISERLICHTRACKER_PT_panel
 from .Operator.detect_operator import KAISERLICHTRACKER_OT_detect_cycle
 from .Operator.track_operator import KAISERLICHTRACKER_OT_track_cycle
 from .Operator.auto_calibrate_operator import KAISERLICHTRACKER_OT_auto_calibrate
+from .Operator.detect_adupt_operator import KAISERLICHTRACKER_OT_detect_adupt
 classes = (
     KAISERLICHTRACKER_OT_detect_cycle,
     KAISERLICHTRACKER_OT_track_cycle,
     KAISERLICHTRACKER_OT_auto_calibrate,
+    KAISERLICHTRACKER_OT_detect_adupt
     KAISERLICHTRACKER_PT_panel,
 )
 
