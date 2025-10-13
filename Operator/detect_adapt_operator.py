@@ -106,9 +106,13 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
                 last_md = last_md * 1.25
                 print(f"[Kaiserlich Tracker] 🔼 Zu viele → Abstand vergrößert: {last_md:.2f}")
 
-            # Alte neuen Marker löschen
-            delete_tracks_by_names(context, [m['track'] for m in neue_marker])
-            time.sleep(0.1)
+            # ⚠️ Nur löschen, wenn weiterer Durchlauf folgt
+            if loop < max_loops:
+                delete_tracks_by_names(context, [m['track'] for m in neue_marker])
+                time.sleep(0.1)
+            else:
+                print("[Kaiserlich Tracker] Letzter Durchlauf – Marker bleiben erhalten.")
+
 
         # ============================================
         # Selektion der finalen Marker
