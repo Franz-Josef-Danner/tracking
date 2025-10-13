@@ -35,7 +35,7 @@ def run_bootstrap(context, ef: int):
 
   ma = hz * 0.025
   md = hz * 0.025
-  pz = int(hz * 0.025)
+  pz = int(hz * 0.02)
   sz = pz * 2
   tr = 0.0001
   za = ef * 4
