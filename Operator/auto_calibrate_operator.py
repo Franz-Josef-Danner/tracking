@@ -190,7 +190,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     elif sgn == sg_prev:
                         stagnation_count += 1
                         current_value = new_value
-                        if stagnation_count >= 2:
+                        if stagnation_count >= 1:
                             self._log(f"{prop_name}: Stagnation erkannt → Stufe beendet.")
                             break
                         else:
