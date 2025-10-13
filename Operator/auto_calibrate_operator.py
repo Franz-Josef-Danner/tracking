@@ -53,7 +53,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         old_names = [t.name for t in tracking.tracks]
         snapshot_active_markers(context)
-        KAISERLICHTRACKER_OT_track_cycle(context)
+        bpy.ops.kaiserlich_tracker.detect_adapt()
 
         new_names = [t.name for t in tracking.tracks if t.name not in old_names]
         for tr in tracking.tracks:
