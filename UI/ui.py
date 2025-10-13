@@ -67,8 +67,6 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 # ==========================================================
 
 def register():
-    def register():
-    # Rotation Thresholds
     bpy.types.Scene.kaiserlich_rot_thresh_x = bpy.props.FloatProperty(
         name="ΔX Threshold",
         description="Minimaler ΔX-Unterschied zur Erkennung von Rotation",
