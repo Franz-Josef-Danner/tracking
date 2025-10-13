@@ -18,9 +18,17 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         # --- Hauptbereich ---
         col = layout.column(align=True)
         col.prop(scene, "kaiserlich_markers_per_frame", text="Marker per Frame")
-        col.operator("kaiserlich_tracker.detect_cycle", text="Detect Cyclus")
-        col.operator("kaiserlich_tracker.track_cycle", text="Track Cycle")
-        col.operator("kaiserlich_tracker.auto_calibrate", text="Auto-Calibrate Thresholds")
+
+        # ▶️ Neue Buttons
+        col.operator("kaiserlich_tracker.detect_cycle", text="Detect Cycle", icon="VIEWZOOM")
+        col.operator("kaiserlich_tracker.track_cycle", text="Track Cycle", icon="TRACKING")
+        col.operator("kaiserlich_tracker.auto_calibrate", text="Auto-Calibrate Thresholds", icon="MOD_WAVE")
+
+        # ⚙️ Neuer Button für vereinfachten Detect-Cycle
+        layout.separator()
+        box = layout.box()
+        box.label(text="Automatisierter Detect-Zyklus (vereinfacht)", icon="MOD_SIMPLIFY")
+        box.operator("kaiserlich_tracker.detect_cycle", text="Run Detect Cycle", icon="FILE_REFRESH")
 
         layout.separator()
 
@@ -99,7 +107,7 @@ def register():
         subtype='FACTOR',
     )
 
-    # LocRotScale Thresholds (neu)
+    # LocRotScale Thresholds
     bpy.types.Scene.kaiserlich_rot_scale_thresh_rot = bpy.props.FloatProperty(
         name="Rot+Scale ΔRot",
         description="Empfindlichkeit für kombinierte Rotation und Skalierung (Rotationsteil)",
@@ -118,6 +126,8 @@ def register():
         precision=6,
         subtype='FACTOR',
     )
+
+    # Perspective Threshold
     bpy.types.Scene.kaiserlich_perspective_thresh = bpy.props.FloatProperty(
         name="Perspective Δ",
         description="Empfindlichkeit für perspektivische Abweichung (Tiefe/Parallaxe)",
@@ -127,6 +137,7 @@ def register():
         precision=6,
         subtype='FACTOR',
     )
+
 
 def unregister():
     for prop in (
