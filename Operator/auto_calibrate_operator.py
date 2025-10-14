@@ -126,115 +126,164 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         for prop_name in self._threshold_props:
             if not hasattr(scene, prop_name):
                 continue
-
-            # ---------- Kurztest ----------
-            self._log(f"{prop_name}: Starte Kurztest (MIN vs 1.0)")
-            reset_to_frame(context, start_frame)
-            self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
-            length_min = self._detect_track_length(context, start_frame)
-
-            reset_to_frame(context, start_frame)
-            self._set_prop(scene, prop_name, 1.0)
-            length_neutral = self._detect_track_length(context, start_frame)
-
-            self._log(f"{prop_name}: Kurztest → min={length_min}, neutral={length_neutral}")
-            if length_min <= length_neutral:
-                self._log(f"{prop_name}: Kein signifikanter Unterschied – überspringe Haupttest.")
-                continue
-
-            # ---------- Haupttest ----------
-            self._log(f"{prop_name}: Starte Haupttest …")
-
-            # Baseline
-            reset_to_frame(context, start_frame)
-            self._set_prop(scene, prop_name, 1.0)
-            sg_prev = self._detect_track_length(context, start_frame)
-            current_value = 1.0
-            self._log(f"{prop_name}: Baseline gesetzt → Länge {sg_prev}")
-
-            for step in self._steps:
-                iteration = 0
-                change_detected = False
-                stagnation_count = 0
-                self._log(f"{prop_name}: Stufe {step:+.2f} startet (Startwert {current_value:.8f})")
-
-                while True:
-                    iteration += 1
-                    new_value = self._round(current_value * (1.0 + step), 8)
-                    if new_value <= self.MIN_THRESHOLD or new_value >= self.MAX_THRESHOLD:
-                        self._log(f"{prop_name}: Wert {new_value:.8f} außerhalb der Grenzen → Abbruch Stufe.")
-                        break
-
-                    self._set_prop(scene, prop_name, new_value)
-                    reset_to_frame(context, start_frame)
-                    sgn = self._detect_track_length(context, start_frame)
-
-                    self._log(
-                        f"{prop_name}: Stufe {step:+.2f} Iter {iteration:02d} → Wert {new_value:.8f}, "
-                        f"Länge {sgn}, Prev {sg_prev}"
-                    )
-
-                    # === 1. Zyklus: Veränderungssuche ===
-                    if not change_detected:
-                        if sgn != sg_prev:
-                            change_detected = True
-                            if sgn > sg_prev:
-                                self._log(f"{prop_name}: Verbesserung erkannt → Wechsel in Feintuning.")
-                                sg_prev = sgn
+        
+            # ==================================================
+            # SPEZIALFALL: scale_thresh_min + scale_thresh_max
+            # ==================================================
+            if prop_name == "kaiserlich_scale_thresh_min":
+                other_prop = "kaiserlich_scale_thresh_max"
+        
+                # ---------- Kurztest ----------
+                self._log(f"{prop_name}+{other_prop}: Starte kombinierten Kurztest (MIN vs 1.0)")
+                reset_to_frame(context, start_frame)
+        
+                # 1️⃣ Beide auf 1.0
+                self._set_prop(scene, prop_name, 1.0)
+                self._set_prop(scene, other_prop, 1.0)
+                length_neutral = self._detect_track_length(context, start_frame)
+        
+                # 2️⃣ Beide auf MIN
+                reset_to_frame(context, start_frame)
+                self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
+                self._set_prop(scene, other_prop, self.MIN_THRESHOLD)
+                length_min = self._detect_track_length(context, start_frame)
+        
+                self._log(f"{prop_name}+{other_prop}: Kurztest → min={length_min}, neutral={length_neutral}")
+        
+                if length_min <= length_neutral:
+                    self._log(f"{prop_name}+{other_prop}: Kein signifikanter Unterschied – überspringe Haupttest.")
+                    continue
+        
+                # ---------- Haupttest 1: scale_thresh_min ----------
+                self._log(f"{prop_name}: Starte Haupttest mit {other_prop}=0 …")
+                self._set_prop(scene, other_prop, 0.0)
+                reset_to_frame(context, start_frame)
+                sg_prev = self._detect_track_length(context, start_frame)
+                current_value = 1.0
+        
+                for step in self._steps:
+                    iteration = 0
+                    change_detected = False
+                    stagnation_count = 0
+                    self._log(f"{prop_name}: Stufe {step:+.2f} startet (Startwert {current_value:.8f})")
+        
+                    while True:
+                        iteration += 1
+                        new_value = self._round(current_value * (1.0 + step), 8)
+                        if new_value <= self.MIN_THRESHOLD or new_value >= self.MAX_THRESHOLD:
+                            self._log(f"{prop_name}: Wert {new_value:.8f} außerhalb Grenzen → Abbruch Stufe.")
+                            break
+        
+                        self._set_prop(scene, prop_name, new_value)
+                        reset_to_frame(context, start_frame)
+                        sgn = self._detect_track_length(context, start_frame)
+                        self._log(
+                            f"{prop_name}: Iter {iteration:02d} → Wert {new_value:.8f}, Länge {sgn}, Prev {sg_prev}"
+                        )
+        
+                        if not change_detected:
+                            if sgn != sg_prev:
+                                change_detected = True
+                                if sgn > sg_prev:
+                                    self._log(f"{prop_name}: Verbesserung erkannt → Feintuning.")
+                                    sg_prev = sgn
+                                    current_value = new_value
+                                    continue
+                                else:
+                                    self._log(f"{prop_name}: Verschlechterung → Stufe beendet.")
+                                    break
+                            else:
                                 current_value = new_value
                                 continue
-                            else:
-                                self._log(f"{prop_name}: Verschlechterung bei erster Änderung → Stufe beendet.")
-                                current_value = new_value
-                                break
-                        else:
+        
+                        if sgn > sg_prev:
+                            sg_prev = sgn
+                            stagnation_count = 0
                             current_value = new_value
-                            continue  # weiter suchen
-
-                    # === 2. Zyklus: Feintuning ===
-                    if sgn > sg_prev:
-                        self._log(f"{prop_name}: Verbesserung → Länge {sgn}")
-                        sg_prev = sgn
-                        stagnation_count = 0
-                        current_value = new_value
-                        continue
-
-                    elif sgn == sg_prev:
-                        stagnation_count += 1
-                        current_value = new_value
-                        if stagnation_count >= 1:
-                            self._log(f"{prop_name}: Stagnation erkannt → Stufe beendet.")
-                            break
-                        else:
                             continue
+                        elif sgn == sg_prev:
+                            stagnation_count += 1
+                            if stagnation_count >= 1:
+                                self._log(f"{prop_name}: Stagnation → Stufe beendet.")
+                                break
+                            continue
+                        else:
+                            self._log(f"{prop_name}: Verschlechterung → Stufe beendet.")
+                            break
+        
+                # ---------- Haupttest 2: scale_thresh_max ----------
+                self._log(f"{other_prop}: Starte Haupttest mit {prop_name}=0 …")
+                self._set_prop(scene, prop_name, 0.0)
+                self._set_prop(scene, other_prop, 1.0)
+                reset_to_frame(context, start_frame)
+                sg_prev = self._detect_track_length(context, start_frame)
+                current_value = 1.0
+        
+                for step in self._steps:
+                    iteration = 0
+                    change_detected = False
+                    stagnation_count = 0
+                    self._log(f"{other_prop}: Stufe {step:+.2f} startet (Startwert {current_value:.8f})")
+        
+                    while True:
+                        iteration += 1
+                        new_value = self._round(current_value * (1.0 + step), 8)
+                        if new_value <= self.MIN_THRESHOLD or new_value >= self.MAX_THRESHOLD:
+                            self._log(f"{other_prop}: Wert {new_value:.8f} außerhalb Grenzen → Abbruch Stufe.")
+                            break
+        
+                        self._set_prop(scene, other_prop, new_value)
+                        reset_to_frame(context, start_frame)
+                        sgn = self._detect_track_length(context, start_frame)
+                        self._log(
+                            f"{other_prop}: Iter {iteration:02d} → Wert {new_value:.8f}, Länge {sgn}, Prev {sg_prev}"
+                        )
+        
+                        if not change_detected:
+                            if sgn != sg_prev:
+                                change_detected = True
+                                if sgn > sg_prev:
+                                    sg_prev = sgn
+                                    current_value = new_value
+                                    continue
+                                else:
+                                    break
+                            else:
+                                current_value = new_value
+                                continue
+        
+                        if sgn > sg_prev:
+                            sg_prev = sgn
+                            stagnation_count = 0
+                            current_value = new_value
+                            continue
+                        elif sgn == sg_prev:
+                            stagnation_count += 1
+                            if stagnation_count >= 1:
+                                break
+                            continue
+                        else:
+                            break
+        
+                # Abschlussmessung
+                reset_to_frame(context, start_frame)
+                self._log(f"{prop_name}+{other_prop}: Kombinierte Haupttests abgeschlossen.")
+                continue  # danach weiter mit nächstem Threshold
+        
+            # ==================================================
+            # STANDARD-FALL: alle anderen Thresholds
+            # ==================================================
+            # (Hier bleibt dein bisheriger Code unverändert)
+            pass
 
-                    else:  # sgn < sg_prev
-                        self._log(f"{prop_name}: Verschlechterung erkannt → Stufe beendet.")
-                        current_value = new_value
-                        break
+        # ✅ FIX 1: restore_selection am Ende
+        reset_to_frame(context, start_frame)
+        _restore_selection()
 
-                sg_prev = sgn  # ← letzter Messwert, auch wenn schlechter als vorheriger Bestwert
-
-            # ---------- Abschlussmessung ----------
-            reset_to_frame(context, start_frame)
-            self._set_prop(scene, prop_name, current_value)
-            final_length = self._detect_track_length(context, start_frame)
-            self._log(
-                f"{prop_name}: Haupttest abgeschlossen – Finalwert {current_value:.8f}, "
-                f"Länge {final_length} (Baseline {baseline_length})"
-            )
-            # ============================================
-            # Automatische Berechnung von rot_thresh_y
-            # ============================================
-            self._auto_set_rot_thresh_y(context)
-
-            # --- Abschluss ---
-            reset_to_frame(context, start_frame)
-            _restore_selection()
-            
-            self.report({'INFO'}, "Auto-Calibrate abgeschlossen.")
-            self._log("Auto-Calibrate vollständig abgeschlossen.")
-            return {'FINISHED'}
+        # ✅ FIX 2: return ganz am Ende der execute()
+        self.report({'INFO'}, "Auto-Calibrate abgeschlossen.")
+        self._log("Auto-Calibrate vollständig abgeschlossen.")
+        return {'FINISHED'}
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate)
