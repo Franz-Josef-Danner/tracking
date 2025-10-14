@@ -38,26 +38,62 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     # Hilfsfunktionen
     # ---------------------------------------
     def _auto_set_rot_thresh_y(self, context):
-        scene = context.scene
-        # rot_thresh_y wird aus rot_thresh_x abgeleitet, auch wenn y noch nicht registriert ist
-        if not hasattr(scene, "kaiserlich_rot_thresh_x"):
-            return
-        rx = getattr(scene, "kaiserlich_rot_thresh_x")
-        clip = getattr(context.space_data, "clip", None)
-        if not (clip and hasattr(clip, "size")):
-            return
+        # robusten Scene/Clip-Zugriff wählen
+        scene = getattr(context, "scene", None) or bpy.context.scene
+        space = getattr(context, "space_data", None)
+        clip = getattr(space, "clip", None)
+        if clip is None:
+            # Fallback: aktiven Clip aus irgendeinem CLIP_EDITOR suchen
+            for win in bpy.context.window_manager.windows:
+                for area in win.screen.areas:
+                    if area.type == 'CLIP_EDITOR':
+                        for sp in area.spaces:
+                            if sp.type == 'CLIP_EDITOR' and getattr(sp, "clip", None):
+                                clip = sp.clip
+                                break
+                    if clip:
+                        break
+                if clip:
+                    break
+        if clip is None or not hasattr(clip, "size"):
+            return  # kein Clip → nichts zu tun
+    
+        if scene is None or not hasattr(scene, "kaiserlich_rot_thresh_x"):
+            return  # X existiert nicht → Y kann nicht abgeleitet werden
+    
         ha, va = clip.size
-        if va == 0:
-            return
-        ry = rx * (ha / va)
-        ry = max(1.0, self._round(ry))  # Mindestwert 1.0
-        # Bevorzugt als registriertes RNA-Property setzen, sonst ID-Property verwenden
-        if hasattr(scene, "kaiserlich_rot_thresh_y"):
-            setattr(scene, "kaiserlich_rot_thresh_y", ry)
-        else:
-            scene["kaiserlich_rot_thresh_y"] = float(ry)  # ID-Property Fallback
+        if not va:
+            return  # Schutz gegen Division durch 0
+    
+        rx = float(getattr(scene, "kaiserlich_rot_thresh_x"))
+        ry = max(1.0, self._round(rx * (ha / va)))  # Mindestwert 1.0
+    
+        # Sicherstellen, dass Y als RNA-Property existiert (UI-sichtbar),
+        # sonst wird es als ID-Property unsichtbar.
+        if not hasattr(scene, "kaiserlich_rot_thresh_y"):
+            try:
+                bpy.types.Scene.kaiserlich_rot_thresh_y = bpy.props.FloatProperty(
+                    name="Rotation Threshold Y",
+                    default=ry,
+                    min=0.0,
+                    soft_max=10.0,
+                    description="Aus X und Bildseitenverhältnis abgeleitete Y-Schwelle (mind. 1.0).",
+                )
+            except Exception:
+                # Falls Registrierung hier nicht erlaubt ist (je nach Addon-Struktur),
+                # fallback auf ID-Property:
+                scene["kaiserlich_rot_thresh_y"] = float(ry)
+                scene.update_tag()
+                if self.verbose:
+                    print("[Kaiserlich Tracker][AutoCalibrate]", f"SET kaiserlich_rot_thresh_y={ry:.8f} (ID-Property)")
+                return
+    
+        # Jetzt als echtes RNA-Property setzen (sichtbar im UI)
+        setattr(scene, "kaiserlich_rot_thresh_y", ry)
         scene.update_tag()
- 
+        if self.verbose:
+            print("[Kaiserlich Tracker][AutoCalibrate]", f"SET kaiserlich_rot_thresh_y={ry:.8f}")
+
     def _log_test(self, prop_name: str, value: float):
         if self.verbose:
             print("[Kaiserlich Tracker][AutoCalibrate]", f"TEST {prop_name}={value:.8f}")
