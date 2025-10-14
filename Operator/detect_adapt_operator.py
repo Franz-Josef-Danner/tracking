@@ -8,7 +8,6 @@ from ..Helper.newmarker import classify_markers
 from ..Helper.cleaneup import cleanup_new_markers
 from ..Helper.delete import delete_tracks_by_names
 
-
 class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
     bl_idname = "kaiserlich_tracker.detect_adapt"
     bl_label = "Detect Adapt (einmalig)"
@@ -113,7 +112,6 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
             else:
                 print("[Kaiserlich Tracker] Letzter Durchlauf – Marker bleiben erhalten.")
 
-
         # ============================================
         # Selektion der finalen Marker
         # ============================================
@@ -133,6 +131,45 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
                 print(f"[Kaiserlich Tracker] Selektion fehlgeschlagen: {e}")
         else:
             print("[Kaiserlich Tracker] Keine Clip/Tracking Daten für Selektion verfügbar.")
+
+        # ============================================
+        # Frame-spezifische min_distance speichern und interpolieren (NEU)
+        # ============================================
+        frame_num = scene.frame_current
+        md_value = float(last_md)
+        # Szene-Property initialisieren (falls noch nicht vorhanden)
+        if "min_distance_values" not in scene:
+            scene["min_distance_values"] = {}
+        md_dict = scene["min_distance_values"]
+        # Bestehende bekannte Frames laden (falls vorhanden)
+        if "known_frames" in md_dict:
+            known_list = list(md_dict["known_frames"])
+        else:
+            known_list = []
+        # Aktuellen Frame hinzufügen, wenn nicht bereits bekannt
+        if frame_num not in known_list:
+            known_list.append(frame_num)
+            known_list.sort()
+        md_dict["known_frames"] = known_list
+        md_dict[str(frame_num)] = md_value
+        print(f"[Kaiserlich Tracker] Frame {frame_num}: Endgültiger min_distance={md_value:.2f} gespeichert.")
+        # Interpolation durchführen, falls mehr als ein bekannter Frame vorhanden
+        if len(known_list) > 1:
+            print(f"[Kaiserlich Tracker] Interpoliere min_distance zwischen bekannten Frames...")
+            for i in range(len(known_list) - 1):
+                f_start = known_list[i]
+                f_end = known_list[i + 1]
+                if f_end - f_start < 2:
+                    continue  # keine Lücke dazwischen
+                v_start = float(md_dict[str(f_start)])
+                v_end = float(md_dict[str(f_end)])
+                # Interpolierte Werte für Zwischen-Frames berechnen
+                for f in range(f_start + 1, f_end):
+                    t = (f - f_start) / float(f_end - f_start)
+                    interp_val = v_start + (v_end - v_start) * t
+                    md_dict[str(f)] = interp_val
+                print(f"[Kaiserlich Tracker] ... Frame {f_start} (md={v_start:.2f}) bis Frame {f_end} (md={v_end:.2f}): "
+                      f"fülle Frames {f_start + 1}–{f_end - 1}.")
 
         # ============================================
         # Abschlussbericht
