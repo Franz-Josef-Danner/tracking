@@ -172,12 +172,4 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
                     interp_val = v_start + (v_end - v_start) * t
                     md_dict[str(f)] = interp_val
 
-        # ============================================
-        # Abschlussmeldung an Blender
-        # ============================================
-        self.report({'INFO'}, (
-            f"Detect abgeschlossen: Neue Marker={final_new_marker_count} | "
-            f"Cleanup gelöscht={deleted_old} | Selektiert={selected_new_tracks} | "
-            f"Ziel={ef_target} | min_distance={last_md:.2f}"
-        ))
         return {'FINISHED'}
