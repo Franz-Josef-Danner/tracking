@@ -125,19 +125,18 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
 
 
             # =======================================================
-            # Dynamische Regelung der Mindestdistanz (Proportional)
+            # Dynamische Regelung der Mindestdistanz (stabilisiert)
             # =======================================================
             if am > 0:
-                new_md = last_md * (ef_target / am)
-                # Sanftes Limit, um numerische Ausreißer zu verhindern
-                new_md = max(1.0, min(new_md, last_md * 5.0))
+                ratio = ef_target / am
+                new_md = max(0.5, min(2.0, last_md * ratio))
                 print(f"[Kaiserlich Tracker] 🔁 Anpassung: md={last_md:.2f} → {new_md:.2f} "
-                      f"(Ziel={ef_target}, Neu={am})")
+                      f"(Ziel={ef_target}, Neu={am}, Verhältnis={ratio:.3f})")
                 last_md = new_md
             else:
-                # Sicherheitsfallback falls keine Marker erkannt
-                last_md = min(last_md * 1.5, last_md + 100.0)
-                print(f"[Kaiserlich Tracker] ⚠️ Keine neuen Marker – Abstand leicht erhöht auf {last_md:.2f}")
+                last_md = min(last_md * 1.5, last_md + 50.0)
+                print(f"[Kaiserlich Tracker] ⚠️ Keine neuen Marker – Abstand erhöht auf {last_md:.2f}")
+
 
 
             # ⚠️ Nur löschen, wenn weiterer Durchlauf folgt
