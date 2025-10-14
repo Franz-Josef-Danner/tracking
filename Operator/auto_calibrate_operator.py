@@ -237,12 +237,14 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                                 continue
                             elif sgn < sg_prev:
                                 # ❌ Verschlechterung ignorieren, weitersuchen
+                                self._log(f"Ignoriere Verschlechterung ({sgn} < {sg_prev}) bei {prop_name}")
                                 current_value = new_value
                                 continue
                             else:
                                 # Keine Veränderung, weitersuchen
                                 current_value = new_value
                                 continue
+
 
                         # Phase 2: Feinsuche
                         if sgn > best_score:
@@ -288,20 +290,24 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
                         # Phase 1: Veränderungssuche
                         if not change_detected:
-                            if sgn != sg_prev:
+                            if sgn > sg_prev:
+                                # ✅ Nur Verbesserung gilt als Veränderung
                                 change_detected = True
-                                if sgn > sg_prev:
-                                    best_score = sgn
-                                    best_value = new_value
-                                    sg_prev = sgn
-                                    current_value = new_value
-                                    continue
-                                else:
-                                    current_value = best_value
-                                    break
-                            else:
+                                best_score = sgn
+                                best_value = new_value
+                                sg_prev = sgn
                                 current_value = new_value
                                 continue
+                            elif sgn < sg_prev:
+                                # ❌ Verschlechterung ignorieren, weitersuchen
+                                self._log(f"Ignoriere Verschlechterung ({sgn} < {sg_prev}) bei {prop_name}")
+                                current_value = new_value
+                                continue
+                            else:
+                                # Keine Veränderung, weitersuchen
+                                current_value = new_value
+                                continue
+
 
                         # Phase 2: Feinsuche
                         if sgn > best_score:
