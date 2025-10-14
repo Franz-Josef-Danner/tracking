@@ -124,15 +124,21 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
                 break
 
 
-            # Nur min_distance anpassen
-            if remaining < ef_target:
-                # Zu wenige Marker → Abstand verringern
-                last_md = max(1, last_md * 0.8)
-                print(f"[Kaiserlich Tracker] 🔽 Zu wenige → Abstand verkleinert: {last_md:.2f}")
+            # =======================================================
+            # Dynamische Regelung der Mindestdistanz (Proportional)
+            # =======================================================
+            if am > 0:
+                new_md = last_md * (ef_target / am)
+                # Sanftes Limit, um numerische Ausreißer zu verhindern
+                new_md = max(1.0, min(new_md, last_md * 5.0))
+                print(f"[Kaiserlich Tracker] 🔁 Anpassung: md={last_md:.2f} → {new_md:.2f} "
+                      f"(Ziel={ef_target}, Neu={am})")
+                last_md = new_md
             else:
-                # Zu viele Marker → Abstand erhöhen
-                last_md = last_md * 1.25
-                print(f"[Kaiserlich Tracker] 🔼 Zu viele → Abstand vergrößert: {last_md:.2f}")
+                # Sicherheitsfallback falls keine Marker erkannt
+                last_md = min(last_md * 1.5, last_md + 100.0)
+                print(f"[Kaiserlich Tracker] ⚠️ Keine neuen Marker – Abstand leicht erhöht auf {last_md:.2f}")
+
 
             # ⚠️ Nur löschen, wenn weiterer Durchlauf folgt
             if loop < max_loops:
