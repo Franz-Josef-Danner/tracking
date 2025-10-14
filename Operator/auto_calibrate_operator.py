@@ -46,7 +46,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 ha, va = clip.size
                 if va != 0:
                     ry = rx * (ha / va)
-                    setattr(scene, "kaiserlich_rot_thresh_y", self._round(ry))
+                    # Mindestwert von 1.0 sicherstellen
+                    ry = max(1.0, self._round(ry))
+                    setattr(scene, "kaiserlich_rot_thresh_y", ry)
                     scene.update_tag()
                     # kein Log: nur funktional notwendig
  
@@ -136,8 +138,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 continue
 
             # Rot-X NICHT testen (am Ende abgeleitet)
-            if prop_name == "kaiserlich_rot_thresh_x":
-                continue
+            # kaiserlich_rot_thresh_x wird getestet; kaiserlich_rot_thresh_y wird später aus ihm abgeleitet
+
             # ==================================================
             # SPEZIALFALL: scale_thresh_min + scale_thresh_max
             # ==================================================
