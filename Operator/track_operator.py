@@ -1,9 +1,7 @@
 import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
-
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
-
 
 # ------------------------------------------------------------
 # Hilfsfunktionen
@@ -79,28 +77,13 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 
     verbose: bpy.props.BoolProperty(  # type: ignore
         name="Verbose Log",
-        default=True,
+        default=False,
         description="Ausführliches Logging in der Konsole"
     )
 
-
-    def _log(self, *msg):
-        if self.verbose:
-            print("[Kaiserlich Tracker][Track]", *msg)
-
-    # --------------------------------------------------------
-
     def execute(self, context):
-        # Delegiert an die freistehende track_cycle Funktion unten, um Logik testbar zu halten.
-        result = track_cycle(context, max_frames=self.max_frames, verbose=self.verbose, report_fn=self.report)
-        return result
-        # Alte Logik wurde in track_cycle ausgelagert.
-        return {'FINISHED'}  # Fallback (sollte nie erreicht werden)
+        return track_cycle(context, max_frames=self.max_frames, verbose=self.verbose, report_fn=self.report)
 
-
-# ------------------------------------------------------------
-# Registrierung
-# ------------------------------------------------------------
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle)
@@ -118,24 +101,8 @@ if __name__ == "__main__":
 # Freistehende Track-Cycle Implementierung (funktionsorientiert)
 # ---------------------------------------------------------------------------
 
-def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn=None):
-    """Implementiert den in der Spezifikation beschriebenen Tracking-Zyklus.
-
-    Schritte:
-        INIT scene, clip, tracking
-        Validierungen – bei Fehler → CANCELLED
-        Start-/End-Frames ermitteln
-        Selektierte Tracks sammeln
-        Clip-Editor-Kontext finden für Override
-        Schleife: frameweise track_markers aufrufen
-            - Bewegungsmodell aus letzten N (≤10) Frames jedes aktiven Tracks evaluieren
-            - Abbruchbedingungen prüfen
-            - verlorene Tracks entfernen
-    """
-    def _log(*a):
-        if verbose:
-            print("[Kaiserlich Tracker][Cycle]", *a)
-
+def track_cycle(context, *, max_frames: int = 0, verbose: bool = False, report_fn=None):
+    """Implementiert den in der Spezifikation beschriebenen Tracking-Zyklus."""
     scene = context.scene
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
@@ -169,19 +136,14 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
             report_fn({'WARNING'}, "Kein CLIP_EDITOR Kontext gefunden.")
         return {'CANCELLED'}
 
-    # Kontext initialisieren
     current_frame = start_frame
     space.clip_user.frame_current = current_frame
     scene.frame_current = current_frame
 
-    # Historie der letzten <=10 Frames für jeden Track
     histories: Dict[str, Deque[Tuple[int, float, float]]] = {
         name: deque(maxlen=10) for name in track_names
     }
 
-    _log("Start Tracking-Zyklus", f"Start={start_frame}", f"End={end_frame}", f"Tracks={len(track_names)}")
-
-    # Nur selektierte markieren
     for tr in tracking.tracks:
         tr.select = tr.name in track_names
 
@@ -190,18 +152,12 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
 
     while True:
         if current_frame > end_frame:
-            _log("End-Frame erreicht → Ende")
             break
         if not track_names:
-            _log("Keine aktiven Tracks mehr → Ende")
             break
         if max_frames > 0 and frames_processed >= max_frames:
-            _log("Max Frames erreicht → Ende")
             break
 
-        _log(f"Track Step @Frame {current_frame} (Aktive: {len(track_names)})")
-
-        # Bewegungsmodell vorbereiten: vorhandene Marker-Positionen einsammeln
         for name in list(track_names):
             tr = tracking.tracks.get(name)
             if not tr:
@@ -210,37 +166,27 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
             if mk:
                 histories[name].append((current_frame, mk.co[0], mk.co[1]))
 
-        # Beispiel-Auswertung (optional): Modellklassifikation pro Track
-        # Frühere (fehlerhafte) Version hat apply_formula_on_selected_tracks mit einer History-Liste
-        # statt mit dem Blender Context aufgerufen und damit einen AttributeError ausgelöst.
-        # Wir wenden das Glättungsverfahren jetzt einmal pro Frame auf alle selektierten Tracks an.
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
-        except Exception as e:
-            _log("Fehler beim Anwenden der Formel:", e)
+        except Exception:
+            pass
 
-        # Tracking-Schritt ausführen
         with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
             try:
                 bpy.ops.clip.track_markers(backwards=False, sequence=False)
-            except Exception as e:
-                _log("Fehler beim track_markers", e)
+            except Exception:
                 break
 
-        # Frame Synchronisation
         if space.clip_user.frame_current == current_frame:
             space.clip_user.frame_current += 1
         scene.frame_current = space.clip_user.frame_current
         current_frame = space.clip_user.frame_current
         frames_processed += 1
 
-        # Aktive Tracks nach neuem Frame prüfen
         track_names, dropped = _filter_active_tracks_at_frame(context, track_names, current_frame)
         if dropped:
             failures_total += dropped
-            _log(f"Verlorene Tracks: {dropped} (verbleibend {len(track_names)})")
 
-        # Selektion aktualisieren
         for tr in tracking.tracks:
             tr.select = tr.name in track_names
 
@@ -248,14 +194,11 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = True, report_fn
         f"Start={start_frame} Ende={current_frame} "
         f"Schritte={frames_processed} Aktiv={len(track_names)} Verloren={failures_total}"
     )
-    _log("Tracking beendet", summary)
+
     if report_fn:
         report_fn({'INFO'}, f"Track-Zyklus: {summary}")
-    # ------------------------------------------------------------
-    # Nachverarbeitung: ursprüngliche Track-Selektion wiederherstellen
-    # ------------------------------------------------------------
-    _log("Ursprüngliche Track-Selektion wiederherstellen ...")
+
     for tr in tracking.tracks:
         tr.select = tr.name in initial_selected_tracks
-    _log(f"{len(initial_selected_tracks)} ursprüngliche Tracks wieder selektiert.")
+
     return {'FINISHED'}
