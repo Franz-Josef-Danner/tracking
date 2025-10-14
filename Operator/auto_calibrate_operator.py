@@ -163,14 +163,14 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 self._log_test(other_prop, getattr(scene, other_prop))
                 length_min = self._detect_track_length(context, start_frame)
         
-                    # nach Skip: neutralen Zustand wiederherstellen
-                    self._set_prop(scene, prop_name, 1.0)
-                    self._set_prop(scene, other_prop, 1.0)
-                    self._log_test(prop_name, getattr(scene, prop_name))
-                    self._log_test(other_prop, getattr(scene, other_prop))
-                    handled_props.update({prop_name, other_prop})
-                    continue
-        
+                # nach Skip: neutralen Zustand wiederherstellen
+                self._set_prop(scene, prop_name, 1.0)
+                self._set_prop(scene, other_prop, 1.0)
+                self._log_test(prop_name, getattr(scene, prop_name))
+                self._log_test(other_prop, getattr(scene, other_prop))
+                handled_props.update({prop_name, other_prop})
+                continue
+    
                 # ---------- Haupttest 1: scale_thresh_min ----------
                 self._set_prop(scene, other_prop, self.MIN_THRESHOLD)
                 self._log_test(other_prop, getattr(scene, other_prop))
