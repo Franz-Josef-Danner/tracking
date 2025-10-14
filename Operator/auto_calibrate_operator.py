@@ -39,18 +39,24 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     # ---------------------------------------
     def _auto_set_rot_thresh_y(self, context):
         scene = context.scene
-        if hasattr(scene, "kaiserlich_rot_thresh_x") and hasattr(scene, "kaiserlich_rot_thresh_y"):
-            rx = getattr(scene, "kaiserlich_rot_thresh_x")
-            clip = getattr(context.space_data, "clip", None)
-            if clip and hasattr(clip, "size"):
-                ha, va = clip.size
-                if va != 0:
-                    ry = rx * (ha / va)
-                    # Mindestwert von 1.0 sicherstellen
-                    ry = max(1.0, self._round(ry))
-                    setattr(scene, "kaiserlich_rot_thresh_y", ry)
-                    scene.update_tag()
-                    # kein Log: nur funktional notwendig
+        # rot_thresh_y wird aus rot_thresh_x abgeleitet, auch wenn y noch nicht registriert ist
+        if not hasattr(scene, "kaiserlich_rot_thresh_x"):
+            return
+        rx = getattr(scene, "kaiserlich_rot_thresh_x")
+        clip = getattr(context.space_data, "clip", None)
+        if not (clip and hasattr(clip, "size")):
+            return
+        ha, va = clip.size
+        if va == 0:
+            return
+        ry = rx * (ha / va)
+        ry = max(1.0, self._round(ry))  # Mindestwert 1.0
+        # Bevorzugt als registriertes RNA-Property setzen, sonst ID-Property verwenden
+        if hasattr(scene, "kaiserlich_rot_thresh_y"):
+            setattr(scene, "kaiserlich_rot_thresh_y", ry)
+        else:
+            scene["kaiserlich_rot_thresh_y"] = float(ry)  # ID-Property Fallback
+        scene.update_tag()
  
     def _log_test(self, prop_name: str, value: float):
         if self.verbose:
