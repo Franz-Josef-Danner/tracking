@@ -227,18 +227,20 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
                         # Phase 1: Veränderungssuche
                         if not change_detected:
-                            if sgn != sg_prev:
+                            if sgn > sg_prev:
+                                # ✅ Nur Verbesserung gilt als Veränderung
                                 change_detected = True
-                                if sgn > sg_prev:
-                                    best_score = sgn
-                                    best_value = new_value
-                                    sg_prev = sgn
-                                    current_value = new_value
-                                    continue
-                                else:
-                                    current_value = best_value
-                                    break
+                                best_score = sgn
+                                best_value = new_value
+                                sg_prev = sgn
+                                current_value = new_value
+                                continue
+                            elif sgn < sg_prev:
+                                # ❌ Verschlechterung ignorieren, weitersuchen
+                                current_value = new_value
+                                continue
                             else:
+                                # Keine Veränderung, weitersuchen
                                 current_value = new_value
                                 continue
 
