@@ -195,10 +195,4 @@ def track_cycle(context, *, max_frames: int = 0, verbose: bool = False, report_f
         f"Schritte={frames_processed} Aktiv={len(track_names)} Verloren={failures_total}"
     )
 
-    if report_fn:
-        report_fn({'INFO'}, f"Track-Zyklus: {summary}")
-
-    for tr in tracking.tracks:
-        tr.select = tr.name in initial_selected_tracks
-
     return {'FINISHED'}
