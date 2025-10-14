@@ -67,7 +67,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             return
     
         rx = float(getattr(scene, "kaiserlich_rot_thresh_x"))
-        ry = max(1.0, self._round(rx * (ha / va)))
+        ry = min(1.0, self._round(rx * (ha / va)))
     
         # Property setzen
         setattr(scene, "kaiserlich_rot_thresh_y", ry)
