@@ -283,6 +283,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # Kurztest (MIN vs 1.0)
             reset_to_frame(context, start_frame)
             self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
+            self._log_test(prop_name, getattr(scene, prop_name))  # 🔹 NEU: Log für MIN-Test
             length_min = self._detect_track_length(context, start_frame)
 
             reset_to_frame(context, start_frame)
