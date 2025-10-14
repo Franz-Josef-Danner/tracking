@@ -126,7 +126,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         for prop_name in self._threshold_props:
             if not hasattr(scene, prop_name):
                 continue
-        
+
+            # ─────────────────────────────────────────────
+            self._log(f"─────────────────────────────────────────────")
+            self._log(f"⚙️ Starte Threshold-Test: {prop_name}")      
             # ==================================================
             # SPEZIALFALL: scale_thresh_min + scale_thresh_max
             # ==================================================
@@ -148,8 +151,18 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 self._set_prop(scene, other_prop, self.MIN_THRESHOLD)
                 length_min = self._detect_track_length(context, start_frame)
         
-                self._log(f"{prop_name}+{other_prop}: Kurztest → min={length_min}, neutral={length_neutral}")
-        
+                # 📊 Erweiterte Kurztest-Ausgabe
+                delta = abs(length_neutral - length_min)
+                ratio = (delta / length_neutral * 100.0) if length_neutral > 0 else 0
+                self._log(
+                    f"📊 {prop_name}+{other_prop}: Kurztest-Ergebnis → min={length_min}, "
+                    f"neutral={length_neutral}, Δ={delta} ({ratio:.2f}%)"
+                )
+                if length_min <= length_neutral:
+                    self._log(f"➡️ {prop_name}+{other_prop}: Keine signifikante Verbesserung ({ratio:.2f}%) → Haupttest übersprungen.")
+                else:
+                    self._log(f"✅ {prop_name}+{other_prop}: Signifikante Änderung erkannt ({ratio:.2f}%) → Starte Haupttest.")
+         
                 if length_min <= length_neutral:
                     self._log(f"{prop_name}+{other_prop}: Kein signifikanter Unterschied – überspringe Haupttest.")
                     continue
@@ -177,8 +190,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         self._set_prop(scene, prop_name, new_value)
                         reset_to_frame(context, start_frame)
                         sgn = self._detect_track_length(context, start_frame)
+                        # Iterations-Detailausgabe
+                        delta_len = sgn - sg_prev
                         self._log(
-                            f"{prop_name}: Iter {iteration:02d} → Wert {new_value:.8f}, Länge {sgn}, Prev {sg_prev}"
+                            f"   • Iteration {iteration:02d}: Value={new_value:.8f} | "
+                            f"Length={sgn} | Prev={sg_prev} | Δ={delta_len:+d}"
                         )
         
                         if not change_detected:
@@ -235,8 +251,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         self._set_prop(scene, other_prop, new_value)
                         reset_to_frame(context, start_frame)
                         sgn = self._detect_track_length(context, start_frame)
+                        delta_len = sgn - sg_prev
                         self._log(
-                            f"{other_prop}: Iter {iteration:02d} → Wert {new_value:.8f}, Länge {sgn}, Prev {sg_prev}"
+                            f"   • Iteration {iteration:02d}: Value={new_value:.8f} | "
+                            f"Length={sgn} | Prev={sg_prev} | Δ={delta_len:+d}"
                         )
         
                         if not change_detected:
@@ -266,8 +284,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                             break
         
                 # Abschlussmessung
-                reset_to_frame(context, start_frame)
-                self._log(f"{prop_name}+{other_prop}: Kombinierte Haupttests abgeschlossen.")
+                self._log(f"🏁 Abschluss {prop_name}+{other_prop}: Haupttests abgeschlossen.")
+                self._log(f"─────────────────────────────────────────────")
+
                 continue  # danach weiter mit nächstem Threshold
         
             # ==================================================
@@ -280,6 +299,16 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         reset_to_frame(context, start_frame)
         _restore_selection()
 
+        # 📋 Zusammenfassung aller finalen Threshold-Werte
+        self._log("📋 Zusammenfassung der Threshold-Kalibrierung:")
+        for p in self._threshold_props:
+            if hasattr(scene, p):
+                self._log(f"   {p}: {getattr(scene, p):.8f}")
+        self._log("─────────────────────────────────────────────")
+
+        # Abschluss-Meldung
+        self._log("✅ Detaillierte Kalibrierung abgeschlossen.")
+    
         # ✅ FIX 2: return ganz am Ende der execute()
         self.report({'INFO'}, "Auto-Calibrate abgeschlossen.")
         self._log("Auto-Calibrate vollständig abgeschlossen.")
