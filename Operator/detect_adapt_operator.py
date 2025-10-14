@@ -53,7 +53,34 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
         max_loops = 8
         loop = 0
         final_new_marker_count = 0
-        last_md = md
+        frame_num = scene.frame_current
+        
+        # Versuch, gespeicherten Wert zu laden
+        if "min_distance_values" in scene:
+            md_dict = scene["min_distance_values"]
+            if str(frame_num) in md_dict:
+                last_md = float(md_dict[str(frame_num)])
+                print(f"[Kaiserlich Tracker] Verwende gespeicherten min_distance={last_md:.2f} für Frame {frame_num}")
+            else:
+                # Interpolation falls möglich
+                if "known_frames" in md_dict and len(md_dict["known_frames"]) >= 2:
+                    known = sorted(md_dict["known_frames"])
+                    prev_frames = [f for f in known if f < frame_num]
+                    next_frames = [f for f in known if f > frame_num]
+                    if prev_frames and next_frames:
+                        f1 = max(prev_frames)
+                        f2 = min(next_frames)
+                        v1 = float(md_dict[str(f1)])
+                        v2 = float(md_dict[str(f2)])
+                        t = (frame_num - f1) / (f2 - f1)
+                        last_md = v1 + (v2 - v1) * t
+                        print(f"[Kaiserlich Tracker] Interpolierter Startwert: Frame {f1}={v1:.2f} → Frame {f2}={v2:.2f} → {last_md:.2f}")
+                    else:
+                        last_md = md
+                else:
+                    last_md = md
+        else:
+            last_md = md
 
         while loop < max_loops:
             loop += 1
