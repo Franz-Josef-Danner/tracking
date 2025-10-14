@@ -3,10 +3,6 @@ import bpy
 
 
 def get_total_track_length(context: bpy.types.Context, start_frame: int = 1) -> int:
-    """
-    Berechnet die Gesamtlänge aller Tracking-Segmente über alle Tracks.
-    Ein Track kann mehrere Segmente haben (z. B. bei Lücken im Tracking).
-    """
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
         return 0
