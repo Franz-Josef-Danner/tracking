@@ -116,11 +116,13 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
             remaining = len(cleaned_new)
             print(f"[Kaiserlich Tracker] Cleanup: gelöscht={deleted_old} | verbleibend={remaining}")
 
-            # Bewertung der Anzahl
             diff = remaining - ef_target
-            if abs(diff) <= 1:
-                print(f"[Kaiserlich Tracker] ✅ Zielanzahl erreicht ({remaining}/{ef_target})")
+            tolerance = ef_target * 0.10  # 10 % Toleranz
+            if abs(diff) <= tolerance:
+                print(f"[Kaiserlich Tracker] ✅ Zielanzahl erreicht ({remaining}/{ef_target}) "
+                      f"(Toleranz ±{tolerance:.1f})")
                 break
+
 
             # Nur min_distance anpassen
             if remaining < ef_target:
