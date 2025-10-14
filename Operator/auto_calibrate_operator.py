@@ -32,7 +32,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         "kaiserlich_perspective_thresh",
     ]
 
-    _steps = [-0.95, +0.95, -0.80, +0.70, -0.50, +0.25, -0.10, +0.05, -0.02, +0.01, -0.01]
+    _steps = [-0.95, -0.75, -0.50, -0.25, -0.10, -0.05, -0.02, -0.01]
 
     # ---------------------------------------
     # Hilfsfunktionen
@@ -173,8 +173,154 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # ==================================================
             # SPEZIALFALL: scale_thresh_min + scale_thresh_max
             # ==================================================
-            if prop_name == "kaiserlich_scale_thresh_min":
-                other_prop = "kaiserlich_scale_thresh_max"
+            if prop_name in {"kaiserlich_scale_thresh_min", "kaiserlich_rot_scale_thresh_rot"}:
+                # Paare definieren
+                if prop_name == "kaiserlich_scale_thresh_min":
+                    other_prop = "kaiserlich_scale_thresh_max"
+                else:
+                    other_prop = "kaiserlich_rot_scale_thresh_scale"
+
+                reset_to_frame(context, start_frame)
+
+                # --- Initialisierung ---
+                self._set_prop(scene, prop_name, 1.0)
+                self._set_prop(scene, other_prop, 1.0)
+                self._log_test(prop_name, getattr(scene, prop_name))
+                self._log_test(other_prop, getattr(scene, other_prop))
+
+                # Kurztest (Neutral vs Minimum)
+                reset_to_frame(context, start_frame)
+                length_neutral = self._detect_track_length(context, start_frame)
+                self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
+                self._set_prop(scene, other_prop, self.MIN_THRESHOLD)
+                reset_to_frame(context, start_frame)
+                length_min = self._detect_track_length(context, start_frame)
+
+                if length_min <= length_neutral:
+                    self._set_prop(scene, prop_name, 1.0)
+                    self._set_prop(scene, other_prop, 1.0)
+                    handled_props.update({prop_name, other_prop})
+                    continue
+
+                # ==================================================
+                # TEIL 1: erster Parameter (prop_name)
+                # ==================================================
+                self._set_prop(scene, other_prop, self.MIN_THRESHOLD)
+                self._log_test(other_prop, getattr(scene, other_prop))
+
+                reset_to_frame(context, start_frame)
+                best_value = current_value = 1.0
+                best_score = sg_prev = self._detect_track_length(context, start_frame)
+
+                down_steps = [s for s in self._steps if s < 0]
+                for step in down_steps:
+                    change_detected = False
+                    while True:
+                        new_value = self._round(current_value * (1.0 + step), 8)
+                        if new_value <= self.MIN_THRESHOLD:
+                            break
+
+                        self._set_prop(scene, prop_name, new_value)
+                        self._log_test(prop_name, getattr(scene, prop_name))
+                        reset_to_frame(context, start_frame)
+                        sgn = self._detect_track_length(context, start_frame)
+
+                        # Phase 1: Veränderungssuche
+                        if not change_detected:
+                            if sgn != sg_prev:
+                                change_detected = True
+                                if sgn > sg_prev:
+                                    best_score = sgn
+                                    best_value = new_value
+                                    sg_prev = sgn
+                                    current_value = new_value
+                                    continue
+                                else:
+                                    current_value = best_value
+                                    break
+                            else:
+                                current_value = new_value
+                                continue
+
+                        # Phase 2: Feinsuche
+                        if sgn > best_score:
+                            best_score = sgn
+                            best_value = new_value
+                            sg_prev = sgn
+                            current_value = new_value
+                            continue
+                        elif sgn == best_score:
+                            current_value = best_value
+                            break
+                        else:
+                            current_value = best_value
+                            break
+
+                reset_to_frame(context, start_frame)
+                self._set_prop(scene, prop_name, best_value)
+                self._log_test(prop_name, getattr(scene, prop_name))
+
+                # ==================================================
+                # TEIL 2: zweiter Parameter (other_prop)
+                # ==================================================
+                self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
+                self._set_prop(scene, other_prop, 1.0)
+                self._log_test(prop_name, getattr(scene, prop_name))
+                self._log_test(other_prop, getattr(scene, other_prop))
+                reset_to_frame(context, start_frame)
+
+                best_value = current_value = 1.0
+                best_score = sg_prev = self._detect_track_length(context, start_frame)
+
+                for step in down_steps:
+                    change_detected = False
+                    while True:
+                        new_value = self._round(current_value * (1.0 + step), 8)
+                        if new_value <= self.MIN_THRESHOLD:
+                            break
+
+                        self._set_prop(scene, other_prop, new_value)
+                        self._log_test(other_prop, getattr(scene, other_prop))
+                        reset_to_frame(context, start_frame)
+                        sgn = self._detect_track_length(context, start_frame)
+
+                        # Phase 1: Veränderungssuche
+                        if not change_detected:
+                            if sgn != sg_prev:
+                                change_detected = True
+                                if sgn > sg_prev:
+                                    best_score = sgn
+                                    best_value = new_value
+                                    sg_prev = sgn
+                                    current_value = new_value
+                                    continue
+                                else:
+                                    current_value = best_value
+                                    break
+                            else:
+                                current_value = new_value
+                                continue
+
+                        # Phase 2: Feinsuche
+                        if sgn > best_score:
+                            best_score = sgn
+                            best_value = new_value
+                            sg_prev = sgn
+                            current_value = new_value
+                            continue
+                        elif sgn == best_score:
+                            current_value = best_value
+                            break
+                        else:
+                            current_value = best_value
+                            break
+
+                reset_to_frame(context, start_frame)
+                self._set_prop(scene, other_prop, best_value)
+                self._log_test(other_prop, getattr(scene, other_prop))
+
+                handled_props.update({prop_name, other_prop})
+                continue
         
                 # ---------- Kurztest ----------
                 
@@ -324,22 +470,20 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             if length_min <= length_neutral:
                 continue
 
-            # Haupttest
+            # Haupttest (nur abwärts, Veränderung → Verschlechterung → Rücksprung)
             reset_to_frame(context, start_frame)
             self._set_prop(scene, prop_name, 1.0)
             self._log_test(prop_name, getattr(scene, prop_name))
-            sg_prev = self._detect_track_length(context, start_frame)
-            current_value = 1.0
 
-            for step in self._steps:
-                iteration = 0
+            best_value = current_value = 1.0
+            best_score = sg_prev = self._detect_track_length(context, start_frame)
+
+            down_steps = [s for s in self._steps if s < 0]
+            for step in down_steps:
                 change_detected = False
-                stagnation_count = 0
-
                 while True:
-                    iteration += 1
                     new_value = self._round(current_value * (1.0 + step), 8)
-                    if new_value <= self.MIN_THRESHOLD or new_value >= self.MAX_THRESHOLD:
+                    if new_value <= self.MIN_THRESHOLD:
                         break
 
                     self._set_prop(scene, prop_name, new_value)
@@ -347,40 +491,39 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     reset_to_frame(context, start_frame)
                     sgn = self._detect_track_length(context, start_frame)
 
+                    # Phase 1: Veränderungssuche
                     if not change_detected:
                         if sgn != sg_prev:
                             change_detected = True
                             if sgn > sg_prev:
+                                best_score = sgn
+                                best_value = new_value
                                 sg_prev = sgn
                                 current_value = new_value
                                 continue
                             else:
-                                current_value = new_value
+                                current_value = best_value
                                 break
                         else:
                             current_value = new_value
                             continue
 
-                    if sgn > sg_prev:
+                    # Phase 2: Feinsuche
+                    if sgn > best_score:
+                        best_score = sgn
+                        best_value = new_value
                         sg_prev = sgn
-                        stagnation_count = 0
                         current_value = new_value
                         continue
-                    elif sgn == sg_prev:
-                        stagnation_count += 1
-                        current_value = new_value
-                        if stagnation_count >= 1:
-                            break
-                        else:
-                            continue
+                    elif sgn == best_score:
+                        current_value = best_value
+                        break
                     else:
-                        current_value = new_value
+                        current_value = best_value
                         break
 
-                sg_prev = sgn
-
             reset_to_frame(context, start_frame)
-            self._set_prop(scene, prop_name, current_value)
+            self._set_prop(scene, prop_name, best_value)
             self._log_test(prop_name, getattr(scene, prop_name))
             final_length = self._detect_track_length(context, start_frame)
 
