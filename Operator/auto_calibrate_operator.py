@@ -26,7 +26,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
     _threshold_props = [
         "kaiserlich_rot_thresh_x",
-        "kaiserlich_rot_thresh_y",
         "kaiserlich_scale_thresh_min",
         "kaiserlich_scale_thresh_max",
         "kaiserlich_rot_scale_thresh_rot",
@@ -39,6 +38,20 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     # ---------------------------------------
     # Hilfsfunktionen
     # ---------------------------------------
+    def _auto_set_rot_thresh_y(self, context):
+        scene = context.scene
+        if hasattr(scene, "kaiserlich_rot_thresh_x") and hasattr(scene, "kaiserlich_rot_thresh_y"):
+            rx = getattr(scene, "kaiserlich_rot_thresh_x")
+            clip = getattr(context.space_data, "clip", None)
+            if clip and hasattr(clip, "size"):
+                ha, va = clip.size
+                if va != 0:
+                    ry = rx * (ha / va)
+                    setattr(scene, "kaiserlich_rot_thresh_y", self._round(ry))
+                    scene.update_tag()
+                    self._log(f"kaiserlich_rot_thresh_y automatisch gesetzt: rx={rx:.8f}, ha={ha}, va={va} → ry={ry:.8f}")
+
+    
     def _round(self, value: float, decimals: int = 8) -> float:
         return round(value, decimals)
 
@@ -210,13 +223,18 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 f"{prop_name}: Haupttest abgeschlossen – Finalwert {current_value:.8f}, "
                 f"Länge {final_length} (Baseline {baseline_length})"
             )
+            # ============================================
+            # Automatische Berechnung von rot_thresh_y
+            # ============================================
+            self._auto_set_rot_thresh_y(context)
 
-        reset_to_frame(context, start_frame)
-        _restore_selection()
-        self.report({'INFO'}, "Auto-Calibrate abgeschlossen.")
-        self._log("Auto-Calibrate vollständig abgeschlossen.")
-        return {'FINISHED'}
-
+            # --- Abschluss ---
+            reset_to_frame(context, start_frame)
+            _restore_selection()
+            
+            self.report({'INFO'}, "Auto-Calibrate abgeschlossen.")
+            self._log("Auto-Calibrate vollständig abgeschlossen.")
+            return {'FINISHED'}
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate)
