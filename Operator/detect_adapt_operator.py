@@ -130,7 +130,7 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
             if am > 0:
                 ratio = ef_target / am
                 factor = max(0.5, min(2.0, ratio))
-                new_md = last_md * factor
+                new_md = last_md / factor
                 last_md = max(1.0, new_md)
                 print(f"[Kaiserlich Tracker] 🔁 md={last_md:.2f} (ratio={ratio:.3f}, factor={factor:.3f}, "
                       f"Ziel={ef_target}, Neu={am})")
