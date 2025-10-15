@@ -140,6 +140,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         new_min = self.MIN_THRESHOLD
         new_start = start_value
 
+        self._log(f"[Haupttest][{prop}] Starting from {start_value:.8f}")
         self._clip_set(scene, prop, current)
 
         for f in self._down_steps:
@@ -187,15 +188,17 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     # ----------------------------------------------------
     # Haupttest (Paar)
     # ----------------------------------------------------
-    def _downward_search_pair(self, context, start_frame: int, prop_a: str, prop_b: str, target_length: int):
+    def _downward_search_pair(self, context, start_frame: int, prop_a: str, prop_b: str, target_length: int,
+                              start_a: float = 1.0, start_b: float = 1.0):
         scene = context.scene
-        cur_a, cur_b = 1.0, 1.0
+        cur_a, cur_b = start_a, start_b
         prev_a, prev_b = cur_a, cur_b
         best_length = -1
         hit_detected = False
         new_min_a = new_min_b = self.MIN_THRESHOLD
-        new_start_a = new_start_b = 1.0
+        new_start_a, new_start_b = start_a, start_b
 
+        self._log(f"[Haupttest][{prop_a},{prop_b}] Starting from ({start_a:.8f},{start_b:.8f})")
         self._clip_set(scene, prop_a, cur_a)
         self._clip_set(scene, prop_b, cur_b)
 
@@ -243,7 +246,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 return (new_min_a, new_min_b), (new_start_a, new_start_b), True, best_length
 
         self._log(f"[Haupttest][{prop_a},{prop_b}] finished without hit, best={best_length}")
-        return (self.MIN_THRESHOLD, self.MIN_THRESHOLD), (1.0, 1.0), False, best_length
+        return (self.MIN_THRESHOLD, self.MIN_THRESHOLD), (start_a, start_b), False, best_length
 
     # ----------------------------------------------------
     # rot_thresh_y automatisch ableiten
@@ -307,7 +310,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             if not improvement:
                 continue
 
-            new_min, new_start, hit, _ = self._downward_search_single(context, start_frame, prop, target_length)
+            # persistenten Startwert nutzen
+            start_val = self._next_start.get(prop, 1.0)
+            new_min, new_start, hit, _ = self._downward_search_single(context, start_frame, prop, target_length, start_value=start_val)
             if hit:
                 self._clip_set(scene, prop, new_min)
                 self._next_start[prop] = new_start
@@ -323,7 +328,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             if not improvement:
                 continue
 
-            (new_min_a, new_min_b), (new_start_a, new_start_b), hit, _ = self._downward_search_pair(context, start_frame, prop_a, prop_b, target_length)
+            start_a = self._next_start.get(prop_a, 1.0)
+            start_b = self._next_start.get(prop_b, 1.0)
+            (new_min_a, new_min_b), (new_start_a, new_start_b), hit, _ = self._downward_search_pair(context, start_frame, prop_a, prop_b, target_length, start_a=start_a, start_b=start_b)
             if hit:
                 self._clip_set(scene, prop_a, new_min_a)
                 self._clip_set(scene, prop_b, new_min_b)
