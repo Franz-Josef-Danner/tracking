@@ -7,16 +7,16 @@ from ..Helper.delete import delete_tracks_by_names
 
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
-    """Automatische Threshold-Kalibrierung (Downward-Search mit Gate-Mechanismus)"""
+    """Automatische Threshold-Kalibrierung mit deterministischer Stufenlogik und Gate-Steuerung"""
     bl_idname = "kaiserlich_tracker.auto_calibrate"
     bl_label = "Auto-Calibrate Thresholds"
-    bl_description = "Einseitige Downward-Search mit Zielwertsteuerung und Gate-Logik."
+    bl_description = "Mehrstufige Downward-Kalibrierung mit Gate-Steuerung für Einzel- und Doppel-Thresholds."
     bl_options = {"REGISTER", "UNDO"}
 
     verbose: bpy.props.BoolProperty(
         name="Verbose Log",
         default=True,
-        description="Minimalistisches Logging während der Kalibrierung"
+        description="Zeigt minimalistische Logs für Threshold-Test, Segmentlänge und aktive Stufe"
     )
 
     MIN_THRESHOLD: float = 1e-8
@@ -32,11 +32,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         ("kaiserlich_rot_scale_thresh_rot", "kaiserlich_rot_scale_thresh_scale"),
     ]
 
-    _down_steps = [0.5, 0.8, 0.9, 0.95, 0.98, 0.99]
     _next_start: dict = {}
 
     # ----------------------------------------------------
-    # Utility
+    # Utilities
     # ----------------------------------------------------
     def _round(self, v: float, decimals: int = 8) -> float:
         return round(float(v), decimals)
@@ -47,24 +46,15 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         scene.update_tag()
         return getattr(scene, prop)
 
-    def _log(self, msg: str):
-        if self.verbose:
-            print(msg)
-
-    # ----------------------------------------------------
-    # Track-Längenmessung
-    # ----------------------------------------------------
     def _detect_track_length(self, context, start_frame: int) -> int:
         clip = context.space_data.clip
         tracking = clip.tracking
         old_names = [t.name for t in tracking.tracks]
         snapshot_active_markers(context)
         bpy.ops.kaiserlich_tracker.detect_adapt()
-
         new_names = [t.name for t in tracking.tracks if t.name not in old_names]
         for tr in tracking.tracks:
             tr.select = (tr.name in new_names)
-
         bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
         length = get_total_track_length(context, start_frame)
         delete_tracks_by_names(context, new_names)
@@ -78,14 +68,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         reset_to_frame(context, start_frame)
         self._clip_set(scene, prop, 1.0)
         len_neutral = self._detect_track_length(context, start_frame)
-        self._log(f"[Kurz][{prop}] 1.000000 -> len={len_neutral}")
-
         reset_to_frame(context, start_frame)
         self._clip_set(scene, prop, self.MIN_THRESHOLD)
         len_min = self._detect_track_length(context, start_frame)
-        self._log(f"[Kurz][{prop}] {self.MIN_THRESHOLD:.6f} -> len={len_min}")
-
-        return (len_min > len_neutral), max(len_min, len_neutral)
+        return (len_min > len_neutral), max(len_neutral, len_min)
 
     # ----------------------------------------------------
     # Kurztest (Paar)
@@ -96,102 +82,77 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         self._clip_set(scene, prop_a, 1.0)
         self._clip_set(scene, prop_b, 1.0)
         len_neutral = self._detect_track_length(context, start_frame)
-        self._log(f"[Kurz][{prop_a},{prop_b}] (1.0,1.0) -> len={len_neutral}")
-
         reset_to_frame(context, start_frame)
         self._clip_set(scene, prop_a, self.MIN_THRESHOLD)
         self._clip_set(scene, prop_b, self.MIN_THRESHOLD)
         len_min = self._detect_track_length(context, start_frame)
-        self._log(f"[Kurz][{prop_a},{prop_b}] ({self.MIN_THRESHOLD:.6f},{self.MIN_THRESHOLD:.6f}) -> len={len_min}")
-
-        return (len_min > len_neutral), max(len_min, len_neutral)
+        return (len_min > len_neutral), max(len_neutral, len_min)
 
     # ----------------------------------------------------
-    # Haupttest (Einzel) – mit Gate und minimalistischen Logs
+    # Haupttest (Einzel)
     # ----------------------------------------------------
-    def _downward_search_single(self, context, start_frame: int, prop: str, target_length: int, start_value: float = 1.0):
+    def _main_test_single(self, context, start_frame: int, prop: str, target_length: int, start_value: float = 1.0):
         scene = context.scene
         current = start_value
-        prev_value = current
-        new_min = self.MIN_THRESHOLD
-        new_start = start_value
+        gate = None
+        stage = 1
+        self._next_start[prop] = start_value
 
-        for f in self._down_steps:
-            self._log(f"[Test][{prop}][step={f:.2f}] start={current:.6f}")
-            while True:
-                next_value = self._round(current * f)
-                if next_value <= self.MIN_THRESHOLD or next_value == current:
-                    break
+        while True:
+            next_value = self._round(current * 0.5)
+            if next_value < self.MIN_THRESHOLD:
+                next_value = self.MIN_THRESHOLD
 
-                self._clip_set(scene, prop, next_value)
-                reset_to_frame(context, start_frame)
-                length = self._detect_track_length(context, start_frame)
-                self._log(f"[Test][{prop}] thr={next_value:.6f} -> len={length}")
+            self._clip_set(scene, prop, next_value)
+            reset_to_frame(context, start_frame)
+            seg_len = self._detect_track_length(context, start_frame)
 
-                if length >= target_length:
-                    new_min = next_value
-                    new_start = prev_value
-                    self._clip_set(scene, prop, new_start)
-                    self._log(f"[Gate][{prop}] hit|min={new_min:.6f}|start={new_start:.6f}")
-                    return new_min, new_start, True, length
+            if self.verbose:
+                print(f"[{prop}] thr={next_value:.8f} len={seg_len} stage={stage}")
 
-                prev_value = current
-                current = next_value
+            # Neuer Zielwert
+            if seg_len > target_length:
+                target_length = seg_len
+                gate = next_value
+                self._next_start[prop] = current
+                # nächste Stufe vorbereiten
+                self._clip_set(scene, prop, current)
+                stage += 1
+                continue
 
-            if current <= self.MIN_THRESHOLD:
+            # Gate unterschritten
+            if gate and next_value < gate:
+                self._clip_set(scene, prop, self._next_start[prop])
+                stage += 1
+                continue
+
+            # Ende
+            if next_value <= self.MIN_THRESHOLD:
                 break
 
-        self._log(f"[Test][{prop}] nohit")
-        return self.MIN_THRESHOLD, start_value, False, 0
+            current = next_value
+
+        return gate, target_length
 
     # ----------------------------------------------------
-    # Haupttest (Paar) – mit Gate und minimalistischen Logs
+    # Haupttest (Paar)
     # ----------------------------------------------------
-    def _downward_search_pair(self, context, start_frame: int, prop_a: str, prop_b: str, target_length: int,
-                              start_a: float = 1.0, start_b: float = 1.0):
+    def _main_test_pair(self, context, start_frame: int, prop_a: str, prop_b: str, target_length: int):
         scene = context.scene
-        cur_a, cur_b = start_a, start_b
-        prev_a, prev_b = cur_a, cur_b
-        new_min_a = new_min_b = self.MIN_THRESHOLD
-        new_start_a, new_start_b = start_a, start_b
-
-        for f in self._down_steps:
-            self._log(f"[Test][{prop_a},{prop_b}][step={f:.2f}] start=({cur_a:.6f},{cur_b:.6f})")
-            while True:
-                next_a = self._round(cur_a * f)
-                next_b = self._round(cur_b * f)
-                if (next_a <= self.MIN_THRESHOLD and next_b <= self.MIN_THRESHOLD) or (next_a == cur_a and next_b == cur_b):
-                    break
-
-                self._clip_set(scene, prop_a, next_a)
-                self._clip_set(scene, prop_b, next_b)
-                reset_to_frame(context, start_frame)
-                length = self._detect_track_length(context, start_frame)
-                self._log(f"[Test][{prop_a},{prop_b}] thr=({next_a:.6f},{next_b:.6f}) -> len={length}")
-
-                if length >= target_length:
-                    new_min_a, new_min_b = next_a, next_b
-                    new_start_a, new_start_b = prev_a, prev_b
-                    self._clip_set(scene, prop_a, new_start_a)
-                    self._clip_set(scene, prop_b, new_start_b)
-                    self._log(f"[Gate][{prop_a},{prop_b}] hit|min=({new_min_a:.6f},{new_min_b:.6f})|start=({new_start_a:.6f},{new_start_b:.6f})")
-                    return (new_min_a, new_min_b), (new_start_a, new_start_b), True, length
-
-                prev_a, prev_b = cur_a, cur_b
-                cur_a, cur_b = next_a, next_b
-
-            if cur_a <= self.MIN_THRESHOLD and cur_b <= self.MIN_THRESHOLD:
-                break
-
-        self._log(f"[Test][{prop_a},{prop_b}] nohit")
-        return (self.MIN_THRESHOLD, self.MIN_THRESHOLD), (start_a, start_b), False, 0
+        # Phase 1: A fix, B testet
+        self._clip_set(scene, prop_a, self.MIN_THRESHOLD)
+        self._main_test_single(context, start_frame, prop_b, target_length)
+        # Phase 2: B fix, A testet
+        self._clip_set(scene, prop_b, self.MIN_THRESHOLD)
+        self._main_test_single(context, start_frame, prop_a, target_length)
 
     # ----------------------------------------------------
-    # rot_thresh_y automatisch ableiten
+    # Ableitung rot_thresh_y
     # ----------------------------------------------------
     def _auto_set_rot_thresh_y(self, context):
         scene = context.scene
-        clip = getattr(getattr(context, "space_data", None), "clip", None)
+        space = getattr(context, "space_data", None)
+        clip = getattr(space, "clip", None)
         if not clip or not hasattr(scene, "kaiserlich_rot_thresh_x"):
             return
         ha, va = clip.size
@@ -203,7 +164,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         scene.update_tag()
 
     # ----------------------------------------------------
-    # Hauptausführung
+    # Execute
     # ----------------------------------------------------
     def execute(self, context: bpy.types.Context):
         scene = context.scene
@@ -227,7 +188,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         start_frame = get_start_frame(context)
 
-        # Init: alle auf 1.0
+        # Init
         for p in self._single_props:
             if hasattr(scene, p):
                 self._clip_set(scene, p, 1.0)
@@ -237,8 +198,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 self._clip_set(scene, b, 1.0)
 
         reset_to_frame(context, start_frame)
-        baseline_length = self._detect_track_length(context, start_frame)
-        self._log(f"[Baseline] len={baseline_length}")
 
         # Einzel-Thresholds
         for prop in self._single_props:
@@ -247,13 +206,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             improvement, target_length = self._short_test_single(context, start_frame, prop)
             if not improvement:
                 continue
-
             start_val = self._next_start.get(prop, 1.0)
-            new_min, new_start, hit, _ = self._downward_search_single(context, start_frame, prop, target_length, start_value=start_val)
-            if hit:
-                self._next_start[prop] = new_start
-            else:
-                self._clip_set(scene, prop, 1.0)
+            self._main_test_single(context, start_frame, prop, target_length, start_value=start_val)
 
         # Doppel-Thresholds
         for prop_a, prop_b in self._pair_props:
@@ -262,18 +216,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             improvement, target_length = self._short_test_pair(context, start_frame, prop_a, prop_b)
             if not improvement:
                 continue
-
-            start_a = self._next_start.get(prop_a, 1.0)
-            start_b = self._next_start.get(prop_b, 1.0)
-            (new_min_a, new_min_b), (new_start_a, new_start_b), hit, _ = self._downward_search_pair(
-                context, start_frame, prop_a, prop_b, target_length, start_a=start_a, start_b=start_b
-            )
-            if hit:
-                self._next_start[prop_a] = new_start_a
-                self._next_start[prop_b] = new_start_b
-            else:
-                self._clip_set(scene, prop_a, 1.0)
-                self._clip_set(scene, prop_b, 1.0)
+            self._main_test_pair(context, start_frame, prop_a, prop_b, target_length)
 
         reset_to_frame(context, start_frame)
         _restore()
