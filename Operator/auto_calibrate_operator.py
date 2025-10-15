@@ -110,102 +110,95 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         best_value = current_value = initial_value
         best_score = sg_prev = self._detect_track_length(context, start_frame)
         down_steps = [s for s in self._steps if s < 0]
-
-        # >>> NEU: Im ersten Durchgang werden ALLE Verschlechterungen ignoriert
-        ignore_deterioration = True
-
+    
         for step_index, step in enumerate(down_steps):
             self._log(f"[{prop_name}] Step={step:+.2f}")
-
+    
+            # --- Jede Stufe startet mit 'Verschlechterungen ignorieren'
+            ignore_deterioration = True
             change_detected = False
             prev_value_2 = current_value
             prev_value_1 = current_value
-
+    
             # --------------------------------------------
             # Baseline pro Stufe
             # --------------------------------------------
             new_value = self._round(current_value * (1.0 + step), 8)
             if new_value <= self.MIN_THRESHOLD:
                 break
-
+    
             self._set_prop(scene, prop_name, new_value)
             reset_to_frame(context, start_frame)
             stage_baseline = self._detect_track_length(context, start_frame)
             sg_prev = stage_baseline
             current_value = new_value
-
+    
             self._log(f"[{prop_name}] Baseline → Value={new_value:.8f} | TrackLength={stage_baseline}")
-
+    
             # --------------------------------------------
-            # Veränderungssuche
+            # Veränderungssuche (Phase 1 + Phase 2)
             # --------------------------------------------
             while True:
                 new_value = self._round(current_value * (1.0 + step), 8)
                 if new_value <= self.MIN_THRESHOLD:
                     break
-
+    
                 self._set_prop(scene, prop_name, new_value)
                 reset_to_frame(context, start_frame)
                 sgn = self._detect_track_length(context, start_frame)
-
+    
                 self._log(f"[{prop_name}] Step={step:+.2f} | Value={new_value:.8f} | TrackLength={sgn}")
-
+    
                 # --------------------------
-                # Phase 1: Veränderungssuche
+                # Phase 1: Verbesserungssuche
                 # --------------------------
                 if not change_detected:
                     if sgn > sg_prev:
-                        change_detected = True
+                        # Verbesserung gefunden → Phase bleibt aktiv
                         best_score = sgn
                         best_value = new_value
+                        sg_prev = sgn
+                        current_value = new_value
                         prev_value_2 = prev_value_1
                         prev_value_1 = current_value
+                        continue
+    
+                    elif sgn <= sg_prev:
+                        # Noch keine Verbesserung → ignoriere Verschlechterungen
+                        current_value = new_value
+                        continue
+    
+                # --------------------------
+                # Phase 2: Feinsuche (nach erster Verbesserung)
+                # --------------------------
+                if change_detected or (sgn > best_score):
+                    ignore_deterioration = False
+                    change_detected = True
+    
+                if not ignore_deterioration:
+                    # Ab hier gelten wieder normale Regeln
+                    if sgn > best_score:
+                        prev_value_2 = prev_value_1
+                        prev_value_1 = best_value
+                        best_score = sgn
+                        best_value = new_value
                         sg_prev = sgn
                         current_value = new_value
                         continue
-
-                    elif sgn < sg_prev:
-                        # >>> Änderung: gesamte erste Runde ignoriert Verschlechterungen
-                        if ignore_deterioration:
-                            current_value = new_value
-                            continue
-                        else:
-                            change_detected = True
-                            best_score = sg_prev
-                            best_value = current_value
-                            prev_value_2 = prev_value_1
-                            prev_value_1 = current_value
-                            break
-                    else:
-                        prev_value_2 = prev_value_1
-                        prev_value_1 = current_value
-                        current_value = new_value
-                        continue
-
-                # --------------------------
-                # Phase 2: Feinsuche
-                # --------------------------
-                if sgn > best_score:
-                    prev_value_2 = prev_value_1
-                    prev_value_1 = best_value
-                    best_score = sgn
-                    best_value = new_value
-                    sg_prev = sgn
-                    current_value = new_value
-                    continue
-
-                elif sgn == best_score:
-                    current_value = prev_value_2
-                    break
-
-                else:
-                    current_value = prev_value_2
-                    break
-
-            # >>> Nach Abschluss der ersten Runde wird Ignorieren deaktiviert
-            ignore_deterioration = False
-
+    
+                    elif sgn == best_score:
+                        current_value = prev_value_2
+                        break
+    
+                    elif sgn < best_score:
+                        current_value = prev_value_2
+                        break
+    
+            # Nach dieser Stufe → nächster Step
+            continue
+    
         return current_value
+
 
     # ---------------------------------------
     # Hauptausführung
