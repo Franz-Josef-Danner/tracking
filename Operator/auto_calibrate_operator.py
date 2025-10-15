@@ -111,6 +111,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         best_score = sg_prev = self._detect_track_length(context, start_frame)
         down_steps = [s for s in self._steps if s < 0]
 
+        # >>> NEU: Im ersten Durchgang werden ALLE Verschlechterungen ignoriert
+        ignore_deterioration = True
+
         for step_index, step in enumerate(down_steps):
             self._log(f"[{prop_name}] Step={step:+.2f}")
 
@@ -162,7 +165,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         continue
 
                     elif sgn < sg_prev:
-                        if step_index == 0:
+                        # >>> Änderung: gesamte erste Runde ignoriert Verschlechterungen
+                        if ignore_deterioration:
                             current_value = new_value
                             continue
                         else:
@@ -197,6 +201,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 else:
                     current_value = prev_value_2
                     break
+
+            # >>> Nach Abschluss der ersten Runde wird Ignorieren deaktiviert
+            ignore_deterioration = False
 
         return current_value
 
