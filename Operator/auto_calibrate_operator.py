@@ -32,17 +32,20 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         "kaiserlich_perspective_thresh",
     ]
 
-    # Doppel-Thresholds (immer gemeinsam testen)
+    # Doppel-Thresholds
     _pair_props = [
         ("kaiserlich_scale_thresh_min", "kaiserlich_scale_thresh_max"),
         ("kaiserlich_rot_scale_thresh_rot", "kaiserlich_rot_scale_thresh_scale"),
     ]
 
-    # Reduktionsfaktoren (einseitige Downward-Stufen)
+    # Reduktionsfaktoren (einseitig, grob → fein)
     _down_steps = [0.5, 0.8, 0.9, 0.95, 0.98, 0.99]
 
+    # interne Speicherung der nächsten Startpunkte
+    _next_start: dict = {}
+
     # ----------------------------------------------------
-    # Utilities / Logging
+    # Utilities
     # ----------------------------------------------------
     def _round(self, v: float, decimals: int = 8) -> float:
         return round(float(v), decimals)
@@ -84,7 +87,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     # ----------------------------------------------------
     def _short_test_single(self, context, start_frame: int, prop: str) -> Tuple[bool, int]:
         scene = context.scene
-
         reset_to_frame(context, start_frame)
         self._clip_set(scene, prop, 1.0)
         length_neutral = self._detect_track_length(context, start_frame)
@@ -107,7 +109,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     # ----------------------------------------------------
     def _short_test_pair(self, context, start_frame: int, prop_a: str, prop_b: str) -> Tuple[bool, int]:
         scene = context.scene
-
         reset_to_frame(context, start_frame)
         self._clip_set(scene, prop_a, 1.0)
         self._clip_set(scene, prop_b, 1.0)
@@ -245,10 +246,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         return (self.MIN_THRESHOLD, self.MIN_THRESHOLD), (1.0, 1.0), False, best_length
 
     # ----------------------------------------------------
-    # rot_thresh_y aus x & Seitenverhältnis ableiten
+    # rot_thresh_y automatisch ableiten
     # ----------------------------------------------------
     def _auto_set_rot_thresh_y(self, context):
-        scene = getattr(context, "scene", None) or bpy.context.scene
+        scene = context.scene
         space = getattr(context, "space_data", None)
         clip = getattr(space, "clip", None)
         if not clip or not hasattr(scene, "kaiserlich_rot_thresh_x"): return
@@ -276,7 +277,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             self.report({'WARNING'}, "Clip besitzt kein tracking-Attribut.")
             return {'CANCELLED'}
 
-        # Auswahl sichern und deselektieren
         selected = [t.name for t in tracking.tracks if getattr(t, "select", False)]
         for tr in tracking.tracks:
             tr.select = False
@@ -287,7 +287,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         start_frame = get_start_frame(context)
 
-        # Init: alle bekannten Properties auf 1.0
+        # Init: alle auf 1.0
         for p in self._single_props:
             if hasattr(scene, p): self._clip_set(scene, p, 1.0)
         for a, b in self._pair_props:
@@ -295,7 +295,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 self._clip_set(scene, a, 1.0)
                 self._clip_set(scene, b, 1.0)
 
-        # Baseline (Info)
         reset_to_frame(context, start_frame)
         baseline_length = self._detect_track_length(context, start_frame)
         self._log(f"[Baseline] length={baseline_length}")
@@ -307,26 +306,31 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             improvement, target_length = self._short_test_single(context, start_frame, prop)
             if not improvement:
                 continue
+
             new_min, new_start, hit, _ = self._downward_search_single(context, start_frame, prop, target_length)
             if hit:
                 self._clip_set(scene, prop, new_min)
-                self._clip_set(scene, prop, new_start)
+                self._next_start[prop] = new_start
+                self._log(f"[Haupttest][{prop}] next start point stored: {new_start:.8f}")
             else:
                 self._clip_set(scene, prop, 1.0)
 
-        # Paare
+        # Doppel-Thresholds
         for prop_a, prop_b in self._pair_props:
             if not (hasattr(scene, prop_a) and hasattr(scene, prop_b)):
                 continue
             improvement, target_length = self._short_test_pair(context, start_frame, prop_a, prop_b)
             if not improvement:
                 continue
+
             (new_min_a, new_min_b), (new_start_a, new_start_b), hit, _ = self._downward_search_pair(context, start_frame, prop_a, prop_b, target_length)
             if hit:
                 self._clip_set(scene, prop_a, new_min_a)
                 self._clip_set(scene, prop_b, new_min_b)
-                self._clip_set(scene, prop_a, new_start_a)
-                self._clip_set(scene, prop_b, new_start_b)
+                self._next_start[prop_a] = new_start_a
+                self._next_start[prop_b] = new_start_b
+                self._log(f"[Haupttest][{prop_a},{prop_b}] next start points stored: "
+                          f"({new_start_a:.8f},{new_start_b:.8f})")
             else:
                 self._clip_set(scene, prop_a, 1.0)
                 self._clip_set(scene, prop_b, 1.0)
@@ -334,6 +338,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         reset_to_frame(context, start_frame)
         _restore()
         self._auto_set_rot_thresh_y(context)
+
         self.report({'INFO'}, "Auto-Calibrate (Downward-Search) abgeschlossen.")
         return {'FINISHED'}
 
