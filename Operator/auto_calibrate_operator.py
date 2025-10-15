@@ -114,9 +114,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         for step_index, step in enumerate(down_steps):
             self._log(f"[{prop_name}] Step={step:+.2f}")
     
-            # --- Jede Stufe startet mit 'Verschlechterungen ignorieren'
-            ignore_deterioration = True
+            # --- Jede Stufe hat zwei Phasen
+            phase = 1  # 1 = Verbesserungssuche, 2 = Validierung
             change_detected = False
+    
             prev_value_2 = current_value
             prev_value_1 = current_value
     
@@ -124,9 +125,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # Baseline pro Stufe
             # --------------------------------------------
             new_value = self._round(current_value * (1.0 + step), 8)
-            if new_value <= self.MIN_THRESHOLD:
-                break
-    
             self._set_prop(scene, prop_name, new_value)
             reset_to_frame(context, start_frame)
             stage_baseline = self._detect_track_length(context, start_frame)
@@ -136,68 +134,61 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             self._log(f"[{prop_name}] Baseline → Value={new_value:.8f} | TrackLength={stage_baseline}")
     
             # --------------------------------------------
-            # Veränderungssuche (Phase 1 + Phase 2)
+            # PHASEN-STEUERUNG
             # --------------------------------------------
             while True:
                 new_value = self._round(current_value * (1.0 + step), 8)
-                if new_value <= self.MIN_THRESHOLD:
-                    break
     
+                # Kein MIN_THRESHOLD-Stop – wir verlassen uns auf echte Daten
                 self._set_prop(scene, prop_name, new_value)
                 reset_to_frame(context, start_frame)
                 sgn = self._detect_track_length(context, start_frame)
     
                 self._log(f"[{prop_name}] Step={step:+.2f} | Value={new_value:.8f} | TrackLength={sgn}")
     
-                # --------------------------
-                # Phase 1: Verbesserungssuche
-                # --------------------------
-                if not change_detected:
+                # =============================
+                # PHASE 1: Verbesserungssuche
+                # =============================
+                if phase == 1:
                     if sgn > sg_prev:
-                        # Verbesserung gefunden → Phase bleibt aktiv
+                        # Verbesserung erkannt → Übergang zu Phase 2
                         best_score = sgn
                         best_value = new_value
                         sg_prev = sgn
                         current_value = new_value
-                        prev_value_2 = prev_value_1
-                        prev_value_1 = current_value
+                        change_detected = True
+                        phase = 2
+                        self._log(f"[{prop_name}] Verbesserung erkannt → Phase 2 gestartet.")
                         continue
-    
-                    elif sgn <= sg_prev:
-                        # Noch keine Verbesserung → ignoriere Verschlechterungen
+                    else:
+                        # Keine Verbesserung → weiter in Phase 1
+                        sg_prev = sgn
                         current_value = new_value
                         continue
     
-                # --------------------------
-                # Phase 2: Feinsuche (nach erster Verbesserung)
-                # --------------------------
-                if change_detected or (sgn > best_score):
-                    ignore_deterioration = False
-                    change_detected = True
-    
-                if not ignore_deterioration:
-                    # Ab hier gelten wieder normale Regeln
+                # =============================
+                # PHASE 2: Validierung
+                # =============================
+                elif phase == 2:
                     if sgn > best_score:
-                        prev_value_2 = prev_value_1
-                        prev_value_1 = best_value
+                        # weitere Verbesserung → aktualisieren
                         best_score = sgn
                         best_value = new_value
                         sg_prev = sgn
                         current_value = new_value
                         continue
     
-                    elif sgn == best_score:
-                        current_value = prev_value_2
+                    # Stagnation oder Verschlechterung → Stufe beenden
+                    if sgn <= best_score:
+                        self._log(f"[{prop_name}] Stagnation/Verschlechterung erkannt → nächste Stufe.")
+                        current_value = best_value
                         break
     
-                    elif sgn < best_score:
-                        current_value = prev_value_2
-                        break
-    
-            # Nach dieser Stufe → nächster Step
+            # Nach Stufenabschluss → zum nächsten Step weiter
             continue
     
         return current_value
+
 
 
     # ---------------------------------------
