@@ -1,5 +1,5 @@
 import bpy
-from typing import List
+from typing import List, Tuple
 from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
 from ..Helper.snapshot import snapshot_active_markers
@@ -103,93 +103,101 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         return getattr(scene, prop_name)
 
     # -----------------------------------------------------
-    # Kernlogik mit Baseline + TrackLength-Logging
+    # Kernlogik mit 2 Phasen pro Stufe + Rollback(−2)
     # -----------------------------------------------------
     def _adaptive_search(self, context, scene, prop_name, start_frame, initial_value=1.0):
+        """
+        Pro Stufe:
+          Phase 1 (Improve-only): Verschlechterung/Stagnation ignorieren, bis erste Verbesserung.
+          Phase 2 (Validate): weiter iterieren bis Stagnation/Verschlechterung, dann Stufe beenden.
+          Nach Stufenende: Rollback auf (best_index - 2), wenn möglich; sonst (best_index - 1) oder best.
+        """
         reset_to_frame(context, start_frame)
         best_value = current_value = initial_value
         best_score = sg_prev = self._detect_track_length(context, start_frame)
         down_steps = [s for s in self._steps if s < 0]
-    
+
+        # komplette Historie über alle Stufen nicht nötig; pro Stufe fresh sammeln
         for step_index, step in enumerate(down_steps):
             self._log(f"[{prop_name}] Step={step:+.2f}")
-    
-            # --- Jede Stufe hat zwei Phasen
-            phase = 1  # 1 = Verbesserungssuche, 2 = Validierung
+
+            phase = 1  # 1 = Improve-only, 2 = Validate
             change_detected = False
-    
-            prev_value_2 = current_value
-            prev_value_1 = current_value
-    
-            # --------------------------------------------
-            # Baseline pro Stufe
-            # --------------------------------------------
+
+            # Verlauf dieser Stufe: Liste von (value, score)
+            history: List[Tuple[float, int]] = []
+
+            # --- Baseline pro Stufe
             new_value = self._round(current_value * (1.0 + step), 8)
             self._set_prop(scene, prop_name, new_value)
             reset_to_frame(context, start_frame)
             stage_baseline = self._detect_track_length(context, start_frame)
             sg_prev = stage_baseline
             current_value = new_value
-    
+            history.append((current_value, sg_prev))
             self._log(f"[{prop_name}] Baseline → Value={new_value:.8f} | TrackLength={stage_baseline}")
-    
-            # --------------------------------------------
-            # PHASEN-STEUERUNG
-            # --------------------------------------------
+
+            # --- Iteration innerhalb der Stufe
             while True:
+                # nächster Versuchswert innerhalb derselben Stufe
                 new_value = self._round(current_value * (1.0 + step), 8)
-    
-                # Kein MIN_THRESHOLD-Stop – wir verlassen uns auf echte Daten
+
+                # keine künstliche Untergrenze-Abbruchlogik hier
                 self._set_prop(scene, prop_name, new_value)
                 reset_to_frame(context, start_frame)
                 sgn = self._detect_track_length(context, start_frame)
-    
                 self._log(f"[{prop_name}] Step={step:+.2f} | Value={new_value:.8f} | TrackLength={sgn}")
-    
-                # =============================
-                # PHASE 1: Verbesserungssuche
-                # =============================
+
+                # Verlauf fortschreiben
+                history.append((new_value, sgn))
+
                 if phase == 1:
+                    # Verbesserungssuche
                     if sgn > sg_prev:
-                        # Verbesserung erkannt → Übergang zu Phase 2
+                        # erste Verbesserung → Phase 2
+                        change_detected = True
                         best_score = sgn
                         best_value = new_value
                         sg_prev = sgn
                         current_value = new_value
-                        change_detected = True
+                        self._log(f"[{prop_name}] Verbesserung erkannt → Phase 2 (Validate) startet.")
                         phase = 2
-                        self._log(f"[{prop_name}] Verbesserung erkannt → Phase 2 gestartet.")
                         continue
                     else:
-                        # Keine Verbesserung → weiter in Phase 1
+                        # keine Verbesserung → weiter testen
                         sg_prev = sgn
                         current_value = new_value
                         continue
-    
-                # =============================
-                # PHASE 2: Validierung
-                # =============================
-                elif phase == 2:
+
+                else:
+                    # Phase 2: Validierung bis Stagnation/Verschlechterung
                     if sgn > best_score:
-                        # weitere Verbesserung → aktualisieren
                         best_score = sgn
                         best_value = new_value
                         sg_prev = sgn
                         current_value = new_value
                         continue
-    
-                    # Stagnation oder Verschlechterung → Stufe beenden
-                    if sgn <= best_score:
-                        self._log(f"[{prop_name}] Stagnation/Verschlechterung erkannt → nächste Stufe.")
-                        current_value = best_value
-                        break
-    
-            # Nach Stufenabschluss → zum nächsten Step weiter
+                    else:
+                        # Stagnation (==) oder Verschlechterung (<) → Stufe beenden
+                        self._log(f"[{prop_name}] Stagnation/Verschlechterung → Stufe beenden & Rollback(-2).")
+                        # Rollback-Logik: Index des besten Werts suchen
+                        if history:
+                            # best_idx in history finden
+                            best_idx = max(range(len(history)), key=lambda i: history[i][1])
+                            target_idx = max(0, best_idx - 2)  # zwei vor dem besten, falls möglich
+                            rollback_value = history[target_idx][0]
+                            current_value = rollback_value
+                            # Setzen und sichern
+                            self._set_prop(scene, prop_name, current_value)
+                            reset_to_frame(context, start_frame)
+                            _ = self._detect_track_length(context, start_frame)
+                            self._log(f"[{prop_name}] Rollback auf Index {target_idx} (Value={current_value:.8f}).")
+                        break  # Stufe verlassen
+
+            # nach Stufenende: weiter zur nächsten Stufe
             continue
-    
+
         return current_value
-
-
 
     # ---------------------------------------
     # Hauptausführung
@@ -222,7 +230,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 self._set_prop(scene, p, 1.0)
 
         reset_to_frame(context, start_frame)
-        baseline_length = self._detect_track_length(context, start_frame)
+        _ = self._detect_track_length(context, start_frame)
         handled_props = set()
 
         # ==================================================
@@ -243,11 +251,13 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 else:
                     other_prop = "kaiserlich_rot_scale_thresh_scale"
 
+                # Neutraltest
                 self._set_prop(scene, prop_name, 1.0)
                 self._set_prop(scene, other_prop, 1.0)
                 reset_to_frame(context, start_frame)
                 length_neutral = self._detect_track_length(context, start_frame)
 
+                # Minimaltest (nur zur Entscheidung, ob Optimierung sinnvoll ist)
                 self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
                 self._set_prop(scene, other_prop, self.MIN_THRESHOLD)
                 reset_to_frame(context, start_frame)
@@ -257,13 +267,13 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     handled_props.update({prop_name, other_prop})
                     continue
 
-                # TEIL 1
+                # TEIL 1: min/rot zuerst (anderer auf MIN, aber ohne MIN-Abbruch in der Stufe)
                 self._set_prop(scene, other_prop, self.MIN_THRESHOLD)
                 val1 = self._adaptive_search(context, scene, prop_name, start_frame)
                 reset_to_frame(context, start_frame)
                 self._set_prop(scene, prop_name, val1)
 
-                # TEIL 2
+                # TEIL 2: max/scale danach (erster wieder auf MIN)
                 self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
                 self._set_prop(scene, other_prop, 1.0)
                 val2 = self._adaptive_search(context, scene, other_prop, start_frame)
@@ -276,13 +286,15 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # ==================================================
             # STANDARD-THRESHOLDS
             # ==================================================
-            self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
-            reset_to_frame(context, start_frame)
-            length_min = self._detect_track_length(context, start_frame)
-
+            # Neutraltest
             self._set_prop(scene, prop_name, 1.0)
             reset_to_frame(context, start_frame)
             length_neutral = self._detect_track_length(context, start_frame)
+
+            # Minimaltest (nur Entscheidungsbasis)
+            self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
+            reset_to_frame(context, start_frame)
+            length_min = self._detect_track_length(context, start_frame)
 
             if length_min <= length_neutral:
                 continue
