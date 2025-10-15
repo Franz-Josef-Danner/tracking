@@ -42,7 +42,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
     # Downward-Search Schrittstrategie (relativ multiplikativ)
     # = nur nach unten, grob -> fein; keine Gegenrichtung
-    _down_steps = [0.5, 0.8, 0.9, 0.95, 0.98, 0.99]  # multiplikative Faktoren
+    _down_steps = [0.05, 0.2, 0.5, 0.7, 0.9, 0.99]  # multiplikative Faktoren
 
     # ----------------------------------------------------
     # Utilities / Logging
