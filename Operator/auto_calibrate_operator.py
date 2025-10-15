@@ -7,7 +7,7 @@ from ..Helper.delete import delete_tracks_by_names
 
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
-    """Automatische Threshold-Kalibrierung mit einseitiger Downward-Search und Gate-Mechanismus."""
+    """Automatische Threshold-Kalibrierung (Downward-Search mit Gate-Mechanismus)"""
     bl_idname = "kaiserlich_tracker.auto_calibrate"
     bl_label = "Auto-Calibrate Thresholds"
     bl_description = "Einseitige Downward-Search mit Zielwertsteuerung und Gate-Logik."
@@ -16,7 +16,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     verbose: bpy.props.BoolProperty(
         name="Verbose Log",
         default=True,
-        description="Detailliertes Logging während der Kalibrierung"
+        description="Minimalistisches Logging während der Kalibrierung"
     )
 
     MIN_THRESHOLD: float = 1e-8
@@ -36,7 +36,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     _next_start: dict = {}
 
     # ----------------------------------------------------
-    # Utilities
+    # Utility
     # ----------------------------------------------------
     def _round(self, v: float, decimals: int = 8) -> float:
         return round(float(v), decimals)
@@ -77,13 +77,15 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         scene = context.scene
         reset_to_frame(context, start_frame)
         self._clip_set(scene, prop, 1.0)
-        length_neutral = self._detect_track_length(context, start_frame)
+        len_neutral = self._detect_track_length(context, start_frame)
+        self._log(f"[Kurz][{prop}] 1.000000 -> len={len_neutral}")
 
         reset_to_frame(context, start_frame)
         self._clip_set(scene, prop, self.MIN_THRESHOLD)
-        length_min = self._detect_track_length(context, start_frame)
+        len_min = self._detect_track_length(context, start_frame)
+        self._log(f"[Kurz][{prop}] {self.MIN_THRESHOLD:.6f} -> len={len_min}")
 
-        return (length_min > length_neutral), max(length_min, length_neutral)
+        return (len_min > len_neutral), max(len_min, len_neutral)
 
     # ----------------------------------------------------
     # Kurztest (Paar)
@@ -93,29 +95,29 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         reset_to_frame(context, start_frame)
         self._clip_set(scene, prop_a, 1.0)
         self._clip_set(scene, prop_b, 1.0)
-        length_neutral = self._detect_track_length(context, start_frame)
+        len_neutral = self._detect_track_length(context, start_frame)
+        self._log(f"[Kurz][{prop_a},{prop_b}] (1.0,1.0) -> len={len_neutral}")
 
         reset_to_frame(context, start_frame)
         self._clip_set(scene, prop_a, self.MIN_THRESHOLD)
         self._clip_set(scene, prop_b, self.MIN_THRESHOLD)
-        length_min = self._detect_track_length(context, start_frame)
+        len_min = self._detect_track_length(context, start_frame)
+        self._log(f"[Kurz][{prop_a},{prop_b}] ({self.MIN_THRESHOLD:.6f},{self.MIN_THRESHOLD:.6f}) -> len={len_min}")
 
-        return (length_min > length_neutral), max(length_min, length_neutral)
+        return (len_min > len_neutral), max(len_min, len_neutral)
 
     # ----------------------------------------------------
-    # Haupttest (Einzel) - mit Gate
+    # Haupttest (Einzel) – mit Gate und minimalistischen Logs
     # ----------------------------------------------------
     def _downward_search_single(self, context, start_frame: int, prop: str, target_length: int, start_value: float = 1.0):
         scene = context.scene
         current = start_value
         prev_value = current
-        best_length = -1
         new_min = self.MIN_THRESHOLD
         new_start = start_value
 
-        self._log(f"[AutoCalib][{prop}] start={start_value:.6f}")
-
         for f in self._down_steps:
+            self._log(f"[Test][{prop}][step={f:.2f}] start={current:.6f}")
             while True:
                 next_value = self._round(current * f)
                 if next_value <= self.MIN_THRESHOLD or next_value == current:
@@ -124,14 +126,14 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 self._clip_set(scene, prop, next_value)
                 reset_to_frame(context, start_frame)
                 length = self._detect_track_length(context, start_frame)
+                self._log(f"[Test][{prop}] thr={next_value:.6f} -> len={length}")
 
                 if length >= target_length:
                     new_min = next_value
                     new_start = prev_value
                     self._clip_set(scene, prop, new_start)
-                    self._log(f"[AutoCalib][{prop}] hit|min={new_min:.6f}|start={new_start:.6f}")
-                    self._log(f"[AutoCalib][{prop}] gate→{new_start:.6f}")
-                    return new_min, new_start, True, best_length
+                    self._log(f"[Gate][{prop}] hit|min={new_min:.6f}|start={new_start:.6f}")
+                    return new_min, new_start, True, length
 
                 prev_value = current
                 current = next_value
@@ -139,45 +141,41 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             if current <= self.MIN_THRESHOLD:
                 break
 
-        self._log(f"[AutoCalib][{prop}] nohit")
-        return self.MIN_THRESHOLD, start_value, False, best_length
+        self._log(f"[Test][{prop}] nohit")
+        return self.MIN_THRESHOLD, start_value, False, 0
 
     # ----------------------------------------------------
-    # Haupttest (Paar) - mit Gate
+    # Haupttest (Paar) – mit Gate und minimalistischen Logs
     # ----------------------------------------------------
     def _downward_search_pair(self, context, start_frame: int, prop_a: str, prop_b: str, target_length: int,
                               start_a: float = 1.0, start_b: float = 1.0):
         scene = context.scene
         cur_a, cur_b = start_a, start_b
         prev_a, prev_b = cur_a, cur_b
-        best_length = -1
         new_min_a = new_min_b = self.MIN_THRESHOLD
         new_start_a, new_start_b = start_a, start_b
 
-        self._log(f"[AutoCalib][{prop_a},{prop_b}] start=({start_a:.6f},{start_b:.6f})")
-
         for f in self._down_steps:
+            self._log(f"[Test][{prop_a},{prop_b}][step={f:.2f}] start=({cur_a:.6f},{cur_b:.6f})")
             while True:
                 next_a = self._round(cur_a * f)
                 next_b = self._round(cur_b * f)
-                if next_a <= self.MIN_THRESHOLD and next_b <= self.MIN_THRESHOLD:
-                    break
-                if next_a == cur_a and next_b == cur_b:
+                if (next_a <= self.MIN_THRESHOLD and next_b <= self.MIN_THRESHOLD) or (next_a == cur_a and next_b == cur_b):
                     break
 
                 self._clip_set(scene, prop_a, next_a)
                 self._clip_set(scene, prop_b, next_b)
                 reset_to_frame(context, start_frame)
                 length = self._detect_track_length(context, start_frame)
+                self._log(f"[Test][{prop_a},{prop_b}] thr=({next_a:.6f},{next_b:.6f}) -> len={length}")
 
                 if length >= target_length:
                     new_min_a, new_min_b = next_a, next_b
                     new_start_a, new_start_b = prev_a, prev_b
                     self._clip_set(scene, prop_a, new_start_a)
                     self._clip_set(scene, prop_b, new_start_b)
-                    self._log(f"[AutoCalib][{prop_a},{prop_b}] hit|min=({new_min_a:.6f},{new_min_b:.6f})|start=({new_start_a:.6f},{new_start_b:.6f})")
-                    self._log(f"[AutoCalib][{prop_a},{prop_b}] gate→({new_start_a:.6f},{new_start_b:.6f})")
-                    return (new_min_a, new_min_b), (new_start_a, new_start_b), True, best_length
+                    self._log(f"[Gate][{prop_a},{prop_b}] hit|min=({new_min_a:.6f},{new_min_b:.6f})|start=({new_start_a:.6f},{new_start_b:.6f})")
+                    return (new_min_a, new_min_b), (new_start_a, new_start_b), True, length
 
                 prev_a, prev_b = cur_a, cur_b
                 cur_a, cur_b = next_a, next_b
@@ -185,8 +183,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             if cur_a <= self.MIN_THRESHOLD and cur_b <= self.MIN_THRESHOLD:
                 break
 
-        self._log(f"[AutoCalib][{prop_a},{prop_b}] nohit")
-        return (self.MIN_THRESHOLD, self.MIN_THRESHOLD), (start_a, start_b), False, best_length
+        self._log(f"[Test][{prop_a},{prop_b}] nohit")
+        return (self.MIN_THRESHOLD, self.MIN_THRESHOLD), (start_a, start_b), False, 0
 
     # ----------------------------------------------------
     # rot_thresh_y automatisch ableiten
@@ -205,7 +203,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         scene.update_tag()
 
     # ----------------------------------------------------
-    # Ausführung
+    # Hauptausführung
     # ----------------------------------------------------
     def execute(self, context: bpy.types.Context):
         scene = context.scene
@@ -240,7 +238,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         reset_to_frame(context, start_frame)
         baseline_length = self._detect_track_length(context, start_frame)
-        self._log(f"[AutoCalib] baseline={baseline_length}")
+        self._log(f"[Baseline] len={baseline_length}")
 
         # Einzel-Thresholds
         for prop in self._single_props:
@@ -254,10 +252,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             new_min, new_start, hit, _ = self._downward_search_single(context, start_frame, prop, target_length, start_value=start_val)
             if hit:
                 self._next_start[prop] = new_start
-                self._log(f"[AutoCalib][{prop}] gate ✓")
             else:
                 self._clip_set(scene, prop, 1.0)
-                self._log(f"[AutoCalib][{prop}] no gate")
 
         # Doppel-Thresholds
         for prop_a, prop_b in self._pair_props:
@@ -275,11 +271,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             if hit:
                 self._next_start[prop_a] = new_start_a
                 self._next_start[prop_b] = new_start_b
-                self._log(f"[AutoCalib][{prop_a},{prop_b}] gate ✓")
             else:
                 self._clip_set(scene, prop_a, 1.0)
                 self._clip_set(scene, prop_b, 1.0)
-                self._log(f"[AutoCalib][{prop_a},{prop_b}] no gate")
 
         reset_to_frame(context, start_frame)
         _restore()
