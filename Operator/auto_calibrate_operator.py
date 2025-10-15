@@ -108,32 +108,47 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         return getattr(scene, prop_name)
 
     # -----------------------------------------------------
-    # Gemeinsame Kernlogik für adaptives Kalibrieren
+    # Gemeinsame Kernlogik (inkl. Basismessung & Step-Log)
     # -----------------------------------------------------
     def _adaptive_search(self, context, scene, prop_name, start_frame, initial_value=1.0):
         reset_to_frame(context, start_frame)
         best_value = current_value = initial_value
         best_score = sg_prev = self._detect_track_length(context, start_frame)
         down_steps = [s for s in self._steps if s < 0]
-    
+
         for step_index, step in enumerate(down_steps):
-            # 🔹 Nur den angewandten Step-Wert loggen
+            # 🔹 Nur Step loggen
             self._log(f"[{prop_name}] Step={step:+.2f}")
-    
+
             change_detected = False
             prev_value_2 = current_value
             prev_value_1 = current_value
-            prev_score = sg_prev
-    
+
+            # --------------------------------------------
+            # Baseline-Messung pro Stufe
+            # --------------------------------------------
+            new_value = self._round(current_value * (1.0 + step), 8)
+            if new_value <= self.MIN_THRESHOLD:
+                break
+
+            self._set_prop(scene, prop_name, new_value)
+            reset_to_frame(context, start_frame)
+            stage_baseline = self._detect_track_length(context, start_frame)
+            sg_prev = stage_baseline
+            current_value = new_value
+
+            # --------------------------------------------
+            # Veränderungssuche ab dieser Stufe
+            # --------------------------------------------
             while True:
                 new_value = self._round(current_value * (1.0 + step), 8)
                 if new_value <= self.MIN_THRESHOLD:
                     break
-    
+
                 self._set_prop(scene, prop_name, new_value)
                 reset_to_frame(context, start_frame)
                 sgn = self._detect_track_length(context, start_frame)
-    
+
                 # --------------------------
                 # Phase 1: Veränderungssuche
                 # --------------------------
@@ -147,7 +162,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         sg_prev = sgn
                         current_value = new_value
                         continue
-    
+
                     elif sgn < sg_prev:
                         if step_index == 0:
                             current_value = new_value
@@ -164,7 +179,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         prev_value_1 = current_value
                         current_value = new_value
                         continue
-    
+
                 # --------------------------
                 # Phase 2: Feinsuche
                 # --------------------------
@@ -176,17 +191,16 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     sg_prev = sgn
                     current_value = new_value
                     continue
-    
+
                 elif sgn == best_score:
                     current_value = prev_value_2
                     break
-    
+
                 else:
                     current_value = prev_value_2
                     break
-    
-        return current_value
 
+        return current_value
 
     # ---------------------------------------
     # Hauptausführung
@@ -213,7 +227,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         start_frame = get_start_frame(context)
 
-        # Init Properties
+        # Init aller Properties
         for p in self._threshold_props:
             if hasattr(scene, p):
                 self._set_prop(scene, p, 1.0)
@@ -221,10 +235,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         reset_to_frame(context, start_frame)
         baseline_length = self._detect_track_length(context, start_frame)
 
+        handled_props = set()
+
         # ==================================================
         # HAUPTSCHLEIFE pro Property
         # ==================================================
-        handled_props = set()
         for prop_name in self._threshold_props:
             if not hasattr(scene, prop_name):
                 continue
@@ -232,7 +247,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 continue
 
             # ==================================================
-            # PAARTEST: scale / rot-scale
+            # DOPPEL-THRESHOLD-FÄLLE
             # ==================================================
             if prop_name in {"kaiserlich_scale_thresh_min", "kaiserlich_rot_scale_thresh_rot"}:
                 if prop_name == "kaiserlich_scale_thresh_min":
@@ -240,54 +255,54 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 else:
                     other_prop = "kaiserlich_rot_scale_thresh_scale"
 
-                reset_to_frame(context, start_frame)
-
                 # Kurztest
                 self._set_prop(scene, prop_name, 1.0)
                 self._set_prop(scene, other_prop, 1.0)
+                reset_to_frame(context, start_frame)
                 length_neutral = self._detect_track_length(context, start_frame)
 
                 self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
                 self._set_prop(scene, other_prop, self.MIN_THRESHOLD)
+                reset_to_frame(context, start_frame)
                 length_min = self._detect_track_length(context, start_frame)
 
                 if length_min <= length_neutral:
                     handled_props.update({prop_name, other_prop})
                     continue
 
-                # Teil 1 – erstes Property
+                # TEIL 1: Erstes Property
                 self._set_prop(scene, other_prop, self.MIN_THRESHOLD)
-                best_val_1 = self._adaptive_search(context, scene, prop_name, start_frame)
+                val1 = self._adaptive_search(context, scene, prop_name, start_frame)
                 reset_to_frame(context, start_frame)
-                self._set_prop(scene, prop_name, best_val_1)
+                self._set_prop(scene, prop_name, val1)
 
-                # Teil 2 – zweites Property
+                # TEIL 2: Zweites Property
                 self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
                 self._set_prop(scene, other_prop, 1.0)
-                best_val_2 = self._adaptive_search(context, scene, other_prop, start_frame)
+                val2 = self._adaptive_search(context, scene, other_prop, start_frame)
                 reset_to_frame(context, start_frame)
-                self._set_prop(scene, other_prop, best_val_2)
+                self._set_prop(scene, other_prop, val2)
 
                 handled_props.update({prop_name, other_prop})
                 continue
 
             # ==================================================
-            # STANDARD-FALL
+            # STANDARD-THRESHOLDS
             # ==================================================
-            reset_to_frame(context, start_frame)
             self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
+            reset_to_frame(context, start_frame)
             length_min = self._detect_track_length(context, start_frame)
 
-            reset_to_frame(context, start_frame)
             self._set_prop(scene, prop_name, 1.0)
+            reset_to_frame(context, start_frame)
             length_neutral = self._detect_track_length(context, start_frame)
 
             if length_min <= length_neutral:
                 continue
 
-            final_value = self._adaptive_search(context, scene, prop_name, start_frame)
+            final_val = self._adaptive_search(context, scene, prop_name, start_frame)
             reset_to_frame(context, start_frame)
-            self._set_prop(scene, prop_name, final_value)
+            self._set_prop(scene, prop_name, final_val)
             self._log_test(prop_name, getattr(scene, prop_name))
 
         # Nachlauf
