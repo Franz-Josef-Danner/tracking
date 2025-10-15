@@ -57,14 +57,12 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         if clip is None or not hasattr(clip, "size"):
             return
-
         if not hasattr(scene, "kaiserlich_rot_thresh_x"):
             return
 
         ha, va = clip.size
         if not va:
             return
-
         rx = float(getattr(scene, "kaiserlich_rot_thresh_x"))
         ry = min(1.0, self._round(rx * (ha / va)))
         setattr(scene, "kaiserlich_rot_thresh_y", ry)
@@ -87,15 +85,12 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     def _detect_track_length(self, context, start_frame: int) -> int:
         clip = context.space_data.clip
         tracking = clip.tracking
-
         old_names = [t.name for t in tracking.tracks]
         snapshot_active_markers(context)
         bpy.ops.kaiserlich_tracker.detect_adapt()
-
         new_names = [t.name for t in tracking.tracks if t.name not in old_names]
         for tr in tracking.tracks:
             tr.select = tr.name in new_names
-
         bpy.ops.kaiserlich_tracker.track_cycle(max_frames=0, verbose=False)
         length = get_total_track_length(context, start_frame)
         delete_tracks_by_names(context, new_names)
@@ -108,7 +103,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         return getattr(scene, prop_name)
 
     # -----------------------------------------------------
-    # Gemeinsame Kernlogik (inkl. Basismessung & Step-Log)
+    # Kernlogik mit Baseline + TrackLength-Logging
     # -----------------------------------------------------
     def _adaptive_search(self, context, scene, prop_name, start_frame, initial_value=1.0):
         reset_to_frame(context, start_frame)
@@ -117,7 +112,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         down_steps = [s for s in self._steps if s < 0]
 
         for step_index, step in enumerate(down_steps):
-            # 🔹 Nur Step loggen
             self._log(f"[{prop_name}] Step={step:+.2f}")
 
             change_detected = False
@@ -125,7 +119,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             prev_value_1 = current_value
 
             # --------------------------------------------
-            # Baseline-Messung pro Stufe
+            # Baseline pro Stufe
             # --------------------------------------------
             new_value = self._round(current_value * (1.0 + step), 8)
             if new_value <= self.MIN_THRESHOLD:
@@ -137,8 +131,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             sg_prev = stage_baseline
             current_value = new_value
 
+            self._log(f"[{prop_name}] Baseline → Value={new_value:.8f} | TrackLength={stage_baseline}")
+
             # --------------------------------------------
-            # Veränderungssuche ab dieser Stufe
+            # Veränderungssuche
             # --------------------------------------------
             while True:
                 new_value = self._round(current_value * (1.0 + step), 8)
@@ -148,6 +144,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 self._set_prop(scene, prop_name, new_value)
                 reset_to_frame(context, start_frame)
                 sgn = self._detect_track_length(context, start_frame)
+
+                self._log(f"[{prop_name}] Step={step:+.2f} | Value={new_value:.8f} | TrackLength={sgn}")
 
                 # --------------------------
                 # Phase 1: Veränderungssuche
@@ -227,18 +225,17 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         start_frame = get_start_frame(context)
 
-        # Init aller Properties
+        # Init Properties
         for p in self._threshold_props:
             if hasattr(scene, p):
                 self._set_prop(scene, p, 1.0)
 
         reset_to_frame(context, start_frame)
         baseline_length = self._detect_track_length(context, start_frame)
-
         handled_props = set()
 
         # ==================================================
-        # HAUPTSCHLEIFE pro Property
+        # Hauptschleife
         # ==================================================
         for prop_name in self._threshold_props:
             if not hasattr(scene, prop_name):
@@ -247,7 +244,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 continue
 
             # ==================================================
-            # DOPPEL-THRESHOLD-FÄLLE
+            # DOPPEL-THRESHOLDS
             # ==================================================
             if prop_name in {"kaiserlich_scale_thresh_min", "kaiserlich_rot_scale_thresh_rot"}:
                 if prop_name == "kaiserlich_scale_thresh_min":
@@ -255,7 +252,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 else:
                     other_prop = "kaiserlich_rot_scale_thresh_scale"
 
-                # Kurztest
                 self._set_prop(scene, prop_name, 1.0)
                 self._set_prop(scene, other_prop, 1.0)
                 reset_to_frame(context, start_frame)
@@ -270,13 +266,13 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     handled_props.update({prop_name, other_prop})
                     continue
 
-                # TEIL 1: Erstes Property
+                # TEIL 1
                 self._set_prop(scene, other_prop, self.MIN_THRESHOLD)
                 val1 = self._adaptive_search(context, scene, prop_name, start_frame)
                 reset_to_frame(context, start_frame)
                 self._set_prop(scene, prop_name, val1)
 
-                # TEIL 2: Zweites Property
+                # TEIL 2
                 self._set_prop(scene, prop_name, self.MIN_THRESHOLD)
                 self._set_prop(scene, other_prop, 1.0)
                 val2 = self._adaptive_search(context, scene, other_prop, start_frame)
@@ -305,11 +301,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             self._set_prop(scene, prop_name, final_val)
             self._log_test(prop_name, getattr(scene, prop_name))
 
-        # Nachlauf
         reset_to_frame(context, start_frame)
         _restore_selection()
         self._auto_set_rot_thresh_y(context)
-
         self.report({'INFO'}, "Auto-Calibrate abgeschlossen.")
         return {'FINISHED'}
 
