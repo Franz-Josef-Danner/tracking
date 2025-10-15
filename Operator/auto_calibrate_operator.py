@@ -115,23 +115,25 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         best_value = current_value = initial_value
         best_score = sg_prev = self._detect_track_length(context, start_frame)
         down_steps = [s for s in self._steps if s < 0]
-
+    
         for step_index, step in enumerate(down_steps):
+            # 🔹 Nur den angewandten Step-Wert loggen
+            self._log(f"[{prop_name}] Step={step:+.2f}")
+    
             change_detected = False
             prev_value_2 = current_value
             prev_value_1 = current_value
             prev_score = sg_prev
-
+    
             while True:
                 new_value = self._round(current_value * (1.0 + step), 8)
                 if new_value <= self.MIN_THRESHOLD:
                     break
-
+    
                 self._set_prop(scene, prop_name, new_value)
-                self._log_test(prop_name, getattr(scene, prop_name))
                 reset_to_frame(context, start_frame)
                 sgn = self._detect_track_length(context, start_frame)
-
+    
                 # --------------------------
                 # Phase 1: Veränderungssuche
                 # --------------------------
@@ -145,16 +147,12 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         sg_prev = sgn
                         current_value = new_value
                         continue
-
+    
                     elif sgn < sg_prev:
                         if step_index == 0:
-                            self._log(f"Ignoriere Verschlechterung in erster Stufe ({sgn} < {sg_prev}) bei {prop_name}")
-                            prev_value_2 = prev_value_1
-                            prev_value_1 = current_value
                             current_value = new_value
                             continue
                         else:
-                            self._log(f"Verschlechterung erkannt ({sgn} < {sg_prev}) bei {prop_name} → Wechsel in Feinsuche")
                             change_detected = True
                             best_score = sg_prev
                             best_value = current_value
@@ -166,7 +164,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         prev_value_1 = current_value
                         current_value = new_value
                         continue
-
+    
                 # --------------------------
                 # Phase 2: Feinsuche
                 # --------------------------
@@ -178,18 +176,17 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     sg_prev = sgn
                     current_value = new_value
                     continue
-
+    
                 elif sgn == best_score:
-                    self._log(f"Stagnation erkannt → zurück auf Wert zwei Schritte vor dem besten bei {prop_name}")
                     current_value = prev_value_2
                     break
-
+    
                 else:
-                    self._log(f"Verschlechterung ({sgn} < {best_score}) bei {prop_name} → zurück auf Wert zwei Schritte vor dem besten")
                     current_value = prev_value_2
                     break
-
+    
         return current_value
+
 
     # ---------------------------------------
     # Hauptausführung
