@@ -225,25 +225,62 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         reset_to_frame(context, start_frame)
                         sgn = self._detect_track_length(context, start_frame)
 
-                        # Phase 1: Veränderungssuche
-                        if not change_detected:
-                            if sgn > sg_prev:
-                                # ✅ Nur Verbesserung gilt als Veränderung
-                                change_detected = True
-                                best_score = sgn
-                                best_value = new_value
-                                sg_prev = sgn
-                                current_value = new_value
-                                continue
-                            elif sgn < sg_prev:
-                                # ❌ Verschlechterung ignorieren, weitersuchen
-                                self._log(f"Ignoriere Verschlechterung ({sgn} < {sg_prev}) bei {prop_name}")
-                                current_value = new_value
-                                continue
-                            else:
-                                # Keine Veränderung, weitersuchen
-                                current_value = new_value
-                                continue
+                        down_steps = [s for s in self._steps if s < 0]
+                        for step_index, step in enumerate(down_steps):
+                            change_detected = False
+                            while True:
+                                new_value = self._round(current_value * (1.0 + step), 8)
+                                if new_value <= self.MIN_THRESHOLD:
+                                    break
+                        
+                                self._set_prop(scene, prop_name, new_value)
+                                self._log_test(prop_name, getattr(scene, prop_name))
+                                reset_to_frame(context, start_frame)
+                                sgn = self._detect_track_length(context, start_frame)
+                        
+                                # Phase 1: Veränderungssuche
+                                if not change_detected:
+                                    if sgn > sg_prev:
+                                        # ✅ Verbesserung erkannt → Phase 2 starten
+                                        change_detected = True
+                                        best_score = sgn
+                                        best_value = new_value
+                                        sg_prev = sgn
+                                        current_value = new_value
+                                        continue
+                        
+                                    elif sgn < sg_prev:
+                                        # 🔹 NUR BEI ERSTER STUFE Verschlechterung ignorieren
+                                        if step_index == 0:
+                                            self._log(f"Ignoriere Verschlechterung in erster Stufe ({sgn} < {sg_prev}) bei {prop_name}")
+                                            current_value = new_value
+                                            continue
+                                        else:
+                                            # 🔸 Ab zweiter Stufe: Verschlechterung gilt als Veränderung → abbrechen
+                                            self._log(f"Verschlechterung erkannt ({sgn} < {sg_prev}) bei {prop_name} → Wechsel in Feinsuche")
+                                            change_detected = True
+                                            best_score = sg_prev
+                                            best_value = current_value
+                                            break
+                        
+                                    else:
+                                        # Keine Veränderung
+                                        current_value = new_value
+                                        continue
+                        
+                                # Phase 2: Feinsuche
+                                if sgn > best_score:
+                                    best_score = sgn
+                                    best_value = new_value
+                                    sg_prev = sgn
+                                    current_value = new_value
+                                    continue
+                                elif sgn == best_score:
+                                    current_value = best_value
+                                    break
+                                else:
+                                    current_value = best_value
+                                    break
 
 
                         # Phase 2: Feinsuche
@@ -288,25 +325,62 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         reset_to_frame(context, start_frame)
                         sgn = self._detect_track_length(context, start_frame)
 
-                        # Phase 1: Veränderungssuche
-                        if not change_detected:
-                            if sgn > sg_prev:
-                                # ✅ Nur Verbesserung gilt als Veränderung
-                                change_detected = True
-                                best_score = sgn
-                                best_value = new_value
-                                sg_prev = sgn
-                                current_value = new_value
-                                continue
-                            elif sgn < sg_prev:
-                                # ❌ Verschlechterung ignorieren, weitersuchen
-                                self._log(f"Ignoriere Verschlechterung ({sgn} < {sg_prev}) bei {prop_name}")
-                                current_value = new_value
-                                continue
-                            else:
-                                # Keine Veränderung, weitersuchen
-                                current_value = new_value
-                                continue
+                        down_steps = [s for s in self._steps if s < 0]
+                        for step_index, step in enumerate(down_steps):
+                            change_detected = False
+                            while True:
+                                new_value = self._round(current_value * (1.0 + step), 8)
+                                if new_value <= self.MIN_THRESHOLD:
+                                    break
+                        
+                                self._set_prop(scene, prop_name, new_value)
+                                self._log_test(prop_name, getattr(scene, prop_name))
+                                reset_to_frame(context, start_frame)
+                                sgn = self._detect_track_length(context, start_frame)
+                        
+                                # Phase 1: Veränderungssuche
+                                if not change_detected:
+                                    if sgn > sg_prev:
+                                        # ✅ Verbesserung erkannt → Phase 2 starten
+                                        change_detected = True
+                                        best_score = sgn
+                                        best_value = new_value
+                                        sg_prev = sgn
+                                        current_value = new_value
+                                        continue
+                        
+                                    elif sgn < sg_prev:
+                                        # 🔹 NUR BEI ERSTER STUFE Verschlechterung ignorieren
+                                        if step_index == 0:
+                                            self._log(f"Ignoriere Verschlechterung in erster Stufe ({sgn} < {sg_prev}) bei {prop_name}")
+                                            current_value = new_value
+                                            continue
+                                        else:
+                                            # 🔸 Ab zweiter Stufe: Verschlechterung gilt als Veränderung → abbrechen
+                                            self._log(f"Verschlechterung erkannt ({sgn} < {sg_prev}) bei {prop_name} → Wechsel in Feinsuche")
+                                            change_detected = True
+                                            best_score = sg_prev
+                                            best_value = current_value
+                                            break
+                        
+                                    else:
+                                        # Keine Veränderung
+                                        current_value = new_value
+                                        continue
+                        
+                                # Phase 2: Feinsuche
+                                if sgn > best_score:
+                                    best_score = sgn
+                                    best_value = new_value
+                                    sg_prev = sgn
+                                    current_value = new_value
+                                    continue
+                                elif sgn == best_score:
+                                    current_value = best_value
+                                    break
+                                else:
+                                    current_value = best_value
+                                    break
 
 
                         # Phase 2: Feinsuche
@@ -499,25 +573,62 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     reset_to_frame(context, start_frame)
                     sgn = self._detect_track_length(context, start_frame)
 
-                    # Phase 1: Veränderungssuche
-                    if not change_detected:
-                        if sgn > sg_prev:
-                            # ✅ Nur Verbesserung gilt als Veränderung
-                            change_detected = True
-                            best_score = sgn
-                            best_value = new_value
-                            sg_prev = sgn
-                            current_value = new_value
-                            continue
-                        elif sgn < sg_prev:
-                            # ❌ Verschlechterung ignorieren, weitersuchen
-                            self._log(f"Ignoriere Verschlechterung ({sgn} < {sg_prev}) bei {prop_name}")
-                            current_value = new_value
-                            continue
-                        else:
-                            # Keine Veränderung, weitersuchen
-                            current_value = new_value
-                            continue
+                    down_steps = [s for s in self._steps if s < 0]
+                    for step_index, step in enumerate(down_steps):
+                        change_detected = False
+                        while True:
+                            new_value = self._round(current_value * (1.0 + step), 8)
+                            if new_value <= self.MIN_THRESHOLD:
+                                break
+                    
+                            self._set_prop(scene, prop_name, new_value)
+                            self._log_test(prop_name, getattr(scene, prop_name))
+                            reset_to_frame(context, start_frame)
+                            sgn = self._detect_track_length(context, start_frame)
+                    
+                            # Phase 1: Veränderungssuche
+                            if not change_detected:
+                                if sgn > sg_prev:
+                                    # ✅ Verbesserung erkannt → Phase 2 starten
+                                    change_detected = True
+                                    best_score = sgn
+                                    best_value = new_value
+                                    sg_prev = sgn
+                                    current_value = new_value
+                                    continue
+                    
+                                elif sgn < sg_prev:
+                                    # 🔹 NUR BEI ERSTER STUFE Verschlechterung ignorieren
+                                    if step_index == 0:
+                                        self._log(f"Ignoriere Verschlechterung in erster Stufe ({sgn} < {sg_prev}) bei {prop_name}")
+                                        current_value = new_value
+                                        continue
+                                    else:
+                                        # 🔸 Ab zweiter Stufe: Verschlechterung gilt als Veränderung → abbrechen
+                                        self._log(f"Verschlechterung erkannt ({sgn} < {sg_prev}) bei {prop_name} → Wechsel in Feinsuche")
+                                        change_detected = True
+                                        best_score = sg_prev
+                                        best_value = current_value
+                                        break
+                    
+                                else:
+                                    # Keine Veränderung
+                                    current_value = new_value
+                                    continue
+                    
+                            # Phase 2: Feinsuche
+                            if sgn > best_score:
+                                best_score = sgn
+                                best_value = new_value
+                                sg_prev = sgn
+                                current_value = new_value
+                                continue
+                            elif sgn == best_score:
+                                current_value = best_value
+                                break
+                            else:
+                                current_value = best_value
+                                break
 
 
                     # Phase 2: Feinsuche
