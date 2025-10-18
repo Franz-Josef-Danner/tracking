@@ -158,10 +158,17 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         tracking = getattr(clip, 'tracking', None)
         if tracking is None or len(tracking.tracks) == 0:
-            # Optionaler Detect-Cycle unter Snapshot/Cleanup—hier bewusst NICHT,
-            # um die Kalibrier-Invariante nicht zu verletzen. Stattdessen abbrechen:
-            self.report({'WARNING'}, "Keine Tracks im Clip. Bitte initiale Marker anlegen/detektierten.")
-            return {'CANCELLED'}
+            print("[AutoCal] Keine Tracks gefunden – starte automatischen Detect.")
+            try:
+                bpy.ops.kaiserlich_tracker.detect_adapt()
+            except Exception as e:
+                self.report({'WARNING'}, f"Detect Adapt fehlgeschlagen: {e}")
+                return {'CANCELLED'}
+
+            tracking = getattr(clip, 'tracking', None)
+            if tracking is None or len(tracking.tracks) == 0:
+                self.report({'WARNING'}, "Keine Tracks nach Detect erstellt – Abbruch.")
+                return {'CANCELLED'}
 
         self._opt = {}
 
