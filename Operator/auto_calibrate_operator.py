@@ -8,7 +8,7 @@ from ..Operator.track_operator import KAISERLICHTRACKER_OT_track_cycle
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Automatische Kalibrierung der Threshold-Scene-Variablen"""
-    bl_idname = "kaiserlichttracker.auto_calibrate"
+    bl_idname = "kaiserlich_tracker.auto_calibrate"
     bl_label = "Auto Calibrate Thresholds"
     bl_options = {'REGISTER', 'UNDO'}
 
