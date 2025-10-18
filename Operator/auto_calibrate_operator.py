@@ -96,8 +96,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
     def _run_and_measure(self, context) -> float:
         """Führt Tracker-Lauf aus und misst aktuelle Track-Länge."""
-        bpy.ops.kaiserlichttracker.detect_adapt()
-        bpy.ops.kaiserlichttracker.track_cycle()
+        bpy.ops.kaiserlich_tracker.detect_adapt()
+        bpy.ops.kaiserlich_tracker.track_cycle()
         start = get_start_frame(context)
         reset_to_frame(context, start)
         return get_total_track_length(start, context)
