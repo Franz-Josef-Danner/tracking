@@ -51,7 +51,20 @@ def run_tracking_cycle(context) -> int:
 		else:
 			print("[AutoCal] Keine verfügbaren Tracks im Tracking-Objekt.")
 
+	# === SNAPSHOT: alte Marker sichern ===
+	old_markers = snapshot_active_markers(context)
+
+	# === DETECT/ADAPT (falls verfügbar) ===
+	if hasattr(bpy.ops.kaiserlich_tracker, "detect_adapt"):
+		try:
+			print("[AutoCal] Aufruf: detect_adapt()")
+			bpy.ops.kaiserlich_tracker.detect_adapt()
+		except Exception as e:
+			print(f"[AutoCal] detect_adapt Exception: {e}")
+
+	# === TRACK ===
 	try:
+		print("[AutoCal] Aufruf: track_cycle()")
 		res = run_track_cycle(context, max_frames=0, verbose=False)
 	except Exception as e:
 		print(f"[AutoCal] Exception in track_cycle: {e}")
@@ -59,13 +72,35 @@ def run_tracking_cycle(context) -> int:
 
 	print(f"[AutoCal] track_cycle returned: {res}")
 
+	# === TRACKLÄNGE messen ===
+	length = get_total_track_length(context, start_frame=start)
+	print(f"[AutoCal] berechnete Gesamtlänge: {length}")
+
+	# === NEUE MARKER ERMITTELN & LÖSCHEN ===
+	new_markers = get_new_markers(context, old_markers)
+	if new_markers:
+		names = [m for m in new_markers]
+		print(f"[AutoCal] Gefundene neue Tracks seit Snapshot: {names} — werden gelöscht.")
+		deleted = delete_tracks_by_names(context, names)
+		print(f"[AutoCal] Anzahl gelöschter Tracks: {deleted}")
+	else:
+		print("[AutoCal] Keine neuen Tracks seit Snapshot gefunden.")
+
 	# Reset des Playheads
 	reset_to_frame(context, start)
 
-	# Berechne Länge
-	length = get_total_track_length(context, start_frame=start)
-	print(f"[AutoCal] berechnete Gesamtlänge: {length}")
 	return length
+
+
+def get_new_markers(context, before_snapshot: List[Dict[str, Any]]) -> List[str]:
+	"""Vergleicht aktuellen Marker-Zustand mit before_snapshot und gibt Liste
+	von neuen Track-Namen zurück (nur Namen zur Verwendung mit Delete).
+	"""
+	before_names = {m['track'] for m in before_snapshot}
+	after = snapshot_active_markers(context)
+	after_names = {m['track'] for m in after}
+	new = list(after_names - before_names)
+	return new
 
 
 def save_result(context, prop: str, value: float):
