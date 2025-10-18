@@ -18,12 +18,53 @@ def run_tracking_cycle(context) -> int:
 	wurden (Thresholds). Start-Frame wird gemerkt und am Ende zurückgesetzt.
 	"""
 	start = get_start_frame(context)
-	# Wir nutzen track_cycle aus track_operator (funktionsbasierte Variante)
-	res = run_track_cycle(context, max_frames=0, verbose=False)
+	clip = getattr(context.space_data, "clip", None)
+	print(f"[AutoCal] run_tracking_cycle: start_frame={start}, clip_present={bool(clip)}")
+	if clip is None:
+		print("[AutoCal] Kein aktiver Clip - Tracklauf wird übersprungen.")
+		return 0
+
+	tracking = getattr(clip, 'tracking', None)
+	if tracking is None:
+		print("[AutoCal] Clip hat kein Tracking-Objekt - Länge=0")
+		return 0
+
+	selected_tracks = [t.name for t in tracking.tracks if getattr(t, 'select', False)]
+	print(f"[AutoCal] selektierte Tracks vor Tracklauf: {selected_tracks}")
+
+	# Fallback: wenn keine Tracks selektiert sind, selektiere konservativ alle sichtbaren (nicht gemuteten) Tracks
+	if not selected_tracks:
+		available = [t for t in tracking.tracks if not getattr(t, 'mute', False)]
+		if available:
+			for t in tracking.tracks:
+				try:
+					t.select = False
+				except Exception:
+					pass
+			for t in available:
+				try:
+					t.select = True
+				except Exception:
+					pass
+			selected_tracks = [t.name for t in available]
+			print(f"[AutoCal] Keine Tracks selektiert — Fallback: selektiere alle {len(available)} verfügbaren Tracks: {selected_tracks}")
+		else:
+			print("[AutoCal] Keine verfügbaren Tracks im Tracking-Objekt.")
+
+	try:
+		res = run_track_cycle(context, max_frames=0, verbose=False)
+	except Exception as e:
+		print(f"[AutoCal] Exception in track_cycle: {e}")
+		res = {'CANCELLED'}
+
+	print(f"[AutoCal] track_cycle returned: {res}")
+
 	# Reset des Playheads
 	reset_to_frame(context, start)
+
 	# Berechne Länge
 	length = get_total_track_length(context, start_frame=start)
+	print(f"[AutoCal] berechnete Gesamtlänge: {length}")
 	return length
 
 
