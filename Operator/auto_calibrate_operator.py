@@ -7,274 +7,317 @@ from ..Helper.delete import delete_tracks_by_names
 from ..Helper.reset_helper import reset_all_thresholds, THRESH_LIST, set_scene_value, get_scene_value
 
 # Direct import of the procedural tracking function used by the operator
-from .track_operator import track_cycle as run_track_cycle
-from .detect_adapt_operator import KAISERLICHTRACKER_OT_detect_adapt
+from ..Operator.track_operator import track_cycle as run_track_cycle
+# Detect-Operator optional über bpy.ops verwendet, kein harter Import nötig
 
 
-def run_tracking_cycle(context) -> int:
-	"""Hilfswrapper: führt den Track-Cycle aus und liefert die Gesamtlänge zurück.
-
-	Wichtig: erwartet, dass vor Aufruf die gewünschten Scene-Properties gesetzt
-	wurden (Thresholds). Start-Frame wird gemerkt und am Ende zurückgesetzt.
-	"""
-	start = get_start_frame(context)
-	clip = getattr(context.space_data, "clip", None)
-	print(f"[AutoCal] run_tracking_cycle: start_frame={start}, clip_present={bool(clip)}")
-	if clip is None:
-		print("[AutoCal] Kein aktiver Clip - Tracklauf wird übersprungen.")
-		return 0
-
-	tracking = getattr(clip, 'tracking', None)
-	if tracking is None:
-		print("[AutoCal] Clip hat kein Tracking-Objekt - Länge=0")
-		return 0
-
-	selected_tracks = [t.name for t in tracking.tracks if getattr(t, 'select', False)]
-	print(f"[AutoCal] selektierte Tracks vor Tracklauf: {selected_tracks}")
-
-	# Fallback: wenn keine Tracks selektiert sind, selektiere konservativ alle sichtbaren (nicht gemuteten) Tracks
-	if not selected_tracks:
-		available = [t for t in tracking.tracks if not getattr(t, 'mute', False)]
-		if available:
-			for t in tracking.tracks:
-				try:
-					t.select = False
-				except Exception:
-					pass
-			for t in available:
-				try:
-					t.select = True
-				except Exception:
-					pass
-			selected_tracks = [t.name for t in available]
-			print(f"[AutoCal] Keine Tracks selektiert — Fallback: selektiere alle {len(available)} verfügbaren Tracks: {selected_tracks}")
-		else:
-			print("[AutoCal] Keine verfügbaren Tracks im Tracking-Objekt.")
-
-	# === SNAPSHOT: alte Marker sichern ===
-	old_markers = snapshot_active_markers(context)
-
-	# === DETECT/ADAPT (falls verfügbar) ===
-	if hasattr(bpy.ops.kaiserlich_tracker, "detect_adapt"):
-		try:
-			print("[AutoCal] Aufruf: detect_adapt()")
-			bpy.ops.kaiserlich_tracker.detect_adapt()
-		except Exception as e:
-			print(f"[AutoCal] detect_adapt Exception: {e}")
-
-	# === TRACK ===
-	try:
-		print("[AutoCal] Aufruf: track_cycle()")
-		res = run_track_cycle(context, max_frames=0, verbose=False)
-	except Exception as e:
-		print(f"[AutoCal] Exception in track_cycle: {e}")
-		res = {'CANCELLED'}
-
-	print(f"[AutoCal] track_cycle returned: {res}")
-
-	# === TRACKLÄNGE messen ===
-	length = get_total_track_length(context, start_frame=start)
-	print(f"[AutoCal] berechnete Gesamtlänge: {length}")
-
-	# === NEUE MARKER ERMITTELN & LÖSCHEN ===
-	new_markers = get_new_markers(context, old_markers)
-	if new_markers:
-		names = [m for m in new_markers]
-		print(f"[AutoCal] Gefundene neue Tracks seit Snapshot: {names} — werden gelöscht.")
-		deleted = delete_tracks_by_names(context, names)
-		print(f"[AutoCal] Anzahl gelöschter Tracks: {deleted}")
-	else:
-		print("[AutoCal] Keine neuen Tracks seit Snapshot gefunden.")
-
-	# Reset des Playheads
-	reset_to_frame(context, start)
-
-	return length
-
-
+# ------------------------------------------------------------
+# Marker-Diff Utilities
+# ------------------------------------------------------------
 def get_new_markers(context, before_snapshot: List[Dict[str, Any]]) -> List[str]:
-	"""Vergleicht aktuellen Marker-Zustand mit before_snapshot und gibt Liste
-	von neuen Track-Namen zurück (nur Namen zur Verwendung mit Delete).
-	"""
-	before_names = {m['track'] for m in before_snapshot}
-	after = snapshot_active_markers(context)
-	after_names = {m['track'] for m in after}
-	new = list(after_names - before_names)
-	return new
+    """Vergleicht aktuellen Marker-Zustand mit before_snapshot und gibt Liste
+    von neuen Track-Namen zurück (nur Namen zur Verwendung mit Delete)."""
+    before_names = {m['track'] for m in before_snapshot}
+    after = snapshot_active_markers(context)
+    after_names = {m['track'] for m in after}
+    new = list(after_names - before_names)
+    return new
 
 
+# ------------------------------------------------------------
+# Tracking-Wrapper mit Snapshot / Cleanup
+# ------------------------------------------------------------
+def run_tracking_cycle(context) -> int:
+    """Führt einen vollständigen Detect+Track-Durchlauf aus und liefert die Gesamtlänge.
+    - Snapshot vor Detect, danach Track
+    - Messung der Track-Länge
+    - Löschen aller neuen Marker
+    - Rücksetzen auf Start-Frame
+    WICHTIG: Erwartet, dass relevante Scene-Properties VORHER gesetzt sind.
+    """
+    start = get_start_frame(context)
+    clip = getattr(context.space_data, "clip", None)
+    if clip is None:
+        print("[AutoCal] Kein aktiver Clip - Tracklauf wird übersprungen.")
+        return 0
+
+    tracking = getattr(clip, 'tracking', None)
+    if tracking is None:
+        print("[AutoCal] Clip hat kein Tracking-Objekt - Länge=0")
+        return 0
+
+    # Snapshot vor Detect
+    old_markers = snapshot_active_markers(context)
+
+    # DETECT (falls registriert)
+    try:
+        if hasattr(bpy.ops.kaiserlich_tracker, "detect_adapt"):
+            bpy.ops.kaiserlich_tracker.detect_adapt()
+    except Exception as e:
+        print(f"[AutoCal] detect_adapt Exception: {e}")
+
+    # TRACK – funktionaler Call bevorzugt
+    try:
+        res = run_track_cycle(context, max_frames=0, verbose=False)
+    except Exception as e:
+        print(f"[AutoCal] Exception in track_cycle: {e}")
+        res = {'CANCELLED'}
+
+    # Track-Länge messen (ab Start)
+    length = get_total_track_length(context, start_frame=start)
+
+    # Neue Marker identifizieren & löschen
+    try:
+        new_markers = get_new_markers(context, old_markers)
+        if new_markers:
+            delete_tracks_by_names(context, new_markers)
+    except Exception as e:
+        print(f"[AutoCal] Fehler beim Löschen neuer Marker: {e}")
+
+    # Playhead zurück
+    reset_to_frame(context, start)
+    return int(length)
+
+
+# ------------------------------------------------------------
+# Ergebnis-Commit am Ende
+# ------------------------------------------------------------
 def save_result(context, prop: str, value: float):
-	"""Speichert das finale Ergebnis in der Scene unter einem klaren Namen.
+    """Speichert das finale Ergebnis eindeutig benannt in der Scene."""
+    scene = context.scene
+    key = f"kaiserlich_opt_{prop}"
+    try:
+        setattr(scene, key, float(value))
+    except Exception:
+        # Fallback in Custom-Prop
+        try:
+            scene[key] = float(value)
+        except Exception:
+            pass
 
-	Beispiel: kaiserlich_opt_kaiserlich_scale_thresh_min
-	"""
-	scene = context.scene
-	key = f"kaiserlich_opt_{prop}"
-	try:
-		setattr(scene, key, float(value))
-	except Exception:
-		pass
+
+# ------------------------------------------------------------
+# Hilfswerte / Policies
+# ------------------------------------------------------------
+def get_min_threshold(context) -> float:
+    """Dedizierte, globale Untergrenze. Fallback robust klein."""
+    return float(getattr(context.scene, "kaiserlich_min_threshold", 1e-8))
 
 
+def baseline_target_value(context, active_prop: str, locked_prop: Optional[str], step_value: float) -> int:
+    """Neutraler Baseline-Lauf:
+       - Vorlauf-Reset: alle auf 1.0
+       - locked_prop = min
+       - active_prop = (start/step_value)
+       - run → length
+       - Nachlauf-Reset: alle außer aktiv/locked auf 1.0
+    """
+    reset_all_thresholds(context, [])  # alle auf 1.0
+    min_threshold = get_min_threshold(context)
+
+    if locked_prop:
+        set_scene_value(context, locked_prop, min_threshold)
+
+    start_threshold = get_scene_value(context, active_prop) or 1.0
+    end_threshold = start_threshold / step_value
+    set_scene_value(context, active_prop, end_threshold)
+
+    length = run_tracking_cycle(context)
+
+    active_props = [active_prop] + ([locked_prop] if locked_prop else [])
+    reset_all_thresholds(context, active_props)
+    return int(length)
+
+
+# ------------------------------------------------------------
+# Hauptoperator
+# ------------------------------------------------------------
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
-	bl_idname = "kaiserlich_tracker.auto_calibrate"
-	bl_label = "Auto Calibrate Thresholds"
-	bl_description = "Automatische Kalibrierung der Threshold-Parameter mit Reset nach jedem Lauf"
-	bl_options = {"REGISTER", "INTERNAL"}
+    """Automatische Kalibrierung der Threshold-Parameter mit:
+       - Stufenlogik (start=140, halbieren)
+       - 3 Wechselkriterien: Ziel erreicht / Ziel übertroffen / Untergrenze erreicht
+       - Doppelwerte seriell (einer aktiv, anderer fixiert auf min)
+       - Reset vor/nach jedem Lauf (alle nicht getesteten = 1.0)
+       - Snapshot vor Detect, Löschung neuer Marker nach Track
+       - Finale Werte erst am Ende committen
+    """
+    bl_idname = "kaiserlich_tracker.auto_calibrate"
+    bl_label = "Auto Calibrate Thresholds"
+    bl_description = "Kalibriert Tracking-Thresholds stufenbasiert und deterministisch"
+    bl_options = {"REGISTER", "INTERNAL"}
 
-	def execute(self, context):
-		# Minimaler Testwert (aus UI oder Konvention)
-		min_threshold = getattr(context.scene, "kaiserlich_scale_thresh_min", 0.002)
+    # Puffer für finale Ergebnisse (erst am Ende committen)
+    _opt: Dict[str, float] = None
 
-		# Wenn keine Tracks vorhanden sind, versuchen wir automatisch einen Detect-Zyklus
-		clip = getattr(context.space_data, "clip", None)
-		if clip is not None:
-			tracking = getattr(clip, 'tracking', None)
-			num_tracks = len(tracking.tracks) if tracking is not None else 0
-			if num_tracks == 0:
-				print("[AutoCal] Keine Tracks im Clip gefunden — starte automatisch Detect Cycle.")
-				try:
-					res = bpy.ops.kaiserlich_tracker.detect_cycle()
-					print(f"[AutoCal] detect_cycle returned: {res}")
-				except Exception as e:
-					print(f"[AutoCal] Fehler beim Aufruf von detect_cycle: {e}")
+    def execute(self, context):
+        # Sicherstellen, dass es überhaupt Tracks gibt (optional: minimalinvasiv)
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Clip im Movie Clip Editor.")
+            return {'CANCELLED'}
 
-				# Nach Detect erneut prüfen
-				tracking = getattr(clip, 'tracking', None)
-				num_tracks = len(tracking.tracks) if tracking is not None else 0
-				if num_tracks == 0:
-					self.report({'WARNING'}, "Keine Tracks nach Detect Cycle; Auto-Calibrate wird abgebrochen.")
-					return {'CANCELLED'}
+        tracking = getattr(clip, 'tracking', None)
+        if tracking is None or len(tracking.tracks) == 0:
+            # Optionaler Detect-Cycle unter Snapshot/Cleanup—hier bewusst NICHT,
+            # um die Kalibrier-Invariante nicht zu verletzen. Stattdessen abbrechen:
+            self.report({'WARNING'}, "Keine Tracks im Clip. Bitte initiale Marker anlegen/detektierten.")
+            return {'CANCELLED'}
 
-		# Short test: iteriere über Gruppen
-		self._short_test(context, min_threshold)
+        self._opt = {}
 
-		# Nach kompletter Kalibrierung: setze finale Werte aus gespeicherten Resultaten
-		# (In dieser Implementierung sind save_result-Aufrufe in _main_test)
-		self.report({"INFO"}, "Auto-Calibrate abgeschlossen.")
-		return {"FINISHED"}
+        # Kurztest (identifiziert sensible Gruppen/Parameter, behandelt Doppelwerte)
+        self._short_test(context)
 
-	def _short_test(self, context, min_threshold: float):
-		current_index = 0
-		# Wir arbeiten mit der globalen THRESH_LIST aus reset_helper
-		while current_index < len(THRESH_LIST):
-			thresh = THRESH_LIST[current_index]
-			props = thresh["props"]
+        # Finale Commit-Phase: Ergebnisse in Scene speichern
+        for prop, value in (self._opt or {}).items():
+            save_result(context, prop, value)
 
-			# Szenario A: Doppelwerte (Länge 2)
-			if len(props) == 2:
-				pA, pB = props
+        self.report({"INFO"}, "Auto-Calibrate abgeschlossen.")
+        return {"FINISHED"}
 
-				# Beide minimal → Baseline
-				set_scene_value(context, pA, min_threshold)
-				set_scene_value(context, pB, min_threshold)
-				len_min = run_tracking_cycle(context)
-				reset_all_thresholds(context, [pA, pB])
+    # --------------------------------------------------------
+    # Kurztest
+    # --------------------------------------------------------
+    def _short_test(self, context):
+        current_index = 0
+        min_threshold = get_min_threshold(context)
 
-				# Beide maximal → Vergleich
-				set_scene_value(context, pA, 1.0)
-				set_scene_value(context, pB, 1.0)
-				len_max = run_tracking_cycle(context)
-				reset_all_thresholds(context, [pA, pB])
+        while current_index < len(THRESH_LIST):
+            thresh = THRESH_LIST[current_index]
+            props = thresh["props"]
 
-				if len_max > len_min:
-					# Positiv reagierende Gruppe -> Teste beide einzeln
-					# Test 1: pA aktiv, pB fixiert
-					set_scene_value(context, pB, min_threshold)
-					self._main_test(context, active_prop=pA, locked_prop=pB)
-					reset_all_thresholds(context, [pA, pB])
+            # Doppelwerte
+            if len(props) == 2:
+                pA, pB = props
 
-					# Test 2: pB aktiv, pA fixiert
-					set_scene_value(context, pA, min_threshold)
-					self._main_test(context, active_prop=pB, locked_prop=pA)
-					reset_all_thresholds(context, [pA, pB])
+                # Baseline: beide minimal
+                set_scene_value(context, pA, min_threshold)
+                set_scene_value(context, pB, min_threshold)
+                len_min = run_tracking_cycle(context)
+                reset_all_thresholds(context, [pA, pB])
 
-				else:
-					current_index += 1
-					continue
+                # Vergleich: beide maximal
+                set_scene_value(context, pA, 1.0)
+                set_scene_value(context, pB, 1.0)
+                len_max = run_tracking_cycle(context)
+                reset_all_thresholds(context, [pA, pB])
 
-			# Szenario B: Einzelparameter
-			elif len(props) == 1:
-				p = props[0]
+                if len_max > len_min:
+                    # 1) pA aktiv, pB fixiert
+                    set_scene_value(context, pB, min_threshold)
+                    self._main_test(context, active_prop=pA, locked_prop=pB)
+                    reset_all_thresholds(context, [pA, pB])
 
-				set_scene_value(context, p, 1.0)
-				len_high = run_tracking_cycle(context)
-				reset_all_thresholds(context, [p])
+                    # 2) pB aktiv, pA fixiert
+                    set_scene_value(context, pA, min_threshold)
+                    self._main_test(context, active_prop=pB, locked_prop=pA)
+                    reset_all_thresholds(context, [pA, pB])
+                else:
+                    current_index += 1
+                    continue
 
-				set_scene_value(context, p, min_threshold)
-				len_low = run_tracking_cycle(context)
-				reset_all_thresholds(context, [p])
+            # Einzelparameter
+            elif len(props) == 1:
+                p = props[0]
 
-				if len_low > len_high:
-					self._main_test(context, active_prop=p)
-				else:
-					current_index += 1
-					continue
+                # hoch
+                set_scene_value(context, p, 1.0)
+                len_high = run_tracking_cycle(context)
+                reset_all_thresholds(context, [p])
 
-			current_index += 1
+                # niedrig
+                set_scene_value(context, p, min_threshold)
+                len_low = run_tracking_cycle(context)
+                reset_all_thresholds(context, [p])
 
-	def _main_test(self, context, active_prop: str, locked_prop: Optional[str] = None):
-		# initiale Werte
-		step_value = 140.0
-		target_value = get_total_track_length(context, start_frame=get_start_frame(context))
-		min_threshold = getattr(context.scene, "kaiserlich_scale_thresh_min", 0.002)
+                if len_low > len_high:
+                    self._main_test(context, active_prop=p)
+                else:
+                    current_index += 1
+                    continue
 
-		start_threshold = get_scene_value(context, active_prop) or 1.0
-		lower_threshold = min_threshold
+            current_index += 1
 
-		while step_value >= 1:
-			current_start = start_threshold
-			current_end = current_start / step_value
+    # --------------------------------------------------------
+    # Haupttest – Stufenlogik (140 → /2 … bis < 1)
+    # 3 Wechselkriterien: == target, > target, end_threshold <= min
+    # Reset vor/nach jedem Lauf; Doppelwerte: locked_prop=min
+    # --------------------------------------------------------
+    def _main_test(self, context, active_prop: str, locked_prop: Optional[str] = None):
+        step_value = 140.0
+        min_threshold = get_min_threshold(context)
 
-			# Fixierten Parameter setzen
-			if locked_prop:
-				set_scene_value(context, locked_prop, min_threshold)
+        # Ausgangswerte
+        start_threshold = get_scene_value(context, active_prop) or 1.0
+        lower_threshold = min_threshold
 
-			# Aktiven Parameter setzen
-			set_scene_value(context, active_prop, current_end)
+        # Sauberen Zielwert aus neutralem Baseline-Lauf bestimmen
+        target_value = baseline_target_value(context, active_prop, locked_prop, step_value)
 
-			# Trackingdurchlauf
-			track_len = run_tracking_cycle(context)
+        while step_value >= 1:
+            # --- VORLAUF-RESET: alle auf 1.0, außer aktiv/locked
+            pre_active = [active_prop] + ([locked_prop] if locked_prop else [])
+            reset_all_thresholds(context, pre_active)
 
-			# Nach jedem Lauf: Reset aller anderen Werte (außer aktive und ggf. locked)
-			active_props = [active_prop]
-			if locked_prop:
-				active_props.append(locked_prop)
-			reset_all_thresholds(context, active_props)
+            # Fixierten Parameter (falls vorhanden) setzen
+            if locked_prop:
+                set_scene_value(context, locked_prop, min_threshold)
 
-			# Bewertung
-			if track_len == target_value:
-				lower_threshold = current_end
-				step_value /= 2
-				if step_value < 1:
-					break
-				continue
+            # Aktiven Parameter: nächster Kandidat
+            current_start = start_threshold
+            current_end = current_start / step_value
+            set_scene_value(context, active_prop, current_end)
 
-			elif track_len > target_value:
-				target_value = track_len
-				lower_threshold = current_end
-				step_value /= 2
-				if step_value < 1:
-					break
-				continue
+            # Tracking
+            track_len = run_tracking_cycle(context)
 
-			elif current_end <= min_threshold:
-				step_value /= 2
-				if step_value < 1:
-					break
-				continue
+            # --- NACHLAUF-RESET: alle außer aktiv/locked auf 1.0
+            reset_all_thresholds(context, pre_active)
 
-			else:
-				start_threshold = current_end
-				continue
+            # === Wechselkriterium 1: Ziel erreicht ===
+            if track_len == target_value:
+                lower_threshold = current_end
+                step_value /= 2.0
+                if step_value < 1.0:
+                    break
+                # Start bleibt unverändert (deine Spezifikation)
+                continue
 
-		# Ende der Kalibrierung: Ergebnis speichern
-		save_result(context, active_prop, lower_threshold)
+            # === Wechselkriterium 2: Ziel übertroffen ===
+            elif track_len > target_value:
+                target_value = track_len
+                lower_threshold = current_end
+                step_value /= 2.0
+                if step_value < 1.0:
+                    break
+                # Start bleibt unverändert
+                continue
+
+            # === Wechselkriterium 3: Untergrenze erreicht ===
+            elif current_end <= min_threshold:
+                step_value /= 2.0
+                if step_value < 1.0:
+                    break
+                # Start bleibt unverändert (bei Untergrenze wechselt nur die Stufe)
+                continue
+
+            # --- kein Wechselkriterium erfüllt → Reduktion fortsetzen ---
+            else:
+                # innerhalb dieser Stufe weiter: neuer Start = aktueller Endwert
+                start_threshold = current_end
+                continue
+
+        # Ergebnis dieser Kalibrierung puffern (finales Commit am Ende in execute)
+        if self._opt is None:
+            self._opt = {}
+        self._opt[active_prop] = float(lower_threshold)
 
 
+# ------------------------------------------------------------
+# Register / Unregister
+# ------------------------------------------------------------
 def register():
-	bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate)
-
+    bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate)
 
 def unregister():
-	bpy.utils.unregister_class(KAISERLICHTRACKER_OT_auto_calibrate)
+    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_auto_calibrate)
