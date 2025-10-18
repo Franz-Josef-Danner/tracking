@@ -4,223 +4,181 @@ from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
 from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.delete import delete_tracks_by_names
+from ..Helper.reset_helper import reset_all_thresholds, THRESH_LIST, set_scene_value, get_scene_value
 
 # Direct import of the procedural tracking function used by the operator
-from ..Operator.track_operator import track_cycle
+from .track_operator import track_cycle as run_track_cycle
+from .detect_adapt_operator import KAISERLICHTRACKER_OT_detect_adapt
+
+
+def run_tracking_cycle(context) -> int:
+	"""Hilfswrapper: führt den Track-Cycle aus und liefert die Gesamtlänge zurück.
+
+	Wichtig: erwartet, dass vor Aufruf die gewünschten Scene-Properties gesetzt
+	wurden (Thresholds). Start-Frame wird gemerkt und am Ende zurückgesetzt.
+	"""
+	start = get_start_frame(context)
+	# Wir nutzen track_cycle aus track_operator (funktionsbasierte Variante)
+	res = run_track_cycle(context, max_frames=0, verbose=False)
+	# Reset des Playheads
+	reset_to_frame(context, start)
+	# Berechne Länge
+	length = get_total_track_length(context, start_frame=start)
+	return length
+
+
+def save_result(context, prop: str, value: float):
+	"""Speichert das finale Ergebnis in der Scene unter einem klaren Namen.
+
+	Beispiel: kaiserlich_opt_kaiserlich_scale_thresh_min
+	"""
+	scene = context.scene
+	key = f"kaiserlich_opt_{prop}"
+	try:
+		setattr(scene, key, float(value))
+	except Exception:
+		pass
 
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
-	"""Automatisches Feintuning von Tracking-Thresholds.
-
-	Diese Implementierung kapselt die Logik aus dem ursprünglich
-	bereitgestellten Skript in eine kontextbewusste Klasse.  Werte
-	werden bevorzugt in Scene-RNA-Properties geschrieben/ gelesen
-	(falls vorhanden). Ansonsten werden temporäre Werte in einer
-	internen Map verwahrt.
-	"""
-
 	bl_idname = "kaiserlich_tracker.auto_calibrate"
-	bl_label = "Auto Calibrate"
+	bl_label = "Auto Calibrate Thresholds"
+	bl_description = "Automatische Kalibrierung der Threshold-Parameter mit Reset nach jedem Lauf"
 	bl_options = {"REGISTER", "INTERNAL"}
 
-	def _scene_get(self, context: bpy.types.Context, name: str, default: float = 0.0) -> float:
-		scene = context.scene
-		# prefer RNA attribute
-		if hasattr(scene, name):
-			try:
-				return float(getattr(scene, name))
-			except Exception:
-				pass
-		# fallback to custom property
-		if name in scene.keys():
-			try:
-				return float(scene[name])
-			except Exception:
-				pass
-		# internal state
-		return float(self._state.get(name, default))
+	def execute(self, context):
+		# Minimaler Testwert (aus UI oder Konvention)
+		min_threshold = getattr(context.scene, "kaiserlich_scale_thresh_min", 0.002)
 
-	def _scene_set(self, context: bpy.types.Context, name: str, value: float) -> None:
-		scene = context.scene
-		if hasattr(scene, name):
-			try:
-				setattr(scene, name, value)
-				return
-			except Exception:
-				pass
-		try:
-			scene[name] = value
-			return
-		except Exception:
-			pass
-		self._state[name] = value
+		# Short test: iteriere über Gruppen
+		self._short_test(context, min_threshold)
 
-	def run_tracking_cycle(self, context: bpy.types.Context, start_frame: Optional[int] = None) -> int:
-		"""Führt Detect + Track-Zyklus aus und liefert die Track-Gesamtlänge.
+		# Nach kompletter Kalibrierung: setze finale Werte aus gespeicherten Resultaten
+		# (In dieser Implementierung sind save_result-Aufrufe in _main_test)
+		self.report({"INFO"}, "Auto-Calibrate abgeschlossen.")
+		return {"FINISHED"}
 
-		Der Playhead wird vor dem Zyklus auf `start_frame` gesetzt. Falls
-		`start_frame` None ist, wird der aktuelle Frame verwendet.
-		"""
-		if start_frame is None:
-			start_frame = get_start_frame(context)
-		# Reset playhead so each Durchlauf vom selben Frame startet
-		reset_to_frame(context, start_frame)
+	def _short_test(self, context, min_threshold: float):
+		current_index = 0
+		# Wir arbeiten mit der globalen THRESH_LIST aus reset_helper
+		while current_index < len(THRESH_LIST):
+			thresh = THRESH_LIST[current_index]
+			props = thresh["props"]
 
-		# Versuch, adaptiven Detect-Operator (falls registriert) auszuführen.
-		try:
-			if hasattr(bpy.ops.kaiserlich_tracker, 'detect_adapt'):
-				bpy.ops.kaiserlich_tracker.detect_adapt()
-		except Exception:
-			# nicht kritisch, weiter mit Tracking
-			pass
+			# Szenario A: Doppelwerte (Länge 2)
+			if len(props) == 2:
+				pA, pB = props
 
-		# Track-Zyklus (funktionaler Aufruf) — gibt Operator-Resultat zurück
-		try:
-			# track_cycle ist die funktionale Implementierung aus track_operator
-			track_cycle(context, max_frames=0, verbose=False, report_fn=self.report)
-		except Exception:
-			# Falls Aufruf fehlschlägt, versuchen wir die Operator-Variante
-			try:
-				if hasattr(bpy.ops.kaiserlich_tracker, 'track_cycle'):
-					bpy.ops.kaiserlich_tracker.track_cycle()
-			except Exception:
-				pass
+				# Beide minimal → Baseline
+				set_scene_value(context, pA, min_threshold)
+				set_scene_value(context, pB, min_threshold)
+				len_min = run_tracking_cycle(context)
+				reset_all_thresholds(context, [pA, pB])
 
-		# Länge berechnen (ab start_frame)
-		length = get_total_track_length(context, start_frame=start_frame)
-		return int(length)
+				# Beide maximal → Vergleich
+				set_scene_value(context, pA, 1.0)
+				set_scene_value(context, pB, 1.0)
+				len_max = run_tracking_cycle(context)
+				reset_all_thresholds(context, [pA, pB])
 
-	def _init_state(self) -> None:
-		# interne Defaults (übernommen aus dem gelieferten Skript)
-		self._state: Dict[str, Any] = {
-			'start_value': 1.0,
-			'end_gate': 1e-8,
-			'target_value': 0.0,
-			'step_value': 140.0,
-			'min_threshold': 1e-8,
-			'threshold_variable': 0.0,
-			# placeholder thresholds
-			'kaiserlich_rot_thresh_x': 1.0,
-			'kaiserlich_scale_thresh_min': 1.0,
-			'kaiserlich_scale_thresh_max': 1.0,
-			'kaiserlich_rot_scale_thresh_rot': 1.0,
-			'kaiserlich_rot_scale_thresh_scale': 1.0,
-			'kaiserlich_perspective_thresh': 1.0,
-		}
+				if len_max > len_min:
+					# Positiv reagierende Gruppe -> Teste beide einzeln
+					# Test 1: pA aktiv, pB fixiert
+					set_scene_value(context, pB, min_threshold)
+					self._main_test(context, active_prop=pA, locked_prop=pB)
+					reset_all_thresholds(context, [pA, pB])
 
-		self.thresh_liste = [
-			{"name": "rot_x", "props": ["kaiserlich_rot_thresh_x"]},
-			{"name": "scale", "props": ["kaiserlich_scale_thresh_min", "kaiserlich_scale_thresh_max"]},
-			{"name": "rot_scale", "props": ["kaiserlich_rot_scale_thresh_rot", "kaiserlich_rot_scale_thresh_scale"]},
-			{"name": "perspective", "props": ["kaiserlich_perspective_thresh"]},
-		]
+					# Test 2: pB aktiv, pA fixiert
+					set_scene_value(context, pA, min_threshold)
+					self._main_test(context, active_prop=pB, locked_prop=pA)
+					reset_all_thresholds(context, [pA, pB])
 
-		self.thresh_count = len(self.thresh_liste)
-		self.current_index = 0
-
-	def _short_test(self, context: bpy.types.Context) -> None:
-		# Kurztest: entscheidet, ob Feintuning nötig ist
-		while self.current_index < self.thresh_count:
-			thresh = self.thresh_liste[self.current_index]
-			props = thresh['props']
-			self.report({'INFO'}, f"Short-Test für '{thresh['name']}'")
-
-			if len(props) > 1:
-				for p in props:
-					self._scene_set(context, p, self._state['min_threshold'])
-				l1 = self.run_tracking_cycle(context)
-
-				for p in props:
-					self._scene_set(context, p, 1.0)
-				l2 = self.run_tracking_cycle(context)
-
-				if l2 > l1:
-					self._state['target_value'] = l2
-					self._state['end_gate'] = self._state['min_threshold']
-					self._state['threshold_variable'] = 1.0
-					self._state['step_value'] = 140.0
-					self.report({'INFO'}, f"Verbesserung bei '{thresh['name']}' -> start Feintuning")
-					self._main_test(context)
-					return
 				else:
-					self.current_index += 1
+					current_index += 1
 					continue
-			else:
+
+			# Szenario B: Einzelparameter
+			elif len(props) == 1:
 				p = props[0]
-				self._scene_set(context, p, 1.0)
-				l1 = self.run_tracking_cycle(context)
-				self._scene_set(context, p, self._state['min_threshold'])
-				l2 = self.run_tracking_cycle(context)
-				if l2 > l1:
-					self._state['target_value'] = l2
-					self._state['end_gate'] = self._state['min_threshold']
-					self._state['threshold_variable'] = 1.0
-					self._state['step_value'] = 140.0
-					self.report({'INFO'}, f"Verbesserung gefunden ({l2}) -> Feintuning")
-					self._main_test(context)
-					return
+
+				set_scene_value(context, p, 1.0)
+				len_high = run_tracking_cycle(context)
+				reset_all_thresholds(context, [p])
+
+				set_scene_value(context, p, min_threshold)
+				len_low = run_tracking_cycle(context)
+				reset_all_thresholds(context, [p])
+
+				if len_low > len_high:
+					self._main_test(context, active_prop=p)
 				else:
-					self.current_index += 1
+					current_index += 1
 					continue
 
-		# wenn alle fertig
-		self.report({'INFO'}, "Alle Threshold-Gruppen fertig getestet.")
+			current_index += 1
 
-	def _main_test(self, context: bpy.types.Context) -> None:
-		# Feintuning: iterativer Ansatz, vermeidet tiefe Rekursion
-		while self.current_index < self.thresh_count:
-			thresh = self.thresh_liste[self.current_index]
-			props = thresh['props']
+	def _main_test(self, context, active_prop: str, locked_prop: Optional[str] = None):
+		# initiale Werte
+		step_value = 140.0
+		target_value = get_total_track_length(context, start_frame=get_start_frame(context))
+		min_threshold = getattr(context.scene, "kaiserlich_scale_thresh_min", 0.002)
 
-			for prop in props:
-				current_value = self._scene_get(context, prop, self._state.get(prop, 1.0))
-				# Versuche kleinere Werte
-				test_value = current_value / self._state['step_value']
-				self._scene_set(context, prop, test_value)
-				seg_len = self.run_tracking_cycle(context)
+		start_threshold = get_scene_value(context, active_prop) or 1.0
+		lower_threshold = min_threshold
 
-				if seg_len == self._state['target_value']:
-					# keine Verbesserung
-					self._state['end_gate'] = self._scene_get(context, prop)
-					self._scene_set(context, prop, self._state['threshold_variable'])
-					self._state['step_value'] /= 2.0
-					if self._state['step_value'] >= 1.0:
-						continue
-					else:
-						self.current_index += 1
-						break
+		while step_value >= 1:
+			current_start = start_threshold
+			current_end = current_start / step_value
 
-				elif seg_len > self._state['target_value']:
-					# Verbesserung
-					self._state['target_value'] = seg_len
-					self._state['end_gate'] = self._scene_get(context, prop)
-					self._scene_set(context, prop, self._state['threshold_variable'])
-					self._state['step_value'] /= 2.0
-					if self._state['step_value'] >= 1.0:
-						continue
-					else:
-						self.current_index += 1
-						break
-				else:
-					# schlechteres Ergebnis -> adjust back
-					self._scene_set(context, prop, current_value / self._state['step_value'])
-					if self._scene_get(context, prop) < self._state['end_gate']:
-						self._scene_set(context, prop, self._state['threshold_variable'] / (self._state['step_value'] / 2.0))
-					else:
-						continue
+			# Fixierten Parameter setzen
+			if locked_prop:
+				set_scene_value(context, locked_prop, min_threshold)
 
-			# Ende for props: falls wir nicht weiter innerhalb for entschieden haben,
-			# erhöhen wir index um sicherzustellen, dass wir Fortschritt machen.
-			if all(self._scene_get(context, p) == self._state.get(p) for p in props):
-				self.current_index += 1
+			# Aktiven Parameter setzen
+			set_scene_value(context, active_prop, current_end)
 
-	def execute(self, context: bpy.types.Context) -> set:
-		self._init_state()
-		# startrahmen sichern
-		start = get_start_frame(context)
-		try:
-			self._short_test(context)
-		finally:
-			# playhead zurücksetzen
-			reset_to_frame(context, start)
-		return {'FINISHED'}
+			# Trackingdurchlauf
+			track_len = run_tracking_cycle(context)
+
+			# Nach jedem Lauf: Reset aller anderen Werte (außer aktive und ggf. locked)
+			active_props = [active_prop]
+			if locked_prop:
+				active_props.append(locked_prop)
+			reset_all_thresholds(context, active_props)
+
+			# Bewertung
+			if track_len == target_value:
+				lower_threshold = current_end
+				step_value /= 2
+				if step_value < 1:
+					break
+				continue
+
+			elif track_len > target_value:
+				target_value = track_len
+				lower_threshold = current_end
+				step_value /= 2
+				if step_value < 1:
+					break
+				continue
+
+			elif current_end <= min_threshold:
+				step_value /= 2
+				if step_value < 1:
+					break
+				continue
+
+			else:
+				start_threshold = current_end
+				continue
+
+		# Ende der Kalibrierung: Ergebnis speichern
+		save_result(context, active_prop, lower_threshold)
+
+
+def register():
+	bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate)
+
+
+def unregister():
+	bpy.utils.unregister_class(KAISERLICHTRACKER_OT_auto_calibrate)
