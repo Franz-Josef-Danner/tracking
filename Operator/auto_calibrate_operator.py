@@ -91,6 +91,26 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 		# Minimaler Testwert (aus UI oder Konvention)
 		min_threshold = getattr(context.scene, "kaiserlich_scale_thresh_min", 0.002)
 
+		# Wenn keine Tracks vorhanden sind, versuchen wir automatisch einen Detect-Zyklus
+		clip = getattr(context.space_data, "clip", None)
+		if clip is not None:
+			tracking = getattr(clip, 'tracking', None)
+			num_tracks = len(tracking.tracks) if tracking is not None else 0
+			if num_tracks == 0:
+				print("[AutoCal] Keine Tracks im Clip gefunden — starte automatisch Detect Cycle.")
+				try:
+					res = bpy.ops.kaiserlich_tracker.detect_cycle()
+					print(f"[AutoCal] detect_cycle returned: {res}")
+				except Exception as e:
+					print(f"[AutoCal] Fehler beim Aufruf von detect_cycle: {e}")
+
+				# Nach Detect erneut prüfen
+				tracking = getattr(clip, 'tracking', None)
+				num_tracks = len(tracking.tracks) if tracking is not None else 0
+				if num_tracks == 0:
+					self.report({'WARNING'}, "Keine Tracks nach Detect Cycle; Auto-Calibrate wird abgebrochen.")
+					return {'CANCELLED'}
+
 		# Short test: iteriere über Gruppen
 		self._short_test(context, min_threshold)
 
