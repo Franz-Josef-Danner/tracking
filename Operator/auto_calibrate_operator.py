@@ -100,7 +100,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         bpy.ops.kaiserlich_tracker.track_cycle()
         start = get_start_frame(context)
         reset_to_frame(context, start)
-        return get_total_track_length(start, context)
+        return get_total_track_length(context, start)
 
     def _tune_single_threshold(
         self,
