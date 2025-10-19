@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import subprocess
+from pathlib import Path
 from typing import Any
 
 # Blender-API
@@ -29,8 +31,19 @@ LOGGER.setLevel(logging.INFO)
 
 
 # -----------------------------------------------------------------------------
-# Helper
+# Helpers
 # -----------------------------------------------------------------------------
+def _addon_root() -> Path:
+    """
+    Liefert das Add-on-Wurzelverzeichnis, also den Ordner, der 'Operator/' enthält.
+    Erwartete Struktur: <addon_root>/Operator/auto_calibrate_operator.py
+    """
+    here = Path(__file__).resolve()
+    operator_dir = here.parent  # .../Operator
+    addon_root = operator_dir.parent  # .../tracking-KI (oder Add-on-Root)
+    return addon_root
+
+
 def _set_scene_prop(scene: Any, prop: str, value: float) -> None:
     """Setzt eine Scene-Property defensiv, loggt hart bei Nichtverfügbarkeit."""
     if hasattr(scene, prop):
@@ -41,7 +54,6 @@ def _set_scene_prop(scene: Any, prop: str, value: float) -> None:
             LOGGER.error("Konnte Property '%s' nicht setzen: %s", prop, exc)
             raise
     else:
-        # Hartes Logging – damit Fehlkonfigurationen sichtbar werden
         LOGGER.warning("Property '%s' nicht gefunden – UI/Property-Registrierung prüfen.", prop)
 
 
@@ -52,10 +64,9 @@ def _run_detect_adapt_operator() -> None:
     """
     LOGGER.info("Starte Detect-Adapt-Operator…")
     try:
-        # EXEC_DEFAULT: keine Modal-Dialoge, keine Bestätigungen
         result = bpy.ops.kaiserlich_tracker.detect_adapt('EXEC_DEFAULT')
         LOGGER.info("Detect-Adapt Result: %s", result)
-    except AttributeError as exc:
+    except AttributeError:
         LOGGER.error(
             "Operator 'kaiserlich_tracker.detect_adapt' nicht gefunden. "
             "Bitte bl_idname und Registrierung in Operator/detect_adapt_operator.py prüfen."
@@ -69,11 +80,41 @@ def _run_detect_adapt_operator() -> None:
 def _launch_track_operator_subprocess() -> None:
     """
     Triggert anschließend Operator/track_operator.py als separaten Prozess.
-    Erwartet importierbares Paket 'Operator' mit Modul 'track_operator'.
+    Fix: Setzt PYTHONPATH dynamisch auf das Add-on-Root, damit 'Operator' importierbar ist.
     """
+    addon_root = _addon_root()
+    operator_pkg = addon_root / "Operator"
+    track_file = operator_pkg / "track_operator.py"
+
+    if not track_file.exists():
+        raise FileNotFoundError(
+            f"track_operator.py nicht gefunden unter: {track_file}"
+        )
+
+    # Python/Blender-Umgebung aufsetzen
+    env = os.environ.copy()
+
+    # Sicherstellen, dass das Add-on-Root (Elternordner von 'Operator') im PYTHONPATH ist.
+    # Damit funktioniert: `python -m Operator.track_operator`
+    current_pp = env.get("PYTHONPATH", "")
+    new_pp = str(addon_root)
+    if current_pp:
+        # OS-separierter Suchpfad (Windows: ';', Posix: ':')
+        new_pp = new_pp + os.pathsep + current_pp
+    env["PYTHONPATH"] = new_pp
+
     LOGGER.info("Starte Track-Operator (Subprozess)…")
+    LOGGER.info("PYTHONPATH ergänzt um: %s", addon_root)
+
     cmd = [sys.executable, "-m", "Operator.track_operator"]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,  # <— entscheidend
+    )
     out, err = proc.communicate()
 
     if out:
@@ -120,7 +161,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # Direkt im Anschluss: Detect-Adapt fahren (ohne UI)
             _run_detect_adapt_operator()
 
-            # Danach: Tracking-Operator als separaten Prozess
+            # Danach: Tracking-Operator als separaten Prozess (mit korrekt gesetztem PYTHONPATH)
             _launch_track_operator_subprocess()
 
             return {"FINISHED"}
@@ -141,7 +182,6 @@ def unregister():
     bpy.utils.unregister_class(KAISERLICHTRACKER_OT_auto_calibrate)
 
 
-# Ermöglicht manuelles Testen via 'Run Script' in Blender Text-Editor:
 if __name__ == "__main__":  # pragma: no cover
     try:
         unregister()
