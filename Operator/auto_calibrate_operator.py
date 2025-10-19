@@ -1,15 +1,28 @@
-# Operator/auto_calibrate_operator.py
+# Operator/auto_calibrate_operator.py  (Ergänzungen)
 from __future__ import annotations
 import bpy
 from bpy.types import Operator
 
+# Vorhandene Helfer/Module aus deinem Projekt:
 from ..Helper.snapshot import snapshot_active_markers
 from ..Helper import delete as delete_helper
 from ..Helper import reset_helper
-from ..Operator import detect_adapt_operator, track_operator
+from ..Operator import detect_adapt_operator
+
+# ------------------------------------------------------------
+# Hilfsfunktionen (lokal)
+# ------------------------------------------------------------
+
+def _active_clip(context) -> bpy.types.MovieClip | None:
+    return getattr(context.space_data, "clip", None)
+
+
+def _tracking(clip: bpy.types.MovieClip) -> bpy.types.MovieTracking | None:
+    return getattr(clip, "tracking", None)
 
 
 def _find_track_by_name(tracking: bpy.types.MovieTracking, name: str):
+    """Hole Track wahlweise aus active object oder root-set."""
     if getattr(tracking.objects, "active", None):
         tr = tracking.objects.active.tracks.get(name)
         if tr:
@@ -18,17 +31,24 @@ def _find_track_by_name(tracking: bpy.types.MovieTracking, name: str):
 
 
 def _total_length_for_tracks(clip: bpy.types.MovieClip, track_names, start_frame: int = 1) -> int:
-    tracking = getattr(clip, "tracking", None)
+    """
+    Summiert Segmentlängen über alle angegebenen Tracks.
+    Ein Segment ist eine Folge aufeinanderfolgender Frames (Lücke > 1 trennt Segmente).
+    """
+    tracking = _tracking(clip)
     if tracking is None:
         return 0
+
     total = 0
     for name in track_names:
         tr = _find_track_by_name(tracking, name)
         if not tr:
             continue
+
         frames = sorted(mk.frame for mk in tr.markers if mk.frame >= int(start_frame))
         if not frames:
             continue
+
         seg_start = frames[0]
         prev = frames[0]
         for f in frames[1:]:
@@ -41,6 +61,7 @@ def _total_length_for_tracks(clip: bpy.types.MovieClip, track_names, start_frame
 
 
 def _safe_run_detect_adapt(context) -> bool:
+    """Versucht gängige Einstiegspunkte oder bpy.ops für Detect/Adapt."""
     for name in ("run_detect_and_adapt", "run", "main", "execute"):
         fn = getattr(detect_adapt_operator, name, None)
         if callable(fn):
@@ -56,29 +77,12 @@ def _safe_run_detect_adapt(context) -> bool:
         return False
 
 
-def _safe_run_tracking(context) -> bool:
-    for name in ("track_cycle", "run", "main", "execute"):
-        fn = getattr(track_operator, name, None)
-        if callable(fn):
-            try:
-                fn(context)
-                return True
-            except TypeError:
-                try:
-                    fn(context, max_frames=0)
-                    return True
-                except Exception as ex:
-                    print(f"[auto_calibrate] track_operator.{name}(context, max_frames=0) failed: {ex}")
-            except Exception as ex:
-                print(f"[auto_calibrate] track_operator.{name} failed: {ex}")
-    try:
-        return bpy.ops.kaiserlich_tracker.track() == {"FINISHED"}
-    except Exception as ex:
-        print(f"[auto_calibrate] bpy.ops track failed: {ex}")
-        return False
-
-
 def _safe_delete_tracks(context, names: set[str]) -> int:
+    """
+    Löscht alle Tracks in 'names'.
+    1) versucht Helper-APIs,
+    2) Fallback: direkte Entfernung aus bpy.
+    """
     for candidate in ("delete_tracks_by_names", "delete_tracks", "remove_tracks_by_name"):
         func = getattr(delete_helper, candidate, None)
         if callable(func):
@@ -87,10 +91,10 @@ def _safe_delete_tracks(context, names: set[str]) -> int:
             except Exception as ex:
                 print(f"[auto_calibrate] delete_helper.{candidate} failed: {ex}")
 
-    clip = getattr(context.space_data, "clip", None)
+    clip = _active_clip(context)
     if clip is None:
         return 0
-    tracking = getattr(clip, "tracking", None)
+    tracking = _tracking(clip)
     if tracking is None:
         return 0
 
@@ -112,10 +116,7 @@ def _safe_delete_tracks(context, names: set[str]) -> int:
 
 
 def _safe_reset(context) -> bool:
-    """
-    Stelle die Szene wieder her. Versucht bekannte reset_helper-APIs,
-    z. B. reset_scene(), reset_all(), restore_initial_state().
-    """
+    """Reset der Szene über reset_helper; Fallback: Playhead zurück."""
     for name in ("reset_scene", "reset_all", "restore_initial_state", "reset"):
         fn = getattr(reset_helper, name, None)
         if callable(fn):
@@ -124,7 +125,6 @@ def _safe_reset(context) -> bool:
                 return True
             except Exception as ex:
                 print(f"[auto_calibrate] reset_helper.{name} failed: {ex}")
-    # Fallback: kleiner Minimal-Reset (Playhead zurück)
     try:
         if hasattr(context, "scene"):
             context.scene.frame_current = context.scene.frame_start
@@ -133,66 +133,176 @@ def _safe_reset(context) -> bool:
         return False
 
 
-class KAISERLICHTRACKER_OT_auto_calibrate(Operator):
-    """
-    Snapshot -> Detect/Adapt -> (optional Track) -> Auswertung (Gesamtlänge NEUER Tracks)
-    -> Cleanup (NEUE löschen) -> Reset (Szene zurücksetzen).
-    """
-    bl_idname = "kaiserlich_tracker.auto_calibrate"
-    bl_label = "Auto Calibrate Tracking (Total Length + Cleanup + Reset)"
-    bl_options = {"REGISTER", "UNDO"}
+def _selected_tracks(context) -> list[bpy.types.MovieTrackingTrack]:
+    """Selektierte Tracks aus aktivem Objekt oder Root-Set ermitteln."""
+    clip = _active_clip(context)
+    if not clip:
+        return []
+    tracking = _tracking(clip)
+    if not tracking:
+        return []
+    candidates = []
+    if getattr(tracking.objects, "active", None):
+        candidates.extend(list(tracking.objects.active.tracks))
+    candidates.extend(list(tracking.tracks))
+    return [t for t in candidates if getattr(t, "select", False)]
 
-    run_tracking_step: bpy.props.BoolProperty(  # type: ignore
-        name="Tracking ausführen",
-        default=True,
-        description="Tracking-Operator nach Detect/Adapt ausführen"
+
+# ------------------------------------------------------------
+# Öffentliche API: run_tracking_cycle(context)
+# -> Snapshot -> Detect/Adapt -> TrackCycle -> Länge -> Cleanup -> Reset
+# ------------------------------------------------------------
+
+def run_tracking_cycle(context, start_frame: int = 1,
+                       do_cleanup: bool = True,
+                       do_reset: bool = True) -> int:
+    """
+    Führt einen kompletten Trackingdurchlauf aus und liefert die
+    GESAMTLÄNGE der *neu hinzugekommenen* Tracks zurück.
+
+    Ablauf:
+      1) Snapshot Baseline (bestehende Tracks)
+      2) Detect/Adapt (legt neue Marker/Tracks an)
+      3) Frameweises Tracking der selektierten Marker (Operator unten)
+      4) Auswertung: Gesamtlänge NEUER Tracks ab start_frame
+      5) Cleanup: löscht NEUE Tracks
+      6) Reset: stellt die Szene zurück
+    """
+    clip = _active_clip(context)
+    if clip is None:
+        return 0
+
+    # 1) Snapshot
+    pre_snapshot = snapshot_active_markers(context)
+    baseline_names = {m.get("track") for m in pre_snapshot if m.get("track")}
+
+    # 2) Detect/Adapt
+    _safe_run_detect_adapt(context)
+
+    # 3) TrackCycle
+    try:
+        bpy.ops.kaiserlich_tracker.track_cycle()
+    except Exception as ex:
+        print(f"[auto_calibrate] track_cycle op failed: {ex}")
+
+    # 4) Auswertung
+    tracking = _tracking(clip)
+    if not tracking:
+        return 0
+    all_names = [t.name for t in tracking.tracks]
+    new_names = [n for n in all_names if n not in baseline_names]
+    total_length = _total_length_for_tracks(clip, new_names, start_frame=start_frame)
+
+    # 5) Cleanup
+    if do_cleanup and new_names:
+        _safe_delete_tracks(context, set(new_names))
+
+    # 6) Reset
+    if do_reset:
+        _safe_reset(context)
+
+    return int(total_length)
+
+
+# ------------------------------------------------------------
+# 1️⃣ Kurztest (vereinfacht mit Reset & Snapshot)
+#    -> nutzt run_tracking_cycle(context) als Blackbox
+# ------------------------------------------------------------
+
+def _short_test(context):
+    """
+    Vereinfacht: für jede Schwellenwert-Kombi:
+      - beide Props auf min_threshold setzen
+      - Tracking-Cycle laufen lassen (Snapshot/Detect/Track/Auswertung/Cleanup/Reset)
+      - Thresholds wieder zurücksetzen
+    Erwartet:
+      - thresh_liste = [{"props": (pA, pB)}, ...]
+      - set_scene_value(prop, value)
+      - reset_all_thresholds(context, [pA, pB])
+      - min_threshold (z. B. 0.0 oder 1)
+    Diese Symbole stammen aus deinem bestehenden Projekt/Umfeld.
+    """
+    # Annahme: diese Symbole existieren bereits im Modul-Kontext
+    try:
+        thresh_iter = iter(thresh_liste)  # noqa: F821  # kommt aus eurem bestehenden Code
+    except NameError:
+        print("[auto_calibrate] _short_test: 'thresh_liste' nicht definiert.")
+        return
+
+    results = []
+    for thresh in thresh_iter:
+        props = thresh.get("props", ())
+        if len(props) == 2:
+            pA, pB = props
+            try:
+                set_scene_value(pA, min_threshold)  # noqa: F821
+                set_scene_value(pB, min_threshold)  # noqa: F821
+            except Exception as ex:
+                print(f"[auto_calibrate] _short_test: set_scene_value failed: {ex}")
+
+            length = run_tracking_cycle(context)  # liefert eine einzige Zahl
+            results.append({"props": (pA, pB), "total_length": length})
+
+            try:
+                reset_all_thresholds(context, [pA, pB])  # noqa: F821
+            except Exception as ex:
+                print(f"[auto_calibrate] _short_test: reset_all_thresholds failed: {ex}")
+
+    # Optional: Ergebnis verfügbar machen (z. B. für UI/Logging)
+    context.scene["short_test_results"] = results
+
+
+# ------------------------------------------------------------
+# Operator: Frameweises Tracken (stabil für Blender 4.4+)
+# ------------------------------------------------------------
+
+class KAISERLICHTRACKER_OT_track_cycle(Operator):
+    """Trackt selektierte Marker frameweise, stabiler Ablauf für Blender 4.4+."""
+    bl_idname = "kaiserlich_tracker.track_cycle"
+    bl_label = "Track Zyklus (Frame für Frame)"
+    bl_description = (
+        "Trackt die aktuell selektierten Tracks frameweise vorwärts, "
+        "bis das Szenen-Ende erreicht wurde."
     )
-    start_frame: bpy.props.IntProperty(  # type: ignore
-        name="Start Frame",
-        default=1,
+    bl_options = {"REGISTER", "INTERNAL"}
+
+    step_limit: bpy.props.IntProperty(  # type: ignore
+        name="Max Steps (0=alle)",
+        default=0,
         min=0,
-        description="Ab diesem Frame wird die Länge gezählt"
+        description="Maximale Anzahl Einzelschritte (0 = bis Szenenende)."
     )
 
     def execute(self, context):
-        clip = getattr(context.space_data, "clip", None)
-        if clip is None:
+        clip = _active_clip(context)
+        if not clip:
             self.report({"ERROR"}, "Kein aktiver MovieClip im Clip-Editor.")
             return {"CANCELLED"}
 
-        # 1) Snapshot: vorhandene Track-Namen als Baseline
-        pre_snapshot = snapshot_active_markers(context)
-        baseline_names = {m.get("track") for m in pre_snapshot if m.get("track")}
-        self.report({"INFO"}, f"Baseline: {len(baseline_names)} Tracks.")
+        scene = context.scene
+        end_frame = scene.frame_end
+        steps_left = int(self.step_limit) if self.step_limit > 0 else None
 
-        # 2) Detect/Adapt
-        if not _safe_run_detect_adapt(context):
-            self.report({"WARNING"}, "Detect/Adapt konnte nicht automatisch gestartet werden.")
-
-        # 3) Tracking (optional)
-        if self.run_tracking_step and not _safe_run_tracking(context):
-            self.report({"INFO"}, "Tracking-Schritt übersprungen oder kein Einstiegspunkt gefunden.")
-
-        # 4) Auswertung (nur neue Tracks)
-        tracking = getattr(clip, "tracking", None)
-        if tracking is None:
-            self.report({"ERROR"}, "Clip hat kein Tracking-Objekt.")
+        # Sicherstellen, dass es selektierte Tracks gibt
+        sel = _selected_tracks(context)
+        if not sel:
+            self.report({"INFO"}, "Keine selektierten Tracks – nichts zu tracken.")
             return {"CANCELLED"}
 
-        all_names = [t.name for t in tracking.tracks]
-        new_names = [n for n in all_names if n not in baseline_names]
-        total_length = _total_length_for_tracks(clip, new_names, start_frame=self.start_frame)
-        clip["new_tracks_total_length"] = int(total_length)  # optional für UI/Debug
-        self.report({"INFO"}, f"Gesamtlänge neuer Tracks: {int(total_length)} Frames")
+        # Frameweise tracken: pro Schritt nur ein Forward-Step
+        # bpy.ops.clip.track_markers(sequence=False) => Einzelbild
+        while scene.frame_current < end_frame:
+            try:
+                bpy.ops.clip.track_markers(backwards=False, sequence=False)
+            except Exception as ex:
+                print(f"[track_cycle] track_markers failed: {ex}")
+                break
 
-        # 5) Cleanup (nur neue Tracks löschen)
-        removed = _safe_delete_tracks(context, set(new_names))
-        self.report({"INFO"}, f"Cleanup: {removed} neue Tracks gelöscht. Baseline bleibt erhalten.")
+            scene.frame_current += 1
 
-        # 6) Reset (Szene wiederherstellen)
-        if _safe_reset(context):
-            self.report({"INFO"}, "Reset: Szene in Ausgangszustand versetzt.")
-        else:
-            self.report({"WARNING"}, "Reset: Kein passender Reset-Aufruf gefunden, minimaler Fallback ausgeführt.")
+            if steps_left is not None:
+                steps_left -= 1
+                if steps_left <= 0:
+                    break
 
         return {"FINISHED"}
