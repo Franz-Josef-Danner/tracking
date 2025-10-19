@@ -71,7 +71,7 @@ def _evaluate_tracking_score(context) -> float:
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Auto-calibrate: setzt initial alle relevanten Werte auf 1 und testet danach jeden Parameter isoliert."""
-    bl_idname = "kaiserlichtracker.auto_calibrate"
+    bl_idname = "kaiserlich_tracker.auto_calibrate"
     bl_label = "KAISERLICHTRACKER — Auto Calibrate"
     bl_options = {"REGISTER", "UNDO"}
 
