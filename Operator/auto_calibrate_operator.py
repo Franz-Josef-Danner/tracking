@@ -2,7 +2,7 @@
 import bpy
 
 class KAISERLICH_OT_reset_thresholds(bpy.types.Operator):
-    bl_idname = "kaiserlich.reset_thresholds"
+    bl_idname = "kaiserlich_tracker.auto_calibrate"
     bl_label  = "Thresholds → 1"
     bl_options = {'REGISTER', 'UNDO'}
 
