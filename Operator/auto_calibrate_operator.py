@@ -26,6 +26,7 @@ def get_calibration_thresholds(context) -> List[Tuple[str, float]]:
         ("scale_thresh_max", _f("kaiserlich_scale_thresh_max")),
         ("rot_scale_thresh_rot", _f("kaiserlich_rot_scale_thresh_rot")),
         ("rot_scale_thresh_scale", _f("kaiserlich_rot_scale_thresh_scale")),
+        ("perspective_thresh", _f("kaiserlich_perspective_thresh")),
     ]
     return thresholds
 
