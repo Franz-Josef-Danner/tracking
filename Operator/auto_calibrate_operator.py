@@ -3,162 +3,162 @@
 import bpy
 from math import inf
 
-# ---------------------------------------------------------------------------
-# Hilfsfunktionen
-# ---------------------------------------------------------------------------
+# ----------------------------- Pfad-Resolver ------------------------------
 
-def _get_settings_and_props(context):
-    """
-    Ermittelt die PropertyGroup und deren kalibrierbare Properties.
-    Annahme: Settings liegen unter context.scene.klt_settings (anpassen falls anders).
-    Wir lesen die Annotationen, um nur echte bpy.props (Int/Float) zu bekommen.
-    """
-    settings = getattr(context.scene, "klt_settings", None)
+def _resolve_attr_chain(root, dotted):
+    cur = root
+    for token in dotted.split("."):
+        if not token:
+            return None
+        if not hasattr(cur, token):
+            return None
+        cur = getattr(cur, token)
+    return cur
+
+def _find_klt_settings(context, candidate_paths):
+    # 1) explizite Kandidatenpfade testen
+    for p in candidate_paths:
+        node = _resolve_attr_chain(context, p)
+        if node is not None:
+            return node
+
+    # 2) Heuristik: iteriere über gängige Container und suche nach *klt* / *kaiser*
+    buckets = [
+        ("scene", getattr(context, "scene", None)),
+        ("window_manager", getattr(context, "window_manager", None)),
+        ("object", getattr(context, "object", None)),
+        ("view_layer", getattr(context, "view_layer", None)),
+    ]
+    keys = ("klt", "kaiser")
+
+    for _, bucket in buckets:
+        if bucket is None:
+            continue
+        for attr in dir(bucket):
+            if any(k in attr.lower() for k in keys):
+                try:
+                    node = getattr(bucket, attr)
+                except Exception:
+                    continue
+                # PointerProperty/PropertyGroup-Instanzen haben __annotations__ an der Klasse
+                if hasattr(type(node), "__annotations__"):
+                    return node
+    return None
+
+# ----------------------------- Utility -----------------------------------
+
+def _get_settings_and_props(settings_obj):
+    settings = settings_obj
     if settings is None:
-        raise RuntimeError("KAISERLICHTRACKER: 'context.scene.klt_settings' nicht gefunden.")
+        raise RuntimeError("KAISERLICHTRACKER: Keine Settings-PropertyGroup gefunden.")
 
-    # Nur numerische Properties (Float/Int) berücksichtigen
     anno = getattr(type(settings), "__annotations__", {})
     prop_names = []
-    for name, _def in anno.items():
+    for name, _ in anno.items():
         prop = getattr(type(settings), name, None)
         if not hasattr(prop, "keywords"):
             continue
-        kw = prop.keywords
-        subtype = prop.__class__.__name__.lower()
-        if "floatproperty" in subtype or "intproperty" in subtype:
+        kind = prop.__class__.__name__.lower()
+        if "floatproperty" in kind or "intproperty" in kind:
             prop_names.append(name)
-
     if not prop_names:
-        raise RuntimeError("KAISERLICHTRACKER: Keine kalibrierbaren numerischen Properties gefunden.")
+        raise RuntimeError("KAISERLICHTRACKER: Keine numerischen kalibrierbaren Properties in den Settings.")
     return settings, prop_names
 
-
 def _get_bounds(prop_def):
-    """Liest (min, max, soft_min, soft_max) aus einem Property-Definition-Objekt."""
     kw = getattr(prop_def, "keywords", {})
-    hard_min = kw.get("min", None)
-    hard_max = kw.get("max", None)
-    soft_min = kw.get("soft_min", hard_min)
-    soft_max = kw.get("soft_max", hard_max)
-    return hard_min, hard_max, soft_min, soft_max
+    return kw.get("min", None), kw.get("max", None), kw.get("soft_min", kw.get("min", None)), kw.get("soft_max", kw.get("max", None))
 
-
-def _clamp(value, low, high):
-    if low is None and high is None:
-        return value
-    if low is None:
-        return min(value, high)
-    if high is None:
-        return max(value, low)
-    return max(low, min(value, high))
-
+def _clamp(v, lo, hi):
+    if lo is None and hi is None: return v
+    if lo is None: return min(v, hi)
+    if hi is None: return max(v, lo)
+    return max(lo, min(v, hi))
 
 def _evaluate_tracking_score(context) -> float:
-    """
-    Domain-spezifische Bewertungsfunktion.
-    TODO: Ersetzen durch echte Metrik (z.B. reprojection error, tracking loss, o.ä.)
-    Muss einen Score liefern, bei dem *niedriger besser* ist.
-    """
-    # Platzhalter: ohne echte Pipeline kein verlässlicher Score.
-    # Wir geben 0.0 zurück, damit der Flow steht – bitte projektintern ersetzen.
+    # TODO: durch echte Metrik ersetzen
     return 0.0
 
-
-# ---------------------------------------------------------------------------
-# Operator
-# ---------------------------------------------------------------------------
+# ----------------------------- Operator ----------------------------------
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
-    """Auto-calibrate: setzt initial alle relevanten Werte auf 1 und testet danach jeden Parameter isoliert."""
-    bl_idname = "kaiserlich_tracker.auto_calibrate"
+    """Auto-calibrate: initialisiert alle Ziel-Parameter auf 1 und testet danach jeden Parameter isoliert."""
+    bl_idname = "kaiserlichtracker.auto_calibrate"
     bl_label = "KAISERLICHTRACKER — Auto Calibrate"
     bl_options = {"REGISTER", "UNDO"}
 
-    # Optional: Schrittweite und Testwerte konfigurieren
-    step: bpy.props.FloatProperty(
-        name="Schrittweite",
-        description="Inkrement für die Einzelsuche pro Parameter (nur für Floats)",
-        default=0.1,
-        min=0.0001,
-        soft_max=10.0,
+    # Optional: Pfad-Override und Suchkandidaten
+    settings_path: bpy.props.StringProperty(
+        name="Settings-Pfad",
+        description="Dotted Path ab context.* (z. B. 'scene.klt_settings'). Leer lassen für Auto-Discovery.",
+        default="scene.klt_settings"
     )
-    span: bpy.props.IntProperty(
-        name="Schritte je Seite",
-        description="Anzahl Schritte in beide Richtungen um den Startwert",
-        default=5,
-        min=1,
-        soft_max=100,
+    extra_candidates: bpy.props.StringProperty(
+        name="Zusätzliche Kandidaten",
+        description="Kommagetrennte alternative Pfade (z. B. 'window_manager.klt_settings, scene.kaiser_settings').",
+        default=""
     )
 
+    step: bpy.props.FloatProperty(name="Schrittweite", default=0.1, min=0.0001, soft_max=10.0)
+    span: bpy.props.IntProperty(name="Schritte je Seite", default=5, min=1, soft_max=100)
+
     def execute(self, context):
+        # Kandidatenliste aufbauen
+        candidates = []
+        if self.settings_path.strip():
+            candidates.append(self.settings_path.strip())
+        if self.extra_candidates.strip():
+            candidates.extend([c.strip() for c in self.extra_candidates.split(",") if c.strip()])
+
+        settings_obj = _find_klt_settings(context, candidates or ["scene.klt_settings"])
+
+        if settings_obj is None:
+            self.report({'ERROR'}, "KAISERLICHTRACKER: Settings nicht gefunden. Lege sie an (siehe Option A) oder setze 'Settings-Pfad'.")
+            return {'CANCELLED'}
+
         try:
-            settings, prop_names = _get_settings_and_props(context)
+            settings, prop_names = _get_settings_and_props(settings_obj)
         except Exception as e:
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
 
-        # 1) Baseline: alle relevanten Properties (Float/Int) hart auf 1 setzen
+        # 1) Alle auf 1 setzen
         for name in prop_names:
             prop_def = getattr(type(settings), name)
-            hard_min, hard_max, soft_min, soft_max = _get_bounds(prop_def)
+            lo, hi, _, _ = _get_bounds(prop_def)
+            setattr(settings, name, _clamp(1, lo, hi))
 
-            # 1 als Startwert clampen (respektiert harte Grenzen)
-            start_val = _clamp(1, hard_min, hard_max)
-            setattr(settings, name, start_val)
+        best_global = _evaluate_tracking_score(context)
 
-        # Recompute Baseline-Score
-        best_global_score = _evaluate_tracking_score(context)
-
-        # 2) Isolierte Einzelsuche pro Parameter
+        # 2) Isolierte Suche je Parameter
         for name in prop_names:
             prop_def = getattr(type(settings), name)
-            hard_min, hard_max, soft_min, soft_max = _get_bounds(prop_def)
-            current_val = getattr(settings, name)
-
-            # Kandidatenwerte generieren (um 1 herum, geklemmt). Für Int/Float getrennt behandeln.
+            lo, hi, _, _ = _get_bounds(prop_def)
+            cur = getattr(settings, name)
             is_int = "intproperty" in prop_def.__class__.__name__.lower()
 
-            candidates = set([current_val])
+            candidates_vals = set([cur])
             if is_int:
-                # Int: diskret um 1 herum durchsuchen
                 for i in range(1, self.span + 1):
-                    candidates.add(_clamp(int(round(1 + i)), hard_min, hard_max))
-                    candidates.add(_clamp(int(round(1 - i)), hard_min, hard_max))
+                    candidates_vals.add(_clamp(int(round(1 + i)), lo, hi))
+                    candidates_vals.add(_clamp(int(round(1 - i)), lo, hi))
             else:
-                # Float: kontinuierlich um 1 herum durchsuchen
                 for i in range(1, self.span + 1):
-                    candidates.add(_clamp(1.0 + i * self.step, hard_min, hard_max))
-                    candidates.add(_clamp(1.0 - i * self.step, hard_min, hard_max))
+                    candidates_vals.add(_clamp(1.0 + i * self.step, lo, hi))
+                    candidates_vals.add(_clamp(1.0 - i * self.step, lo, hi))
 
-            # Normalisieren: raus mit Nones, NaNs, Grenzen-respektierend
-            candidates = [c for c in sorted(candidates) if c is not None]
-
-            best_local_val = current_val
-            best_local_score = inf
-
-            # Jeden Kandidaten isoliert testen
-            for cand in candidates:
+            best_local_val, best_local_score = cur, inf
+            for cand in sorted([c for c in candidates_vals if c is not None]):
                 setattr(settings, name, cand)
-                score = _evaluate_tracking_score(context)
+                s = _evaluate_tracking_score(context)
+                if s < best_local_score:
+                    best_local_score, best_local_val = s, cand
 
-                if score < best_local_score:
-                    best_local_score = score
-                    best_local_val = cand
-
-            # Bestwert für diesen Parameter setzen
             setattr(settings, name, best_local_val)
+            best_global = min(best_global, best_local_score)
 
-            # Optional: globalen Score tracken (informativ)
-            best_global_score = min(best_global_score, best_local_score)
-
-        self.report({'INFO'}, f"Auto-Calibrate abgeschlossen. Finaler Score: {best_global_score:.4f}")
+        self.report({'INFO'}, f"Auto-Calibrate fertig. Finaler Score: {best_global:.4f}")
         return {'FINISHED'}
-
-
-# ---------------------------------------------------------------------------
-# Registration
-# ---------------------------------------------------------------------------
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate)
