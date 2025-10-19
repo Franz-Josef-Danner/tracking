@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 import logging
-import os
 import sys
-import subprocess
-from pathlib import Path
 from typing import Any
 
 # Blender-API
@@ -33,17 +30,6 @@ LOGGER.setLevel(logging.INFO)
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
-def _addon_root() -> Path:
-    """
-    Liefert das Add-on-Wurzelverzeichnis, also den Ordner, der 'Operator/' enthält.
-    Erwartete Struktur: <addon_root>/Operator/auto_calibrate_operator.py
-    """
-    here = Path(__file__).resolve()
-    operator_dir = here.parent  # .../Operator
-    addon_root = operator_dir.parent  # .../tracking-KI (oder Add-on-Root)
-    return addon_root
-
-
 def _set_scene_prop(scene: Any, prop: str, value: float) -> None:
     """Setzt eine Scene-Property defensiv, loggt hart bei Nichtverfügbarkeit."""
     if hasattr(scene, prop):
@@ -77,57 +63,48 @@ def _run_detect_adapt_operator() -> None:
         raise
 
 
-def _launch_track_operator_subprocess() -> None:
+def _run_track_operator_inprocess() -> None:
     """
-    Triggert anschließend Operator/track_operator.py als separaten Prozess.
-    Fix: Setzt PYTHONPATH dynamisch auf das Add-on-Root, damit 'Operator' importierbar ist.
+    Führt den Track-Operator IM GLEICHEN Blender-Prozess aus (bpy vorhanden).
+    Reihenfolge der Einstiegspunkte:
+      1) Operator.track_operator.main()    -> nutzt Rückgabecode
+      2) Operator.track_operator.run()     -> fire-and-forget
+      3) bpy.ops.kaiserlich_tracker.track  -> falls als Blender-Operator registriert
     """
-    addon_root = _addon_root()
-    operator_pkg = addon_root / "Operator"
-    track_file = operator_pkg / "track_operator.py"
+    LOGGER.info("Starte Track-Operator (in-process)…")
+    try:
+        from Operator import track_operator  # lazy import vermeidet Zyklen
 
-    if not track_file.exists():
-        raise FileNotFoundError(
-            f"track_operator.py nicht gefunden unter: {track_file}"
-        )
+        # 1) main()
+        entry = getattr(track_operator, "main", None)
+        if callable(entry):
+            rc = entry()
+            if isinstance(rc, int) and rc != 0:
+                raise RuntimeError(f"track_operator.main() exited with code {rc}")
+            LOGGER.info("Track-Operator via main() abgeschlossen.")
+            return
 
-    # Python/Blender-Umgebung aufsetzen
-    env = os.environ.copy()
+        # 2) run()
+        entry = getattr(track_operator, "run", None)
+        if callable(entry):
+            entry()
+            LOGGER.info("Track-Operator via run() abgeschlossen.")
+            return
 
-    # Sicherstellen, dass das Add-on-Root (Elternordner von 'Operator') im PYTHONPATH ist.
-    # Damit funktioniert: `python -m Operator.track_operator`
-    current_pp = env.get("PYTHONPATH", "")
-    new_pp = str(addon_root)
-    if current_pp:
-        # OS-separierter Suchpfad (Windows: ';', Posix: ':')
-        new_pp = new_pp + os.pathsep + current_pp
-    env["PYTHONPATH"] = new_pp
+        # 3) Blender-Operator als Fallback
+        LOGGER.info("Kein main()/run() gefunden – versuche Blender-Operator 'kaiserlich_tracker.track' …")
+        try:
+            result = bpy.ops.kaiserlich_tracker.track('EXEC_DEFAULT')
+            LOGGER.info("Track-Operator (bpy.ops) Result: %s", result)
+            return
+        except AttributeError:
+            raise RuntimeError(
+                "Weder main()/run() in Operator.track_operator noch Blender-Operator 'kaiserlich_tracker.track' vorhanden."
+            )
 
-    LOGGER.info("Starte Track-Operator (Subprozess)…")
-    LOGGER.info("PYTHONPATH ergänzt um: %s", addon_root)
-
-    cmd = [sys.executable, "-m", "Operator.track_operator"]
-
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        env=env,  # <— entscheidend
-    )
-    out, err = proc.communicate()
-
-    if out:
-        for line in out.strip().splitlines():
-            LOGGER.info("track_operator: %s", line)
-    if err:
-        for line in err.strip().splitlines():
-            LOGGER.warning("track_operator[stderr]: %s", line)
-
-    if proc.returncode != 0:
-        raise RuntimeError(f"track_operator exited with code {proc.returncode}")
-
-    LOGGER.info("Track-Operator erfolgreich beendet.")
+    except Exception as exc:
+        LOGGER.exception("Track-Operator (in-process) schlug fehl: %s", exc)
+        raise
 
 
 # -----------------------------------------------------------------------------
@@ -158,11 +135,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # --- Perspective Thresholds ---
             _set_scene_prop(scene, "kaiserlich_perspective_thresh", 1.0)
 
-            # Direkt im Anschluss: Detect-Adapt fahren (ohne UI)
+            # Direkt im Anschluss: Detect-Adapt (ohne UI)
             _run_detect_adapt_operator()
 
-            # Danach: Tracking-Operator als separaten Prozess (mit korrekt gesetztem PYTHONPATH)
-            _launch_track_operator_subprocess()
+            # Danach: Tracking im selben Prozess (bpy verfügbar)
+            _run_track_operator_inprocess()
 
             return {"FINISHED"}
 
