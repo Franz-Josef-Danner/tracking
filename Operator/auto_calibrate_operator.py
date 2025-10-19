@@ -33,7 +33,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
 
 def register():
-    bpy.utils.register_class(KAISERLICH_OT_reset_thresholds)
+    bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate)
 
 def unregister():
-    bpy.utils.unregister_class(KAISERLICH_OT_reset_thresholds)
+    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_auto_calibrate)
