@@ -1,10 +1,11 @@
 # operators/reset_thresholds.py
 import bpy
 
-class KAISERLICH_OT_reset_thresholds(bpy.types.Operator):
+class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
+    """Auto-calibrate: initialisiert alle Ziel-Parameter auf 1 und testet danach jeden Parameter isoliert."""
     bl_idname = "kaiserlich_tracker.auto_calibrate"
-    bl_label  = "Thresholds → 1"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_label = "KAISERLICHTRACKER — Auto Calibrate"
+    bl_options = {"REGISTER", "UNDO"}
 
     _TARGETS = (
         "kaiserlich_rot_thresh_x",
