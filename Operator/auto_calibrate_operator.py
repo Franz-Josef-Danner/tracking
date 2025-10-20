@@ -583,23 +583,22 @@ def _is_success(measured_len: int, target_len: int) -> bool:
 
 def reduce_threshold_single(
     context: Optional[bpy.types.Context],
-    prop_name: str,                    # z.B. "kaiserlich_perspective_thresh"
+    prop_name: str,
     cfg: ReduceConfig,
     tracks_to_delete: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Downward-Reduce für einen einzelnen Threshold:
-      - pro Stufe sf: candidate = start/sf, dann /sf, /sf ...
-      - Erfolg (len ≥ target) → Startpunkt = candidate, sf halbieren
-      - Untergrenze → sf halbieren
-      - Ende, wenn sf < 1 oder Limits erreicht
+    Downward-Reduce (Single): loggt ausschließlich Reduktionsfaktor (sf) und getesteten Threshold.
+    Rückgabe enthält best.value + best.sf sowie eine Logliste [(sf, threshold), ...].
     """
     scene = (context.scene if context is not None else bpy.context.scene)
     snap = _snapshot_thresholds(scene)
 
-    logs: List[Dict[str, Any]] = []
+    # Nur die zwei Felder im Log: sf, threshold
+    logs: List[Dict[str, float]] = []
     best_val: float = cfg.start_single
     best_len: int = -1
+    best_sf: Optional[float] = None
 
     try:
         _set_scene_props(scene, **{prop_name: cfg.start_single})
@@ -610,7 +609,6 @@ def reduce_threshold_single(
         while sf >= 1.0 and outer < cfg.max_outer_iters:
             outer += 1
 
-            # Ausgangswert dieser Stufe
             start_val = float(getattr(scene, prop_name))
             candidate = start_val / sf
 
@@ -619,50 +617,54 @@ def reduce_threshold_single(
                 inner += 1
 
                 if candidate < cfg.min_threshold:
-                    logs.append({"sf": sf, "start": start_val, "candidate": candidate, "status": "untergrenze erreicht"})
+                    # Untergrenze erreicht → sf halbieren; Log optional ohne Status
                     break
 
                 _set_scene_props(scene, **{prop_name: candidate})
                 res = short_test_track(context=context, tracks_to_delete=tracks_to_delete)
                 ttl = int(float(res.get("total_track_length", 0.0)))
 
-                status = "weiter"
-                if _is_success(ttl, cfg.target_len):
-                    status = "erfolg"
+                # Log NUR sf & threshold
+                logs.append({"sf": sf, "threshold": candidate})
+
+                if ttl >= cfg.target_len:
+                    # Erfolg ⇒ neuen Startpunkt + Bestwert aktualisieren
                     if ttl > best_len:
                         best_len = ttl
                         best_val = candidate
-                    # Startpunkt für nächste Stufe aktualisieren
-                    start_val = candidate
-                    logs.append({"sf": sf, "start": start_val, "candidate": candidate, "len": ttl, "status": status})
+                        best_sf = sf
+                    # Start für nächste sf-Stufe auf letzten Erfolg setzen
+                    # (hier brechen wir die aktuelle sf-Stufe wie gehabt ab)
                     break
                 else:
-                    logs.append({"sf": sf, "start": start_val, "candidate": candidate, "len": ttl, "status": status})
-                    candidate = candidate / sf  # stärker reduzieren
+                    # weiter stärker reduzieren
+                    candidate = candidate / sf
 
             sf = sf / cfg.sf_halve
 
-        logs.append({"sf": sf, "start": float(getattr(scene, prop_name)), "candidate": None,
-                     "status": ("finished" if sf < 1.0 else "abgebrochen/max_iters")})
+        # Abschlussmarke (optional, nur sf)
+        logs.append({"sf": sf})
 
     finally:
         _restore_thresholds(scene, snap)
 
-    return {"prop": prop_name, "best": {"value": best_val, "total_track_length": best_len}, "log": logs}
+    return {
+        "prop": prop_name,
+        "best": {"value": best_val, "sf": best_sf},
+        "log": logs,
+    }
 
 
 def reduce_threshold_pair(
     context: Optional[bpy.types.Context],
-    prop_a: str, prop_b: str,          # z.B. ("kaiserlich_rot_thresh_x", "kaiserlich_rot_thresh_y")
+    prop_a: str, prop_b: str,
     cfg: ReduceConfig,
-    coupling: str = "uniform",         # "uniform": beide gleich skalieren
+    coupling: str = "uniform",
     tracks_to_delete: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Downward-Reduce für ein Threshold-Paar (standardmäßig uniform):
-      - pro Stufe sf: (a/sf, b/sf) dann erneut /sf ...
-      - Erfolg → Startpunkt = Kandidat, sf halbieren
-      - Untergrenze → sf halbieren
+    Downward-Reduce (Pair): loggt ausschließlich Reduktionsfaktor (sf) und getestetes Threshold-Paar.
+    Rückgabe enthält best.values + best.sf sowie eine Logliste [(sf, (a,b)), ...].
     """
     scene = (context.scene if context is not None else bpy.context.scene)
     snap = _snapshot_thresholds(scene)
@@ -670,6 +672,7 @@ def reduce_threshold_pair(
     logs: List[Dict[str, Any]] = []
     best_pair: Tuple[float, float] = tuple(cfg.start_pair)
     best_len: int = -1
+    best_sf: Optional[float] = None
 
     try:
         _set_scene_props(scene, **{prop_a: cfg.start_pair[0], prop_b: cfg.start_pair[1]})
@@ -686,7 +689,6 @@ def reduce_threshold_pair(
             cand_a = a0 / sf
             cand_b = b0 / sf
             if coupling != "uniform":
-                # Hook für spätere asymmetrische Strategien
                 cand_a = a0 / sf
                 cand_b = b0 / sf
 
@@ -695,36 +697,39 @@ def reduce_threshold_pair(
                 inner += 1
 
                 if cand_a < cfg.min_threshold and cand_b < cfg.min_threshold:
-                    logs.append({"sf": sf, "start": (a0, b0), "candidate": (cand_a, cand_b), "status": "untergrenze erreicht"})
+                    # Untergrenze erreicht → sf halbieren
                     break
 
                 _set_scene_props(scene, **{prop_a: cand_a, prop_b: cand_b})
                 res = short_test_track(context=context, tracks_to_delete=tracks_to_delete)
                 ttl = int(float(res.get("total_track_length", 0.0)))
 
-                status = "weiter"
-                if _is_success(ttl, cfg.target_len):
-                    status = "erfolg"
+                # Log NUR sf & thresholds
+                logs.append({"sf": sf, "thresholds": (cand_a, cand_b)})
+
+                if ttl >= cfg.target_len:
                     if ttl > best_len:
                         best_len = ttl
                         best_pair = (cand_a, cand_b)
-                    a0, b0 = cand_a, cand_b
-                    logs.append({"sf": sf, "start": (a0, b0), "candidate": (cand_a, cand_b), "len": ttl, "status": status})
+                        best_sf = sf
+                    # Startpunkt für nächste sf-Stufe: letzter Erfolg (Abbruch der Stufe)
                     break
                 else:
-                    logs.append({"sf": sf, "start": (a0, b0), "candidate": (cand_a, cand_b), "len": ttl, "status": status})
                     cand_a = cand_a / sf
                     cand_b = cand_b / sf
 
             sf = sf / cfg.sf_halve
 
-        logs.append({"sf": sf, "start": (float(getattr(scene, prop_a)), float(getattr(scene, prop_b))),
-                     "status": ("finished" if sf < 1.0 else "abgebrochen/max_iters")})
+        logs.append({"sf": sf})
 
     finally:
         _restore_thresholds(scene, snap)
 
-    return {"props": (prop_a, prop_b), "best": {"values": best_pair, "total_track_length": best_len}, "log": logs}
+    return {
+        "props": (prop_a, prop_b),
+        "best": {"values": best_pair, "sf": best_sf},
+        "log": logs,
+    }
 
 # ---- Bequeme Wrapper für Deine 4 Gruppen -----------------------------------
 
