@@ -181,7 +181,7 @@ def _set_scene_props(scene: bpy.types.Scene, **kwargs) -> None:
             pass  # fail-soft
 
 
-def short_test_pipeline(context=None):
+def short_test_pipeline(context=None, tracks_to_delete=None):
     """
     Fährt 5 Tests in einem Run. Test 1 ist die Baseline.
     Persistiert nur die Step-Werte in Scene (optional auch BASE).
@@ -211,7 +211,8 @@ def short_test_pipeline(context=None):
             kaiserlich_rot_scale_thresh_scale=1.0,
             kaiserlich_perspective_thresh=1.0,
         )
-        rb = short_test_track(context=context)
+        # Falls gewünscht: explizite Löschliste nur im Baseline-Durchlauf
+        rb = short_test_track(context=context, tracks_to_delete=tracks_to_delete)
         results["baseline"] = int(float(rb.get("total_track_length", 0.0)))
         # optional: historisch persistieren
         try:
@@ -377,22 +378,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # UI-Feedback
             set_all_thresholds_to_one(context)
             self.report({'INFO'}, "KaiserlichTracker: Thresholds => 1.0")
-
-            names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
-            result = short_test_track(context=context, tracks_to_delete=names)
-
-            final_len = result.get('total_track_length', 0.0)
-            self.report({'INFO'}, f"Auto-Calibrate finalisiert. Track-Länge gesamt: {final_len}")
-            if result.get("deleted_explicit"):
-                self.report({'INFO'}, f"Explizit gelöschte Tracks: {', '.join(result['deleted_explicit'])}")
-            if result.get("deleted_new"):
-                self.report({'INFO'}, f"Neu erzeugte Tracks entfernt: {', '.join(result['deleted_new'])}")
-            if result.get("start_frame") is not None:
-                self.report({'INFO'}, f"Playhead zurückgesetzt auf Frame {result['start_frame']}")
-
+            
             # ---- Ergänzend: Short Test Pipeline fahren und Ergebnisse persistieren ----
             try:
-                pipeline_results = short_test_pipeline(context=context)
+                names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
+                pipeline_results = short_test_pipeline(context=context, tracks_to_delete=names)
                 bl = pipeline_results.get('baseline', 0)
                 s1 = pipeline_results.get('step1', 0)
                 s2 = pipeline_results.get('step2', 0)
