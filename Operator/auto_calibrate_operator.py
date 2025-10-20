@@ -765,15 +765,15 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             set_all_thresholds_to_one(context)
             self.report({'INFO'}, "KaiserlichTracker: Thresholds => 1.0")
 
-            # Short-Test-Pipeline + Persistenz
+            # ---- 1) Short-Test-Pipeline fahren & persistieren ----
             try:
                 names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
                 pipeline_results = short_test_pipeline(context=context, tracks_to_delete=names)
-                bl = pipeline_results.get('baseline', 0)
-                s1 = pipeline_results.get('step1', 0)
-                s2 = pipeline_results.get('step2', 0)
-                s3 = pipeline_results.get('step3', 0)
-                s4 = pipeline_results.get('step4', 0)
+                bl = int(pipeline_results.get('baseline', 0))
+                s1 = int(pipeline_results.get('step1', 0))
+                s2 = int(pipeline_results.get('step2', 0))
+                s3 = int(pipeline_results.get('step3', 0))
+                s4 = int(pipeline_results.get('step4', 0))
                 self.report(
                     {'INFO'},
                     (f"Short-Test-Pipeline abgeschlossen | "
@@ -781,14 +781,17 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 )
             except Exception as e:
                 self.report({'ERROR'}, f"Short-Test-Pipeline fehlgeschlagen: {e}")
+                # Falls Short-Test scheitert, abbrechen – lange Tests wären ungerichtet.
+                return {'CANCELLED'}
 
-            # Vergleich
+            # ---- 2) Auswertung -> entscheidet, welche langen Tests starten ----
             try:
                 cmp_res = compare_len_steps_to_total(context)
-                base = cmp_res.get("baseline")
+                base = int(cmp_res.get("baseline") or 0)
                 vals = cmp_res.get("values", {})
                 rels = cmp_res.get("relations", {})
                 ge_list = cmp_res.get("better_or_equal", [])
+
                 self.report(
                     {'INFO'},
                     (f"Baseline={base} | "
@@ -799,28 +802,52 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 )
                 self.report({'INFO'}, "≥ Baseline: " + (", ".join(ge_list) if ge_list else "none"))
 
-                # Optionale Auto-Trigger (auskommentiert lassen, falls manuell gesteuert werden soll):
-                # if "STEP1" in ge_list:
-                #     r = reduce_rot_xy(context, target_len=max(base or 0, vals.get("STEP1") or 0))
-                #     self.report({'INFO'}, f"Reduce RotXY best={r['best']}")
-                # if "STEP2" in ge_list:
-                #     r = reduce_scale_min_max(context, target_len=max(base or 0, vals.get("STEP2") or 0))
-                #     self.report({'INFO'}, f"Reduce Scale best={r['best']}")
-                # if "STEP3" in ge_list:
-                #     r = reduce_rot_scale_pair(context, target_len=max(base or 0, vals.get("STEP3") or 0))
-                #     self.report({'INFO'}, f"Reduce Rot+Scale best={r['best']}")
-                # if "STEP4" in ge_list:
-                #     r = reduce_perspective(context, target_len=max(base or 0, vals.get("STEP4") or 0))
-                #     self.report({'INFO'}, f"Reduce Perspective best={r['best']}")
+                # ---- 3) Lange Tests automatisch gemäß Auswertung ----
+                # Target pro Step = max(Baseline, STEPn)
+                scene = context.scene
+
+                # STEP1 → Rot/XY
+                if "STEP1" in ge_list:
+                    target_len = max(base, int(vals.get("STEP1") or 0))
+                    r = reduce_rot_xy(context, target_len=target_len)
+                    best = r.get("best", {})
+                    scene[SCENE_DEEPTEST_ROT_XY_BEST] = int(best.get("total_track_length", 0) or 0)
+                    self.report({'INFO'}, f"[Reduce RotXY] target={target_len} | best={best}")
+
+                # STEP2 → Scale Min/Max
+                if "STEP2" in ge_list:
+                    target_len = max(base, int(vals.get("STEP2") or 0))
+                    r = reduce_scale_min_max(context, target_len=target_len)
+                    best = r.get("best", {})
+                    scene[SCENE_DEEPTEST_SCALE_BEST] = int(best.get("total_track_length", 0) or 0)
+                    self.report({'INFO'}, f"[Reduce Scale] target={target_len} | best={best}")
+
+                # STEP3 → Rot+Scale Pair
+                if "STEP3" in ge_list:
+                    target_len = max(base, int(vals.get("STEP3") or 0))
+                    r = reduce_rot_scale_pair(context, target_len=target_len)
+                    best = r.get("best", {})
+                    scene[SCENE_DEEPTEST_ROT_SCALE_BEST] = int(best.get("total_track_length", 0) or 0)
+                    self.report({'INFO'}, f"[Reduce Rot+Scale] target={target_len} | best={best}")
+
+                # STEP4 → Perspective
+                if "STEP4" in ge_list:
+                    target_len = max(base, int(vals.get("STEP4") or 0))
+                    r = reduce_perspective(context, target_len=target_len)
+                    best = r.get("best", {})
+                    scene[SCENE_DEEPTEST_PERSPECTIVE_BEST] = int(best.get("total_track_length", 0) or 0)
+                    self.report({'INFO'}, f"[Reduce Perspective] target={target_len} | best={best}")
 
             except Exception as e:
-                self.report({'ERROR'}, f"Vergleich (STEPs vs. Baseline) fehlgeschlagen: {e}")
+                self.report({'ERROR'}, f"Auswertung/Long-Tests fehlgeschlagen: {e}")
+                return {'CANCELLED'}
 
             return {'FINISHED'}
 
         except Exception as e:
             self.report({'ERROR'}, f"Auto-Calibrate fehlgeschlagen: {e}")
             return {'CANCELLED'}
+
 
 
 def register():
