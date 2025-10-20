@@ -586,15 +586,14 @@ def reduce_threshold_single(
     prop_name: str,
     cfg: ReduceConfig,
     tracks_to_delete: Optional[List[str]] = None,
+    report_fn: Optional[Any] = None,   # ← NEU: pro Versuch loggen
 ) -> Dict[str, Any]:
     """
-    Downward-Reduce (Single): loggt ausschließlich Reduktionsfaktor (sf) und getesteten Threshold.
-    Rückgabe enthält best.value + best.sf sowie eine Logliste [(sf, threshold), ...].
+    Downward-Reduce (Single): streamt pro Kandidat nur (sf, threshold) via report_fn.
     """
     scene = (context.scene if context is not None else bpy.context.scene)
     snap = _snapshot_thresholds(scene)
 
-    # Nur die zwei Felder im Log: sf, threshold
     logs: List[Dict[str, float]] = []
     best_val: float = cfg.start_single
     best_len: int = -1
@@ -605,45 +604,36 @@ def reduce_threshold_single(
 
         sf = float(cfg.sf0)
         outer = 0
-
         while sf >= 1.0 and outer < cfg.max_outer_iters:
             outer += 1
-
             start_val = float(getattr(scene, prop_name))
             candidate = start_val / sf
 
             inner = 0
             while inner < cfg.max_inner_iters:
                 inner += 1
-
                 if candidate < cfg.min_threshold:
-                    # Untergrenze erreicht → sf halbieren; Log optional ohne Status
                     break
+
+                # Log NUR sf & threshold – unmittelbar vor dem Test
+                if report_fn:
+                    report_fn(f"[Reduce {prop_name}] sf={sf} | threshold={candidate}")
+                logs.append({"sf": sf, "threshold": candidate})
 
                 _set_scene_props(scene, **{prop_name: candidate})
                 res = short_test_track(context=context, tracks_to_delete=tracks_to_delete)
                 ttl = int(float(res.get("total_track_length", 0.0)))
 
-                # Log NUR sf & threshold
-                logs.append({"sf": sf, "threshold": candidate})
-
                 if ttl >= cfg.target_len:
-                    # Erfolg ⇒ neuen Startpunkt + Bestwert aktualisieren
                     if ttl > best_len:
                         best_len = ttl
                         best_val = candidate
                         best_sf = sf
-                    # Start für nächste sf-Stufe auf letzten Erfolg setzen
-                    # (hier brechen wir die aktuelle sf-Stufe wie gehabt ab)
                     break
                 else:
-                    # weiter stärker reduzieren
                     candidate = candidate / sf
 
             sf = sf / cfg.sf_halve
-
-        # Abschlussmarke (optional, nur sf)
-        logs.append({"sf": sf})
 
     finally:
         _restore_thresholds(scene, snap)
@@ -651,7 +641,7 @@ def reduce_threshold_single(
     return {
         "prop": prop_name,
         "best": {"value": best_val, "sf": best_sf},
-        "log": logs,
+        "log": logs,  # enthält nur (sf, threshold) je Versuch
     }
 
 
@@ -661,10 +651,10 @@ def reduce_threshold_pair(
     cfg: ReduceConfig,
     coupling: str = "uniform",
     tracks_to_delete: Optional[List[str]] = None,
+    report_fn: Optional[Any] = None,   # ← NEU
 ) -> Dict[str, Any]:
     """
-    Downward-Reduce (Pair): loggt ausschließlich Reduktionsfaktor (sf) und getestetes Threshold-Paar.
-    Rückgabe enthält best.values + best.sf sowie eine Logliste [(sf, (a,b)), ...].
+    Downward-Reduce (Pair): streamt pro Kandidat nur (sf, (a,b)) via report_fn.
     """
     scene = (context.scene if context is not None else bpy.context.scene)
     snap = _snapshot_thresholds(scene)
@@ -679,40 +669,33 @@ def reduce_threshold_pair(
 
         sf = float(cfg.sf0)
         outer = 0
-
         while sf >= 1.0 and outer < cfg.max_outer_iters:
             outer += 1
 
             a0 = float(getattr(scene, prop_a))
             b0 = float(getattr(scene, prop_b))
-
             cand_a = a0 / sf
             cand_b = b0 / sf
-            if coupling != "uniform":
-                cand_a = a0 / sf
-                cand_b = b0 / sf
 
             inner = 0
             while inner < cfg.max_inner_iters:
                 inner += 1
-
                 if cand_a < cfg.min_threshold and cand_b < cfg.min_threshold:
-                    # Untergrenze erreicht → sf halbieren
                     break
+
+                if report_fn:
+                    report_fn(f"[Reduce {prop_a}+{prop_b}] sf={sf} | thresholds=({cand_a}, {cand_b})")
+                logs.append({"sf": sf, "thresholds": (cand_a, cand_b)})
 
                 _set_scene_props(scene, **{prop_a: cand_a, prop_b: cand_b})
                 res = short_test_track(context=context, tracks_to_delete=tracks_to_delete)
                 ttl = int(float(res.get("total_track_length", 0.0)))
-
-                # Log NUR sf & thresholds
-                logs.append({"sf": sf, "thresholds": (cand_a, cand_b)})
 
                 if ttl >= cfg.target_len:
                     if ttl > best_len:
                         best_len = ttl
                         best_pair = (cand_a, cand_b)
                         best_sf = sf
-                    # Startpunkt für nächste sf-Stufe: letzter Erfolg (Abbruch der Stufe)
                     break
                 else:
                     cand_a = cand_a / sf
@@ -720,34 +703,34 @@ def reduce_threshold_pair(
 
             sf = sf / cfg.sf_halve
 
-        logs.append({"sf": sf})
-
     finally:
         _restore_thresholds(scene, snap)
 
     return {
         "props": (prop_a, prop_b),
         "best": {"values": best_pair, "sf": best_sf},
-        "log": logs,
+        "log": logs,  # nur (sf, (a,b)) je Versuch
     }
+
 
 # ---- Bequeme Wrapper für Deine 4 Gruppen -----------------------------------
 
-def reduce_rot_xy(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), **kw) -> Dict[str, Any]:
+def reduce_rot_xy(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), report_fn=None, **kw):
     cfg = ReduceConfig(target_len=target_len, start_pair=start, **kw)
-    return reduce_threshold_pair(context, "kaiserlich_rot_thresh_x", "kaiserlich_rot_thresh_y", cfg)
+    return reduce_threshold_pair(context, "kaiserlich_rot_thresh_x", "kaiserlich_rot_thresh_y", cfg, report_fn=report_fn)
 
-def reduce_scale_min_max(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), **kw) -> Dict[str, Any]:
+def reduce_scale_min_max(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), report_fn=None, **kw):
     cfg = ReduceConfig(target_len=target_len, start_pair=start, **kw)
-    return reduce_threshold_pair(context, "kaiserlich_scale_thresh_min", "kaiserlich_scale_thresh_max", cfg)
+    return reduce_threshold_pair(context, "kaiserlich_scale_thresh_min", "kaiserlich_scale_thresh_max", cfg, report_fn=report_fn)
 
-def reduce_rot_scale_pair(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), **kw) -> Dict[str, Any]:
+def reduce_rot_scale_pair(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), report_fn=None, **kw):
     cfg = ReduceConfig(target_len=target_len, start_pair=start, **kw)
-    return reduce_threshold_pair(context, "kaiserlich_rot_scale_thresh_rot", "kaiserlich_rot_scale_thresh_scale", cfg)
+    return reduce_threshold_pair(context, "kaiserlich_rot_scale_thresh_rot", "kaiserlich_rot_scale_thresh_scale", cfg, report_fn=report_fn)
 
-def reduce_perspective(context, target_len: int, start: float = 1.0, **kw) -> Dict[str, Any]:
+def reduce_perspective(context, target_len: int, start: float = 1.0, report_fn=None, **kw):
     cfg = ReduceConfig(target_len=target_len, start_single=start, **kw)
-    return reduce_threshold_single(context, "kaiserlich_perspective_thresh", cfg)
+    return reduce_threshold_single(context, "kaiserlich_perspective_thresh", cfg, report_fn=report_fn)
+
 
 # =============================================================================
 #  Operator (bestehend)
@@ -814,34 +797,37 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 # STEP1 → Rot/XY
                 if "STEP1" in ge_list:
                     target_len = max(base, int(vals.get("STEP1") or 0))
-                    r = reduce_rot_xy(context, target_len=target_len)
+                    r = reduce_rot_xy(context, target_len=target_len,
+                                      report_fn=lambda msg: self.report({'INFO'}, msg))
                     best = r.get("best", {})
-                    scene[SCENE_DEEPTEST_ROT_XY_BEST] = int(best.get("total_track_length", 0) or 0)
-                    self.report({'INFO'}, f"[Reduce RotXY] target={target_len} | best={best}")
-
+                    scene[SCENE_DEEPTEST_ROT_XY_BEST] = int(target_len)
+                    # kein Finalwert nötig; falls doch:
+                    # self.report({'INFO'}, f"[Reduce RotXY] best sf={best.get('sf')} | thresh={best.get('values')}")
+                
                 # STEP2 → Scale Min/Max
                 if "STEP2" in ge_list:
                     target_len = max(base, int(vals.get("STEP2") or 0))
-                    r = reduce_scale_min_max(context, target_len=target_len)
+                    r = reduce_scale_min_max(context, target_len=target_len,
+                                             report_fn=lambda msg: self.report({'INFO'}, msg))
                     best = r.get("best", {})
-                    scene[SCENE_DEEPTEST_SCALE_BEST] = int(best.get("total_track_length", 0) or 0)
-                    self.report({'INFO'}, f"[Reduce Scale] target={target_len} | best={best}")
-
+                    scene[SCENE_DEEPTEST_SCALE_BEST] = int(target_len)
+                
                 # STEP3 → Rot+Scale Pair
                 if "STEP3" in ge_list:
                     target_len = max(base, int(vals.get("STEP3") or 0))
-                    r = reduce_rot_scale_pair(context, target_len=target_len)
+                    r = reduce_rot_scale_pair(context, target_len=target_len,
+                                              report_fn=lambda msg: self.report({'INFO'}, msg))
                     best = r.get("best", {})
-                    scene[SCENE_DEEPTEST_ROT_SCALE_BEST] = int(best.get("total_track_length", 0) or 0)
-                    self.report({'INFO'}, f"[Reduce Rot+Scale] target={target_len} | best={best}")
-
+                    scene[SCENE_DEEPTEST_ROT_SCALE_BEST] = int(target_len)
+                
                 # STEP4 → Perspective
                 if "STEP4" in ge_list:
                     target_len = max(base, int(vals.get("STEP4") or 0))
-                    r = reduce_perspective(context, target_len=target_len)
+                    r = reduce_perspective(context, target_len=target_len,
+                                           report_fn=lambda msg: self.report({'INFO'}, msg))
                     best = r.get("best", {})
-                    scene[SCENE_DEEPTEST_PERSPECTIVE_BEST] = int(best.get("total_track_length", 0) or 0)
-                    self.report({'INFO'}, f"[Reduce Perspective] target={target_len} | best={best}")
+                    scene[SCENE_DEEPTEST_PERSPECTIVE_BEST] = int(target_len)
+
 
             except Exception as e:
                 self.report({'ERROR'}, f"Auswertung/Long-Tests fehlgeschlagen: {e}")
