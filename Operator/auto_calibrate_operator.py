@@ -673,7 +673,10 @@ def reduce_threshold_single(
     report_fn: Optional[Any] = None,   # pro Kandidat live loggen
 ) -> Dict[str, Any]:
     """
-    Downward-Reduce (Single): streamt pro Kandidat nur (sf, threshold) via report_fn -> short_test_track(run_meta).
+    Downward-Reduce (Single) mit 'einen Durchlauf zurück':
+      - Innerhalb einer Stufe sf iterativ cand = prev / sf
+      - Bei 'erfolg': nächster Stufenstart = prev (nicht cand)
+      - Kein Erfolg: Start der nächsten Stufe = letzter erfolgreicher prev (global), falls vorhanden
     """
     scene = (context.scene if context is not None else bpy.context.scene)
     snap = _snapshot_thresholds(scene)
@@ -684,21 +687,28 @@ def reduce_threshold_single(
     best_sf: Optional[float] = None
 
     try:
-        _set_scene_props(scene, **{prop_name: cfg.start_single})
+        # aktueller Start und globaler Fallback (vorerst Start)
+        current_start = float(cfg.start_single)
+        last_success_prev_global: Optional[float] = None
 
         sf = float(cfg.sf0)
         outer = 0
         while sf >= 1.0 and outer < cfg.max_outer_iters:
             outer += 1
-            start_val = float(getattr(scene, prop_name))
-            candidate = start_val / sf
+
+            prev = current_start   # Stufen-Start (wird bei 'weiter' nachgeführt)
+            had_success = False
+            next_start_after_stage: Optional[float] = None
 
             inner = 0
             while inner < cfg.max_inner_iters:
                 inner += 1
+                candidate = prev / sf
                 if candidate < cfg.min_threshold:
+                    # Untergrenze → Stufe ohne Erfolg verlassen
                     break
 
+                # Test mit aktuellem Kandidaten (Logging übernimmt short_test_track)
                 _set_scene_props(scene, **{prop_name: candidate})
                 res = short_test_track(
                     context=context,
@@ -707,17 +717,29 @@ def reduce_threshold_single(
                     report_fn=report_fn
                 )
                 ttl = int(float(res.get("total_track_length", 0.0)))
-
                 logs.append({"sf": sf, "threshold": candidate})
 
-                if ttl >= cfg.target_len:
+                if _is_success(ttl, cfg.target_len):
+                    # Erfolg: Bestwert tracken (für Reporting), Start für nächste Stufe = prev (ein Schritt zurück)
                     if ttl > best_len:
                         best_len = ttl
                         best_val = candidate
                         best_sf = sf
+                    last_success_prev_global = prev
+                    next_start_after_stage = prev
+                    had_success = True
                     break
                 else:
-                    candidate = candidate / sf
+                    # weiter → prev verschieben und nächsten Kandidaten testen
+                    prev = candidate
+
+            # Stufenwechsel: Start für die nächste Stufe definieren
+            if had_success and next_start_after_stage is not None:
+                current_start = next_start_after_stage
+            elif last_success_prev_global is not None:
+                # Kein Erfolg in dieser Stufe → auf letzten erfolgreichen prev zurückfallen
+                current_start = last_success_prev_global
+            # sonst bleibt current_start unverändert
 
             sf = sf / cfg.sf_halve
 
@@ -740,7 +762,10 @@ def reduce_threshold_pair(
     report_fn: Optional[Any] = None,   # pro Kandidat live loggen
 ) -> Dict[str, Any]:
     """
-    Downward-Reduce (Pair): streamt pro Kandidat nur (sf, (a,b)) via report_fn -> short_test_track(run_meta).
+    Downward-Reduce (Pair) mit 'einen Durchlauf zurück':
+      - Innerhalb einer Stufe sf iterativ (cand_a, cand_b) = (prev_a/sf, prev_b/sf)
+      - Bei 'erfolg': nächster Stufenstart = (prev_a, prev_b) (nicht (cand_a, cand_b))
+      - Kein Erfolg: Start der nächsten Stufe = letzter erfolgreicher (prev_a, prev_b) (global), falls vorhanden
     """
     scene = (context.scene if context is not None else bpy.context.scene)
     snap = _snapshot_thresholds(scene)
@@ -751,21 +776,26 @@ def reduce_threshold_pair(
     best_sf: Optional[float] = None
 
     try:
-        _set_scene_props(scene, **{prop_a: cfg.start_pair[0], prop_b: cfg.start_pair[1]})
+        current_start_a = float(cfg.start_pair[0])
+        current_start_b = float(cfg.start_pair[1])
+        last_success_prev_global: Optional[Tuple[float, float]] = None
 
         sf = float(cfg.sf0)
         outer = 0
         while sf >= 1.0 and outer < cfg.max_outer_iters:
             outer += 1
 
-            a0 = float(getattr(scene, prop_a))
-            b0 = float(getattr(scene, prop_b))
-            cand_a = a0 / sf
-            cand_b = b0 / sf
+            prev_a = current_start_a
+            prev_b = current_start_b
+            had_success = False
+            next_start_after_stage: Optional[Tuple[float, float]] = None
 
             inner = 0
             while inner < cfg.max_inner_iters:
                 inner += 1
+
+                cand_a = prev_a / sf
+                cand_b = prev_b / sf
                 if cand_a < cfg.min_threshold and cand_b < cfg.min_threshold:
                     break
 
@@ -777,18 +807,27 @@ def reduce_threshold_pair(
                     report_fn=report_fn
                 )
                 ttl = int(float(res.get("total_track_length", 0.0)))
-
                 logs.append({"sf": sf, "thresholds": (cand_a, cand_b)})
 
-                if ttl >= cfg.target_len:
+                if _is_success(ttl, cfg.target_len):
                     if ttl > best_len:
                         best_len = ttl
                         best_pair = (cand_a, cand_b)
                         best_sf = sf
+                    last_success_prev_global = (prev_a, prev_b)
+                    next_start_after_stage = (prev_a, prev_b)  # ein Schritt zurück
+                    had_success = True
                     break
                 else:
-                    cand_a = cand_a / sf
-                    cand_b = cand_b / sf
+                    prev_a = cand_a
+                    prev_b = cand_b
+
+            # Stufenwechsel
+            if had_success and next_start_after_stage is not None:
+                current_start_a, current_start_b = next_start_after_stage
+            elif last_success_prev_global is not None:
+                current_start_a, current_start_b = last_success_prev_global
+            # sonst unverändert
 
             sf = sf / cfg.sf_halve
 
