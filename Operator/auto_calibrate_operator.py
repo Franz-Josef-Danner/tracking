@@ -9,6 +9,10 @@ from ..Helper.delete import delete_tracks_by_names
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
 
 SCENE_TOTAL_TRACK_LEN_KEY = "kaiserlich_track_length_total"
+SCENE_TOTAL_TRACK_LEN_STEP1 = "kaiserlich_len_rot_xy_00"
+SCENE_TOTAL_TRACK_LEN_STEP2 = "kaiserlich_len_scale_00"
+SCENE_TOTAL_TRACK_LEN_STEP3 = "kaiserlich_len_rot_scale_00"
+SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_0"
 
 # ---- Utility ---------------------------------------------------------------
 
@@ -73,10 +77,9 @@ def _get_current_track_names(context: Optional[bpy.types.Context]) -> Set[str]:
     return set(_list_track_names_from_clip(clip))
 
 
-def auto_calibrate_pipeline(context=None, tracks_to_delete=None):
+def short_test_track(context=None, tracks_to_delete=None):
     """
     Reihenfolge:
-      0) set_all_thresholds_to_one
       1) snapshot_active_markers
       2) bpy.ops.kaiserlich_tracker.detect_adapt
       2.5) get_start_frame
@@ -97,13 +100,6 @@ def auto_calibrate_pipeline(context=None, tracks_to_delete=None):
     pre_names: Set[str] = _get_current_track_names(context)
 
     try:
-        # 0) Thresholds
-        if context is not None:
-            try:
-                set_all_thresholds_to_one(context)
-            except Exception:
-                pass
-
         # 1) Snapshot
         try:
             (snapshot_active_markers(context) if context is not None else snapshot_active_markers())
@@ -180,11 +176,109 @@ def auto_calibrate_pipeline(context=None, tracks_to_delete=None):
         "start_frame": start_frame,
     }
 
+def _set_scene_props(scene: bpy.types.Scene, **kwargs) -> None:
+    """Best-effort Setter für Scene-Properties (float-cast, fail-soft)."""
+    for k, v in kwargs.items():
+        try:
+            if hasattr(scene, k):
+                setattr(scene, k, float(v))
+        except Exception:
+            pass  # fail-soft
+
+
+def short_test_pipeline(context=None):
+    """
+    Führt vier kurze Testläufe mit definierten Threshold-Sets aus und
+    persistiert jeweils die finale Gesamtlänge in neuen Scene-Variablen.
+
+    Schritte:
+      1) rot_thresh_x=0, rot_thresh_y=0                                  -> short_test_track -> Scene[SCENE_TOTAL_TRACK_LEN_STEP1]
+      2) rot_thresh_x=1, rot_thresh_y=1, scale_min=0, scale_max=0        -> short_test_track -> Scene[SCENE_TOTAL_TRACK_LEN_STEP2]
+      3) scale_min=1, scale_max=1, rot_scale_rot=0, rot_scale_scale=0    -> short_test_track -> Scene[SCENE_TOTAL_TRACK_LEN_STEP3]
+      4) rot_scale_rot=1, rot_scale_scale=1, perspective_thresh=0        -> short_test_track -> Scene[SCENE_TOTAL_TRACK_LEN_STEP4]
+
+    Returns:
+      dict: {"step1": float, "step2": float, "step3": float, "step4": float}
+    """
+    scene = (context.scene if context is not None else bpy.context.scene)
+
+    results = {"step1": 0.0, "step2": 0.0, "step3": 0.0, "step4": 0.0}
+
+    # --- STEP 1 ---
+    try:
+        _set_scene_props(
+            scene,
+            kaiserlich_rot_thresh_x=0.0,
+            kaiserlich_rot_thresh_y=0.0,
+        )
+        r1 = short_test_track(context=context)
+        results["step1"] = float(r1.get("total_track_length", 0.0))
+        try:
+            scene[SCENE_TOTAL_TRACK_LEN_STEP1] = results["step1"]
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # --- STEP 2 ---
+    try:
+        _set_scene_props(
+            scene,
+            kaiserlich_rot_thresh_x=1.0,
+            kaiserlich_rot_thresh_y=1.0,
+            kaiserlich_scale_thresh_min=0.0,
+            kaiserlich_scale_thresh_max=0.0,
+        )
+        r2 = short_test_track(context=context)
+        results["step2"] = float(r2.get("total_track_length", 0.0))
+        try:
+            scene[SCENE_TOTAL_TRACK_LEN_STEP2] = results["step2"]
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # --- STEP 3 ---
+    try:
+        _set_scene_props(
+            scene,
+            kaiserlich_scale_thresh_min=1.0,
+            kaiserlich_scale_thresh_max=1.0,
+            kaiserlich_rot_scale_thresh_rot=0.0,
+            kaiserlich_rot_scale_thresh_scale=0.0,
+        )
+        r3 = short_test_track(context=context)
+        results["step3"] = float(r3.get("total_track_length", 0.0))
+        try:
+            scene[SCENE_TOTAL_TRACK_LEN_STEP3] = results["step3"]
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # --- STEP 4 ---
+    try:
+        _set_scene_props(
+            scene,
+            kaiserlich_rot_scale_thresh_rot=1.0,
+            kaiserlich_rot_scale_thresh_scale=1.0,
+            kaiserlich_perspective_thresh=0.0,
+        )
+        r4 = short_test_track(context=context)
+        results["step4"] = float(r4.get("total_track_length", 0.0))
+        try:
+            scene[SCENE_TOTAL_TRACK_LEN_STEP4] = results["step4"]
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    return results
 
 # ---- Operator --------------------------------------------------------------
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
-    """Auto-calibrate: initialisiert alle Ziel-Parameter auf 1 und führt danach Detect-Adapt und Tracking aus."""
+    """Auto-calibrate: setzt alle Ziel-Parameter auf 1.0 und führt danach Detect-Adapt & Tracking aus."""
     bl_idname = "kaiserlich_tracker.auto_calibrate"
     bl_label = "KAISERLICHTRACKER — Auto Calibrate"
     bl_options = {"REGISTER", "UNDO"}
@@ -202,7 +296,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             self.report({'INFO'}, "KaiserlichTracker: Thresholds => 1.0")
 
             names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
-            result = auto_calibrate_pipeline(context=context, tracks_to_delete=names)
+            result = short_test_track(context=context, tracks_to_delete=names)
 
             final_len = result.get('total_track_length', 0.0)
             self.report({'INFO'}, f"Auto-Calibrate finalisiert. Track-Länge gesamt (persistiert): {final_len}")
@@ -212,6 +306,19 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 self.report({'INFO'}, f"Neu erzeugte Tracks entfernt: {', '.join(result['deleted_new'])}")
             if result.get("start_frame") is not None:
                 self.report({'INFO'}, f"Playhead zurückgesetzt auf Frame {result['start_frame']}")
+            # ---- Ergänzend: Short Test Pipeline fahren und Ergebnisse persistieren ----
+            try:
+                pipeline_results = short_test_pipeline(context=context)
+                self.report(
+                    {'INFO'},
+                    ("Short-Test-Pipeline abgeschlossen | "
+                     f"Step1={pipeline_results.get('step1', 0.0)} "
+                     f"Step2={pipeline_results.get('step2', 0.0)} "
+                     f"Step3={pipeline_results.get('step3', 0.0)} "
+                     f"Step4={pipeline_results.get('step4', 0.0)}")
+                )
+            except Exception as e:
+                self.report({'ERROR'}, f"Short-Test-Pipeline fehlgeschlagen: {e}")
 
             return {'FINISHED'}
 
