@@ -25,6 +25,14 @@ SCENE_DEEPTEST_PERSPECTIVE_BEST   = "kaiserlich_deeptest_perspective_best"
 #  Utility
 # =============================================================================
 
+def _fmt8(x: float) -> str:
+    """Max. 8 Nachkommastellen, ohne unnötige Nullen/Dezimalpunkt."""
+    try:
+        s = f"{float(x):.8f}".rstrip("0").rstrip(".")
+        return s if s != "-0" else "0"
+    except Exception:
+        return str(x)
+
 def set_all_thresholds_to_one(context: bpy.types.Context) -> None:
     scene = context.scene
     props: Iterable[str] = (
@@ -108,7 +116,7 @@ def short_test_track(
 ):
     """
     Reihenfolge:
-      0) (NEU) Live-Log der aktiven Thresholds + optional sf
+      0) Live-Log der aktiven Thresholds + optional sf
       1) snapshot_active_markers
       2) bpy.ops.kaiserlich_tracker.detect_adapt
       2.5) get_start_frame
@@ -153,9 +161,9 @@ def short_test_track(
     for f in fields:
         v = _safe_get(scene, f)
         if v is not None:
-            kv.append(f"{f}={v:.12g}")
+            kv.append(f"{f}={_fmt8(v)}")
     if sf is not None:
-        kv.insert(0, f"sf={float(sf):.12g}")
+        kv.insert(0, f"sf={_fmt8(sf)}")
     if report_fn and kv:
         report_fn(f"[{tag}] " + " | ".join(kv))
 
@@ -831,7 +839,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            # zentraler Report-Callback
             report = lambda m: self.report({'INFO'}, m)
 
             set_all_thresholds_to_one(context)
@@ -876,8 +883,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     r = reduce_rot_xy(context, target_len=target_len, report_fn=report)
                     best = r.get("best", {})
                     scene[SCENE_DEEPTEST_ROT_XY_BEST] = int(target_len)
-                    # optionaler Abschlussreport:
-                    report(f"[Reduce RotXY] best sf={best.get('sf')} | thresh={best.get('values')}")
+                    vals_ = best.get("values")
+                    if isinstance(vals_, (tuple, list)) and len(vals_) == 2:
+                        report(f"[Reduce RotXY] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])})")
 
                 # STEP2 → Scale Min/Max
                 if "STEP2" in ge_list:
@@ -885,7 +893,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     r = reduce_scale_min_max(context, target_len=target_len, report_fn=report)
                     best = r.get("best", {})
                     scene[SCENE_DEEPTEST_SCALE_BEST] = int(target_len)
-                    report(f"[Reduce Scale] best sf={best.get('sf')} | thresh={best.get('values')}")
+                    vals_ = best.get("values")
+                    if isinstance(vals_, (tuple, list)) and len(vals_) == 2:
+                        report(f"[Reduce Scale] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])})")
 
                 # STEP3 → Rot+Scale Pair
                 if "STEP3" in ge_list:
@@ -893,7 +903,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     r = reduce_rot_scale_pair(context, target_len=target_len, report_fn=report)
                     best = r.get("best", {})
                     scene[SCENE_DEEPTEST_ROT_SCALE_BEST] = int(target_len)
-                    report(f"[Reduce Rot+Scale] best sf={best.get('sf')} | thresh={best.get('values')}")
+                    vals_ = best.get("values")
+                    if isinstance(vals_, (tuple, list)) and len(vals_) == 2:
+                        report(f"[Reduce Rot+Scale] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])})")
 
                 # STEP4 → Perspective
                 if "STEP4" in ge_list:
@@ -901,7 +913,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     r = reduce_perspective(context, target_len=target_len, report_fn=report)
                     best = r.get("best", {})
                     scene[SCENE_DEEPTEST_PERSPECTIVE_BEST] = int(target_len)
-                    report(f"[Reduce Perspective] best sf={best.get('sf')} | thresh={best.get('value')}")
+                    report(f"[Reduce Perspective] best sf={_fmt8(best.get('sf'))} | thresh={_fmt8(best.get('value'))}")
 
             except Exception as e:
                 self.report({'ERROR'}, f"Auswertung/Long-Tests fehlgeschlagen: {e}")
