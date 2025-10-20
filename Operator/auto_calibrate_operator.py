@@ -278,6 +278,9 @@ def short_test_pipeline(context=None):
             scene,
             kaiserlich_perspective_thresh=1.0,
         )
+    except Exception:
+        pass
+        
     return results
 
 # ---- Operator --------------------------------------------------------------
