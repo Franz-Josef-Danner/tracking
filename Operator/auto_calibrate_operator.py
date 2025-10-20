@@ -93,8 +93,7 @@ def auto_calibrate_pipeline(context=None, tracks_to_delete=None):
 
     return {"total_track_length": total_len, "deleted": deleted}
 
-# ---- Operator (Ausschnitt) ------------------------------------------------
-# In deiner bestehenden Operator-Klasse einfach im execute() aufrufen:
+# ---- Operator ------------------------------------------------
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Auto-calibrate: initialisiert alle Ziel-Parameter auf 1 und führt danach Detect-Adapt und Tracking aus."""
