@@ -283,6 +283,70 @@ def short_test_pipeline(context=None):
         
     return results
 
+# ---- Comparison Utility -----------------------------------------------------
+
+def _get_scene_int(scene: bpy.types.Scene, key: str) -> Optional[int]:
+    """Liest scene[key] oder scene.key und castet robust nach int. None falls nicht vorhanden."""
+    try:
+        if key in scene.keys():
+            val = scene[key]
+        elif hasattr(scene, key):
+            val = getattr(scene, key)
+        else:
+            return None
+        # Viele Längen werden als float persistiert -> erst float, dann int
+        return int(float(val))
+    except Exception:
+        return None
+
+def compare_len_steps_to_total(context=None):
+    """
+    Vergleicht STEP1..STEP4 (int) gegen SCENE_TOTAL_TRACK_LEN_KEY (int).
+    Rückgabe liefert Werte und Relationen ('better'|'equal'|'worse'|'missing').
+
+    Returns:
+      dict: {
+        'baseline': Optional[int],
+        'values': {'STEP1': Optional[int], ...},
+        'relations': {'STEP1': 'better|equal|worse|missing', ...},
+        'better_or_equal': [steps...],   # nur die, die >= baseline sind
+        'all_present': bool              # True, wenn baseline und alle steps vorhanden
+      }
+    """
+    scene = (context.scene if context is not None else bpy.context.scene)
+
+    base = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_KEY)
+    v1 = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_STEP1)
+    v2 = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_STEP2)
+    v3 = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_STEP3)
+    v4 = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_STEP4)
+
+    values = {"STEP1": v1, "STEP2": v2, "STEP3": v3, "STEP4": v4}
+    relations = {}
+
+    def _rel(v, b):
+        if v is None or b is None:
+            return "missing"
+        if v > b:
+            return "better"
+        if v == b:
+            return "equal"
+        return "worse"
+
+    for k, v in values.items():
+        relations[k] = _rel(v, base)
+
+    better_or_equal = [k for k, r in relations.items() if r in ("better", "equal")]
+    all_present = (base is not None) and all(v is not None for v in values.values())
+
+    return {
+        "baseline": base,
+        "values": values,
+        "relations": relations,
+        "better_or_equal": better_or_equal,
+        "all_present": all_present,
+    }
+
 # ---- Operator --------------------------------------------------------------
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
@@ -327,11 +391,30 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 )
             except Exception as e:
                 self.report({'ERROR'}, f"Short-Test-Pipeline fehlgeschlagen: {e}")
+            # --- NEU: Ergänzend Vergleich STEP1..STEP4 vs. Baseline triggern ---
+            try:
+                cmp_res = compare_len_steps_to_total(context)
+                base = cmp_res.get("baseline")
+                vals = cmp_res.get("values", {})
+                rels = cmp_res.get("relations", {})
+                ge_list = cmp_res.get("better_or_equal", [])
+                self.report(
+                    {'INFO'},
+                    (f"Baseline={base} | "
+                     f"STEP1={vals.get('STEP1')}({rels.get('STEP1')}) "
+                     f"STEP2={vals.get('STEP2')}({rels.get('STEP2')}) "
+                     f"STEP3={vals.get('STEP3')}({rels.get('STEP3')}) "
+                     f"STEP4={vals.get('STEP4')}({rels.get('STEP4')})")
+                )
+                self.report({'INFO'}, "≥ Baseline: " + (", ".join(ge_list) if ge_list else "none"))
+            except Exception as e:
+                self.report({'ERROR'}, f"Vergleich (STEPs vs. Baseline) fehlgeschlagen: {e}")
 
             return {'FINISHED'}
 
         except Exception as e:
             self.report({'ERROR'}, f"Auto-Calibrate fehlgeschlagen: {e}")
+            
             return {'CANCELLED'}
 
 
