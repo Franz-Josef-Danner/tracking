@@ -273,7 +273,11 @@ def short_test_pipeline(context=None):
             pass
     except Exception:
         pass
-
+    try:
+        _set_scene_props(
+            scene,
+            kaiserlich_perspective_thresh=1.0,
+        )
     return results
 
 # ---- Operator --------------------------------------------------------------
