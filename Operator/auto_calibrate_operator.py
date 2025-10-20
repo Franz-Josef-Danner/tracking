@@ -1,7 +1,8 @@
 # Operator/auto_calibrate_operator.py
 
 import bpy
-from typing import Iterable, List, Set, Optional
+from typing import Iterable, List, Set, Optional, Tuple, Dict, Any
+from dataclasses import dataclass  # ← NEU
 
 from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.track_length_helper import get_total_track_length
@@ -14,7 +15,15 @@ SCENE_TOTAL_TRACK_LEN_STEP2 = "kaiserlich_len_scale_00"
 SCENE_TOTAL_TRACK_LEN_STEP3 = "kaiserlich_len_rot_scale_00"
 SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_0"
 
-# ---- Utility ---------------------------------------------------------------
+# ---- NEW: Persistenz-Schlüssel für Deep-Tests ------------------------------
+SCENE_DEEPTEST_ROT_XY_BEST        = "kaiserlich_deeptest_rot_xy_best"
+SCENE_DEEPTEST_SCALE_BEST         = "kaiserlich_deeptest_scale_best"
+SCENE_DEEPTEST_ROT_SCALE_BEST     = "kaiserlich_deeptest_rot_scale_best"
+SCENE_DEEPTEST_PERSPECTIVE_BEST   = "kaiserlich_deeptest_perspective_best"
+
+# =============================================================================
+#  Utility (bestehend)
+# =============================================================================
 
 def set_all_thresholds_to_one(context: bpy.types.Context) -> None:
     scene = context.scene
@@ -77,6 +86,16 @@ def _get_current_track_names(context: Optional[bpy.types.Context]) -> Set[str]:
     return set(_list_track_names_from_clip(clip))
 
 
+def _set_scene_props(scene: bpy.types.Scene, **kwargs) -> None:
+    """Best-effort Setter für Scene-Properties (float-cast, fail-soft)."""
+    for k, v in kwargs.items():
+        try:
+            if hasattr(scene, k):
+                setattr(scene, k, float(v))
+        except Exception:
+            pass  # fail-soft
+
+
 def short_test_track(context=None, tracks_to_delete=None):
     """
     Reihenfolge:
@@ -96,7 +115,6 @@ def short_test_track(context=None, tracks_to_delete=None):
     deleted_new: List[str] = []
     final_total_len: float = 0.0
 
-    # Vorher-Stand der Tracks für Delta-Ermittlung
     pre_names: Set[str] = _get_current_track_names(context)
 
     try:
@@ -149,7 +167,7 @@ def short_test_track(context=None, tracks_to_delete=None):
         except Exception:
             final_total_len = 0.0  # fail-soft
 
-        # 7) NEU: neu erzeugte Tracks löschen (Delta) – Szene aufräumen
+        # 7) NEU: neu erzeugte Tracks löschen (Delta)
         try:
             post_names: Set[str] = _get_current_track_names(context)
             new_names = sorted(list(post_names - pre_names))
@@ -171,33 +189,19 @@ def short_test_track(context=None, tracks_to_delete=None):
     }
 
 
-def _set_scene_props(scene: bpy.types.Scene, **kwargs) -> None:
-    """Best-effort Setter für Scene-Properties (float-cast, fail-soft)."""
-    for k, v in kwargs.items():
-        try:
-            if hasattr(scene, k):
-                setattr(scene, k, float(v))
-        except Exception:
-            pass  # fail-soft
-
-
 def short_test_pipeline(context=None, tracks_to_delete=None):
     """
     Fährt 5 Tests in einem Run. Test 1 ist die Baseline.
-    Persistiert nur die Step-Werte in Scene (optional auch BASE).
+    Persistiert STEP-Werte in Scene (inkl. BASE).
 
     Steps:
-      BASE) alle relevanten Thresholds = 1.0                              -> short_test_track -> (optional) Scene[SCENE_TOTAL_TRACK_LEN_BASE]
+      BASE) alle relevanten Thresholds = 1.0                              -> short_test_track -> Scene[SCENE_TOTAL_TRACK_LEN_BASE]
       1)    rot_thresh_x=0, rot_thresh_y=0                                -> Scene[SCENE_TOTAL_TRACK_LEN_STEP1]
       2)    rot_thresh_x=1, rot_thresh_y=1, scale_min=0, scale_max=0      -> Scene[SCENE_TOTAL_TRACK_LEN_STEP2]
       3)    scale_min=1, scale_max=1, rot_scale_rot=0, rot_scale_scale=0  -> Scene[SCENE_TOTAL_TRACK_LEN_STEP3]
       4)    rot_scale_rot=1, rot_scale_scale=1, perspective_thresh=0      -> Scene[SCENE_TOTAL_TRACK_LEN_STEP4]
-
-    Returns:
-      dict: {"baseline": int, "step1": int, "step2": int, "step3": int, "step4": int}
     """
     scene = (context.scene if context is not None else bpy.context.scene)
-
     results = {"baseline": 0, "step1": 0, "step2": 0, "step3": 0, "step4": 0}
 
     # --- BASELINE (alle = 1.0) ---
@@ -211,10 +215,8 @@ def short_test_pipeline(context=None, tracks_to_delete=None):
             kaiserlich_rot_scale_thresh_scale=1.0,
             kaiserlich_perspective_thresh=1.0,
         )
-        # Falls gewünscht: explizite Löschliste nur im Baseline-Durchlauf
         rb = short_test_track(context=context, tracks_to_delete=tracks_to_delete)
         results["baseline"] = int(float(rb.get("total_track_length", 0.0)))
-        # optional: historisch persistieren
         try:
             scene[SCENE_TOTAL_TRACK_LEN_BASE] = results["baseline"]
         except Exception:
@@ -224,10 +226,7 @@ def short_test_pipeline(context=None, tracks_to_delete=None):
 
     # --- STEP 1 ---
     try:
-        _set_scene_props(scene,
-            kaiserlich_rot_thresh_x=0.0,
-            kaiserlich_rot_thresh_y=0.0,
-        )
+        _set_scene_props(scene, kaiserlich_rot_thresh_x=0.0, kaiserlich_rot_thresh_y=0.0)
         r1 = short_test_track(context=context)
         results["step1"] = int(float(r1.get("total_track_length", 0.0)))
         try:
@@ -239,8 +238,7 @@ def short_test_pipeline(context=None, tracks_to_delete=None):
 
     # --- STEP 2 ---
     try:
-        _set_scene_props(
-            scene,
+        _set_scene_props(scene,
             kaiserlich_rot_thresh_x=1.0,
             kaiserlich_rot_thresh_y=1.0,
             kaiserlich_scale_thresh_min=0.0,
@@ -257,8 +255,7 @@ def short_test_pipeline(context=None, tracks_to_delete=None):
 
     # --- STEP 3 ---
     try:
-        _set_scene_props(
-            scene,
+        _set_scene_props(scene,
             kaiserlich_scale_thresh_min=1.0,
             kaiserlich_scale_thresh_max=1.0,
             kaiserlich_rot_scale_thresh_rot=0.0,
@@ -275,8 +272,7 @@ def short_test_pipeline(context=None, tracks_to_delete=None):
 
     # --- STEP 4 ---
     try:
-        _set_scene_props(
-            scene,
+        _set_scene_props(scene,
             kaiserlich_rot_scale_thresh_rot=1.0,
             kaiserlich_rot_scale_thresh_scale=1.0,
             kaiserlich_perspective_thresh=0.0,
@@ -289,6 +285,7 @@ def short_test_pipeline(context=None, tracks_to_delete=None):
             pass
     except Exception:
         pass
+
     try:
         _set_scene_props(scene, kaiserlich_perspective_thresh=1.0)
     except Exception:
@@ -296,7 +293,6 @@ def short_test_pipeline(context=None, tracks_to_delete=None):
 
     return results
 
-# ---- Comparison Utility -----------------------------------------------------
 
 def _get_scene_int(scene: bpy.types.Scene, key: str) -> Optional[int]:
     """Liest scene[key] oder scene.key und castet robust nach int. None falls nicht vorhanden."""
@@ -311,22 +307,10 @@ def _get_scene_int(scene: bpy.types.Scene, key: str) -> Optional[int]:
     except Exception:
         return None
 
+
 def compare_len_steps_to_total(context=None):
-    """
-    Vergleicht STEP1..STEP4 (int) gegen die BASELINE (int, aus Scene[SCENE_TOTAL_TRACK_LEN_BASE]).
-    Rückgabe liefert Werte und Relationen ('better'|'equal'|'worse'|'missing').
-
-    Returns:
-      dict: {
-        'baseline': Optional[int],
-        'values': {'STEP1': Optional[int], ...},
-        'relations': {'STEP1': 'better|equal|worse|missing', ...},
-        'better_or_equal': [steps...],   # nur die, die >= baseline sind
-        'all_present': bool              # True, wenn baseline und alle steps vorhanden
-      }
-    """
+    """Vergleicht STEP1..STEP4 gegen BASELINE; liefert Relations und ≥Baseline-Liste."""
     scene = (context.scene if context is not None else bpy.context.scene)
-
     base = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_BASE)
     v1 = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_STEP1)
     v2 = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_STEP2)
@@ -359,7 +343,410 @@ def compare_len_steps_to_total(context=None):
         "all_present": all_present,
     }
 
-# ---- Operator --------------------------------------------------------------
+# =============================================================================
+#  NEW: Deep-Test – generische Helfer
+# =============================================================================
+
+def _snapshot_thresholds(scene: bpy.types.Scene) -> Dict[str, float]:
+    keys = (
+        "kaiserlich_rot_thresh_x",
+        "kaiserlich_rot_thresh_y",
+        "kaiserlich_scale_thresh_min",
+        "kaiserlich_scale_thresh_max",
+        "kaiserlich_rot_scale_thresh_rot",
+        "kaiserlich_rot_scale_thresh_scale",
+        "kaiserlich_perspective_thresh",
+    )
+    snap = {}
+    for k in keys:
+        try:
+            snap[k] = float(getattr(scene, k))
+        except Exception:
+            pass
+    return snap
+
+
+def _restore_thresholds(scene: bpy.types.Scene, snap: Dict[str, float]) -> None:
+    for k, v in snap.items():
+        try:
+            if hasattr(scene, k):
+                setattr(scene, k, float(v))
+        except Exception:
+            pass
+
+
+def _run_grid(
+    context: Optional[bpy.types.Context],
+    apply_params_fn,                # (scene, cfg_dict) -> None   (setzt die relevanten Thresholds)
+    grid: List[Dict[str, float]],   # Liste an Konfigurationen mit expliziten Threshold-Schlüsseln
+    tracks_to_delete: Optional[List[str]] = None,
+    persist_best_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Führt für jede Konfiguration im Grid einen short_test_track aus.
+    Rückgabe enthält alle Messungen sowie den Best-Pick.
+    """
+    scene = (context.scene if context is not None else bpy.context.scene)
+    snap = _snapshot_thresholds(scene)
+
+    measurements: List[Dict[str, Any]] = []
+    best_len: int = -1
+    best_cfg: Dict[str, float] = {}
+    best_idx: int = -1
+
+    try:
+        for i, cfg in enumerate(grid):
+            # Set Konfig
+            try:
+                apply_params_fn(scene, cfg)
+            except Exception as e:
+                measurements.append({
+                    "index": i,
+                    "params": cfg,
+                    "total_track_length": 0,
+                    "error": f"apply_params_failed: {e}",
+                })
+                continue
+
+            # Run
+            try:
+                res = short_test_track(context=context, tracks_to_delete=tracks_to_delete)
+                ttl = int(float(res.get("total_track_length", 0.0)))
+            except Exception as e:
+                ttl = 0
+                res = {"error": f"short_test_failed: {e}"}
+
+            measurements.append({
+                "index": i,
+                "params": cfg,
+                "total_track_length": ttl,
+                "meta": res,
+            })
+
+            # Best-of
+            if ttl > best_len:
+                best_len = ttl
+                best_cfg = cfg
+                best_idx = i
+
+        # Optional persist best
+        if persist_best_key and best_len >= 0:
+            try:
+                scene[persist_best_key] = int(best_len)
+            except Exception:
+                pass
+
+    finally:
+        # Restore ursprüngliche Thresholds
+        _restore_thresholds(scene, snap)
+
+    return {
+        "measurements": measurements,
+        "best": {
+            "index": best_idx,
+            "params": best_cfg,
+            "total_track_length": best_len,
+        }
+    }
+
+# =============================================================================
+#  NEW: Deep-Test – spezialisierte Utilities
+# =============================================================================
+
+def deep_test_rot_xy(
+    context: Optional[bpy.types.Context] = None,
+    grid: Optional[List[Tuple[float, float]]] = None,
+    tracks_to_delete: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Testet Paare für (kaiserlich_rot_thresh_x, kaiserlich_rot_thresh_y).
+    Default-Grid ist konservativ.
+    """
+    if grid is None:
+        grid = [
+            (0.0, 0.0),
+            (0.01, 0.01),
+            (0.05, 0.05),
+            (0.1, 0.1),
+            (0.2, 0.2),
+            (0.5, 0.5),
+        ]
+
+    def _apply(scene, cfg):
+        _set_scene_props(scene,
+            kaiserlich_rot_thresh_x=cfg["kaiserlich_rot_thresh_x"],
+            kaiserlich_rot_thresh_y=cfg["kaiserlich_rot_thresh_y"],
+        )
+
+    grid_dicts = [{"kaiserlich_rot_thresh_x": x, "kaiserlich_rot_thresh_y": y} for (x, y) in grid]
+    return _run_grid(context, _apply, grid_dicts, tracks_to_delete, SCENE_DEEPTEST_ROT_XY_BEST)
+
+
+def deep_test_scale_min_max(
+    context: Optional[bpy.types.Context] = None,
+    grid: Optional[List[Tuple[float, float]]] = None,
+    tracks_to_delete: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Testet Paare für (kaiserlich_scale_thresh_min, kaiserlich_scale_thresh_max).
+    """
+    if grid is None:
+        grid = [
+            (0.0, 0.0),
+            (0.005, 0.005),
+            (0.01, 0.01),
+            (0.05, 0.05),
+            (0.1, 0.1),
+            (0.2, 0.2),
+        ]
+
+    def _apply(scene, cfg):
+        _set_scene_props(scene,
+            kaiserlich_scale_thresh_min=cfg["kaiserlich_scale_thresh_min"],
+            kaiserlich_scale_thresh_max=cfg["kaiserlich_scale_thresh_max"],
+        )
+
+    grid_dicts = [{"kaiserlich_scale_thresh_min": mn, "kaiserlich_scale_thresh_max": mx} for (mn, mx) in grid]
+    return _run_grid(context, _apply, grid_dicts, tracks_to_delete, SCENE_DEEPTEST_SCALE_BEST)
+
+
+def deep_test_rot_scale_pair(
+    context: Optional[bpy.types.Context] = None,
+    grid: Optional[List[Tuple[float, float]]] = None,
+    tracks_to_delete: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Testet Paare für (kaiserlich_rot_scale_thresh_rot, kaiserlich_rot_scale_thresh_scale).
+    """
+    if grid is None:
+        grid = [
+            (0.0, 0.0),
+            (0.01, 0.01),
+            (0.05, 0.05),
+            (0.1, 0.1),
+            (0.2, 0.2),
+        ]
+
+    def _apply(scene, cfg):
+        _set_scene_props(scene,
+            kaiserlich_rot_scale_thresh_rot=cfg["kaiserlich_rot_scale_thresh_rot"],
+            kaiserlich_rot_scale_thresh_scale=cfg["kaiserlich_rot_scale_thresh_scale"],
+        )
+
+    grid_dicts = [{"kaiserlich_rot_scale_thresh_rot": r, "kaiserlich_rot_scale_thresh_scale": s} for (r, s) in grid]
+    return _run_grid(context, _apply, grid_dicts, tracks_to_delete, SCENE_DEEPTEST_ROT_SCALE_BEST)
+
+
+def deep_test_perspective(
+    context: Optional[bpy.types.Context] = None,
+    values: Optional[List[float]] = None,
+    tracks_to_delete: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Testet Einzelwerte für (kaiserlich_perspective_thresh).
+    """
+    if values is None:
+        values = [0.0, 0.005, 0.01, 0.02, 0.05, 0.1]
+
+    def _apply(scene, cfg):
+        _set_scene_props(scene, kaiserlich_perspective_thresh=cfg["kaiserlich_perspective_thresh"])
+
+    grid_dicts = [{"kaiserlich_perspective_thresh": v} for v in values]
+    return _run_grid(context, _apply, grid_dicts, tracks_to_delete, SCENE_DEEPTEST_PERSPECTIVE_BEST)
+
+# =============================================================================
+#  NEW: Reduction Search – generische Downward-Reduce-Algorithmen
+# =============================================================================
+
+@dataclass
+class ReduceConfig:
+    # Startkonfiguration
+    start_single: float = 1.0
+    start_pair: Tuple[float, float] = (1.0, 1.0)
+
+    # Ziel & Grenzen
+    target_len: int = 0                # Tracklänge, ab der "erfolg" gilt (≥)
+    min_threshold: float = 1e-8        # Untergrenze für Threshold-Werte
+
+    # Reduktionsfaktoren
+    sf0: float = 140.0                 # initialer Reduktionsfaktor (Dein Beispiel)
+    sf_halve: float = 2.0              # Halbierung pro Stufe
+
+    # Limits
+    max_outer_iters: int = 64          # max Stufen (sf-Reduktionen)
+    max_inner_iters: int = 512         # max Versuche pro sf
+
+
+def _is_success(measured_len: int, target_len: int) -> bool:
+    return measured_len >= target_len
+
+
+def reduce_threshold_single(
+    context: Optional[bpy.types.Context],
+    prop_name: str,                    # z.B. "kaiserlich_perspective_thresh"
+    cfg: ReduceConfig,
+    tracks_to_delete: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Downward-Reduce für einen einzelnen Threshold:
+      - pro Stufe sf: candidate = start/sf, dann /sf, /sf ...
+      - Erfolg (len ≥ target) → Startpunkt = candidate, sf halbieren
+      - Untergrenze → sf halbieren
+      - Ende, wenn sf < 1 oder Limits erreicht
+    """
+    scene = (context.scene if context is not None else bpy.context.scene)
+    snap = _snapshot_thresholds(scene)
+
+    logs: List[Dict[str, Any]] = []
+    best_val: float = cfg.start_single
+    best_len: int = -1
+
+    try:
+        _set_scene_props(scene, **{prop_name: cfg.start_single})
+
+        sf = float(cfg.sf0)
+        outer = 0
+
+        while sf >= 1.0 and outer < cfg.max_outer_iters:
+            outer += 1
+
+            # Ausgangswert dieser Stufe
+            start_val = float(getattr(scene, prop_name))
+            candidate = start_val / sf
+
+            inner = 0
+            while inner < cfg.max_inner_iters:
+                inner += 1
+
+                if candidate < cfg.min_threshold:
+                    logs.append({"sf": sf, "start": start_val, "candidate": candidate, "status": "untergrenze erreicht"})
+                    break
+
+                _set_scene_props(scene, **{prop_name: candidate})
+                res = short_test_track(context=context, tracks_to_delete=tracks_to_delete)
+                ttl = int(float(res.get("total_track_length", 0.0)))
+
+                status = "weiter"
+                if _is_success(ttl, cfg.target_len):
+                    status = "erfolg"
+                    if ttl > best_len:
+                        best_len = ttl
+                        best_val = candidate
+                    # Startpunkt für nächste Stufe aktualisieren
+                    start_val = candidate
+                    logs.append({"sf": sf, "start": start_val, "candidate": candidate, "len": ttl, "status": status})
+                    break
+                else:
+                    logs.append({"sf": sf, "start": start_val, "candidate": candidate, "len": ttl, "status": status})
+                    candidate = candidate / sf  # stärker reduzieren
+
+            sf = sf / cfg.sf_halve
+
+        logs.append({"sf": sf, "start": float(getattr(scene, prop_name)), "candidate": None,
+                     "status": ("finished" if sf < 1.0 else "abgebrochen/max_iters")})
+
+    finally:
+        _restore_thresholds(scene, snap)
+
+    return {"prop": prop_name, "best": {"value": best_val, "total_track_length": best_len}, "log": logs}
+
+
+def reduce_threshold_pair(
+    context: Optional[bpy.types.Context],
+    prop_a: str, prop_b: str,          # z.B. ("kaiserlich_rot_thresh_x", "kaiserlich_rot_thresh_y")
+    cfg: ReduceConfig,
+    coupling: str = "uniform",         # "uniform": beide gleich skalieren
+    tracks_to_delete: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Downward-Reduce für ein Threshold-Paar (standardmäßig uniform):
+      - pro Stufe sf: (a/sf, b/sf) dann erneut /sf ...
+      - Erfolg → Startpunkt = Kandidat, sf halbieren
+      - Untergrenze → sf halbieren
+    """
+    scene = (context.scene if context is not None else bpy.context.scene)
+    snap = _snapshot_thresholds(scene)
+
+    logs: List[Dict[str, Any]] = []
+    best_pair: Tuple[float, float] = tuple(cfg.start_pair)
+    best_len: int = -1
+
+    try:
+        _set_scene_props(scene, **{prop_a: cfg.start_pair[0], prop_b: cfg.start_pair[1]})
+
+        sf = float(cfg.sf0)
+        outer = 0
+
+        while sf >= 1.0 and outer < cfg.max_outer_iters:
+            outer += 1
+
+            a0 = float(getattr(scene, prop_a))
+            b0 = float(getattr(scene, prop_b))
+
+            cand_a = a0 / sf
+            cand_b = b0 / sf
+            if coupling != "uniform":
+                # Hook für spätere asymmetrische Strategien
+                cand_a = a0 / sf
+                cand_b = b0 / sf
+
+            inner = 0
+            while inner < cfg.max_inner_iters:
+                inner += 1
+
+                if cand_a < cfg.min_threshold and cand_b < cfg.min_threshold:
+                    logs.append({"sf": sf, "start": (a0, b0), "candidate": (cand_a, cand_b), "status": "untergrenze erreicht"})
+                    break
+
+                _set_scene_props(scene, **{prop_a: cand_a, prop_b: cand_b})
+                res = short_test_track(context=context, tracks_to_delete=tracks_to_delete)
+                ttl = int(float(res.get("total_track_length", 0.0)))
+
+                status = "weiter"
+                if _is_success(ttl, cfg.target_len):
+                    status = "erfolg"
+                    if ttl > best_len:
+                        best_len = ttl
+                        best_pair = (cand_a, cand_b)
+                    a0, b0 = cand_a, cand_b
+                    logs.append({"sf": sf, "start": (a0, b0), "candidate": (cand_a, cand_b), "len": ttl, "status": status})
+                    break
+                else:
+                    logs.append({"sf": sf, "start": (a0, b0), "candidate": (cand_a, cand_b), "len": ttl, "status": status})
+                    cand_a = cand_a / sf
+                    cand_b = cand_b / sf
+
+            sf = sf / cfg.sf_halve
+
+        logs.append({"sf": sf, "start": (float(getattr(scene, prop_a)), float(getattr(scene, prop_b))),
+                     "status": ("finished" if sf < 1.0 else "abgebrochen/max_iters")})
+
+    finally:
+        _restore_thresholds(scene, snap)
+
+    return {"props": (prop_a, prop_b), "best": {"values": best_pair, "total_track_length": best_len}, "log": logs}
+
+# ---- Bequeme Wrapper für Deine 4 Gruppen -----------------------------------
+
+def reduce_rot_xy(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), **kw) -> Dict[str, Any]:
+    cfg = ReduceConfig(target_len=target_len, start_pair=start, **kw)
+    return reduce_threshold_pair(context, "kaiserlich_rot_thresh_x", "kaiserlich_rot_thresh_y", cfg)
+
+def reduce_scale_min_max(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), **kw) -> Dict[str, Any]:
+    cfg = ReduceConfig(target_len=target_len, start_pair=start, **kw)
+    return reduce_threshold_pair(context, "kaiserlich_scale_thresh_min", "kaiserlich_scale_thresh_max", cfg)
+
+def reduce_rot_scale_pair(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), **kw) -> Dict[str, Any]:
+    cfg = ReduceConfig(target_len=target_len, start_pair=start, **kw)
+    return reduce_threshold_pair(context, "kaiserlich_rot_scale_thresh_rot", "kaiserlich_rot_scale_thresh_scale", cfg)
+
+def reduce_perspective(context, target_len: int, start: float = 1.0, **kw) -> Dict[str, Any]:
+    cfg = ReduceConfig(target_len=target_len, start_single=start, **kw)
+    return reduce_threshold_single(context, "kaiserlich_perspective_thresh", cfg)
+
+# =============================================================================
+#  Operator (bestehend)
+# =============================================================================
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Auto-calibrate: setzt alle Ziel-Parameter auf 1.0 und führt danach Detect-Adapt & Tracking aus."""
@@ -375,11 +762,10 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            # UI-Feedback
             set_all_thresholds_to_one(context)
             self.report({'INFO'}, "KaiserlichTracker: Thresholds => 1.0")
-            
-            # ---- Ergänzend: Short Test Pipeline fahren und Ergebnisse persistieren ----
+
+            # Short-Test-Pipeline + Persistenz
             try:
                 names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
                 pipeline_results = short_test_pipeline(context=context, tracks_to_delete=names)
@@ -396,7 +782,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             except Exception as e:
                 self.report({'ERROR'}, f"Short-Test-Pipeline fehlgeschlagen: {e}")
 
-            # --- NEU: Ergänzend Vergleich STEP1..STEP4 vs. Baseline triggern ---
+            # Vergleich
             try:
                 cmp_res = compare_len_steps_to_total(context)
                 base = cmp_res.get("baseline")
@@ -412,6 +798,21 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                      f"STEP4={vals.get('STEP4')}({rels.get('STEP4')})")
                 )
                 self.report({'INFO'}, "≥ Baseline: " + (", ".join(ge_list) if ge_list else "none"))
+
+                # Optionale Auto-Trigger (auskommentiert lassen, falls manuell gesteuert werden soll):
+                # if "STEP1" in ge_list:
+                #     r = reduce_rot_xy(context, target_len=max(base or 0, vals.get("STEP1") or 0))
+                #     self.report({'INFO'}, f"Reduce RotXY best={r['best']}")
+                # if "STEP2" in ge_list:
+                #     r = reduce_scale_min_max(context, target_len=max(base or 0, vals.get("STEP2") or 0))
+                #     self.report({'INFO'}, f"Reduce Scale best={r['best']}")
+                # if "STEP3" in ge_list:
+                #     r = reduce_rot_scale_pair(context, target_len=max(base or 0, vals.get("STEP3") or 0))
+                #     self.report({'INFO'}, f"Reduce Rot+Scale best={r['best']}")
+                # if "STEP4" in ge_list:
+                #     r = reduce_perspective(context, target_len=max(base or 0, vals.get("STEP4") or 0))
+                #     self.report({'INFO'}, f"Reduce Perspective best={r['best']}")
+
             except Exception as e:
                 self.report({'ERROR'}, f"Vergleich (STEPs vs. Baseline) fehlgeschlagen: {e}")
 
