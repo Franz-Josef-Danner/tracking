@@ -35,9 +35,10 @@ def set_all_thresholds_to_one(context: bpy.types.Context) -> None:
 # In deiner bestehenden Operator-Klasse einfach im execute() aufrufen:
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
-    bl_idname = "kaiserlichtracker.auto_calibrate"
-    bl_label = "Auto Calibrate"
-    bl_options = {'REGISTER', 'UNDO'}
+    """Auto-calibrate: initialisiert alle Ziel-Parameter auf 1 und führt danach Detect-Adapt und Tracking aus."""
+    bl_idname = "kaiserlich_tracker.auto_calibrate"
+    bl_label = "KAISERLICHTRACKER — Auto Calibrate"
+    bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
         set_all_thresholds_to_one(context)
