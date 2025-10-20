@@ -137,20 +137,7 @@ def short_test_track(context=None, tracks_to_delete=None):
             except Exception:
                 pass
 
-        # 6) NEU: neu erzeugte Tracks löschen (Delta)
-        try:
-            post_names: Set[str] = _get_current_track_names(context)
-            new_names = sorted(list(post_names - pre_names))
-            if new_names:
-                try:
-                    (delete_tracks_by_names(context, new_names) if context is not None else delete_tracks_by_names(new_names))
-                except TypeError:
-                    delete_tracks_by_names(new_names)
-                deleted_new = new_names
-        except Exception:
-            pass
-
-        # 7) FINAL: Gesamtlänge nach allen Löschungen bestimmen UND in Scene speichern
+        # 6) FINAL: Gesamtlänge VOR dem Delta-Cleanup bestimmen UND in Scene speichern
         try:
             if context is not None:
                 try:
@@ -166,15 +153,29 @@ def short_test_track(context=None, tracks_to_delete=None):
             scene = context.scene if context is not None else bpy.context.scene
             scene[SCENE_TOTAL_TRACK_LEN_KEY] = final_total_len
         except Exception:
-            # Kein Hard-Fail, falls Scene nicht schreibbar ist
+            pass  # Szene nicht schreibbar -> kein Hard-Fail
+
+        # 7) NEU: neu erzeugte Tracks löschen (Delta) – Szene aufräumen NACH Persistierung
+        try:
+            post_names: Set[str] = _get_current_track_names(context)
+            new_names = sorted(list(post_names - pre_names))
+            if new_names:
+                try:
+                    (delete_tracks_by_names(context, new_names) if context is not None
+                     else delete_tracks_by_names(new_names))
+                except TypeError:
+                    delete_tracks_by_names(new_names)
+                deleted_new = new_names
+        except Exception:
             pass
 
     return {
-        "total_track_length": final_total_len,   # FINALER Wert (nach Cleanup)
+        "total_track_length": final_total_len,   # Wert VOR Cleanup (relevant für deine Messung)
         "deleted_explicit": deleted_explicit,
         "deleted_new": deleted_new,
         "start_frame": start_frame,
     }
+
 
 def _set_scene_props(scene: bpy.types.Scene, **kwargs) -> None:
     """Best-effort Setter für Scene-Properties (float-cast, fail-soft)."""
