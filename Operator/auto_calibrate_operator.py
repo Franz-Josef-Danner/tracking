@@ -108,7 +108,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     )
 
     def execute(self, context):
-       try: 
+        try: 
             set_all_thresholds_to_one(context)
             self.report({'INFO'}, "KaiserlichTracker: Thresholds => 1.0")
     
