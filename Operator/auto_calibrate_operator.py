@@ -109,20 +109,21 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     )
 
     def execute(self, context):
-        set_all_thresholds_to_one(context)
-        self.report({'INFO'}, "KaiserlichTracker: Thresholds => 1.0")
-
-        names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
-        result = auto_calibrate_pipeline(context=context, tracks_to_delete=names)
-
-        self.report({'INFO'}, f"Auto-Calibrate abgeschlossen. Gesamte Track-Länge: {result.get('total_track_length')}")
-        if result.get("deleted"):
-            self.report({'INFO'}, f"Gelöschte Tracks: {', '.join(result['deleted'])}")
-        return {'FINISHED'}
-
-    except Exception as e:
-        self.report({'ERROR'}, f"Auto-Calibrate fehlgeschlagen: {e}")
-        return {'CANCELLED'}
+       try: 
+            set_all_thresholds_to_one(context)
+            self.report({'INFO'}, "KaiserlichTracker: Thresholds => 1.0")
+    
+            names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
+            result = auto_calibrate_pipeline(context=context, tracks_to_delete=names)
+    
+            self.report({'INFO'}, f"Auto-Calibrate abgeschlossen. Gesamte Track-Länge: {result.get('total_track_length')}")
+            if result.get("deleted"):
+                self.report({'INFO'}, f"Gelöschte Tracks: {', '.join(result['deleted'])}")
+            return {'FINISHED'}
+    
+        except Exception as e:
+            self.report({'ERROR'}, f"Auto-Calibrate fehlgeschlagen: {e}")
+            return {'CANCELLED'}
 
 
 # Optional: Registrierung
