@@ -8,7 +8,7 @@ from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.delete import delete_tracks_by_names
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
 
-SCENE_TOTAL_TRACK_LEN_KEY = "kaiserlich_track_length_total"
+SCENE_TOTAL_TRACK_LEN_BASE  = "kaiserlich_len_baseline_00"
 SCENE_TOTAL_TRACK_LEN_STEP1 = "kaiserlich_len_rot_xy_00"
 SCENE_TOTAL_TRACK_LEN_STEP2 = "kaiserlich_len_scale_00"
 SCENE_TOTAL_TRACK_LEN_STEP3 = "kaiserlich_len_rot_scale_00"
@@ -87,7 +87,7 @@ def short_test_track(context=None, tracks_to_delete=None):
       4) delete_tracks_by_names (explizit/optional)
       5) reset_to_frame(start)
       6) delete newly created tracks (Delta)
-      7) FINAL: get_total_track_length und in Scene speichern
+      7) FINAL: get_total_track_length (nur zurückgeben, keine globale Szene-Length mehr)
     Returns:
       dict: {"total_track_length": float, "deleted_explicit": [str], "deleted_new": [str], "start_frame": int|None}
     """
@@ -137,7 +137,7 @@ def short_test_track(context=None, tracks_to_delete=None):
             except Exception:
                 pass
 
-        # 6) FINAL: Gesamtlänge VOR dem Delta-Cleanup bestimmen UND in Scene speichern
+        # 6) FINAL: Gesamtlänge (VOR Delta-Cleanup) bestimmen
         try:
             if context is not None:
                 try:
@@ -149,13 +149,7 @@ def short_test_track(context=None, tracks_to_delete=None):
         except Exception:
             final_total_len = 0.0  # fail-soft
 
-        try:
-            scene = context.scene if context is not None else bpy.context.scene
-            scene[SCENE_TOTAL_TRACK_LEN_KEY] = final_total_len
-        except Exception:
-            pass  # Szene nicht schreibbar -> kein Hard-Fail
-
-        # 7) NEU: neu erzeugte Tracks löschen (Delta) – Szene aufräumen NACH Persistierung
+        # 7) NEU: neu erzeugte Tracks löschen (Delta) – Szene aufräumen
         try:
             post_names: Set[str] = _get_current_track_names(context)
             new_names = sorted(list(post_names - pre_names))
@@ -170,7 +164,7 @@ def short_test_track(context=None, tracks_to_delete=None):
             pass
 
     return {
-        "total_track_length": final_total_len,   # Wert VOR Cleanup (relevant für deine Messung)
+        "total_track_length": final_total_len,   # Wert VOR Cleanup
         "deleted_explicit": deleted_explicit,
         "deleted_new": deleted_new,
         "start_frame": start_frame,
@@ -189,31 +183,52 @@ def _set_scene_props(scene: bpy.types.Scene, **kwargs) -> None:
 
 def short_test_pipeline(context=None):
     """
-    Führt vier kurze Testläufe mit definierten Threshold-Sets aus und
-    persistiert jeweils die finale Gesamtlänge in neuen Scene-Variablen.
+    Fährt 5 Tests in einem Run. Test 1 ist die Baseline.
+    Persistiert nur die Step-Werte in Scene (optional auch BASE).
 
-    Schritte:
-      1) rot_thresh_x=0, rot_thresh_y=0                                  -> short_test_track -> Scene[SCENE_TOTAL_TRACK_LEN_STEP1]
-      2) rot_thresh_x=1, rot_thresh_y=1, scale_min=0, scale_max=0        -> short_test_track -> Scene[SCENE_TOTAL_TRACK_LEN_STEP2]
-      3) scale_min=1, scale_max=1, rot_scale_rot=0, rot_scale_scale=0    -> short_test_track -> Scene[SCENE_TOTAL_TRACK_LEN_STEP3]
-      4) rot_scale_rot=1, rot_scale_scale=1, perspective_thresh=0        -> short_test_track -> Scene[SCENE_TOTAL_TRACK_LEN_STEP4]
+    Steps:
+      BASE) alle relevanten Thresholds = 1.0                              -> short_test_track -> (optional) Scene[SCENE_TOTAL_TRACK_LEN_BASE]
+      1)    rot_thresh_x=0, rot_thresh_y=0                                -> Scene[SCENE_TOTAL_TRACK_LEN_STEP1]
+      2)    rot_thresh_x=1, rot_thresh_y=1, scale_min=0, scale_max=0      -> Scene[SCENE_TOTAL_TRACK_LEN_STEP2]
+      3)    scale_min=1, scale_max=1, rot_scale_rot=0, rot_scale_scale=0  -> Scene[SCENE_TOTAL_TRACK_LEN_STEP3]
+      4)    rot_scale_rot=1, rot_scale_scale=1, perspective_thresh=0      -> Scene[SCENE_TOTAL_TRACK_LEN_STEP4]
 
     Returns:
-      dict: {"step1": float, "step2": float, "step3": float, "step4": float}
+      dict: {"baseline": int, "step1": int, "step2": int, "step3": int, "step4": int}
     """
     scene = (context.scene if context is not None else bpy.context.scene)
 
-    results = {"step1": 0.0, "step2": 0.0, "step3": 0.0, "step4": 0.0}
+    results = {"baseline": 0, "step1": 0, "step2": 0, "step3": 0, "step4": 0}
+
+    # --- BASELINE (alle = 1.0) ---
+    try:
+        _set_scene_props(scene,
+            kaiserlich_rot_thresh_x=1.0,
+            kaiserlich_rot_thresh_y=1.0,
+            kaiserlich_scale_thresh_min=1.0,
+            kaiserlich_scale_thresh_max=1.0,
+            kaiserlich_rot_scale_thresh_rot=1.0,
+            kaiserlich_rot_scale_thresh_scale=1.0,
+            kaiserlich_perspective_thresh=1.0,
+        )
+        rb = short_test_track(context=context)
+        results["baseline"] = int(float(rb.get("total_track_length", 0.0)))
+        # optional: historisch persistieren
+        try:
+            scene[SCENE_TOTAL_TRACK_LEN_BASE] = results["baseline"]
+        except Exception:
+            pass
+    except Exception:
+        pass
 
     # --- STEP 1 ---
     try:
-        _set_scene_props(
-            scene,
+        _set_scene_props(scene,
             kaiserlich_rot_thresh_x=0.0,
             kaiserlich_rot_thresh_y=0.0,
         )
         r1 = short_test_track(context=context)
-        results["step1"] = float(r1.get("total_track_length", 0.0))
+        results["step1"] = int(float(r1.get("total_track_length", 0.0)))
         try:
             scene[SCENE_TOTAL_TRACK_LEN_STEP1] = results["step1"]
         except Exception:
@@ -231,7 +246,7 @@ def short_test_pipeline(context=None):
             kaiserlich_scale_thresh_max=0.0,
         )
         r2 = short_test_track(context=context)
-        results["step2"] = float(r2.get("total_track_length", 0.0))
+        results["step2"] = int(float(r2.get("total_track_length", 0.0)))
         try:
             scene[SCENE_TOTAL_TRACK_LEN_STEP2] = results["step2"]
         except Exception:
@@ -249,7 +264,7 @@ def short_test_pipeline(context=None):
             kaiserlich_rot_scale_thresh_scale=0.0,
         )
         r3 = short_test_track(context=context)
-        results["step3"] = float(r3.get("total_track_length", 0.0))
+        results["step3"] = int(float(r3.get("total_track_length", 0.0)))
         try:
             scene[SCENE_TOTAL_TRACK_LEN_STEP3] = results["step3"]
         except Exception:
@@ -266,7 +281,7 @@ def short_test_pipeline(context=None):
             kaiserlich_perspective_thresh=0.0,
         )
         r4 = short_test_track(context=context)
-        results["step4"] = float(r4.get("total_track_length", 0.0))
+        results["step4"] = int(float(r4.get("total_track_length", 0.0)))
         try:
             scene[SCENE_TOTAL_TRACK_LEN_STEP4] = results["step4"]
         except Exception:
@@ -274,13 +289,10 @@ def short_test_pipeline(context=None):
     except Exception:
         pass
     try:
-        _set_scene_props(
-            scene,
-            kaiserlich_perspective_thresh=1.0,
-        )
+        _set_scene_props(scene, kaiserlich_perspective_thresh=1.0)
     except Exception:
         pass
-        
+
     return results
 
 # ---- Comparison Utility -----------------------------------------------------
@@ -294,14 +306,13 @@ def _get_scene_int(scene: bpy.types.Scene, key: str) -> Optional[int]:
             val = getattr(scene, key)
         else:
             return None
-        # Viele Längen werden als float persistiert -> erst float, dann int
         return int(float(val))
     except Exception:
         return None
 
 def compare_len_steps_to_total(context=None):
     """
-    Vergleicht STEP1..STEP4 (int) gegen SCENE_TOTAL_TRACK_LEN_KEY (int).
+    Vergleicht STEP1..STEP4 (int) gegen die BASELINE (int, aus Scene[SCENE_TOTAL_TRACK_LEN_BASE]).
     Rückgabe liefert Werte und Relationen ('better'|'equal'|'worse'|'missing').
 
     Returns:
@@ -315,7 +326,7 @@ def compare_len_steps_to_total(context=None):
     """
     scene = (context.scene if context is not None else bpy.context.scene)
 
-    base = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_KEY)
+    base = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_BASE)
     v1 = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_STEP1)
     v2 = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_STEP2)
     v3 = _get_scene_int(scene, SCENE_TOTAL_TRACK_LEN_STEP3)
@@ -371,26 +382,30 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             result = short_test_track(context=context, tracks_to_delete=names)
 
             final_len = result.get('total_track_length', 0.0)
-            self.report({'INFO'}, f"Auto-Calibrate finalisiert. Track-Länge gesamt (persistiert): {final_len}")
+            self.report({'INFO'}, f"Auto-Calibrate finalisiert. Track-Länge gesamt: {final_len}")
             if result.get("deleted_explicit"):
                 self.report({'INFO'}, f"Explizit gelöschte Tracks: {', '.join(result['deleted_explicit'])}")
             if result.get("deleted_new"):
                 self.report({'INFO'}, f"Neu erzeugte Tracks entfernt: {', '.join(result['deleted_new'])}")
             if result.get("start_frame") is not None:
                 self.report({'INFO'}, f"Playhead zurückgesetzt auf Frame {result['start_frame']}")
+
             # ---- Ergänzend: Short Test Pipeline fahren und Ergebnisse persistieren ----
             try:
                 pipeline_results = short_test_pipeline(context=context)
+                bl = pipeline_results.get('baseline', 0)
+                s1 = pipeline_results.get('step1', 0)
+                s2 = pipeline_results.get('step2', 0)
+                s3 = pipeline_results.get('step3', 0)
+                s4 = pipeline_results.get('step4', 0)
                 self.report(
                     {'INFO'},
-                    ("Short-Test-Pipeline abgeschlossen | "
-                     f"Step1={pipeline_results.get('step1', 0.0)} "
-                     f"Step2={pipeline_results.get('step2', 0.0)} "
-                     f"Step3={pipeline_results.get('step3', 0.0)} "
-                     f"Step4={pipeline_results.get('step4', 0.0)}")
+                    (f"Short-Test-Pipeline abgeschlossen | "
+                     f"Baseline={bl} | Step1={s1} Step2={s2} Step3={s3} Step4={s4}")
                 )
             except Exception as e:
                 self.report({'ERROR'}, f"Short-Test-Pipeline fehlgeschlagen: {e}")
+
             # --- NEU: Ergänzend Vergleich STEP1..STEP4 vs. Baseline triggern ---
             try:
                 cmp_res = compare_len_steps_to_total(context)
@@ -414,7 +429,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         except Exception as e:
             self.report({'ERROR'}, f"Auto-Calibrate fehlgeschlagen: {e}")
-            
             return {'CANCELLED'}
 
 
