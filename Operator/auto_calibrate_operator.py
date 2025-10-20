@@ -112,11 +112,6 @@ def auto_calibrate_pipeline(context=None, tracks_to_delete=None):
                 pass
 # ---- Operator ------------------------------------------------
 
-import bpy
-
-from ..Utility.auto_calibrate import auto_calibrate_pipeline, set_all_thresholds_to_one
-
-
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Auto-calibrate: initialisiert alle Ziel-Parameter auf 1 und führt danach Detect-Adapt und Tracking aus."""
     bl_idname = "kaiserlich_tracker.auto_calibrate"
