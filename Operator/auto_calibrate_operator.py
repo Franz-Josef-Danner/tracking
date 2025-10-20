@@ -8,6 +8,7 @@ from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.delete import delete_tracks_by_names
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
 
+SCENE_TOTAL_TRACK_LEN_KEY = "kaiserlich_track_length_total"
 
 # ---- Utility ---------------------------------------------------------------
 
@@ -45,10 +46,6 @@ def _call_reset_to_frame(frame, context=None):
 
 
 def _get_active_clip(context: Optional[bpy.types.Context]) -> Optional[bpy.types.MovieClip]:
-    """
-    Best effort: aktive Clip-Quelle priorisieren; fällt andernfalls auf ersten verfügbaren Clip zurück.
-    """
-    # 1) Kontext-Clip (Movie Clip Editor)
     try:
         if context and getattr(context, "space_data", None):
             clip = getattr(context.space_data, "clip", None)
@@ -56,14 +53,13 @@ def _get_active_clip(context: Optional[bpy.types.Context]) -> Optional[bpy.types
                 return clip
     except Exception:
         pass
-    # 2) Fallback: erster MovieClip in der Datei
     try:
         return bpy.data.movieclips[0] if bpy.data.movieclips else None
     except Exception:
         return None
 
 
-def _list_track_names_from_clip(clip: Optional[bpy.types.MovieClip]) -> List[str]:
+def _list_track_names_from_clip(clip: Optional[bpy.types.MovieClip]):
     if not clip:
         return []
     try:
@@ -85,17 +81,19 @@ def auto_calibrate_pipeline(context=None, tracks_to_delete=None):
       2) bpy.ops.kaiserlich_tracker.detect_adapt
       2.5) get_start_frame
       3) bpy.ops.kaiserlich_tracker.track_cycle
-      4) get_total_track_length
-      5) delete_tracks_by_names (optional, explizit übergeben)
-      6) reset_to_frame(start)
-      7) delete newly created tracks (Delta)  <-- NEU & am Ende
+      4) delete_tracks_by_names (explizit/optional)
+      5) reset_to_frame(start)
+      6) delete newly created tracks (Delta)
+      7) FINAL: get_total_track_length und in Scene speichern
+    Returns:
+      dict: {"total_track_length": float, "deleted_explicit": [str], "deleted_new": [str], "start_frame": int|None}
     """
     start_frame = None
-    total_len = 0
     deleted_explicit: List[str] = []
     deleted_new: List[str] = []
+    final_total_len: float = 0.0
 
-    # Snapshot der bestehenden Tracknamen VOR dem Tracking
+    # Vorher-Stand der Tracks für Delta-Ermittlung
     pre_names: Set[str] = _get_current_track_names(context)
 
     try:
@@ -117,7 +115,7 @@ def auto_calibrate_pipeline(context=None, tracks_to_delete=None):
         if 'CANCELLED' in result:
             raise RuntimeError("Detect-Adapt wurde abgebrochen.")
 
-        # 2.5) Start-Frame sichern
+        # 2.5) Start-Frame
         start_frame = _call_get_start_frame(context)
 
         # 3) Track Cycle
@@ -125,13 +123,7 @@ def auto_calibrate_pipeline(context=None, tracks_to_delete=None):
         if 'CANCELLED' in result:
             raise RuntimeError("Tracking Cycle wurde abgebrochen.")
 
-        # 4) Track-Länge
-        try:
-            total_len = get_total_track_length(context) if context is not None else get_total_track_length()
-        except TypeError:
-            total_len = get_total_track_length()
-
-        # 5) Optionales Cleanup (explizite Namen)
+        # 4) Optional: explizit angegebene Tracks löschen
         if tracks_to_delete:
             names = [n.strip() for n in tracks_to_delete if n and n.strip()]
             if names:
@@ -141,37 +133,52 @@ def auto_calibrate_pipeline(context=None, tracks_to_delete=None):
                     delete_tracks_by_names(names)
                 deleted_explicit = names
 
-        return {
-            "total_track_length": total_len,
-            "deleted": deleted_explicit,
-            "start_frame": start_frame,
-            "deleted_new": [],  # wird im finally gesetzt
-        }
-
     finally:
-        # 6) Playhead zurücksetzen (best effort)
+        # 5) Playhead zurücksetzen (best effort)
         if start_frame is not None:
             try:
                 _call_reset_to_frame(start_frame, context)
             except Exception:
                 pass
 
-        # 7) NEU: alle *neu erzeugten* Tracks löschen (Delta nach dem Tracking)
+        # 6) NEU: neu erzeugte Tracks löschen (Delta)
         try:
             post_names: Set[str] = _get_current_track_names(context)
-            new_names: List[str] = sorted(list(post_names - pre_names))
+            new_names = sorted(list(post_names - pre_names))
             if new_names:
                 try:
                     (delete_tracks_by_names(context, new_names) if context is not None else delete_tracks_by_names(new_names))
                 except TypeError:
                     delete_tracks_by_names(new_names)
-                deleted_new[:] = new_names  # für Sichtbarkeit nach außen (Operator-Report)
+                deleted_new = new_names
         except Exception:
-            # fail-soft: nie hart abbrechen
             pass
 
-        # Hinweis: Rückgabewert aus finally wird vom try-Return überschrieben.
-        # Der Operator liest 'deleted_new' aus dem Result-Objekt, darum patchen wir dort.
+        # 7) FINAL: Gesamtlänge nach allen Löschungen bestimmen UND in Scene speichern
+        try:
+            if context is not None:
+                try:
+                    final_total_len = float(get_total_track_length(context))
+                except TypeError:
+                    final_total_len = float(get_total_track_length())
+            else:
+                final_total_len = float(get_total_track_length())
+        except Exception:
+            final_total_len = 0.0  # fail-soft
+
+        try:
+            scene = context.scene if context is not None else bpy.context.scene
+            scene[SCENE_TOTAL_TRACK_LEN_KEY] = final_total_len
+        except Exception:
+            # Kein Hard-Fail, falls Scene nicht schreibbar ist
+            pass
+
+    return {
+        "total_track_length": final_total_len,   # FINALER Wert (nach Cleanup)
+        "deleted_explicit": deleted_explicit,
+        "deleted_new": deleted_new,
+        "start_frame": start_frame,
+    }
 
 
 # ---- Operator --------------------------------------------------------------
@@ -197,22 +204,15 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
             result = auto_calibrate_pipeline(context=context, tracks_to_delete=names)
 
-            # Report
-            self.report({'INFO'}, f"Auto-Calibrate abgeschlossen. Track-Länge gesamt: {result.get('total_track_length')}")
-            if result.get("deleted"):
-                self.report({'INFO'}, f"Explizit gelöschte Tracks: {', '.join(result['deleted'])}")
+            final_len = result.get('total_track_length', 0.0)
+            self.report({'INFO'}, f"Auto-Calibrate finalisiert. Track-Länge gesamt (persistiert): {final_len}")
+            if result.get("deleted_explicit"):
+                self.report({'INFO'}, f"Explizit gelöschte Tracks: {', '.join(result['deleted_explicit'])}")
+            if result.get("deleted_new"):
+                self.report({'INFO'}, f"Neu erzeugte Tracks entfernt: {', '.join(result['deleted_new'])}")
+            if result.get("start_frame") is not None:
+                self.report({'INFO'}, f"Playhead zurückgesetzt auf Frame {result['start_frame']}")
 
-            # Die in finally gelöschten *neuen* Tracks sind im Rückgabedict nicht automatisch aktualisiert.
-            # Wir ermitteln sie für den Report hier noch einmal defensiv.
-            try:
-                # Gleiche Delta-Logik wie in Utility, nur für Reporting
-                # (post - pre kann hier nicht erneut berechnet werden; daher nur aktueller Status melden)
-                # Als pragmatische Lösung: keine Liste, nur Zähler melden
-                pass
-            except Exception:
-                pass
-
-            self.report({'INFO'}, "Neu erzeugte Tracks wurden am Ende entfernt.")
             return {'FINISHED'}
 
         except Exception as e:
