@@ -10,7 +10,6 @@ from ..Helper.thresh_map import (                              # ✅ NEU
     should_use_cached_thresholds,
     save_after_autocalibrate,
 )
-from ..Helper.ui_refresh import refresh_clip_editor            # ✅ UI-Refresh nur für Movie-Clip-Editor
 
 # ---------------------------------------------------------------------------
 # Context & Selection Utilities
@@ -88,8 +87,6 @@ def _set_frame_in_scene_and_clip(context: bpy.types.Context, frame: int) -> None
                 region.tag_redraw()
             except Exception:
                 pass
-    # 🔄 UI-Refresh gezielt für Clip-Editor
-    refresh_clip_editor(context)
 
 
 @contextmanager
@@ -123,14 +120,11 @@ def _call_op_in_clip(op_callable, context: bpy.types.Context, clip: Optional[bpy
     try:
         with _clip_context(context, clip):
             result = op_callable(**kwargs)
-        ok = hasattr(result, "__contains__") and "FINISHED" in result
-        # 🔄 Nach jedem Operator-Call UI aktualisieren (nur CLIP-Editor)
-        refresh_clip_editor(context)
-        return bool(ok)
+        if hasattr(result, "__contains__") and "FINISHED" in result:
+            return True
+        return False
     except Exception as e:
         print(f"[Kaiserlich Tracker][Master] Operator-Call fehlgeschlagen: {_op_id(op_callable)} -> {e}")
-        # 🔄 Auch im Fehlerfall Refresh, um UI-Zustand zu reflektieren
-        refresh_clip_editor(context)
         return False
 
 
@@ -171,7 +165,6 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
 
         # Selektion sichern
         saved_selection = _snapshot_selected_track_names(clip)
-        refresh_clip_editor(context)  # 🔄 UI initial synchronisieren
 
         iterations = 0
         total_hits = 0
@@ -184,14 +177,12 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
                 res = find_first_weak_frame(context)
             except Exception as e:
                 self.report({"ERROR"}, f"find_first_weak_frame() Fehler: {e}")
-                refresh_clip_editor(context)
                 break
 
             frame = _coerce_frame(res)
             if frame is None:
                 self.report({"INFO"}, f"Kein Low-Marker-Frame mehr gefunden. Iterationen: {iterations-1}, Hits: {total_hits}")
                 print(f"[Kaiserlich Tracker][Master] Completed. Iterations={iterations-1}, Hits={total_hits}")
-                refresh_clip_editor(context)
                 break
 
             total_hits += 1
@@ -204,7 +195,7 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
 
             # Playhead setzen
             if self.set_playhead:
-                _set_frame_in_scene_and_clip(context, frame)  # beinhaltet Refresh
+                _set_frame_in_scene_and_clip(context, frame)
 
             print(f"[Kaiserlich Tracker][Master] Iteration={iterations} -> LowMarkerFrame={frame}")
 
@@ -215,8 +206,6 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
             except Exception as e:
                 print(f"[Kaiserlich Tracker][Master] ThreshMap check failed (frame {frame}): {e}")
                 skip_auto = False
-
-            refresh_clip_editor(context)  # 🔄 UI nach Cache-Check
 
             if skip_auto:
                 print("[Kaiserlich Tracker][Master] auto_calibrate SKIPPED (gespeicherte/interpolierte Thresholds).")
@@ -231,7 +220,6 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
                         save_after_autocalibrate(context, frame, bake_neighbors=True)
                     except Exception as e:
                         print(f"[Kaiserlich Tracker][Master] Warnung: save_after_autocalibrate fehlgeschlagen: {e}")
-                refresh_clip_editor(context)  # 🔄 UI nach Auto-Calibrate & Save
 
             # 3) Detect Adapt
             ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.detect_adapt, context, clip)
@@ -239,7 +227,6 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
                 self.report({"WARNING"}, "detect_adapt wurde nicht erfolgreich ausgeführt.")
             else:
                 print("[Kaiserlich Tracker][Master] detect_adapt: OK")
-            refresh_clip_editor(context)  # 🔄 UI nach Detect
 
             # 4) Track Cycle Backwards
             ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.track_cycle_backwards, context, clip)
@@ -247,7 +234,6 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
                 self.report({"WARNING"}, "track_cycle_backwards wurde nicht erfolgreich ausgeführt.")
             else:
                 print("[Kaiserlich Tracker][Master] track_cycle_backwards: OK")
-            refresh_clip_editor(context)  # 🔄 UI nach Track Backwards
 
             # 5) Track Cycle Forwards
             ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.track_cycle, context, clip)
@@ -255,11 +241,9 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
                 self.report({"WARNING"}, "track_cycle (vorwärts) wurde nicht erfolgreich ausgeführt.")
             else:
                 print("[Kaiserlich Tracker][Master] track_cycle (forward): OK")
-            refresh_clip_editor(context)  # 🔄 UI nach Track Forwards
 
             # 6) Selektion wiederherstellen
             _restore_selected_tracks_by_names(clip, saved_selection)
-            refresh_clip_editor(context)  # 🔄 UI nach Selections-Restore
 
             # 7) ✅ Filter nach jedem Iterationszyklus anwenden
             try:
@@ -267,16 +251,13 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
                 print(f"[Kaiserlich Tracker][Master] Iteration={iterations} -> Filter Problematic Tracks (threshold=10.0) erfolgreich ausgeführt.")
             except Exception as e:
                 print(f"[Kaiserlich Tracker][Master] ❌ Iteration={iterations} Filter Problematic Tracks Fehler: {e}")
-            refresh_clip_editor(context)  # 🔄 UI nach Filterlauf
 
         # Final: Selektion sicherstellen
         _restore_selected_tracks_by_names(clip, saved_selection)
-        refresh_clip_editor(context)  # 🔄 Abschluss-Refresh
 
         if iterations >= self.max_iterations:
             self.report({"WARNING"}, f"Abbruch durch Safety-Stop nach {self.max_iterations} Iterationen.")
             print(f"[Kaiserlich Tracker][Master] Safety stop reached at {self.max_iterations} iterations.")
-            refresh_clip_editor(context)
 
         return {"FINISHED"}
 
