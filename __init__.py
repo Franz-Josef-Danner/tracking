@@ -14,11 +14,13 @@ from .Operator.detect_operator import KAISERLICHTRACKER_OT_detect_cycle
 from .Operator.track_operator import KAISERLICHTRACKER_OT_track_cycle
 from .Operator.auto_calibrate_operator import KAISERLICHTRACKER_OT_auto_calibrate
 from .Operator.detect_adapt_operator import KAISERLICHTRACKER_OT_detect_adapt
+from .Operator.track_operator_backwards import class KAISERLICHTRACKER_OT_track_cycle_backwards
 classes = (
     KAISERLICHTRACKER_OT_detect_cycle,
     KAISERLICHTRACKER_OT_track_cycle,
     KAISERLICHTRACKER_OT_auto_calibrate,
     KAISERLICHTRACKER_OT_detect_adapt,
+    KAISERLICHTRACKER_OT_track_cycle_backwards,
     KAISERLICHTRACKER_PT_panel,
 )
 
