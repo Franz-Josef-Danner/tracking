@@ -5,30 +5,39 @@ from typing import List, Dict, Any
 MarkerSnapshot = Dict[str, Any]
 
 def snapshot_active_markers(context) -> List[MarkerSnapshot]:
-    """Erfasst alle aktiven (nicht gemuteten) Marker im aktuellen Frame.
-    Gibt eine Liste von Dictionaries zurück: 
+    """Erfasst alle **aktiven** (Track nicht gemutet, Marker nicht gemutet)
+    Marker im aktuellen Frame. Rückgabe:
     { 'track': str, 'frame': int, 'co': (x, y), 'is_keyed': bool }
     """
-    clip = context.space_data.clip if getattr(context, "space_data", None) else None
+    space = getattr(context, "space_data", None)
+    clip = getattr(space, "clip", None) if space else None
     if clip is None:
         return []
 
-    tracking = getattr(clip, 'tracking', None)
+    tracking = getattr(clip, "tracking", None)
     if tracking is None:
         return []
 
-    current_frame = context.scene.frame_current
-    result: List[MarkerSnapshot] = []
+    current_frame = int(getattr(context.scene, "frame_current", 0))
+    out: List[MarkerSnapshot] = []
 
     for track in tracking.tracks:
-        marker = track.markers.find_frame(current_frame)
-        if marker is None or marker.mute:
+        # Nur **aktive** Tracks berücksichtigen
+        if getattr(track, "mute", False):
             continue
-        result.append({
-            'track': track.name,
-            'frame': marker.frame,
-            'co': (marker.co[0], marker.co[1]),
-            'is_keyed': marker.is_keyed,
+
+        marker = track.markers.find_frame(current_frame)
+        if marker is None:
+            continue
+        # Nur **aktive** Marker berücksichtigen
+        if getattr(marker, "mute", False):
+            continue
+
+        out.append({
+            "track": track.name,
+            "frame": int(marker.frame),
+            "co": (float(marker.co[0]), float(marker.co[1])),
+            "is_keyed": bool(getattr(marker, "is_keyed", False)),
         })
 
-    return result
+    return out
