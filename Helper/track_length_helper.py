@@ -39,7 +39,4 @@ def get_total_track_length(context: bpy.types.Context, start_frame: int = 1) -> 
         seg_lengths.append(prev_frame - seg_start + 1)
         total_length += sum(seg_lengths)
 
-    # Nur das finale Ergebnis ausgeben
-    print(f"Finale Track-Gesamtlänge: {total_length}")
-
     return total_length
