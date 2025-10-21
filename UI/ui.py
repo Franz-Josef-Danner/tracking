@@ -83,8 +83,6 @@ def register():
         precision=6,
         subtype='FACTOR',
     )
-
-    # Scale Thresholds
     bpy.types.Scene.kaiserlich_scale_thresh_min = bpy.props.FloatProperty(
         name="Min Scale Δ",
         description="Minimale Abstandsänderung zur Erkennung von Skalierung",
@@ -103,8 +101,6 @@ def register():
         precision=6,
         subtype='FACTOR',
     )
-
-    # LocRotScale Thresholds
     bpy.types.Scene.kaiserlich_rot_scale_thresh_rot = bpy.props.FloatProperty(
         name="Rot+Scale ΔRot",
         description="Empfindlichkeit für kombinierte Rotation und Skalierung (Rotationsteil)",
@@ -123,8 +119,6 @@ def register():
         precision=6,
         subtype='FACTOR',
     )
-
-    # Perspective Threshold
     bpy.types.Scene.kaiserlich_perspective_thresh = bpy.props.FloatProperty(
         name="Perspective Δ",
         description="Empfindlichkeit für perspektivische Abweichung (Tiefe/Parallaxe)",
@@ -134,7 +128,13 @@ def register():
         precision=6,
         subtype='FACTOR',
     )
-
+    bpy.types.Scene.kaiserlich_frames_per_track = bpy.props.IntProperty(
+        name="Frames per Track",
+        description="Mindestanzahl an Frames, die ein Track haben muss, um beim Cleanup nicht gelöscht zu werden",
+        default=25,
+        min=0,
+        soft_min=0,
+    )
 
 def unregister():
     for prop in (
@@ -145,6 +145,7 @@ def unregister():
         "kaiserlich_rot_scale_thresh_rot",
         "kaiserlich_rot_scale_thresh_scale",
         "kaiserlich_perspective_thresh",
+        "kaiserlich_frames_per_track",
     ):
         if hasattr(bpy.types.Scene, prop):
             delattr(bpy.types.Scene, prop)
