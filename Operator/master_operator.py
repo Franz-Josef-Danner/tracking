@@ -43,7 +43,7 @@ def _coerce_frame(result: Any) -> Optional[int]:
     return None
 
 
-class KAISERLICHTRACKER_OT_jump_to_low_marker_frame(bpy.types.Operator):
+class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
     """Springt zum ersten Frame mit zu wenigen Markern (unterhalb Scene.kaiserlich_markers_per_frame)."""
     bl_idname = "kaiserlich_tracker.jump_to_low_marker_frame"
     bl_label = "KAISERLICHTRACKER — Jump to Low-Marker Frame"
