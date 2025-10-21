@@ -948,6 +948,92 @@ def reduce_threshold_rot_xy_coupled(
     }
 
 
+# ---- NEU: Gekoppelter Scale-Reducer (nur Min-Reduktion; Max = Min * Faktor) ------
+
+def reduce_threshold_scale_coupled(
+    context: Optional[bpy.types.Context],
+    prop_min: str,
+    prop_max: str,
+    factor: float,
+    cfg: ReduceConfig,
+    tracks_to_delete: Optional[List[str]] = None,
+    report_fn: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """
+    Downward-Reduce für Scale-Min/Max:
+      - Reduziert ausschließlich prop_min (candidate = prev/sf)
+      - prop_max wird jedes Mal deterministisch gesetzt: prop_max = candidate * factor
+      - 'Einen Durchlauf zurück'-Strategie analog Single
+    """
+    scene = (context.scene if context is not None else bpy.context.scene)
+    snap = _snapshot_thresholds(scene)
+
+    logs: List[Dict[str, Any]] = []
+    best_min: float = cfg.start_single
+    best_max: float = cfg.start_single * factor
+    best_len: int = -1
+    best_sf: Optional[float] = None
+
+    try:
+        current_start_min = float(cfg.start_single)
+        last_success_prev_global: Optional[float] = None
+
+        sf = float(cfg.sf0)
+        outer = 0
+        while sf >= 1.0 and outer < cfg.max_outer_iters:
+            outer += 1
+
+            prev_min = current_start_min
+            had_success = False
+            next_start_after_stage: Optional[float] = None
+
+            inner = 0
+            while inner < cfg.max_inner_iters:
+                inner += 1
+                cand_min = prev_min / sf
+                if cand_min < cfg.min_threshold:
+                    break
+                cand_max = cand_min * factor
+
+                _set_scene_props(scene, **{prop_min: cand_min, prop_max: cand_max})
+                res = short_test_track(
+                    context=context,
+                    tracks_to_delete=tracks_to_delete,
+                    run_meta={"sf": sf, "fields": [prop_min, prop_max], "tag": f"Reduce {prop_min}(Max coupled)"},
+                    report_fn=report_fn
+                )
+                ttl = int(float(res.get("total_track_length", 0.0)))
+                logs.append({"sf": sf, "thresholds": (cand_min, cand_max), "factor": factor})
+
+                if _is_success(ttl, cfg.target_len):
+                    if ttl > best_len:
+                        best_len = ttl
+                        best_min = cand_min
+                        best_max = cand_max
+                        best_sf = sf
+                    last_success_prev_global = prev_min
+                    next_start_after_stage = prev_min
+                    had_success = True
+                    break
+                else:
+                    prev_min = cand_min
+
+            if had_success and next_start_after_stage is not None:
+                current_start_min = next_start_after_stage
+            elif last_success_prev_global is not None:
+                current_start_min = last_success_prev_global
+
+            sf = sf / cfg.sf_halve
+
+    finally:
+        _restore_thresholds(scene, snap)
+
+    return {
+        "props": (prop_min, prop_max),
+        "best": {"values": (best_min, best_max), "sf": best_sf, "factor": factor},
+        "log": logs,
+    }
+
 # ---- Wrapper für die 4 Gruppen ---------------------------------------------
 
 def reduce_rot_xy(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), report_fn=None, **kw):
@@ -968,9 +1054,21 @@ def reduce_rot_xy(context, target_len: int, start: Tuple[float, float] = (1.0, 1
     )
 
 def reduce_scale_min_max(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), report_fn=None, **kw):
-    cfg = ReduceConfig(target_len=target_len, start_pair=start, **kw)
-    return reduce_threshold_pair(context, "kaiserlich_scale_thresh_min", "kaiserlich_scale_thresh_max", cfg, report_fn=report_fn)
-
+    """
+    Scale-Min/Max Haupttest mit gekoppelter Ableitung:
+      - Reduktion nur auf Min
+      - Max = Min * 1.1
+    """
+    factor = 1.1
+    cfg = ReduceConfig(target_len=target_len, start_single=float(start[0]), **kw)
+    return reduce_threshold_scale_coupled(
+        context,
+        "kaiserlich_scale_thresh_min",
+        "kaiserlich_scale_thresh_max",
+        factor,
+        cfg,
+        report_fn=report_fn
+    )
 def reduce_rot_scale_pair(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), report_fn=None, **kw):
     cfg = ReduceConfig(target_len=target_len, start_pair=start, **kw)
     return reduce_threshold_pair(context, "kaiserlich_rot_scale_thresh_rot", "kaiserlich_rot_scale_thresh_scale", cfg, report_fn=report_fn)
