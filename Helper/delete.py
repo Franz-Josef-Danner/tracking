@@ -1,13 +1,13 @@
 import bpy
-from typing import Iterable, List, Tuple, Optional
+from typing import Iterable, List, Tuple, Optional, Any
 
-def _get_tracking(context) -> Optional[bpy.types.MovieTracking]:
+def _get_tracking(context) -> Optional[Any]:
     sd = getattr(context, "space_data", None)
     clip = getattr(sd, "clip", None) if sd else None
     return getattr(clip, "tracking", None) if clip else None
 
-def _find_clip_editor_area(clip) -> Tuple[Optional[bpy.types.Window], Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.SpaceClip]]:
-    """Sucht eine passende CLIP_EDITOR Area für Context Override (silent)."""
+def _find_clip_editor_area(clip) -> Tuple[Optional[Any], Optional[Any], Optional[Any], Optional[Any]]:
+    """Sucht eine passende CLIP_EDITOR Area für Context Override (silent, versionstolerant)."""
     wm = bpy.context.window_manager
     for window in wm.windows:
         screen = window.screen
@@ -27,7 +27,6 @@ def _operator_delete_selected(window, area, region, space) -> bool:
     """Führt den Clip-Delete-Operator im Override-Kontext aus (silent)."""
     try:
         with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-            # Blender-Versionen unterscheiden sich: mehrere Fallbacks
             if hasattr(bpy.ops.clip, "delete_track"):
                 res = bpy.ops.clip.delete_track()
                 return "CANCELLED" not in res
@@ -57,7 +56,6 @@ def delete_tracks_by_names(context, track_names: Iterable[str]) -> int:
 
     tracks = tracking.tracks
 
-    # Dedup & Resolve
     unique: List[str] = list(dict.fromkeys(track_names))
     targets = [tracks.get(name) for name in unique if tracks.get(name) is not None]
     if not targets:
