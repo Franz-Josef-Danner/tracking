@@ -1,5 +1,6 @@
 import bpy
-from typing import Any, Optional, Tuple, List, Set
+from typing import Any, Optional, Set, Dict, Callable, ContextManager
+from contextlib import contextmanager
 
 # Helper-Import
 from ..Helper.low_marker_frame import find_first_weak_frame
@@ -34,13 +35,7 @@ def _get_active_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip
 
 
 def _coerce_frame(result: Any) -> Optional[int]:
-    """
-    Toleranter Unpacker:
-    - int -> Frame
-    - (frame,) -> Frame
-    - (frame, count[, target]) -> Frame
-    - None -> None
-    """
+    """Erlaubt flexible Rückgaben von find_first_weak_frame."""
     if result is None:
         return None
     if isinstance(result, int):
@@ -52,7 +47,6 @@ def _coerce_frame(result: Any) -> Optional[int]:
 
 
 def _snapshot_selected_track_names(clip: Optional[bpy.types.MovieClip]) -> Set[str]:
-    """Sichert die Namen aktuell selektierter Tracks."""
     names: Set[str] = set()
     if not clip:
         return names
@@ -64,11 +58,9 @@ def _snapshot_selected_track_names(clip: Optional[bpy.types.MovieClip]) -> Set[s
 
 
 def _restore_selected_tracks_by_names(clip: Optional[bpy.types.MovieClip], names: Set[str]) -> None:
-    """Stellt Selektion anhand gesicherter Namen wieder her (nur existierende Tracks)."""
     if not clip or not names:
         return
     tracking = clip.tracking
-    # Optional: Erst alles deselektieren, um eine definierte Basis zu haben
     for track in tracking.tracks:
         track.select = False
     for track in tracking.tracks:
@@ -76,55 +68,58 @@ def _restore_selected_tracks_by_names(clip: Optional[bpy.types.MovieClip], names
             track.select = True
 
 
-def _override_for_clip(context: bpy.types.Context, clip: Optional[bpy.types.MovieClip]):
-    """Baut einen Override-Dict für Clip-Operatoren."""
-    window, area, region, space = _find_clip_editor_area_for_clip(clip)
-    if not (window and area and region and space):
-        return None
-    return {
-        "window": window,
-        "screen": window.screen,
-        "area": area,
-        "region": region,
-        "space_data": space,
-        "scene": context.scene,
-    }
-
-
 def _set_frame_in_scene_and_clip(context: bpy.types.Context, frame: int) -> None:
-    """Setzt den Playhead global und im Clip-Editor (falls möglich)."""
+    """Setzt Playhead global und im Clip-Editor (falls möglich)."""
     context.scene.frame_current = int(frame)
     clip = _get_active_clip(context)
-    ov = _override_for_clip(context, clip)
-    if ov:
+    window, area, region, space = _find_clip_editor_area_for_clip(clip)
+    if window and area and region and space:
         try:
-            bpy.ops.clip.change_frame(ov, frame=int(frame))
+            with bpy.context.temp_override(window=window, area=area, region=region, space_data=space, scene=context.scene):
+                bpy.ops.clip.change_frame(frame=int(frame))
         except Exception:
-            # Fallback: Redraw
-            reg = ov.get("region", None)
-            if reg:
-                try:
-                    reg.tag_redraw()
-                except Exception:
-                    pass
+            try:
+                region.tag_redraw()
+            except Exception:
+                pass
 
 
-def _call_op(op_callable, override=None, **kwargs) -> bool:
+@contextmanager
+def _clip_context(context: bpy.types.Context, clip: Optional[bpy.types.MovieClip]) -> ContextManager[None]:
     """
-    Führt einen Blender-Operator aufrufrobust aus.
-    Rückgabe: True bei {'FINISHED'}, ansonsten False.
+    Liefert einen sicheren Override-Kontext für CLIP_EDITOR-Operatoren via temp_override.
+    Nur erlaubte Keys; kein 'screen' (wird intern aus window abgeleitet).
+    """
+    window, area, region, space = _find_clip_editor_area_for_clip(clip)
+    if window and area and region and space:
+        with bpy.context.temp_override(window=window, area=area, region=region, space_data=space, scene=context.scene):
+            yield
+    else:
+        # Fallback: kein Override möglich, Operatoren laufen im aktuellen Kontext
+        yield
+
+
+def _op_id(op) -> str:
+    """Robustes Operator-Label fürs Logging."""
+    try:
+        return op.idname()
+    except Exception:
+        return repr(op)
+
+
+def _call_op_in_clip(op_callable, context: bpy.types.Context, clip: Optional[bpy.types.MovieClip], **kwargs) -> bool:
+    """
+    Führt einen Blender-Operator im CLIP_EDITOR-Kontext aus (temp_override).
+    Rückgabe: True bei {'FINISHED'}, sonst False. Crash-sicher geloggt.
     """
     try:
-        if override is None:
+        with _clip_context(context, clip):
             result = op_callable(**kwargs)
-        else:
-            result = op_callable(override, **kwargs)
-        # Operator-Ergebnis ist ein Set[str] wie {'FINISHED'} oder {'CANCELLED'}
         if hasattr(result, "__contains__") and "FINISHED" in result:
             return True
         return False
     except Exception as e:
-        print(f"[Kaiserlich Tracker][Master] Operator-Call fehlgeschlagen: {op_callable.__self__}.{op_callable.__name__} -> {e}")
+        print(f"[Kaiserlich Tracker][Master] Operator-Call fehlgeschlagen: {_op_id(op_callable)} -> {e}")
         return False
 
 
@@ -162,7 +157,7 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
         scene = context.scene
         clip = _get_active_clip(context)
 
-        # Selektion sichern (wird am Ende wiederhergestellt)
+        # Selektion sichern
         saved_selection = _snapshot_selected_track_names(clip)
 
         iterations = 0
@@ -180,14 +175,13 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
 
             frame = _coerce_frame(res)
             if frame is None:
-                # Nichts mehr zu tun: sauber beenden
                 self.report({"INFO"}, f"Kein Low-Marker-Frame mehr gefunden. Iterationen: {iterations-1}, Hits: {total_hits}")
                 print(f"[Kaiserlich Tracker][Master] Completed. Iterations={iterations-1}, Hits={total_hits}")
                 break
 
             total_hits += 1
 
-            # Persistieren (optional)
+            # Persistenz
             try:
                 scene[self.store_scene_key] = int(frame)
             except Exception:
@@ -197,40 +191,37 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
             if self.set_playhead:
                 _set_frame_in_scene_and_clip(context, frame)
 
-            ov = _override_for_clip(context, clip)
-
             print(f"[Kaiserlich Tracker][Master] Iteration={iterations} -> LowMarkerFrame={frame}")
 
             # 2) Auto-Calibrate
-            ok = _call_op(bpy.ops.kaiserlich_tracker.auto_calibrate, ov)
+            ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.auto_calibrate, context, clip)
             if not ok:
                 self.report({"WARNING"}, "auto_calibrate wurde nicht erfolgreich ausgeführt.")
-                # Weiterlaufen ist ok – aber wir loggen es bewusst
             else:
                 print("[Kaiserlich Tracker][Master] auto_calibrate: OK")
 
             # 3) Detect Adapt
-            ok = _call_op(bpy.ops.kaiserlich_tracker.detect_adapt, ov)
+            ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.detect_adapt, context, clip)
             if not ok:
                 self.report({"WARNING"}, "detect_adapt wurde nicht erfolgreich ausgeführt.")
             else:
                 print("[Kaiserlich Tracker][Master] detect_adapt: OK")
 
             # 4) Track Cycle Backwards
-            ok = _call_op(bpy.ops.kaiserlich_tracker.track_cycle_backwards, ov)
+            ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.track_cycle_backwards, context, clip)
             if not ok:
                 self.report({"WARNING"}, "track_cycle_backwards wurde nicht erfolgreich ausgeführt.")
             else:
                 print("[Kaiserlich Tracker][Master] track_cycle_backwards: OK")
 
             # 5) Track Cycle Forwards
-            ok = _call_op(bpy.ops.kaiserlich_tracker.track_cycle, ov)
+            ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.track_cycle, context, clip)
             if not ok:
                 self.report({"WARNING"}, "track_cycle (vorwärts) wurde nicht erfolgreich ausgeführt.")
             else:
                 print("[Kaiserlich Tracker][Master] track_cycle (forward): OK")
 
-            # Optional: nach jedem Iterationslauf die gesicherte Selektion wiederherstellen
+            # Optional: Selektion nach jedem Loop wiederherstellen
             _restore_selected_tracks_by_names(clip, saved_selection)
 
         # Final: Selektion sicherstellen
