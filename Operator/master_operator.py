@@ -101,16 +101,30 @@ def _op_id(op) -> str:
     try: return op.idname()
     except Exception: return repr(op)
 
-def _call_op_in_clip(op_callable, context: bpy.types.Context, clip: Optional[bpy.types.MovieClip], **kwargs) -> bool:
+def _call_op_in_clip(
+    op_callable,
+    context: bpy.types.Context,
+    clip: Optional[bpy.types.MovieClip],
+    *args,
+    **kwargs
+) -> bool:
+    """
+    Führt einen Blender-Operator im CLIP_EDITOR-Kontext aus (temp_override).
+    Akzeptiert Positional-Args (z. B. 'INVOKE_DEFAULT') und **kwargs.
+    Erfolgreich, wenn {'FINISHED'} ODER {'RUNNING_MODAL'} zurückkommt.
+    """
     try:
         with _clip_context(context, clip):
-            result = op_callable(**kwargs)
-        if hasattr(result, "__contains__") and "FINISHED" in result:
-            return True
-        return False
+            result = op_callable(*args, **kwargs)
+        if hasattr(result, "__contains__"):
+            if "FINISHED" in result or "RUNNING_MODAL" in result:
+                return True
+        # Manche Ops liefern None → nicht fatal; wir werten das als "gestartet".
+        return result is None
     except Exception as e:
         print(f"[Kaiserlich Tracker][Master] Operator-Call fehlgeschlagen: {_op_id(op_callable)} -> {e}")
         return False
+
 
 # ---------------------------------------------------------------------------
 # Master Operator (Modal mit Handshake)
@@ -213,7 +227,7 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
         # Modal Auto-Calibrate starten
         self._ui_ping(context, "Auto-Calibrate startet …")
         prev_epoch = int(context.scene.get(AC_EPOCH_KEY, 0))
-        ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.auto_calibrate, context, self._clip, **{'INVOKE_DEFAULT'})
+        ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.auto_calibrate, context, self._clip, 'INVOKE_DEFAULT')
         if not ok:
             # INVOKE_DEFAULT liefert oft kein {'FINISHED'}; wir akzeptieren Start best-effort
             pass
