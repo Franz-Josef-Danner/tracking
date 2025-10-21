@@ -45,8 +45,8 @@ def _coerce_frame(result: Any) -> Optional[int]:
 
 class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
     """Springt zum ersten Frame mit zu wenigen Markern (unterhalb Scene.kaiserlich_markers_per_frame)."""
-    bl_idname = "kaiserlich_tracker.jump_to_low_marker_frame"
-    bl_label = "KAISERLICHTRACKER — Jump to Low-Marker Frame"
+    bl_idname = "kaiserlich_tracker.master_operator"
+    bl_label = "KAISERLICHTRACKER — master operator"
     bl_options = {"REGISTER", "UNDO"}
 
     set_playhead: bpy.props.BoolProperty(
