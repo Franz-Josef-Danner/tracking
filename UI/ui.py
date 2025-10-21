@@ -21,12 +21,11 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.prop(scene, "kaiserlich_markers_per_frame", text="Marker per Frame")
 
         # ▶️ Buttons
-        col.operator("kaiserlich_tracker.detect_cycle", text="Detect Cycle", icon="VIEWZOOM")
-        col.operator("kaiserlich_tracker.track_cycle", text="Track Cycle", icon="TRACKING")
-        # 👇 NEU: Rückwärts-Tracking
-        col.operator("kaiserlich_tracker.track_cycle_backwards", text="Track Cycle (Backwards)", icon="TRACKING")
+        col.operator("kaiserlich_tracker.master_operator", text="Master", icon="cup")
         col.operator("kaiserlich_tracker.auto_calibrate", text="Auto-Calibrate Thresholds", icon="MOD_WAVE")
         col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="FILE_TICK")
+        col.operator("kaiserlich_tracker.track_cycle_backwards", text="Track Cycle (Backwards)", icon="TRACKING")
+        col.operator("kaiserlich_tracker.track_cycle", text="Track Cycle", icon="TRACKING")
 
         layout.separator()
 
