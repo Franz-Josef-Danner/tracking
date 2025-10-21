@@ -5,8 +5,8 @@ from contextlib import contextmanager
 
 # Helper-Importe
 from ..Helper.low_marker_frame import find_first_weak_frame
-from ..Helper.filter_tracks import filter_problematic_tracks   # ✅ Filter integriert
-from ..Helper.thresh_map import (                              # ✅ NEU
+from ..Helper.filter_tracks import filter_problematic_tracks
+from ..Helper.thresh_map import (
     should_use_cached_thresholds,
     save_after_autocalibrate,
 )
@@ -100,31 +100,19 @@ def _clip_context(context: bpy.types.Context, clip: Optional[bpy.types.MovieClip
         with bpy.context.temp_override(window=window, area=area, region=region, space_data=space, scene=context.scene):
             yield
     else:
-        # Fallback: kein Override möglich, Operatoren laufen im aktuellen Kontext
         yield
-
-
-def _op_id(op) -> str:
-    """Robustes Operator-Label fürs Logging."""
-    try:
-        return op.idname()
-    except Exception:
-        return repr(op)
 
 
 def _call_op_in_clip(op_callable, context: bpy.types.Context, clip: Optional[bpy.types.MovieClip], **kwargs) -> bool:
     """
     Führt einen Blender-Operator im CLIP_EDITOR-Kontext aus (temp_override).
-    Rückgabe: True bei {'FINISHED'}, sonst False. Crash-sicher geloggt.
+    Rückgabe: True bei {'FINISHED'}, sonst False. Keine Logausgabe.
     """
     try:
         with _clip_context(context, clip):
             result = op_callable(**kwargs)
-        if hasattr(result, "__contains__") and "FINISHED" in result:
-            return True
-        return False
-    except Exception as e:
-        print(f"[Kaiserlich Tracker][Master] Operator-Call fehlgeschlagen: {_op_id(op_callable)} -> {e}")
+        return bool(hasattr(result, "__contains__") and "FINISHED" in result)
+    except Exception:
         return False
 
 
@@ -167,7 +155,6 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
         saved_selection = _snapshot_selected_track_names(clip)
 
         iterations = 0
-        total_hits = 0
 
         while iterations < self.max_iterations:
             iterations += 1
@@ -181,11 +168,7 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
 
             frame = _coerce_frame(res)
             if frame is None:
-                self.report({"INFO"}, f"Kein Low-Marker-Frame mehr gefunden. Iterationen: {iterations-1}, Hits: {total_hits}")
-                print(f"[Kaiserlich Tracker][Master] Completed. Iterations={iterations-1}, Hits={total_hits}")
                 break
-
-            total_hits += 1
 
             # Persistenz
             try:
@@ -197,67 +180,45 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
             if self.set_playhead:
                 _set_frame_in_scene_and_clip(context, frame)
 
-            print(f"[Kaiserlich Tracker][Master] Iteration={iterations} -> LowMarkerFrame={frame}")
-
             # 2) Auto-Calibrate nur ausführen, wenn NICHT bereits Werte (exakt/interpoliert) vorliegen
             skip_auto = False
             try:
                 skip_auto = should_use_cached_thresholds(context, frame)
-            except Exception as e:
-                print(f"[Kaiserlich Tracker][Master] ThreshMap check failed (frame {frame}): {e}")
+            except Exception:
                 skip_auto = False
 
-            if skip_auto:
-                print("[Kaiserlich Tracker][Master] auto_calibrate SKIPPED (gespeicherte/interpolierte Thresholds).")
-            else:
+            if not skip_auto:
                 ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.auto_calibrate, context, clip)
-                if not ok:
-                    self.report({"WARNING"}, "auto_calibrate wurde nicht erfolgreich ausgeführt.")
-                else:
-                    print("[Kaiserlich Tracker][Master] auto_calibrate: OK")
-                    # Nach erfolgreichem Calibrate: Ergebnisse speichern und ggf. Spanne baken
+                if ok:
                     try:
                         save_after_autocalibrate(context, frame, bake_neighbors=True)
-                    except Exception as e:
-                        print(f"[Kaiserlich Tracker][Master] Warnung: save_after_autocalibrate fehlgeschlagen: {e}")
+                    except Exception:
+                        pass
 
             # 3) Detect Adapt
-            ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.detect_adapt, context, clip)
-            if not ok:
-                self.report({"WARNING"}, "detect_adapt wurde nicht erfolgreich ausgeführt.")
-            else:
-                print("[Kaiserlich Tracker][Master] detect_adapt: OK")
+            _call_op_in_clip(bpy.ops.kaiserlich_tracker.detect_adapt, context, clip)
 
             # 4) Track Cycle Backwards
-            ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.track_cycle_backwards, context, clip)
-            if not ok:
-                self.report({"WARNING"}, "track_cycle_backwards wurde nicht erfolgreich ausgeführt.")
-            else:
-                print("[Kaiserlich Tracker][Master] track_cycle_backwards: OK")
+            _call_op_in_clip(bpy.ops.kaiserlich_tracker.track_cycle_backwards, context, clip)
 
             # 5) Track Cycle Forwards
-            ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.track_cycle, context, clip)
-            if not ok:
-                self.report({"WARNING"}, "track_cycle (vorwärts) wurde nicht erfolgreich ausgeführt.")
-            else:
-                print("[Kaiserlich Tracker][Master] track_cycle (forward): OK")
+            _call_op_in_clip(bpy.ops.kaiserlich_tracker.track_cycle, context, clip)
 
             # 6) Selektion wiederherstellen
             _restore_selected_tracks_by_names(clip, saved_selection)
 
-            # 7) ✅ Filter nach jedem Iterationszyklus anwenden
+            # 7) Filter nach jedem Iterationszyklus anwenden (silent)
             try:
                 filter_problematic_tracks(context, threshold=10.0)
-                print(f"[Kaiserlich Tracker][Master] Iteration={iterations} -> Filter Problematic Tracks (threshold=10.0) erfolgreich ausgeführt.")
-            except Exception as e:
-                print(f"[Kaiserlich Tracker][Master] ❌ Iteration={iterations} Filter Problematic Tracks Fehler: {e}")
+            except Exception:
+                pass
 
         # Final: Selektion sicherstellen
         _restore_selected_tracks_by_names(clip, saved_selection)
 
         if iterations >= self.max_iterations:
-            self.report({"WARNING"}, f"Abbruch durch Safety-Stop nach {self.max_iterations} Iterationen.")
-            print(f"[Kaiserlich Tracker][Master] Safety stop reached at {self.max_iterations} iterations.")
+            # Nur harter Fehlerfall signalisieren
+            self.report({"ERROR"}, f"Abbruch durch Safety-Stop nach {self.max_iterations} Iterationen.")
 
         return {"FINISHED"}
 
