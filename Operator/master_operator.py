@@ -120,7 +120,7 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
 # --- Registrierung ----------------------------------------------------------
 
 classes = (
-    KAISERLICHTRACKER_OT_jump_to_low_marker_frame,
+    KAISERLICHTRACKER_OT_master_operator,
 )
 
 
