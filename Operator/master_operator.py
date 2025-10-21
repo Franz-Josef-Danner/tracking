@@ -4,7 +4,7 @@ from contextlib import contextmanager
 
 # Helper-Importe
 from ..Helper.low_marker_frame import find_first_weak_frame
-from ..Helper.filter_tracks import filter_problematic_tracks   # ✅ NEU
+from ..Helper.filter_tracks import filter_problematic_tracks   # ✅ Filter integriert
 
 # ---------------------------------------------------------------------------
 # Context & Selection Utilities
@@ -221,18 +221,18 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
             else:
                 print("[Kaiserlich Tracker][Master] track_cycle (forward): OK")
 
-            # Optional: Selektion nach jedem Loop wiederherstellen
+            # 6) Selektion wiederherstellen
             _restore_selected_tracks_by_names(clip, saved_selection)
+
+            # 7) ✅ Filter nach jedem Iterationszyklus anwenden
+            try:
+                filter_problematic_tracks(context, threshold=10.0)
+                print(f"[Kaiserlich Tracker][Master] Iteration={iterations} -> Filter Problematic Tracks (threshold=10.0) erfolgreich ausgeführt.")
+            except Exception as e:
+                print(f"[Kaiserlich Tracker][Master] ❌ Iteration={iterations} Filter Problematic Tracks Fehler: {e}")
 
         # Final: Selektion sicherstellen
         _restore_selected_tracks_by_names(clip, saved_selection)
-
-        # ✅ NEU: Filter-Helper am Ende der gesamten Pipeline ausführen
-        try:
-            filter_problematic_tracks(context, threshold=10.0)
-            print("[Kaiserlich Tracker][Master] Filter Problematic Tracks erfolgreich ausgeführt (threshold=10.0).")
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Master] ❌ Fehler beim Filter Problematic Tracks: {e}")
 
         if iterations >= self.max_iterations:
             self.report({"WARNING"}, f"Abbruch durch Safety-Stop nach {self.max_iterations} Iterationen.")
