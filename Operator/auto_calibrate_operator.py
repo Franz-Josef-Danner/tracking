@@ -104,6 +104,37 @@ def _set_scene_props(scene: bpy.types.Scene, **kwargs) -> None:
             pass  # fail-soft
 
 
+def _get_hw_ratio(context: Optional[bpy.types.Context]) -> float:
+    """
+    Liefert (Horizontale Auflösung / Vertikale Auflösung).
+    1. Wahl: aktiver MovieClip.size (px)
+    2. Fallback: scene.render.resolution_x / resolution_y
+    3. Fallback: 1.0
+    """
+    # 1) MovieClip
+    try:
+        clip = _get_active_clip(context)
+        if clip:
+            # MovieClip.size -> (width, height)
+            w, h = clip.size
+            if isinstance(w, (int, float)) and isinstance(h, (int, float)) and h > 0:
+                return float(w) / float(h)
+    except Exception:
+        pass
+
+    # 2) Scene Render
+    try:
+        scene = (context.scene if context is not None else bpy.context.scene)
+        rx = float(getattr(scene.render, "resolution_x", 0) or 0)
+        ry = float(getattr(scene.render, "resolution_y", 0) or 0)
+        if ry > 0:
+            return rx / ry
+    except Exception:
+        pass
+
+    # 3) Default
+    return 1.0
+
 # =============================================================================
 #  Short-Test inkl. Live-Logging
 # =============================================================================
@@ -339,6 +370,7 @@ def short_test_pipeline(context=None, tracks_to_delete=None, report_fn: Optional
             kaiserlich_rot_scale_thresh_rot=0.0,
             kaiserlich_rot_scale_thresh_scale=0.0,
         )
+    ...
         r3 = short_test_track(
             context=context,
             run_meta={"tag": "STEP3", "fields": [
@@ -831,11 +863,112 @@ def reduce_threshold_pair(
     }
 
 
+# ---- NEU: Gekoppelter Rot-XY-Reducer (nur X-Reduktion; Y = X * (W/H)) ------
+
+def reduce_threshold_rot_xy_coupled(
+    context: Optional[bpy.types.Context],
+    prop_x: str,
+    prop_y: str,
+    hw_ratio: float,
+    cfg: ReduceConfig,
+    tracks_to_delete: Optional[List[str]] = None,
+    report_fn: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """
+    Downward-Reduce für Rot-XY:
+      - Nur prop_x wird reduziert (candidate = prev/sf)
+      - prop_y wird jedes Mal deterministisch gesetzt: prop_y = candidate * hw_ratio
+      - 'Einen Durchlauf zurück'-Strategie wie bei Single
+    """
+    scene = (context.scene if context is not None else bpy.context.scene)
+    snap = _snapshot_thresholds(scene)
+
+    logs: List[Dict[str, Any]] = []
+    best_x: float = cfg.start_single
+    best_y: float = cfg.start_single * hw_ratio
+    best_len: int = -1
+    best_sf: Optional[float] = None
+
+    try:
+        current_start_x = float(cfg.start_single)
+        last_success_prev_global: Optional[float] = None
+
+        sf = float(cfg.sf0)
+        outer = 0
+        while sf >= 1.0 and outer < cfg.max_outer_iters:
+            outer += 1
+
+            prev_x = current_start_x
+            had_success = False
+            next_start_after_stage: Optional[float] = None
+
+            inner = 0
+            while inner < cfg.max_inner_iters:
+                inner += 1
+                cand_x = prev_x / sf
+                if cand_x < cfg.min_threshold:
+                    break
+                cand_y = cand_x * hw_ratio
+
+                _set_scene_props(scene, **{prop_x: cand_x, prop_y: cand_y})
+                res = short_test_track(
+                    context=context,
+                    tracks_to_delete=tracks_to_delete,
+                    run_meta={"sf": sf, "fields": [prop_x, prop_y], "tag": f"Reduce {prop_x}(Y coupled)"},
+                    report_fn=report_fn
+                )
+                ttl = int(float(res.get("total_track_length", 0.0)))
+                logs.append({"sf": sf, "thresholds": (cand_x, cand_y), "ratio": hw_ratio})
+
+                if _is_success(ttl, cfg.target_len):
+                    if ttl > best_len:
+                        best_len = ttl
+                        best_x = cand_x
+                        best_y = cand_y
+                        best_sf = sf
+                    last_success_prev_global = prev_x
+                    next_start_after_stage = prev_x  # einen Schritt zurück
+                    had_success = True
+                    break
+                else:
+                    prev_x = cand_x
+
+            if had_success and next_start_after_stage is not None:
+                current_start_x = next_start_after_stage
+            elif last_success_prev_global is not None:
+                current_start_x = last_success_prev_global
+
+            sf = sf / cfg.sf_halve
+
+    finally:
+        _restore_thresholds(scene, snap)
+
+    return {
+        "props": (prop_x, prop_y),
+        "best": {"values": (best_x, best_y), "sf": best_sf, "ratio": hw_ratio},
+        "log": logs,
+    }
+
+
 # ---- Wrapper für die 4 Gruppen ---------------------------------------------
 
 def reduce_rot_xy(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), report_fn=None, **kw):
-    cfg = ReduceConfig(target_len=target_len, start_pair=start, **kw)
-    return reduce_threshold_pair(context, "kaiserlich_rot_thresh_x", "kaiserlich_rot_thresh_y", cfg, report_fn=report_fn)
+    """
+    Rot-XY Haupttest mit gekoppelter Ableitung:
+      - Reduktion nur auf X
+      - Y = X * (Horizontale / Vertikale Auflösung)
+    """
+    ratio = _get_hw_ratio(context)
+    # Startwert aus X nehmen; Y wird ohnehin dynamisch aus X*ratio abgeleitet.
+    cfg = ReduceConfig(target_len=target_len, start_single=float(start[0]), **kw)
+    return reduce_threshold_rot_xy_coupled(
+        context,
+        "kaiserlich_rot_thresh_x",
+        "kaiserlich_rot_thresh_y",
+        ratio,
+        cfg,
+        report_fn=report_fn
+    )
 
 def reduce_scale_min_max(context, target_len: int, start: Tuple[float, float] = (1.0, 1.0), report_fn=None, **kw):
     cfg = ReduceConfig(target_len=target_len, start_pair=start, **kw)
@@ -906,7 +1039,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 # ---- 3) Lange Tests automatisch gemäß Auswertung (mit Live-Log) ----
                 scene = context.scene
 
-                # STEP1 → Rot/XY
+                # STEP1 → Rot/XY (NEU: gekoppelter Reducer; nur X-Reduktion, Y aus Ratio)
                 if "STEP1" in ge_list:
                     target_len = max(base, int(vals.get("STEP1") or 0))
                     r = reduce_rot_xy(context, target_len=target_len, report_fn=report)
@@ -914,14 +1047,15 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     scene[SCENE_DEEPTEST_ROT_XY_BEST] = int(target_len)
                     vals_ = best.get("values")
                     if best.get("sf") is not None and isinstance(vals_, (tuple, list)) and len(vals_) == 2:
-                        # Ergebnis in Eingabefelder schreiben
                         _set_scene_props(scene,
                             kaiserlich_rot_thresh_x=float(vals_[0]),
                             kaiserlich_rot_thresh_y=float(vals_[1]),
                         )
-                        report(f"[Reduce RotXY] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])}) → Eingabefelder gesetzt")
+                        ratio = best.get("ratio")
+                        ratio_info = f" ratio={_fmt8(ratio)}" if ratio is not None else ""
+                        report(f"[Reduce RotXY (X-only)] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])}){ratio_info} → Eingabefelder gesetzt")
                     else:
-                        report("[Reduce RotXY] kein erfolgreicher Wert gefunden – Eingabefelder unverändert")
+                        report("[Reduce RotXY (X-only)] kein erfolgreicher Wert gefunden – Eingabefelder unverändert")
 
                 # STEP2 → Scale Min/Max
                 if "STEP2" in ge_list:
