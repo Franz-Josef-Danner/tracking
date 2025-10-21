@@ -6,6 +6,7 @@ from collections import deque
 
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
+from ..Helper.scene import get_start_frame, get_end_frame
 
 
 # ------------------------------------------------------------
@@ -118,11 +119,11 @@ def track_cycle(context, *, max_frames: int = 0, report_fn=None):
                 report_fn({"WARNING"}, "Clip hat kein Tracking-Objekt.")
             return {"CANCELLED"}
 
-        end_frame = getattr(scene, "frame_end", None)
-        if end_frame is None:
-            if report_fn:
-                report_fn({"WARNING"}, "Kein Szenen-Endframe gesetzt.")
-            return {"CANCELLED"}
+        # Szenen-Ende strikt aus Helper/scene.py ziehen
+        end_frame = get_end_frame(context)
+        if end_frame < start_frame:
+            # Defensive Korrektur
+            end_frame = start_frame
 
         # Originale Selektion sichern (bleibt bestehen)
         original_selected: List[str] = _collect_selected_track_names(context)
@@ -140,7 +141,11 @@ def track_cycle(context, *, max_frames: int = 0, report_fn=None):
                 report_fn({"WARNING"}, "Kein CLIP_EDITOR Kontext gefunden.")
             return {"CANCELLED"}
 
-        current_frame = start_frame
+        current_frame = max(start_frame, int(scene.frame_current))
+        if current_frame < start_frame:
+            current_frame = start_frame
+        if current_frame > end_frame:
+            current_frame = start_frame
         space.clip_user.frame_current = current_frame
         scene.frame_current = current_frame
 
@@ -187,12 +192,22 @@ def track_cycle(context, *, max_frames: int = 0, report_fn=None):
                 except Exception:
                     break
 
-            # Frame +1 (failsafe)
+            # Frame-Advance & Clamp: nie über Szenenende hinaus
             if space.clip_user.frame_current == current_frame:
                 space.clip_user.frame_current += 1
+
+            # **Harter Clamp nach dem Op**
+            if space.clip_user.frame_current > end_frame:
+                space.clip_user.frame_current = end_frame
+
             scene.frame_current = space.clip_user.frame_current
             current_frame = space.clip_user.frame_current
             frames_processed += 1
+
+            # **Stop-Kriterium**: Ende erreicht
+            if current_frame >= end_frame:
+                # einmaliges Optional-Advance verhindern, strikt beenden
+                break
 
             # Aktive Arbeitsliste pflegen (Selektion unberührt lassen!)
             processing_names, _ = _filter_active_tracks_at_frame(context, processing_names, current_frame)
