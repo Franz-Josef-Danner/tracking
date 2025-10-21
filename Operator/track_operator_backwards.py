@@ -6,7 +6,7 @@ from collections import deque
 
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.playhead_helper import get_start_frame, reset_to_frame
-
+from ..Helper.scene import get_start_frame, get_end_frame
 
 # ------------------------------------------------------------
 # Hilfsfunktionen (identisch nutzbar für beide Richtungen)
@@ -118,11 +118,11 @@ def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
                 report_fn({"WARNING"}, "Clip hat kein Tracking-Objekt.")
             return {"CANCELLED"}
 
-        frame_start = getattr(scene, "frame_start", None)
-        if frame_start is None:
-            if report_fn:
-                report_fn({"WARNING"}, "Kein Szenen-Startframe gesetzt.")
-            return {"CANCELLED"}
+        # Szenen-Grenzen strikt aus Helper/scene.py
+        frame_start = get_start_frame(context)
+        frame_end   = get_end_frame(context)
+        if frame_end < frame_start:
+            frame_end = frame_start
 
         # Originale Selektion sichern (bleibt bestehen)
         original_selected: List[str] = _collect_selected_track_names(context)
@@ -140,8 +140,14 @@ def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
                 report_fn({"WARNING"}, "Kein CLIP_EDITOR Kontext gefunden.")
             return {"CANCELLED"}
 
-        # Startframe aus Helper
-        current_frame = start_frame_saved
+        # Startposition rückwärts: nie über Szenenende hinaus starten,
+        # und nie VOR Szenenstart laufen.
+        # Falls der aktuelle Playhead außerhalb liegt, einklemmen.
+        current_frame = int(scene.frame_current)
+        if current_frame > frame_end:
+            current_frame = frame_end
+        if current_frame < frame_start:
+            current_frame = frame_start
 
         # Ausgangsframe setzen
         space.clip_user.frame_current = current_frame
@@ -193,9 +199,18 @@ def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
             # Frame -1 (failsafe)
             if space.clip_user.frame_current == current_frame:
                 space.clip_user.frame_current -= 1
+
+            # **Harter Clamp**: nie vor Szenenstart
+            if space.clip_user.frame_current < frame_start:
+                space.clip_user.frame_current = frame_start
+
             scene.frame_current = space.clip_user.frame_current
             current_frame = space.clip_user.frame_current
             frames_processed += 1
+
+            # **Stop-Kriterium**: Szenenstart erreicht
+            if current_frame <= frame_start:
+                break
 
             # Arbeitsliste pflegen (Selektion unberührt lassen!)
             processing_names, _ = _filter_active_tracks_at_frame(context, processing_names, current_frame)
