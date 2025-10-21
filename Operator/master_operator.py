@@ -2,9 +2,9 @@ import bpy
 from typing import Any, Optional, Set, Dict, Callable, ContextManager
 from contextlib import contextmanager
 
-# Helper-Import
+# Helper-Importe
 from ..Helper.low_marker_frame import find_first_weak_frame
-
+from ..Helper.filter_tracks import filter_problematic_tracks   # ✅ NEU
 
 # ---------------------------------------------------------------------------
 # Context & Selection Utilities
@@ -226,6 +226,13 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
 
         # Final: Selektion sicherstellen
         _restore_selected_tracks_by_names(clip, saved_selection)
+
+        # ✅ NEU: Filter-Helper am Ende der gesamten Pipeline ausführen
+        try:
+            filter_problematic_tracks(context, threshold=10.0)
+            print("[Kaiserlich Tracker][Master] Filter Problematic Tracks erfolgreich ausgeführt (threshold=10.0).")
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][Master] ❌ Fehler beim Filter Problematic Tracks: {e}")
 
         if iterations >= self.max_iterations:
             self.report({"WARNING"}, f"Abbruch durch Safety-Stop nach {self.max_iterations} Iterationen.")
