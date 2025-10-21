@@ -22,12 +22,10 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
         scene = context.scene
         ef_target = int(scene.kaiserlich_markers_per_frame)
 
-        # ============================================
         # Bootstrap
-        # ============================================
         params = run_bootstrap(context, ef_target)
         if not params:
-            self.report({'WARNING'}, "Bootstrap fehlgeschlagen")
+            self.report({'ERROR'}, "Bootstrap fehlgeschlagen")
             return {'CANCELLED'}
 
         md = float(params['md'])
@@ -38,15 +36,11 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
         hz = params['hz']
         vc = params['vc']
 
-        # ============================================
         # Snapshot vor Detect
-        # ============================================
         pre_snapshot = snapshot_active_markers(context)
         baseline_start_tracknames = {m['track'] for m in pre_snapshot}
 
-        # ============================================
         # Adaptive Schleife (nur min_distance)
-        # ============================================
         max_loops = 8
         loop = 0
         final_new_marker_count = 0
@@ -127,11 +121,8 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
                 delete_tracks_by_names(context, [m['track'] for m in neue_marker])
                 time.sleep(0.1)
 
-        # ============================================
         # Selektion der finalen Marker
-        # ============================================
         clip = getattr(context.space_data, 'clip', None)
-        selected_new_tracks = 0
         if clip and getattr(clip, 'tracking', None):
             tracking = clip.tracking
             new_tracks = [trk for trk in tracking.tracks if trk.name not in baseline_start_tracknames]
@@ -140,13 +131,10 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
                     trk.select = False
                 for new_trk in new_tracks:
                     new_trk.select = True
-                selected_new_tracks = len(new_tracks)
             except Exception:
                 pass
 
-        # ============================================
         # Frame-spezifische min_distance speichern & interpolieren
-        # ============================================
         frame_num = scene.frame_current
         md_value = float(last_md)
         if "min_distance_values" not in scene:
