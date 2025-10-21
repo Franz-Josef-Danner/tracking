@@ -5,8 +5,9 @@ from typing import List, Tuple, Dict, Deque
 from collections import deque
 
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
-from ..Helper.playhead_helper import get_start_frame, reset_to_frame
-from ..Helper.scene import get_start_frame, get_end_frame
+from ..Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
+from ..Helper.scene import get_start_frame as sc_get_start_frame, get_end_frame
+
 
 # ------------------------------------------------------------
 # Hilfsfunktionen (identisch nutzbar für beide Richtungen)
@@ -83,7 +84,7 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
     )
 
     def execute(self, context):
-        return track_cycle_backwards(context, max_frames=self.max_frames, report_fn=self.report)
+        return track_cycle_backwards(context, max_frames=self.max_frames)
 
 
 def register():
@@ -98,28 +99,24 @@ def unregister():
 # Hauptimplementierung: Tracking-Zyklus rückwärts
 # ------------------------------------------------------------
 
-def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
+def track_cycle_backwards(context, *, max_frames: int = 0):
     """Implementiert den stabilen Tracking-Zyklus (frameweise Tracking) rückwärts
     und setzt den Playhead am Ende auf die Ausgangsposition zurück.
     Zusätzlich bleiben ALLE ursprünglich getrackten Tracks selektiert."""
-    start_frame_saved = get_start_frame(context)
+    start_frame_saved = ph_get_start_frame(context)
 
     try:
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
-            if report_fn:
-                report_fn({"WARNING"}, "Kein aktiver Clip.")
             return {"CANCELLED"}
 
         tracking = getattr(clip, "tracking", None)
         if tracking is None:
-            if report_fn:
-                report_fn({"WARNING"}, "Clip hat kein Tracking-Objekt.")
             return {"CANCELLED"}
 
         # Szenen-Grenzen strikt aus Helper/scene.py
-        frame_start = get_start_frame(context)
+        frame_start = sc_get_start_frame(context)
         frame_end   = get_end_frame(context)
         if frame_end < frame_start:
             frame_end = frame_start
@@ -127,8 +124,6 @@ def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
         # Originale Selektion sichern (bleibt bestehen)
         original_selected: List[str] = _collect_selected_track_names(context)
         if not original_selected:
-            if report_fn:
-                report_fn({"WARNING"}, "Keine selektierten Tracks.")
             return {"CANCELLED"}
 
         # Arbeitsliste unabhängig von Selektion pflegen
@@ -136,13 +131,10 @@ def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
 
         window, area, region, space = _find_clip_editor_area(clip)
         if not window:
-            if report_fn:
-                report_fn({"WARNING"}, "Kein CLIP_EDITOR Kontext gefunden.")
             return {"CANCELLED"}
 
         # Startposition rückwärts: nie über Szenenende hinaus starten,
-        # und nie VOR Szenenstart laufen.
-        # Falls der aktuelle Playhead außerhalb liegt, einklemmen.
+        # und nie vor Szenenstart laufen. Playhead einklemmen.
         current_frame = int(scene.frame_current)
         if current_frame > frame_end:
             current_frame = frame_end
@@ -157,8 +149,7 @@ def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
             name: deque(maxlen=10) for name in processing_names
         }
 
-        # **Selektion NICHT mehr an processing_names koppeln**:
-        # Sicherstellen, dass die ursprünglichen Tracks selektiert bleiben.
+        # Ursprüngliche Selektion fixieren
         for tr in tracking.tracks:
             if tr.name in original_selected:
                 tr.select = True
@@ -196,11 +187,10 @@ def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
                 except Exception:
                     break
 
-            # Frame -1 (failsafe)
+            # Step rückwärts & Clamp
             if space.clip_user.frame_current == current_frame:
                 space.clip_user.frame_current -= 1
 
-            # **Harter Clamp**: nie vor Szenenstart
             if space.clip_user.frame_current < frame_start:
                 space.clip_user.frame_current = frame_start
 
@@ -208,11 +198,11 @@ def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
             current_frame = space.clip_user.frame_current
             frames_processed += 1
 
-            # **Stop-Kriterium**: Szenenstart erreicht
+            # Stop-Kriterium: Szenenstart erreicht
             if current_frame <= frame_start:
                 break
 
-            # Arbeitsliste pflegen (Selektion unberührt lassen!)
+            # Arbeitsliste pflegen (Selektion unberührt lassen)
             processing_names, _ = _filter_active_tracks_at_frame(context, processing_names, current_frame)
 
         # Vor Rückgabe: Originalselektion nochmals hartsetzen
