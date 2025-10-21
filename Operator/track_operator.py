@@ -100,8 +100,8 @@ def unregister():
 
 def track_cycle(context, *, max_frames: int = 0, report_fn=None):
     """Implementiert den stabilen Tracking-Zyklus (frameweise Tracking) und
-    setzt den Playhead am Ende auf die Ausgangsposition zurück."""
-    # Ausgangsposition sichern
+    setzt den Playhead am Ende auf die Ausgangsposition zurück. 
+    Zusätzlich bleiben ALLE ursprünglich getrackten Tracks selektiert."""
     start_frame = get_start_frame(context)
 
     try:
@@ -124,11 +124,15 @@ def track_cycle(context, *, max_frames: int = 0, report_fn=None):
                 report_fn({"WARNING"}, "Kein Szenen-Endframe gesetzt.")
             return {"CANCELLED"}
 
-        track_names = _collect_selected_track_names(context)
-        if not track_names:
+        # Originale Selektion sichern (bleibt bestehen)
+        original_selected: List[str] = _collect_selected_track_names(context)
+        if not original_selected:
             if report_fn:
                 report_fn({"WARNING"}, "Keine selektierten Tracks.")
             return {"CANCELLED"}
+
+        # Arbeitsliste unabhängig von Selektion pflegen
+        processing_names: List[str] = list(original_selected)
 
         window, area, region, space = _find_clip_editor_area(clip)
         if not window:
@@ -141,27 +145,28 @@ def track_cycle(context, *, max_frames: int = 0, report_fn=None):
         scene.frame_current = current_frame
 
         histories: Dict[str, Deque[Tuple[int, float, float]]] = {
-            name: deque(maxlen=10) for name in track_names
+            name: deque(maxlen=10) for name in processing_names
         }
 
-        # Tracks korrekt selektieren
+        # **Selektion NICHT mehr an processing_names koppeln**:
+        # Sicherstellen, dass die ursprünglichen Tracks selektiert bleiben.
         for tr in tracking.tracks:
-            tr.select = tr.name in track_names
+            if tr.name in original_selected:
+                tr.select = True
 
         frames_processed = 0
-        failures_total = 0
 
         # --- Hauptloop ---
         while True:
             if current_frame > end_frame:
                 break
-            if not track_names:
+            if not processing_names:
                 break
             if max_frames > 0 and frames_processed >= max_frames:
                 break
 
-            # Markerhistorie aktualisieren
-            for name in list(track_names):
+            # Historie aktualisieren
+            for name in list(processing_names):
                 tr = tracking.tracks.get(name)
                 if not tr:
                     continue
@@ -169,42 +174,38 @@ def track_cycle(context, *, max_frames: int = 0, report_fn=None):
                 if mk:
                     histories[name].append((current_frame, mk.co[0], mk.co[1]))
 
-            # Optionales Preprocessing (Formeln, Stabilisierung, etc.)
+            # Optionales Preprocessing
             try:
                 apply_formula_on_selected_tracks(context, max_frames=5)
             except Exception:
-                # Stabil bleiben, keine harte Unterbrechung
                 pass
 
-            # Blender Tracking Operator ausführen
+            # Tracking-Op
             with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                 try:
                     bpy.ops.clip.track_markers(backwards=False, sequence=False)
                 except Exception:
                     break
 
-            # Frame-Inkrement
+            # Frame +1 (failsafe)
             if space.clip_user.frame_current == current_frame:
                 space.clip_user.frame_current += 1
             scene.frame_current = space.clip_user.frame_current
             current_frame = space.clip_user.frame_current
             frames_processed += 1
 
-            # Aktive Tracks prüfen
-            track_names, dropped = _filter_active_tracks_at_frame(context, track_names, current_frame)
-            if dropped:
-                failures_total += dropped
+            # Aktive Arbeitsliste pflegen (Selektion unberührt lassen!)
+            processing_names, _ = _filter_active_tracks_at_frame(context, processing_names, current_frame)
 
-            # Selektion updaten
-            for tr in tracking.tracks:
-                tr.select = tr.name in track_names
+        # Vor Rückgabe: Originalselektion nochmals hartsetzen
+        for tr in tracking.tracks:
+            tr.select = (tr.name in original_selected)
 
         return {"FINISHED"}
 
     finally:
-        # Immer zurück auf Ausgangsposition – robust gegenüber Fehlern/Cancel
+        # Playhead robust zurücksetzen
         try:
             reset_to_frame(context, start_frame)
         except Exception:
-            # Silent fail: der Operator soll nicht an einer UI-Rücksetzung scheitern
             pass
