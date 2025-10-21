@@ -19,7 +19,8 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         # --- Hauptbereich ---
         col = layout.column(align=True)
         col.prop(scene, "kaiserlich_markers_per_frame", text="Marker per Frame")
-
+        col.prop(scene, "kaiserlich_frames_per_track", text="Frames per Track")
+        
         # ▶️ Buttons
         col.operator("kaiserlich_tracker.master_operator", text="Master", icon="PLUGIN")
         col.operator("kaiserlich_tracker.auto_calibrate", text="Auto-Calibrate Thresholds", icon="MOD_WAVE")
