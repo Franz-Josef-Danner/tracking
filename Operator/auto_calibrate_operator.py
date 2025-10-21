@@ -675,7 +675,7 @@ def reduce_threshold_single(
     """
     Downward-Reduce (Single) mit 'einen Durchlauf zurück':
       - Innerhalb einer Stufe sf iterativ cand = prev / sf
-      - Bei 'erfolg': nächster Stufenstart = prev (nicht cand)
+      - Bei Erfolg: nächster Stufenstart = prev (nicht cand)
       - Kein Erfolg: Start der nächsten Stufe = letzter erfolgreicher prev (global), falls vorhanden
     """
     scene = (context.scene if context is not None else bpy.context.scene)
@@ -687,7 +687,6 @@ def reduce_threshold_single(
     best_sf: Optional[float] = None
 
     try:
-        # aktueller Start und globaler Fallback (vorerst Start)
         current_start = float(cfg.start_single)
         last_success_prev_global: Optional[float] = None
 
@@ -696,7 +695,7 @@ def reduce_threshold_single(
         while sf >= 1.0 and outer < cfg.max_outer_iters:
             outer += 1
 
-            prev = current_start   # Stufen-Start (wird bei 'weiter' nachgeführt)
+            prev = current_start
             had_success = False
             next_start_after_stage: Optional[float] = None
 
@@ -705,10 +704,8 @@ def reduce_threshold_single(
                 inner += 1
                 candidate = prev / sf
                 if candidate < cfg.min_threshold:
-                    # Untergrenze → Stufe ohne Erfolg verlassen
                     break
 
-                # Test mit aktuellem Kandidaten (Logging übernimmt short_test_track)
                 _set_scene_props(scene, **{prop_name: candidate})
                 res = short_test_track(
                     context=context,
@@ -720,26 +717,21 @@ def reduce_threshold_single(
                 logs.append({"sf": sf, "threshold": candidate})
 
                 if _is_success(ttl, cfg.target_len):
-                    # Erfolg: Bestwert tracken (für Reporting), Start für nächste Stufe = prev (ein Schritt zurück)
                     if ttl > best_len:
                         best_len = ttl
                         best_val = candidate
                         best_sf = sf
                     last_success_prev_global = prev
-                    next_start_after_stage = prev
+                    next_start_after_stage = prev  # einen Schritt zurück
                     had_success = True
                     break
                 else:
-                    # weiter → prev verschieben und nächsten Kandidaten testen
                     prev = candidate
 
-            # Stufenwechsel: Start für die nächste Stufe definieren
             if had_success and next_start_after_stage is not None:
                 current_start = next_start_after_stage
             elif last_success_prev_global is not None:
-                # Kein Erfolg in dieser Stufe → auf letzten erfolgreichen prev zurückfallen
                 current_start = last_success_prev_global
-            # sonst bleibt current_start unverändert
 
             sf = sf / cfg.sf_halve
 
@@ -764,7 +756,7 @@ def reduce_threshold_pair(
     """
     Downward-Reduce (Pair) mit 'einen Durchlauf zurück':
       - Innerhalb einer Stufe sf iterativ (cand_a, cand_b) = (prev_a/sf, prev_b/sf)
-      - Bei 'erfolg': nächster Stufenstart = (prev_a, prev_b) (nicht (cand_a, cand_b))
+      - Bei Erfolg: nächster Stufenstart = (prev_a, prev_b) (nicht (cand_a, cand_b))
       - Kein Erfolg: Start der nächsten Stufe = letzter erfolgreicher (prev_a, prev_b) (global), falls vorhanden
     """
     scene = (context.scene if context is not None else bpy.context.scene)
@@ -815,19 +807,17 @@ def reduce_threshold_pair(
                         best_pair = (cand_a, cand_b)
                         best_sf = sf
                     last_success_prev_global = (prev_a, prev_b)
-                    next_start_after_stage = (prev_a, prev_b)  # ein Schritt zurück
+                    next_start_after_stage = (prev_a, prev_b)  # einen Schritt zurück
                     had_success = True
                     break
                 else:
                     prev_a = cand_a
                     prev_b = cand_b
 
-            # Stufenwechsel
             if had_success and next_start_after_stage is not None:
                 current_start_a, current_start_b = next_start_after_stage
             elif last_success_prev_global is not None:
                 current_start_a, current_start_b = last_success_prev_global
-            # sonst unverändert
 
             sf = sf / cfg.sf_halve
 
@@ -923,8 +913,15 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     best = r.get("best", {})
                     scene[SCENE_DEEPTEST_ROT_XY_BEST] = int(target_len)
                     vals_ = best.get("values")
-                    if isinstance(vals_, (tuple, list)) and len(vals_) == 2:
-                        report(f"[Reduce RotXY] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])})")
+                    if best.get("sf") is not None and isinstance(vals_, (tuple, list)) and len(vals_) == 2:
+                        # Ergebnis in Eingabefelder schreiben
+                        _set_scene_props(scene,
+                            kaiserlich_rot_thresh_x=float(vals_[0]),
+                            kaiserlich_rot_thresh_y=float(vals_[1]),
+                        )
+                        report(f"[Reduce RotXY] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])}) → Eingabefelder gesetzt")
+                    else:
+                        report("[Reduce RotXY] kein erfolgreicher Wert gefunden – Eingabefelder unverändert")
 
                 # STEP2 → Scale Min/Max
                 if "STEP2" in ge_list:
@@ -933,8 +930,14 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     best = r.get("best", {})
                     scene[SCENE_DEEPTEST_SCALE_BEST] = int(target_len)
                     vals_ = best.get("values")
-                    if isinstance(vals_, (tuple, list)) and len(vals_) == 2:
-                        report(f"[Reduce Scale] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])})")
+                    if best.get("sf") is not None and isinstance(vals_, (tuple, list)) and len(vals_) == 2:
+                        _set_scene_props(scene,
+                            kaiserlich_scale_thresh_min=float(vals_[0]),
+                            kaiserlich_scale_thresh_max=float(vals_[1]),
+                        )
+                        report(f"[Reduce Scale] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])}) → Eingabefelder gesetzt")
+                    else:
+                        report("[Reduce Scale] kein erfolgreicher Wert gefunden – Eingabefelder unverändert")
 
                 # STEP3 → Rot+Scale Pair
                 if "STEP3" in ge_list:
@@ -943,8 +946,14 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     best = r.get("best", {})
                     scene[SCENE_DEEPTEST_ROT_SCALE_BEST] = int(target_len)
                     vals_ = best.get("values")
-                    if isinstance(vals_, (tuple, list)) and len(vals_) == 2:
-                        report(f"[Reduce Rot+Scale] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])})")
+                    if best.get("sf") is not None and isinstance(vals_, (tuple, list)) and len(vals_) == 2:
+                        _set_scene_props(scene,
+                            kaiserlich_rot_scale_thresh_rot=float(vals_[0]),
+                            kaiserlich_rot_scale_thresh_scale=float(vals_[1]),
+                        )
+                        report(f"[Reduce Rot+Scale] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])}) → Eingabefelder gesetzt")
+                    else:
+                        report("[Reduce Rot+Scale] kein erfolgreicher Wert gefunden – Eingabefelder unverändert")
 
                 # STEP4 → Perspective
                 if "STEP4" in ge_list:
@@ -952,7 +961,12 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     r = reduce_perspective(context, target_len=target_len, report_fn=report)
                     best = r.get("best", {})
                     scene[SCENE_DEEPTEST_PERSPECTIVE_BEST] = int(target_len)
-                    report(f"[Reduce Perspective] best sf={_fmt8(best.get('sf'))} | thresh={_fmt8(best.get('value'))}")
+                    val_ = best.get("value")
+                    if best.get("sf") is not None and val_ is not None:
+                        _set_scene_props(scene, kaiserlich_perspective_thresh=float(val_))
+                        report(f"[Reduce Perspective] best sf={_fmt8(best.get('sf'))} | thresh={_fmt8(val_)} → Eingabefeld gesetzt")
+                    else:
+                        report("[Reduce Perspective] kein erfolgreicher Wert gefunden – Eingabefeld unverändert")
 
             except Exception as e:
                 self.report({'ERROR'}, f"Auswertung/Long-Tests fehlgeschlagen: {e}")
