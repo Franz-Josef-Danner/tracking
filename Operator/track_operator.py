@@ -1,7 +1,11 @@
+# Operator/track_operator.py
+
 import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
+
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
+from ..Helper.playhead_helper import get_start_frame, reset_to_frame
 
 
 # ------------------------------------------------------------
@@ -95,100 +99,112 @@ def unregister():
 # ------------------------------------------------------------
 
 def track_cycle(context, *, max_frames: int = 0, report_fn=None):
-    """Implementiert den stabilen Tracking-Zyklus (frameweise Tracking)."""
-    scene = context.scene
-    clip = getattr(context.space_data, "clip", None)
-    if clip is None:
-        if report_fn:
-            report_fn({"WARNING"}, "Kein aktiver Clip.")
-        return {"CANCELLED"}
+    """Implementiert den stabilen Tracking-Zyklus (frameweise Tracking) und
+    setzt den Playhead am Ende auf die Ausgangsposition zurück."""
+    # Ausgangsposition sichern
+    start_frame = get_start_frame(context)
 
-    tracking = getattr(clip, "tracking", None)
-    if tracking is None:
-        if report_fn:
-            report_fn({"WARNING"}, "Clip hat kein Tracking-Objekt.")
-        return {"CANCELLED"}
+    try:
+        scene = context.scene
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            if report_fn:
+                report_fn({"WARNING"}, "Kein aktiver Clip.")
+            return {"CANCELLED"}
 
-    end_frame = getattr(scene, "frame_end", None)
-    if end_frame is None:
-        if report_fn:
-            report_fn({"WARNING"}, "Kein Szenen-Endframe gesetzt.")
-        return {"CANCELLED"}
+        tracking = getattr(clip, "tracking", None)
+        if tracking is None:
+            if report_fn:
+                report_fn({"WARNING"}, "Clip hat kein Tracking-Objekt.")
+            return {"CANCELLED"}
 
-    start_frame = scene.frame_current
-    track_names = _collect_selected_track_names(context)
-    if not track_names:
-        if report_fn:
-            report_fn({"WARNING"}, "Keine selektierten Tracks.")
-        return {"CANCELLED"}
+        end_frame = getattr(scene, "frame_end", None)
+        if end_frame is None:
+            if report_fn:
+                report_fn({"WARNING"}, "Kein Szenen-Endframe gesetzt.")
+            return {"CANCELLED"}
 
-    window, area, region, space = _find_clip_editor_area(clip)
-    if not window:
-        if report_fn:
-            report_fn({"WARNING"}, "Kein CLIP_EDITOR Kontext gefunden.")
-        return {"CANCELLED"}
-
-    current_frame = start_frame
-    space.clip_user.frame_current = current_frame
-    scene.frame_current = current_frame
-
-    histories: Dict[str, Deque[Tuple[int, float, float]]] = {
-        name: deque(maxlen=10) for name in track_names
-    }
-
-    # Tracks korrekt selektieren
-    for tr in tracking.tracks:
-        tr.select = tr.name in track_names
-
-    frames_processed = 0
-    failures_total = 0
-
-    # --- Hauptloop ---
-    while True:
-        if current_frame > end_frame:
-            break
+        track_names = _collect_selected_track_names(context)
         if not track_names:
-            break
-        if max_frames > 0 and frames_processed >= max_frames:
-            break
+            if report_fn:
+                report_fn({"WARNING"}, "Keine selektierten Tracks.")
+            return {"CANCELLED"}
 
-        # Markerhistorie aktualisieren
-        for name in list(track_names):
-            tr = tracking.tracks.get(name)
-            if not tr:
-                continue
-            mk = tr.markers.find_frame(current_frame)
-            if mk:
-                histories[name].append((current_frame, mk.co[0], mk.co[1]))
+        window, area, region, space = _find_clip_editor_area(clip)
+        if not window:
+            if report_fn:
+                report_fn({"WARNING"}, "Kein CLIP_EDITOR Kontext gefunden.")
+            return {"CANCELLED"}
 
-        # Optionales Preprocessing (Formeln, Stabilisierung, etc.)
-        try:
-            apply_formula_on_selected_tracks(context, max_frames=5)
-        except Exception:
-            pass
+        current_frame = start_frame
+        space.clip_user.frame_current = current_frame
+        scene.frame_current = current_frame
 
-        # Blender Tracking Operator ausführen
-        with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-            try:
-                bpy.ops.clip.track_markers(backwards=False, sequence=False)
-            except Exception:
-                break
+        histories: Dict[str, Deque[Tuple[int, float, float]]] = {
+            name: deque(maxlen=10) for name in track_names
+        }
 
-        # Frame-Inkrement
-        if space.clip_user.frame_current == current_frame:
-            space.clip_user.frame_current += 1
-        scene.frame_current = space.clip_user.frame_current
-        current_frame = space.clip_user.frame_current
-        frames_processed += 1
-
-        # Aktive Tracks prüfen
-        track_names, dropped = _filter_active_tracks_at_frame(context, track_names, current_frame)
-        if dropped:
-            failures_total += dropped
-
-        # Selektion updaten
+        # Tracks korrekt selektieren
         for tr in tracking.tracks:
             tr.select = tr.name in track_names
 
-    # Kein Logging, nur stilles Return
-    return {"FINISHED"}
+        frames_processed = 0
+        failures_total = 0
+
+        # --- Hauptloop ---
+        while True:
+            if current_frame > end_frame:
+                break
+            if not track_names:
+                break
+            if max_frames > 0 and frames_processed >= max_frames:
+                break
+
+            # Markerhistorie aktualisieren
+            for name in list(track_names):
+                tr = tracking.tracks.get(name)
+                if not tr:
+                    continue
+                mk = tr.markers.find_frame(current_frame)
+                if mk:
+                    histories[name].append((current_frame, mk.co[0], mk.co[1]))
+
+            # Optionales Preprocessing (Formeln, Stabilisierung, etc.)
+            try:
+                apply_formula_on_selected_tracks(context, max_frames=5)
+            except Exception:
+                # Stabil bleiben, keine harte Unterbrechung
+                pass
+
+            # Blender Tracking Operator ausführen
+            with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+                try:
+                    bpy.ops.clip.track_markers(backwards=False, sequence=False)
+                except Exception:
+                    break
+
+            # Frame-Inkrement
+            if space.clip_user.frame_current == current_frame:
+                space.clip_user.frame_current += 1
+            scene.frame_current = space.clip_user.frame_current
+            current_frame = space.clip_user.frame_current
+            frames_processed += 1
+
+            # Aktive Tracks prüfen
+            track_names, dropped = _filter_active_tracks_at_frame(context, track_names, current_frame)
+            if dropped:
+                failures_total += dropped
+
+            # Selektion updaten
+            for tr in tracking.tracks:
+                tr.select = tr.name in track_names
+
+        return {"FINISHED"}
+
+    finally:
+        # Immer zurück auf Ausgangsposition – robust gegenüber Fehlern/Cancel
+        try:
+            reset_to_frame(context, start_frame)
+        except Exception:
+            # Silent fail: der Operator soll nicht an einer UI-Rücksetzung scheitern
+            pass
