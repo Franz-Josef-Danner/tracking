@@ -100,8 +100,8 @@ def unregister():
 
 def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
     """Implementiert den stabilen Tracking-Zyklus (frameweise Tracking) rückwärts
-    und setzt den Playhead am Ende auf die Ausgangsposition zurück."""
-    # Ausgangsposition robust sichern
+    und setzt den Playhead am Ende auf die Ausgangsposition zurück.
+    Zusätzlich bleiben ALLE ursprünglich getrackten Tracks selektiert."""
     start_frame_saved = get_start_frame(context)
 
     try:
@@ -124,14 +124,15 @@ def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
                 report_fn({"WARNING"}, "Kein Szenen-Startframe gesetzt.")
             return {"CANCELLED"}
 
-        # Startframe für den Trackinglauf aus dem Helper übernehmen
-        current_frame = start_frame_saved
-
-        track_names = _collect_selected_track_names(context)
-        if not track_names:
+        # Originale Selektion sichern (bleibt bestehen)
+        original_selected: List[str] = _collect_selected_track_names(context)
+        if not original_selected:
             if report_fn:
                 report_fn({"WARNING"}, "Keine selektierten Tracks.")
             return {"CANCELLED"}
+
+        # Arbeitsliste unabhängig von Selektion pflegen
+        processing_names: List[str] = list(original_selected)
 
         window, area, region, space = _find_clip_editor_area(clip)
         if not window:
@@ -139,33 +140,36 @@ def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
                 report_fn({"WARNING"}, "Kein CLIP_EDITOR Kontext gefunden.")
             return {"CANCELLED"}
 
-        # Ausgangsframe in Szene und Clip-User setzen
+        # Startframe aus Helper
+        current_frame = start_frame_saved
+
+        # Ausgangsframe setzen
         space.clip_user.frame_current = current_frame
         scene.frame_current = current_frame
 
-        # Historien (optional, analog zur Vorwärtsvariante)
         histories: Dict[str, Deque[Tuple[int, float, float]]] = {
-            name: deque(maxlen=10) for name in track_names
+            name: deque(maxlen=10) for name in processing_names
         }
 
-        # Tracks korrekt selektieren
+        # **Selektion NICHT mehr an processing_names koppeln**:
+        # Sicherstellen, dass die ursprünglichen Tracks selektiert bleiben.
         for tr in tracking.tracks:
-            tr.select = tr.name in track_names
+            if tr.name in original_selected:
+                tr.select = True
 
         frames_processed = 0
-        failures_total = 0
 
         # --- Hauptloop (rückwärts) ---
         while True:
             if current_frame < frame_start:
                 break
-            if not track_names:
+            if not processing_names:
                 break
             if max_frames > 0 and frames_processed >= max_frames:
                 break
 
-            # Markerhistorie aktualisieren
-            for name in list(track_names):
+            # Historie aktualisieren
+            for name in list(processing_names):
                 tr = tracking.tracks.get(name)
                 if not tr:
                     continue
@@ -173,43 +177,38 @@ def track_cycle_backwards(context, *, max_frames: int = 0, report_fn=None):
                 if mk:
                     histories[name].append((current_frame, mk.co[0], mk.co[1]))
 
-            # Optionales Preprocessing (Formeln, Stabilisierung, etc.)
+            # Optionales Preprocessing
             try:
                 apply_formula_on_selected_tracks(context, max_frames=5)
             except Exception:
-                # Silent-Fail analog Vorwärtsoperator
                 pass
 
-            # Blender Tracking Operator (rückwärts)
+            # Tracking rückwärts
             with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                 try:
                     bpy.ops.clip.track_markers(backwards=True, sequence=False)
                 except Exception:
                     break
 
-            # Frame-Dekrement (failsafe, falls Blender nicht gesprungen ist)
+            # Frame -1 (failsafe)
             if space.clip_user.frame_current == current_frame:
                 space.clip_user.frame_current -= 1
             scene.frame_current = space.clip_user.frame_current
             current_frame = space.clip_user.frame_current
             frames_processed += 1
 
-            # Aktive Tracks im neuen Frame prüfen
-            track_names, dropped = _filter_active_tracks_at_frame(context, track_names, current_frame)
-            if dropped:
-                failures_total += dropped
+            # Arbeitsliste pflegen (Selektion unberührt lassen!)
+            processing_names, _ = _filter_active_tracks_at_frame(context, processing_names, current_frame)
 
-            # Selektion updaten
-            for tr in tracking.tracks:
-                tr.select = tr.name in track_names
+        # Vor Rückgabe: Originalselektion nochmals hartsetzen
+        for tr in tracking.tracks:
+            tr.select = (tr.name in original_selected)
 
-        # Still: keine Logs, nur Status
         return {"FINISHED"}
 
     finally:
-        # Immer auf Ausgangsposition zurücksetzen – robust ggü. Fehlern/Cancel
+        # Playhead robust zurücksetzen
         try:
             reset_to_frame(context, start_frame_saved)
         except Exception:
-            # Silent fail: Die Rücksetzung soll nie den Operator hart failen lassen
             pass
