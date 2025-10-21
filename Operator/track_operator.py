@@ -5,8 +5,8 @@ from typing import List, Tuple, Dict, Deque
 from collections import deque
 
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
-from ..Helper.playhead_helper import get_start_frame, reset_to_frame
-from ..Helper.scene import get_start_frame, get_end_frame
+from ..Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
+from ..Helper.scene import get_end_frame
 
 
 # ------------------------------------------------------------
@@ -84,7 +84,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
     )
 
     def execute(self, context):
-        return track_cycle(context, max_frames=self.max_frames, report_fn=self.report)
+        return track_cycle(context, max_frames=self.max_frames)
 
 
 def register():
@@ -99,37 +99,30 @@ def unregister():
 # Hauptimplementierung: Tracking-Zyklus
 # ------------------------------------------------------------
 
-def track_cycle(context, *, max_frames: int = 0, report_fn=None):
+def track_cycle(context, *, max_frames: int = 0):
     """Implementiert den stabilen Tracking-Zyklus (frameweise Tracking) und
-    setzt den Playhead am Ende auf die Ausgangsposition zurück. 
+    setzt den Playhead am Ende auf die Ausgangsposition zurück.
     Zusätzlich bleiben ALLE ursprünglich getrackten Tracks selektiert."""
-    start_frame = get_start_frame(context)
+    start_frame = ph_get_start_frame(context)
 
     try:
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
-            if report_fn:
-                report_fn({"WARNING"}, "Kein aktiver Clip.")
             return {"CANCELLED"}
 
         tracking = getattr(clip, "tracking", None)
         if tracking is None:
-            if report_fn:
-                report_fn({"WARNING"}, "Clip hat kein Tracking-Objekt.")
             return {"CANCELLED"}
 
         # Szenen-Ende strikt aus Helper/scene.py ziehen
         end_frame = get_end_frame(context)
         if end_frame < start_frame:
-            # Defensive Korrektur
             end_frame = start_frame
 
         # Originale Selektion sichern (bleibt bestehen)
         original_selected: List[str] = _collect_selected_track_names(context)
         if not original_selected:
-            if report_fn:
-                report_fn({"WARNING"}, "Keine selektierten Tracks.")
             return {"CANCELLED"}
 
         # Arbeitsliste unabhängig von Selektion pflegen
@@ -137,8 +130,6 @@ def track_cycle(context, *, max_frames: int = 0, report_fn=None):
 
         window, area, region, space = _find_clip_editor_area(clip)
         if not window:
-            if report_fn:
-                report_fn({"WARNING"}, "Kein CLIP_EDITOR Kontext gefunden.")
             return {"CANCELLED"}
 
         current_frame = max(start_frame, int(scene.frame_current))
@@ -153,8 +144,7 @@ def track_cycle(context, *, max_frames: int = 0, report_fn=None):
             name: deque(maxlen=10) for name in processing_names
         }
 
-        # **Selektion NICHT mehr an processing_names koppeln**:
-        # Sicherstellen, dass die ursprünglichen Tracks selektiert bleiben.
+        # Ursprüngliche Selektion fixieren
         for tr in tracking.tracks:
             if tr.name in original_selected:
                 tr.select = True
@@ -192,11 +182,10 @@ def track_cycle(context, *, max_frames: int = 0, report_fn=None):
                 except Exception:
                     break
 
-            # Frame-Advance & Clamp: nie über Szenenende hinaus
+            # Frame-Advance & Clamp
             if space.clip_user.frame_current == current_frame:
                 space.clip_user.frame_current += 1
 
-            # **Harter Clamp nach dem Op**
             if space.clip_user.frame_current > end_frame:
                 space.clip_user.frame_current = end_frame
 
@@ -204,12 +193,11 @@ def track_cycle(context, *, max_frames: int = 0, report_fn=None):
             current_frame = space.clip_user.frame_current
             frames_processed += 1
 
-            # **Stop-Kriterium**: Ende erreicht
+            # Ende erreicht
             if current_frame >= end_frame:
-                # einmaliges Optional-Advance verhindern, strikt beenden
                 break
 
-            # Aktive Arbeitsliste pflegen (Selektion unberührt lassen!)
+            # Aktive Arbeitsliste pflegen (Selektion unberührt lassen)
             processing_names, _ = _filter_active_tracks_at_frame(context, processing_names, current_frame)
 
         # Vor Rückgabe: Originalselektion nochmals hartsetzen
