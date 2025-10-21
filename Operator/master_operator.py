@@ -1,3 +1,4 @@
+# Operator/master_operator.py
 import bpy
 from typing import Any, Optional, Set, Dict, Callable, ContextManager
 from contextlib import contextmanager
@@ -5,6 +6,10 @@ from contextlib import contextmanager
 # Helper-Importe
 from ..Helper.low_marker_frame import find_first_weak_frame
 from ..Helper.filter_tracks import filter_problematic_tracks   # ✅ Filter integriert
+from ..Helper.thresh_map import (                              # ✅ NEU
+    should_use_cached_thresholds,
+    save_after_autocalibrate,
+)
 
 # ---------------------------------------------------------------------------
 # Context & Selection Utilities
@@ -128,7 +133,8 @@ def _call_op_in_clip(op_callable, context: bpy.types.Context, clip: Optional[bpy
 # ---------------------------------------------------------------------------
 
 class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
-    """Iterative Low-Marker-Pipeline: low_marker_frame -> auto_calibrate -> detect_adapt -> track_backwards -> track_forwards, bis kein Low-Marker-Frame mehr existiert."""
+    """Iterative Low-Marker-Pipeline: low_marker_frame -> (auto_calibrate?) -> detect_adapt -> track_backwards -> track_forwards, bis kein Low-Marker-Frame mehr existiert.
+       Auto-Calibrate wird durch Helper/thresh_map konditional übersprungen, wenn für den aktuellen Playhead-Frame gespeicherte oder interpolierte Thresholds bereitstehen."""
     bl_idname = "kaiserlich_tracker.master_operator"
     bl_label = "KAISERLICHTRACKER — Master Operator"
     bl_options = {"REGISTER", "UNDO"}
@@ -193,12 +199,27 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
 
             print(f"[Kaiserlich Tracker][Master] Iteration={iterations} -> LowMarkerFrame={frame}")
 
-            # 2) Auto-Calibrate
-            ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.auto_calibrate, context, clip)
-            if not ok:
-                self.report({"WARNING"}, "auto_calibrate wurde nicht erfolgreich ausgeführt.")
+            # 2) Auto-Calibrate nur ausführen, wenn NICHT bereits Werte (exakt/interpoliert) vorliegen
+            skip_auto = False
+            try:
+                skip_auto = should_use_cached_thresholds(context, frame)
+            except Exception as e:
+                print(f"[Kaiserlich Tracker][Master] ThreshMap check failed (frame {frame}): {e}")
+                skip_auto = False
+
+            if skip_auto:
+                print("[Kaiserlich Tracker][Master] auto_calibrate SKIPPED (gespeicherte/interpolierte Thresholds).")
             else:
-                print("[Kaiserlich Tracker][Master] auto_calibrate: OK")
+                ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.auto_calibrate, context, clip)
+                if not ok:
+                    self.report({"WARNING"}, "auto_calibrate wurde nicht erfolgreich ausgeführt.")
+                else:
+                    print("[Kaiserlich Tracker][Master] auto_calibrate: OK")
+                    # Nach erfolgreichem Calibrate: Ergebnisse speichern und ggf. Spanne baken
+                    try:
+                        save_after_autocalibrate(context, frame, bake_neighbors=True)
+                    except Exception as e:
+                        print(f"[Kaiserlich Tracker][Master] Warnung: save_after_autocalibrate fehlgeschlagen: {e}")
 
             # 3) Detect Adapt
             ok = _call_op_in_clip(bpy.ops.kaiserlich_tracker.detect_adapt, context, clip)
