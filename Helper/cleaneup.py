@@ -18,7 +18,6 @@ def cleanup_new_markers(
         return neue_marker, 0
 
     if pz <= 0:
-        print(f"[Kaiserlich Tracker] cleanup: Ungültiges pz={pz} -> kein Cleanup.")
         return neue_marker, 0
 
     # Tracking referenzieren für Aktiv-Filter
@@ -32,14 +31,8 @@ def cleanup_new_markers(
         tr = tracking.tracks.get(name)
         return bool(tr and not getattr(tr, "mute", False))
 
-    active_old = [
-        m for m in alte_marker
-        if _track_active(m["track"])
-    ]
-    active_new = [
-        m for m in neue_marker
-        if _track_active(m["track"])
-    ]
+    active_old = [m for m in alte_marker if _track_active(m["track"])]
+    active_new = [m for m in neue_marker if _track_active(m["track"])]
 
     if not active_new or not active_old:
         return neue_marker, 0
@@ -55,7 +48,6 @@ def cleanup_new_markers(
         ]
 
     old_pixels = build_old_pixel_map()
-
     thresh = float(pz) * 0.025
 
     for nm in active_new:
@@ -68,8 +60,7 @@ def cleanup_new_markers(
                 if delete_track_by_name(context, ama_m["track"]):
                     deleted_old += 1
                     remaining_old.pop(key, None)
-                    print(f"[Kaiserlich Tracker] cleanup: Alter Track '{ama_m['track']}' gelöscht (|dx|={dx:.2f} < pz/2={thresh:.2f}).")
-                old_pixels = build_old_pixel_map()
+                    old_pixels = build_old_pixel_map()
                 continue
 
             dy = abs(ama_px_y - nm_px_y)
@@ -77,9 +68,7 @@ def cleanup_new_markers(
                 if delete_track_by_name(context, ama_m["track"]):
                     deleted_old += 1
                     remaining_old.pop(key, None)
-                    print(f"[Kaiserlich Tracker] cleanup: Alter Track '{ama_m['track']}' gelöscht (|dy|={dy:.2f} < pz/2={thresh:.2f}).")
-                old_pixels = build_old_pixel_map()
+                    old_pixels = build_old_pixel_map()
                 continue
 
-    print(f"[Kaiserlich Tracker] cleanup: {deleted_old} alte Tracks entfernt (Schwelle pz/2={thresh:.2f}). Neue Marker behalten: {len(neue_marker)}")
     return neue_marker, deleted_old
