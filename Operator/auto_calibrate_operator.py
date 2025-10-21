@@ -115,7 +115,6 @@ def _get_hw_ratio(context: Optional[bpy.types.Context]) -> float:
     try:
         clip = _get_active_clip(context)
         if clip:
-            # MovieClip.size -> (width, height)
             w, h = clip.size
             if isinstance(w, (int, float)) and isinstance(h, (int, float)) and h > 0:
                 return float(w) / float(h)
@@ -370,7 +369,6 @@ def short_test_pipeline(context=None, tracks_to_delete=None, report_fn: Optional
             kaiserlich_rot_scale_thresh_rot=0.0,
             kaiserlich_rot_scale_thresh_scale=0.0,
         )
-    ...
         r3 = short_test_track(
             context=context,
             run_meta={"tag": "STEP3", "fields": [
@@ -959,7 +957,6 @@ def reduce_rot_xy(context, target_len: int, start: Tuple[float, float] = (1.0, 1
       - Y = X * (Horizontale / Vertikale Auflösung)
     """
     ratio = _get_hw_ratio(context)
-    # Startwert aus X nehmen; Y wird ohnehin dynamisch aus X*ratio abgeleitet.
     cfg = ReduceConfig(target_len=target_len, start_single=float(start[0]), **kw)
     return reduce_threshold_rot_xy_coupled(
         context,
