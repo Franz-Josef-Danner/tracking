@@ -1,25 +1,7 @@
-# Helper/filter_tracks.py
-# ------------------------------------------------------------
-# Führt den Blender-internen Filter zur Track-Bereinigung aus
-# und löscht anschließend Tracks mit zu kurzer Länge.
-# ------------------------------------------------------------
-
 import bpy
 
 
 def filter_problematic_tracks(context: bpy.types.Context, threshold: float = 10.0, min_frames: int = 25) -> None:
-    """
-    Wendet den internen Blender-Filter auf Tracking-Daten an, um
-    fehlerhafte Tracks zu bereinigen und anschließend alle Tracks
-    zu löschen, die kürzer als 'min_frames' sind.
-
-    Args:
-        context (bpy.types.Context): Der aktuelle Blender-Kontext.
-        threshold (float): Schwellenwert für den internen Track-Filter.
-        min_frames (int): Mindestanzahl an Frames, die ein Track haben muss.
-                          Tracks mit weniger Frames werden gelöscht.
-    """
-
     # Sicherstellen, dass wir im Movie Clip Editor sind
     space_data = getattr(context, "space_data", None)
     if not space_data or not hasattr(space_data, "clip") or space_data.clip is None:
