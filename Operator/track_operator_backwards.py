@@ -177,21 +177,26 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
 
                 # Fortschritt aktualisieren
                 if space.clip_user.frame_current == current_frame:
-                    # Falls Blender sich nicht bewegt, abbrechen
-                    print(f"[Kaiserlich Tracker][Backwards] Playhead steht (Frame {current_frame}) – Abbruch.")
-                    break
-
-                if space.clip_user.frame_current < frame_start:
-                    space.clip_user.frame_current = frame_start
-
-                scene.frame_current = space.clip_user.frame_current
-                current_frame = scene.frame_current
+                    # Wenn Blender-Tracking keinen Schritt ausführt, Frame manuell reduzieren
+                    print(f"[Kaiserlich Tracker][Backwards] Kein Playhead-Move erkannt – manueller Rückschritt von {current_frame} auf {current_frame - 1}")
+                    current_frame -= 1
+                    if current_frame < frame_start:
+                        print(f"[Kaiserlich Tracker][Backwards] Szenenanfang erreicht ({frame_start}).")
+                        break
+                    # Frame aktiv setzen
+                    space.clip_user.frame_current = current_frame
+                    scene.frame_current = current_frame
+                else:
+                    # Normaler Fortschritt
+                    scene.frame_current = space.clip_user.frame_current
+                    current_frame = scene.frame_current
+                
                 frames_processed += 1
-
                 print(f"[Kaiserlich Tracker][Backwards] Frame {current_frame} getrackt ({frames_processed})")
-
+                
                 # Aktive Tracks prüfen
                 processing_names, _ = _filter_active_tracks_at_frame(context, processing_names, current_frame)
+
 
             # Selektion am Ende wiederherstellen
             for tr in tracking.tracks:
