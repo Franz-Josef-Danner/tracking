@@ -67,12 +67,12 @@ def _filter_active_tracks_at_frame(context, track_names: List[str], frame: int) 
 # ------------------------------------------------------------
 
 class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
-    """Trackt selektierte Marker frameweise rückwärts mit Playhead-Erkennung."""
+    """Trackt selektierte Marker frameweise rückwärts bis Szenenanfang, mit INVOKE_DEFAULT-Fallback."""
     bl_idname = "kaiserlich_tracker.track_cycle_backwards"
     bl_label = "Track Zyklus (Rückwärts, Frame für Frame)"
     bl_description = (
         "Trackt selektierte Marker frameweise rückwärts bis zum Szenenanfang. "
-        "Bricht ab, wenn der Playhead sich nicht mehr bewegt."
+        "Erzwingt INVOKE_DEFAULT für UI-Feedback, auch bei Skriptaufrufen."
     )
     bl_options = {"REGISTER", "INTERNAL"}
 
@@ -85,7 +85,7 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
     )
 
     # --------------------------------------------------------
-    # Invoke: startet Tracking bei jedem Aufruf
+    # invoke() — Standardstart bei UI/INVOKE_DEFAULT
     # --------------------------------------------------------
     def invoke(self, context, event):
         scene = context.scene
@@ -98,22 +98,38 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
 
         scene["kaiserlich_last_frame_backwards"] = current_frame
         print(f"[Kaiserlich Tracker][Backwards] Starte rückwärts-Tracking ab Frame {current_frame}")
-        return self.execute(context)
+        return self._execute_tracking(context)
 
     # --------------------------------------------------------
-    # Execute: vollständiger Rückwärts-Zyklus
+    # execute() — erzwungener INVOKE_DEFAULT-Wrapper
     # --------------------------------------------------------
     def execute(self, context):
+        """Wenn ohne UI gestartet, ruft sich der Operator selbst mit INVOKE_DEFAULT neu auf."""
+        if not hasattr(self, "_invoked_from_ui"):
+            print(f"[Kaiserlich Tracker][Backwards] Force INVOKE_DEFAULT (Re-route)")
+            self._invoked_from_ui = True
+            return bpy.ops.kaiserlich_tracker.track_cycle_backwards('INVOKE_DEFAULT', max_frames=self.max_frames)
+
+        # Bereits über invoke gestartet -> echten Tracking-Code ausführen
+        delattr(self, "_invoked_from_ui")
+        return self._execute_tracking(context)
+
+    # --------------------------------------------------------
+    # _execute_tracking() — eigentlicher Rückwärts-Zyklus
+    # --------------------------------------------------------
+    def _execute_tracking(self, context):
         start_frame_saved = ph_get_start_frame(context)
 
         try:
             scene = context.scene
             clip = getattr(context.space_data, "clip", None)
             if clip is None:
+                print("[Kaiserlich Tracker][Backwards] ❌ Kein aktiver Clip.")
                 return {"CANCELLED"}
 
             tracking = getattr(clip, "tracking", None)
             if tracking is None:
+                print("[Kaiserlich Tracker][Backwards] ❌ Kein Tracking-Objekt gefunden.")
                 return {"CANCELLED"}
 
             frame_start = sc_get_start_frame(context)
@@ -124,12 +140,12 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
             # Selektion sichern
             original_selected: List[str] = _collect_selected_track_names(context)
             if not original_selected:
-                print("[Kaiserlich Tracker][Backwards] Keine Tracks selektiert.")
+                print("[Kaiserlich Tracker][Backwards] ❌ Keine Tracks selektiert.")
                 return {"CANCELLED"}
 
             window, area, region, space = _find_clip_editor_area(clip)
             if not window:
-                print("[Kaiserlich Tracker][Backwards] Kein CLIP_EDITOR gefunden.")
+                print("[Kaiserlich Tracker][Backwards] ❌ Kein CLIP_EDITOR gefunden.")
                 return {"CANCELLED"}
 
             current_frame = int(scene.frame_current)
@@ -147,7 +163,7 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
             print(f"[Kaiserlich Tracker][Backwards] Tracking-Loop startet bei Frame {current_frame}")
 
             # --------------------------------------------------------
-            # Hauptloop (rückwärts, bis Szenenanfang)
+            # Hauptloop (rückwärts)
             # --------------------------------------------------------
             while True:
                 # Stopbedingungen
@@ -172,41 +188,39 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
                     try:
                         bpy.ops.clip.track_markers(backwards=True, sequence=False)
                     except Exception as e:
-                        print(f"[Kaiserlich Tracker][Backwards] Fehler: {e}")
+                        print(f"[Kaiserlich Tracker][Backwards] ❌ Tracking-Fehler: {e}")
                         break
 
-                # Fortschritt aktualisieren
+                # Fortschritt aktualisieren oder erzwingen
                 if space.clip_user.frame_current == current_frame:
-                    # Wenn Blender-Tracking keinen Schritt ausführt, Frame manuell reduzieren
-                    print(f"[Kaiserlich Tracker][Backwards] Kein Playhead-Move erkannt – manueller Rückschritt von {current_frame} auf {current_frame - 1}")
+                    # Blender hat Playhead nicht bewegt -> manueller Schritt
+                    print(f"[Kaiserlich Tracker][Backwards] Kein Move erkannt – manuell zu Frame {current_frame - 1}")
                     current_frame -= 1
                     if current_frame < frame_start:
                         print(f"[Kaiserlich Tracker][Backwards] Szenenanfang erreicht ({frame_start}).")
                         break
-                    # Frame aktiv setzen
                     space.clip_user.frame_current = current_frame
                     scene.frame_current = current_frame
                 else:
-                    # Normaler Fortschritt
+                    # Normale Bewegung
                     scene.frame_current = space.clip_user.frame_current
                     current_frame = scene.frame_current
-                
+
                 frames_processed += 1
                 print(f"[Kaiserlich Tracker][Backwards] Frame {current_frame} getrackt ({frames_processed})")
-                
+
                 # Aktive Tracks prüfen
                 processing_names, _ = _filter_active_tracks_at_frame(context, processing_names, current_frame)
-
 
             # Selektion am Ende wiederherstellen
             for tr in tracking.tracks:
                 tr.select = (tr.name in original_selected)
 
-            print(f"[Kaiserlich Tracker][Backwards] Tracking abgeschlossen bei Frame {scene.frame_current}")
-
+            print(f"[Kaiserlich Tracker][Backwards] ✅ Tracking abgeschlossen bei Frame {scene.frame_current}")
             return {"FINISHED"}
 
         finally:
+            # Playhead sicher zurücksetzen
             try:
                 reset_to_frame(context, start_frame_saved)
             except Exception:
