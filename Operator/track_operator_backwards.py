@@ -63,9 +63,9 @@ def _filter_active_tracks_at_frame(context, track_names: List[str], frame: int) 
 # Modal Operator (Rückwärts)
 # ------------------------------------------------------------
 
-class KAISERLICHTRACKER_OT_track_cycle_backwards_modal(bpy.types.Operator):
+class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
     """Frame-by-Frame Rückwärts-Tracking mit sichtbarem Fortschritt (nicht blockierend)."""
-    bl_idname = "kaiserlich_tracker.track_cycle_backwards_modal"
+    bl_idname = "kaiserlich_tracker.track_cycle_backwards"
     bl_label = "Track Zyklus (Modal Rückwärts)"
     bl_description = (
         "Trackt selektierte Marker frameweise rückwärts mit Timer – UI bleibt responsiv, "
@@ -259,8 +259,8 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards_modal(bpy.types.Operator):
 # ------------------------------------------------------------
 
 def register():
-    bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle_backwards_modal)
+    bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle_backwards)
 
 
 def unregister():
-    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_track_cycle_backwards_modal)
+    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_track_cycle_backwards)
