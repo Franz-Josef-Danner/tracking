@@ -4,6 +4,8 @@ from typing import List, Tuple
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
 from ..Helper.scene import get_start_frame as sc_get_start_frame, get_end_frame
+# optional: falls du eine spezialisierte Analyse hast:
+# from ..Helper.motion_model import select_best_motion_model
 
 
 # ------------------------------------------------------------
@@ -32,13 +34,13 @@ def _collect_selected_track_names(context):
 
 
 # ------------------------------------------------------------
-# Modal Operator (nicht blockierend)
+# Modal Operator mit Analyse-Hook
 # ------------------------------------------------------------
 
 class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
-    """Nicht blockierender Rückwärts-Tracking-Zyklus mit sichtbarem Fortschritt."""
+    """Nicht blockierender Rückwärts-Tracking-Zyklus mit Analyse-Phase (apply_formula_on_selected_tracks)."""
     bl_idname = "kaiserlich_tracker.track_cycle_backwards"
-    bl_label = "Track Zyklus (Rückwärts, Sichtbar)"
+    bl_label = "Track Zyklus (Rückwärts, Sichtbar + Analyse)"
     bl_options = {"REGISTER", "INTERNAL"}
 
     timer = None
@@ -49,9 +51,6 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
     frames_processed = 0
     max_frames: bpy.props.IntProperty(default=0, min=0, soft_max=100000)
 
-    # --------------------------------------------------------
-    # Invoke (Start)
-    # --------------------------------------------------------
     def invoke(self, context, event):
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
@@ -64,13 +63,8 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
             self.report({'ERROR'}, "Kein CLIP_EDITOR aktiv.")
             return {'CANCELLED'}
 
-        self.window = window
-        self.area = area
-        self.region = region
-        self.space = space
-        self.scene = scene
-        self.clip = clip
-        self.tracking = clip.tracking
+        self.window, self.area, self.region, self.space = window, area, region, space
+        self.scene, self.clip, self.tracking = scene, clip, clip.tracking
         self.frame_start = sc_get_start_frame(context)
         self.frame_end = get_end_frame(context)
         self.current_frame = int(scene.frame_current)
@@ -85,11 +79,11 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
         # Timer für Modalbetrieb
         self.timer = context.window_manager.event_timer_add(0.05, window=context.window)
         context.window_manager.modal_handler_add(self)
-        print(f"[Kaiserlich Tracker][Modal Backwards] Starte Rückwärts-Tracking ab Frame {self.current_frame}")
+        print(f"[Kaiserlich Tracker][Backwards Modal] Starte Rückwärts-Tracking (Analyse aktiv) ab Frame {self.current_frame}")
         return {'RUNNING_MODAL'}
 
     # --------------------------------------------------------
-    # Modal Step
+    # Modal Step (pro Frame)
     # --------------------------------------------------------
     def modal(self, context, event):
         if event.type == 'ESC':
@@ -111,13 +105,29 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
             print("[Kaiserlich Tracker][Modal Backwards] Sicherheitslimit erreicht.")
             return self._finish(context)
 
+        # --------------------------------------------------------
+        # Analyse / Motion-Model-Optimierung
+        # --------------------------------------------------------
+        try:
+            # Optional: gezielte KPI-basierte Modellwahl
+            # best_model = select_best_motion_model(context, frame=self.current_frame)
+            # if best_model:
+            #     self.clip.tracking.settings.motion_model = best_model
+
+            # Standardanalyse – dein bisheriger Algorithmus:
+            apply_formula_on_selected_tracks(context, max_frames=5)
+
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][Modal Backwards] Analyse-Fehler: {e}")
+
+        # --------------------------------------------------------
         # Tracking-Schritt
+        # --------------------------------------------------------
         with bpy.context.temp_override(window=self.window, area=self.area, region=self.region, space_data=self.space):
             try:
-                apply_formula_on_selected_tracks(context, max_frames=5)
                 bpy.ops.clip.track_markers(backwards=True, sequence=False)
             except Exception as e:
-                print(f"[Kaiserlich Tracker][Modal Backwards] Fehler: {e}")
+                print(f"[Kaiserlich Tracker][Modal Backwards] Tracking-Fehler: {e}")
                 return self._finish(context)
 
         # Fortschritt sichtbar machen
@@ -129,7 +139,8 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
         self.scene.frame_current = self.current_frame
         context.area.tag_redraw()
         self.frames_processed += 1
-        print(f"[Kaiserlich Tracker][Modal Backwards] Frame {self.current_frame} getrackt ({self.frames_processed})")
+
+        print(f"[Kaiserlich Tracker][Modal Backwards] Frame {self.current_frame} analysiert + getrackt ({self.frames_processed})")
 
         return {'RUNNING_MODAL'}
 
@@ -148,6 +159,7 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
         if cancelled:
             print("[Kaiserlich Tracker][Modal Backwards] ❌ Abgebrochen.")
             return {'CANCELLED'}
+
         print("[Kaiserlich Tracker][Modal Backwards] ✅ Fertig.")
         return {'FINISHED'}
 
