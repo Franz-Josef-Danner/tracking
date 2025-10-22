@@ -81,7 +81,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         description="Sicherheitslimit (0 = kein Limit)"
     )
 
-    # interne State-Variablen
     _timer = None
     _context_cache = None
     _processing_names: List[str]
@@ -159,14 +158,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         if event.type != 'TIMER':
             return {"PASS_THROUGH"}
 
-        # Ablauf pro Timer-Tick (ein Frame)
-        if (self._current_frame > self._end_frame or
-            not self._processing_names or
-            (self.max_frames > 0 and self._frames_processed >= self.max_frames)):
-            print("[Kaiserlich Tracker][Modal] Fertig.")
-            self._finish(context)
-            return {"FINISHED"}
-
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
             self._finish(context, cancelled=True)
@@ -212,6 +203,28 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         # Aktive Tracks prüfen
         self._processing_names, _ = _filter_active_tracks_at_frame(context, self._processing_names, self._current_frame)
 
+        # ---------------------------
+        # ✅ Beendigungskriterien
+        # ---------------------------
+
+        # 1. Szenenende erreicht
+        if self._current_frame >= self._end_frame:
+            print("[Kaiserlich Tracker][Modal] Szenenende erreicht.")
+            self._finish(context)
+            return {"FINISHED"}
+
+        # 2. Keine aktiven Tracks mehr
+        if not self._processing_names:
+            print("[Kaiserlich Tracker][Modal] Keine aktiven Tracks mehr.")
+            self._finish(context)
+            return {"FINISHED"}
+
+        # 3. Sicherheitslimit
+        if self.max_frames > 0 and self._frames_processed >= self.max_frames:
+            print("[Kaiserlich Tracker][Modal] Sicherheitslimit erreicht.")
+            self._finish(context)
+            return {"FINISHED"}
+
         return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
@@ -235,7 +248,11 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         except Exception:
             pass
 
-        print("[Kaiserlich Tracker][Modal] Zyklus beendet." if not cancelled else "[Kaiserlich Tracker][Modal] Abgebrochen.")
+        print(
+            "[Kaiserlich Tracker][Modal] Zyklus beendet."
+            if not cancelled else
+            "[Kaiserlich Tracker][Modal] Abgebrochen."
+        )
 
 
 # ------------------------------------------------------------
