@@ -81,7 +81,6 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
         description="Sicherheitslimit (0 = kein Limit)"
     )
 
-    # interne Statevariablen
     _timer = None
     _processing_names: List[str]
     _original_selected: List[str]
@@ -160,14 +159,6 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
         if event.type != 'TIMER':
             return {"PASS_THROUGH"}
 
-        # Abbruchkriterien
-        if (self._current_frame < self._frame_start or
-            not self._processing_names or
-            (self.max_frames > 0 and self._frames_processed >= self.max_frames)):
-            print("[Kaiserlich Tracker][Modal Rückwärts] Fertig.")
-            self._finish(context)
-            return {"FINISHED"}
-
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
             self._finish(context, cancelled=True)
@@ -212,6 +203,27 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
 
         # Arbeitsliste aktualisieren
         self._processing_names, _ = _filter_active_tracks_at_frame(context, self._processing_names, self._current_frame)
+
+        # ---------------------------
+        # ✅ Beendigungskriterien
+        # ---------------------------
+        # 1. Szenenstart erreicht
+        if self._current_frame <= self._frame_start:
+            print("[Kaiserlich Tracker][Modal Rückwärts] Szenenstart erreicht.")
+            self._finish(context)
+            return {"FINISHED"}
+
+        # 2. Keine aktiven Tracks mehr
+        if not self._processing_names:
+            print("[Kaiserlich Tracker][Modal Rückwärts] Keine aktiven Tracks mehr.")
+            self._finish(context)
+            return {"FINISHED"}
+
+        # 3. Sicherheitslimit
+        if self.max_frames > 0 and self._frames_processed >= self.max_frames:
+            print("[Kaiserlich Tracker][Modal Rückwärts] Sicherheitslimit erreicht.")
+            self._finish(context)
+            return {"FINISHED"}
 
         return {"RUNNING_MODAL"}
 
