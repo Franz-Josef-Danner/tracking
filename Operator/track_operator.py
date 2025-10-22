@@ -63,9 +63,9 @@ def _filter_active_tracks_at_frame(context, track_names: List[str], frame: int) 
 # Modal Operator
 # ------------------------------------------------------------
 
-class KAISERLICHTRACKER_OT_track_cycle_modal(bpy.types.Operator):
+class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
     """Frame-by-Frame Tracking mit sichtbarem Fortschritt (nicht blockierend)."""
-    bl_idname = "kaiserlich_tracker.track_cycle_modal"
+    bl_idname = "kaiserlich_tracker.track_cycle"
     bl_label = "Track Zyklus (Modal)"
     bl_description = (
         "Trackt selektierte Marker frameweise mit Timer – UI bleibt responsiv, "
@@ -243,8 +243,8 @@ class KAISERLICHTRACKER_OT_track_cycle_modal(bpy.types.Operator):
 # ------------------------------------------------------------
 
 def register():
-    bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle_modal)
+    bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle)
 
 
 def unregister():
-    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_track_cycle_modal)
+    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_track_cycle)
