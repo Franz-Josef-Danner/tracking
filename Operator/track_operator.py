@@ -1,5 +1,3 @@
-# Operator/track_operator.py
-
 import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
@@ -40,7 +38,7 @@ def _collect_selected_track_names(context) -> List[str]:
 
 
 def _filter_active_tracks_at_frame(context, track_names: List[str], frame: int) -> Tuple[List[str], int]:
-    """Prüft, welche der Tracks im angegebenen Frame noch aktiv (nicht gemutet, Marker vorhanden) sind."""
+    """Prüft, welche der Tracks im angegebenen Frame aktiv sind (Marker vorhanden, nicht gemutet)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
         return [], len(track_names)
@@ -62,16 +60,16 @@ def _filter_active_tracks_at_frame(context, track_names: List[str], frame: int) 
 
 
 # ------------------------------------------------------------
-# Operator (Optional UI Wrapper)
+# Modal Operator
 # ------------------------------------------------------------
 
-class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
-    """Trackt selektierte Marker frameweise, stabiler Ablauf für Blender 4.4+."""
-    bl_idname = "kaiserlich_tracker.track_cycle"
-    bl_label = "Track Zyklus (Frame für Frame)"
+class KAISERLICHTRACKER_OT_track_cycle_modal(bpy.types.Operator):
+    """Frame-by-Frame Tracking mit sichtbarem Fortschritt (nicht blockierend)."""
+    bl_idname = "kaiserlich_tracker.track_cycle_modal"
+    bl_label = "Track Zyklus (Modal)"
     bl_description = (
-        "Trackt die aktuell selektierten Tracks frameweise vorwärts, "
-        "bis kein Track mehr aktiv ist oder das Szenen-Ende erreicht wurde."
+        "Trackt selektierte Marker frameweise mit Timer – UI bleibt responsiv, "
+        "Playhead und Markerupdates sichtbar."
     )
     bl_options = {"REGISTER", "INTERNAL"}
 
@@ -83,132 +81,170 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         description="Sicherheitslimit (0 = kein Limit)"
     )
 
+    # interne State-Variablen
+    _timer = None
+    _context_cache = None
+    _processing_names: List[str]
+    _original_selected: List[str]
+    _histories: Dict[str, Deque[Tuple[int, float, float]]]
+    _window = None
+    _area = None
+    _region = None
+    _space = None
+    _start_frame = 0
+    _end_frame = 0
+    _current_frame = 0
+    _frames_processed = 0
+
+    # --------------------------------------------------------
+    # Init
+    # --------------------------------------------------------
+
     def execute(self, context):
-        return track_cycle(context, max_frames=self.max_frames)
-
-
-def register():
-    bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle)
-
-
-def unregister():
-    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_track_cycle)
-
-
-# ------------------------------------------------------------
-# Hauptimplementierung: Tracking-Zyklus
-# ------------------------------------------------------------
-
-def track_cycle(context, *, max_frames: int = 0):
-    """Implementiert den stabilen Tracking-Zyklus (frameweise Tracking) und
-    setzt den Playhead am Ende auf die Ausgangsposition zurück.
-    Zusätzlich bleiben ALLE ursprünglich getrackten Tracks selektiert."""
-    start_frame = ph_get_start_frame(context)
-
-    try:
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
+            self.report({'ERROR'}, "Kein aktiver Clip.")
             return {"CANCELLED"}
 
-        tracking = getattr(clip, "tracking", None)
-        if tracking is None:
+        self._start_frame = ph_get_start_frame(context)
+        self._end_frame = get_end_frame(context)
+        if self._end_frame < self._start_frame:
+            self._end_frame = self._start_frame
+
+        # Selektion erfassen
+        self._original_selected = _collect_selected_track_names(context)
+        if not self._original_selected:
+            self.report({'WARNING'}, "Keine Tracks selektiert.")
             return {"CANCELLED"}
 
-        # Szenen-Ende strikt aus Helper/scene.py ziehen
-        end_frame = get_end_frame(context)
-        if end_frame < start_frame:
-            end_frame = start_frame
+        self._processing_names = list(self._original_selected)
 
-        # Originale Selektion sichern (bleibt bestehen)
-        original_selected: List[str] = _collect_selected_track_names(context)
-        if not original_selected:
+        # CLIP_EDITOR Bereich holen
+        self._window, self._area, self._region, self._space = _find_clip_editor_area(clip)
+        if not self._window:
+            self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
             return {"CANCELLED"}
 
-        # Arbeitsliste unabhängig von Selektion pflegen
-        processing_names: List[str] = list(original_selected)
+        # Startframe setzen
+        self._current_frame = max(self._start_frame, int(scene.frame_current))
+        self._space.clip_user.frame_current = self._current_frame
+        scene.frame_current = self._current_frame
 
-        window, area, region, space = _find_clip_editor_area(clip)
-        if not window:
-            return {"CANCELLED"}
+        # Historien initialisieren
+        self._histories = {name: deque(maxlen=10) for name in self._processing_names}
 
-        current_frame = max(start_frame, int(scene.frame_current))
-        if current_frame < start_frame:
-            current_frame = start_frame
-        if current_frame > end_frame:
-            current_frame = start_frame
-        space.clip_user.frame_current = current_frame
-        scene.frame_current = current_frame
-
-        histories: Dict[str, Deque[Tuple[int, float, float]]] = {
-            name: deque(maxlen=10) for name in processing_names
-        }
-
-        # Ursprüngliche Selektion fixieren
+        # Selektion fixieren
+        tracking = clip.tracking
         for tr in tracking.tracks:
-            if tr.name in original_selected:
-                tr.select = True
+            tr.select = (tr.name in self._original_selected)
 
-        frames_processed = 0
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.05, window=context.window)  # alle 50ms ein Tick
+        wm.modal_handler_add(self)
 
-        # --- Hauptloop ---
-        while True:
-            if current_frame > end_frame:
-                break
-            if not processing_names:
-                break
-            if max_frames > 0 and frames_processed >= max_frames:
-                break
+        print("[Kaiserlich Tracker][Modal] Startet Tracking-Zyklus...")
+        return {"RUNNING_MODAL"}
 
-            # Historie aktualisieren
-            for name in list(processing_names):
-                tr = tracking.tracks.get(name)
-                if not tr:
-                    continue
-                mk = tr.markers.find_frame(current_frame)
-                if mk:
-                    histories[name].append((current_frame, mk.co[0], mk.co[1]))
+    # --------------------------------------------------------
+    # Modal-Loop
+    # --------------------------------------------------------
 
-            # Optionales Preprocessing
-            try:
-                apply_formula_on_selected_tracks(context, max_frames=5)
-            except Exception:
-                pass
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            print("[Kaiserlich Tracker][Modal] Abgebrochen durch Benutzer.")
+            self._finish(context, cancelled=True)
+            return {"CANCELLED"}
 
-            # Tracking-Op
-            with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-                try:
-                    bpy.ops.clip.track_markers(backwards=False, sequence=False)
-                except Exception:
-                    break
+        if event.type != 'TIMER':
+            return {"PASS_THROUGH"}
 
-            # Frame-Advance & Clamp
-            if space.clip_user.frame_current == current_frame:
-                space.clip_user.frame_current += 1
+        # Ablauf pro Timer-Tick (ein Frame)
+        if (self._current_frame > self._end_frame or
+            not self._processing_names or
+            (self.max_frames > 0 and self._frames_processed >= self.max_frames)):
+            print("[Kaiserlich Tracker][Modal] Fertig.")
+            self._finish(context)
+            return {"FINISHED"}
 
-            if space.clip_user.frame_current > end_frame:
-                space.clip_user.frame_current = end_frame
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self._finish(context, cancelled=True)
+            return {"CANCELLED"}
 
-            scene.frame_current = space.clip_user.frame_current
-            current_frame = space.clip_user.frame_current
-            frames_processed += 1
+        tracking = clip.tracking
 
-            # Ende erreicht
-            if current_frame >= end_frame:
-                break
+        # Historien aktualisieren
+        for name in list(self._processing_names):
+            tr = tracking.tracks.get(name)
+            if not tr:
+                continue
+            mk = tr.markers.find_frame(self._current_frame)
+            if mk:
+                self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
 
-            # Aktive Arbeitsliste pflegen (Selektion unberührt lassen)
-            processing_names, _ = _filter_active_tracks_at_frame(context, processing_names, current_frame)
-
-        # Vor Rückgabe: Originalselektion nochmals hartsetzen
-        for tr in tracking.tracks:
-            tr.select = (tr.name in original_selected)
-
-        return {"FINISHED"}
-
-    finally:
-        # Playhead robust zurücksetzen
+        # Helper-Funktion anwenden (nicht ändern!)
         try:
-            reset_to_frame(context, start_frame)
+            apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception:
             pass
+
+        # Tracking-Operation
+        with bpy.context.temp_override(window=self._window, area=self._area, region=self._region, space_data=self._space):
+            try:
+                bpy.ops.clip.track_markers(backwards=False, sequence=False)
+            except Exception:
+                print("[Kaiserlich Tracker][Modal] Tracking-Fehler.")
+                self._finish(context, cancelled=True)
+                return {"CANCELLED"}
+
+        # Frame erhöhen
+        scene = context.scene
+        if self._space.clip_user.frame_current == self._current_frame:
+            self._space.clip_user.frame_current += 1
+        if self._space.clip_user.frame_current > self._end_frame:
+            self._space.clip_user.frame_current = self._end_frame
+
+        scene.frame_current = self._space.clip_user.frame_current
+        self._current_frame = self._space.clip_user.frame_current
+        self._frames_processed += 1
+
+        # Aktive Tracks prüfen
+        self._processing_names, _ = _filter_active_tracks_at_frame(context, self._processing_names, self._current_frame)
+
+        return {"RUNNING_MODAL"}
+
+    # --------------------------------------------------------
+    # Abschluss / Cleanup
+    # --------------------------------------------------------
+
+    def _finish(self, context, cancelled: bool = False):
+        wm = context.window_manager
+        if self._timer:
+            wm.event_timer_remove(self._timer)
+        self._timer = None
+
+        # Selektion wiederherstellen
+        clip = getattr(context.space_data, "clip", None)
+        if clip and hasattr(clip, "tracking"):
+            for tr in clip.tracking.tracks:
+                tr.select = (tr.name in self._original_selected)
+
+        try:
+            reset_to_frame(context, self._start_frame)
+        except Exception:
+            pass
+
+        print("[Kaiserlich Tracker][Modal] Zyklus beendet." if not cancelled else "[Kaiserlich Tracker][Modal] Abgebrochen.")
+
+
+# ------------------------------------------------------------
+# Register
+# ------------------------------------------------------------
+
+def register():
+    bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle_modal)
+
+
+def unregister():
+    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_track_cycle_modal)
