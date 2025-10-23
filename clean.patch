@@ -177,3 +177,10 @@ index 8cf19ad..c72b841 100644
 +            if not cancelled else
 +            "[Kaiserlich Tracker][Modal Rückwärts] Abgebrochen."
 +        )
+
+git apply Operator/modal_calibrate.patch
+
+git add .
+git commit -m "Applied modal auto-calibrate patch cleanly"
+git push
+x
