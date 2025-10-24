@@ -247,11 +247,6 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
         except Exception:
             pass
 
-        try:
-            context.scene["kaiserlich_tracking_backward_done"] = True
-        except Exception:
-            pass
-
         print(
             "[Kaiserlich Tracker][Modal Rückwärts] Zyklus beendet."
             if not cancelled else
