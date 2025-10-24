@@ -1,5 +1,3 @@
-hier die aktuellen Operator, damit du noch siehst wie der modale Aufbau in den Trackern ist und damit verbunden die beste Lösung in der Kalibrierung sein muss. wichtig, der grundsätzliche Ablauf soll nicht verändert werden, alle Operator machen genau das was sie sollen. Operator/auto_calibrate_operator.py: # Operator/auto_calibrate_operator.py
-
 import bpy
 from typing import Iterable, List, Set, Optional, Tuple, Dict, Any
 from dataclasses import dataclass
