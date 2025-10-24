@@ -248,11 +248,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         except Exception:
             pass
 
-        try:
-            context.scene["kaiserlich_tracking_forward_done"] = True
-        except Exception:
-            pass
-
         print(
             "[Kaiserlich Tracker][Modal] Zyklus beendet."
             if not cancelled else
