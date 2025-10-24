@@ -1342,6 +1342,19 @@ def reduce_perspective(context, target_len: int, start: float = 1.0, report_fn=N
     cfg = ReduceConfig(target_len=target_len, start_single=start, **kw)
     return reduce_threshold_single(context, "kaiserlich_perspective_thresh", cfg, report_fn=report_fn)
 
+# ------------------------------------------------------------
+# Force-Redraw Helper (UI aktualisieren)
+# ------------------------------------------------------------
+def _force_redraw():
+    """Erzwingt ein vollständiges Redraw aller Blender-Fenster."""
+    try:
+        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
+    except Exception:
+        pass
+
 
 # =============================================================================
 #  Operator
@@ -1389,6 +1402,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     def modal(self, context, event):
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
+
+        _force_redraw()
 
         if self._state == "INIT":
             set_all_thresholds_to_one(context)
