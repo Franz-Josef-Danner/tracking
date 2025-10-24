@@ -1505,6 +1505,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate_modal(bpy.types.Operator):
 
     def modal(self, context, event):
         scene = context.scene
+        # ---- Globaler Frame-Log pro Timer ----
+        print(f"[AutoCalibrate][Modal] Tick | State={self._state} | tracking_done={getattr(scene, 'kaiserlich_tracking_done', 'N/A')} | Event={event.type}")
 
         if event.type == 'ESC':
             self.report({'WARNING'}, "[AutoCalibrate] Abbruch durch Benutzer.")
@@ -1517,6 +1519,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate_modal(bpy.types.Operator):
         try:
             # -------- PHASENSTEUERUNG -----------------------------------
             if self._state == 0:
+                print("[AutoCalibrate][Modal] → ENTER State 0 (Init Thresholds)")
                 set_all_thresholds_to_one(context)
                 scene.kaiserlich_tracking_done = False
                 self._state = 1
@@ -1524,41 +1527,54 @@ class KAISERLICHTRACKER_OT_auto_calibrate_modal(bpy.types.Operator):
                 return {"RUNNING_MODAL"}
 
             elif self._state == 1:
+                print("[AutoCalibrate][Modal] → ENTER State 1 (DetectAdapt)")
                 self.report({'INFO'}, "[AutoCalibrate] Detect-Adapt starten ...")
                 result = bpy.ops.kaiserlich_tracker.detect_adapt('EXEC_DEFAULT')
                 if 'CANCELLED' in result:
                     raise RuntimeError("Detect-Adapt abgebrochen.")
+                print("[AutoCalibrate][Modal] DetectAdapt OK – next: Tracking vorwärts")
                 scene.kaiserlich_tracking_done = False
                 self._state = 2
                 return {"RUNNING_MODAL"}
 
             elif self._state == 2:
+                print(f"[AutoCalibrate][Modal] → ENTER State 2 (Forward) tracking_done={scene.kaiserlich_tracking_done}")
                 if scene.kaiserlich_tracking_done is False:
+                    print("[AutoCalibrate][Modal] Launching track_cycle(INVOKE_DEFAULT)...")
                     bpy.ops.kaiserlich_tracker.track_cycle('INVOKE_DEFAULT')
                     scene.kaiserlich_tracking_done = None
+                    print("[AutoCalibrate][Modal] track_cycle gestartet, warte auf Abschluss ...")
                     return {"RUNNING_MODAL"}
                 elif scene.kaiserlich_tracking_done is None:
+                    print("[AutoCalibrate][Modal] Warten (track_cycle läuft)...")
                     return {"RUNNING_MODAL"}  # warten
                 elif scene.kaiserlich_tracking_done is True:
+                    print("[AutoCalibrate][Modal] Forward-Tracking erkannt als abgeschlossen.")
                     self.report({'INFO'}, "[AutoCalibrate] Vorwärts-Tracking abgeschlossen.")
                     scene.kaiserlich_tracking_done = False
                     self._state = 3
                     return {"RUNNING_MODAL"}
 
             elif self._state == 3:
+                print(f"[AutoCalibrate][Modal] → ENTER State 3 (Backward) tracking_done={scene.kaiserlich_tracking_done}")
                 if scene.kaiserlich_tracking_done is False:
+                    print("[AutoCalibrate][Modal] Launching track_cycle_backwards(INVOKE_DEFAULT)...")
                     bpy.ops.kaiserlich_tracker.track_cycle_backwards('INVOKE_DEFAULT')
                     scene.kaiserlich_tracking_done = None
+                    print("[AutoCalibrate][Modal] track_cycle_backwards gestartet, warte auf Abschluss ...")
                     return {"RUNNING_MODAL"}
                 elif scene.kaiserlich_tracking_done is None:
+                    print("[AutoCalibrate][Modal] Warten (track_cycle_backwards läuft)...")
                     return {"RUNNING_MODAL"}  # warten
                 elif scene.kaiserlich_tracking_done is True:
+                    print("[AutoCalibrate][Modal] Rückwärts-Tracking erkannt als abgeschlossen.")
                     self.report({'INFO'}, "[AutoCalibrate] Rückwärts-Tracking abgeschlossen.")
                     scene.kaiserlich_tracking_done = False
                     self._state = 4
                     return {"RUNNING_MODAL"}
 
             elif self._state == 4:
+                print("[AutoCalibrate][Modal] → ENTER State 4 (Finale)")
                 self.report({'INFO'}, "[AutoCalibrate] Abschlussphase startet ...")
                 try:
                     bpy.ops.kaiserlich_tracker.auto_calibrate('EXEC_DEFAULT')
@@ -1584,7 +1600,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate_modal(bpy.types.Operator):
         except Exception:
             pass
         msg = "[AutoCalibrate] Modalprozess beendet." if not cancelled else "[AutoCalibrate] Abgebrochen."
-        print(msg)
+        print(f"[AutoCalibrate][Finish] {msg} | cancelled={cancelled} | final tracking_done={getattr(context.scene, 'kaiserlich_tracking_done', 'N/A')}")
         self.report({'INFO'}, msg)
 
 
