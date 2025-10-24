@@ -356,7 +356,7 @@ def short_test_pipeline(context=None, tracks_to_delete=None, report_fn: Optional
                 "kaiserlich_rot_scale_thresh_rot","kaiserlich_rot_scale_thresh_scale",
                 "kaiserlich_perspective_thresh",
             ]},
-            report_fn=report_fn
+            report_fn=report_fn,
             clip_override=clip_override
         )
         results["baseline"] = int(float(rb.get("total_track_length", 0.0)))
