@@ -1336,129 +1336,144 @@ def reduce_perspective(context, target_len: int, start: float = 1.0, report_fn=N
 # =============================================================================
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
-    """Auto-calibrate: setzt alle Ziel-Parameter auf 1.0 und führt danach Detect-Adapt & Tracking aus."""
-    bl_idname = "kaiserlich_tracker.auto_calibrate"
-    bl_label = "KAISERLICHTRACKER — Auto Calibrate"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_idname = "kaiserlich_tracker.auto_calibrate_modal"
+    bl_label = "Kaiserlich Tracker – Auto Calibrate (Modal)"
+    bl_options = {"REGISTER", "UNDO", "INTERNAL"}
 
-    tracks_to_delete: bpy.props.StringProperty(
-        name="Tracks to delete (comma-separated)",
-        default="",
-        description="Optional: Namen der zu löschenden Tracks, getrennt durch Kommas"
-    )
+    _state = "INIT"
+    _timer = None
+    _result_cache = {}
+    _cmp_result = None
 
     def execute(self, context):
-        try:
-            report = lambda m: self.report({'INFO'}, m)
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        self._state = "INIT"
+        print("[Kaiserlich Tracker][AutoCalibrate] Modal gestartet.")
+        return {'RUNNING_MODAL'}
 
+    def modal(self, context, event):
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        if self._state == "INIT":
             set_all_thresholds_to_one(context)
-            report("KaiserlichTracker: Thresholds => 1.0")
-
-            # ---- 1) Short-Test-Pipeline fahren & persistieren (mit Live-Log) ----
+            print("[AutoCalibrate] Thresholds => 1.0")
             try:
-                names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
-                pipeline_results = short_test_pipeline(context=context, tracks_to_delete=names, report_fn=report)
-                bl = int(pipeline_results.get('baseline', 0))
-                s1 = int(pipeline_results.get('step1', 0))
-                s2 = int(pipeline_results.get('step2', 0))
-                s3 = int(pipeline_results.get('step3', 0))
-                s4 = int(pipeline_results.get('step4', 0))
-                report(f"Short-Test-Pipeline abgeschlossen | Baseline={bl} | Step1={s1} Step2={s2} Step3={s3} Step4={s4}")
+                self._result_cache = short_test_pipeline(context=context)
+                self._state = "EVAL"
+                print("[AutoCalibrate] Short-Test-Pipeline abgeschlossen.")
             except Exception as e:
                 self.report({'ERROR'}, f"Short-Test-Pipeline fehlgeschlagen: {e}")
-                return {'CANCELLED'}
+                return self._stop(context, cancelled=True)
+            return {'RUNNING_MODAL'}
 
-            # ---- 2) Auswertung -> entscheidet, welche langen Tests starten ----
+        elif self._state == "EVAL":
             try:
-                cmp_res = compare_len_steps_to_total(context)
-                base = int(cmp_res.get("baseline") or 0)
-                vals = cmp_res.get("values", {})
-                rels = cmp_res.get("relations", {})
-                ge_list = cmp_res.get("better_or_equal", [])
-                report(
-                    (f"Baseline={base} | "
-                     f"STEP1={vals.get('STEP1')}({rels.get('STEP1')}) "
-                     f"STEP2={vals.get('STEP2')}({rels.get('STEP2')}) "
-                     f"STEP3={vals.get('STEP3')}({rels.get('STEP3')}) "
-                     f"STEP4={vals.get('STEP4')}({rels.get('STEP4')})")
-                )
-                report("≥ Baseline: " + (", ".join(ge_list) if ge_list else "none"))
+                self._cmp_result = compare_len_steps_to_total(context)
+                self._ge_list = self._cmp_result.get("better_or_equal", [])
+                print("[AutoCalibrate] Vergleich abgeschlossen.")
+                self._state = "REDUCE_ROT_XY"
+            except Exception as e:
+                self.report({'ERROR'}, f"Vergleich fehlgeschlagen: {e}")
+                return self._stop(context, cancelled=True)
+            return {'RUNNING_MODAL'}
 
-                # ---- 3) Lange Tests automatisch gemäß Auswertung (mit Live-Log) ----
-                scene = context.scene
-
-                # STEP1 → Rot/XY (NEU: gekoppelter Reducer; nur X-Reduktion, Y aus Ratio)
-                if "STEP1" in ge_list:
-                    target_len = max(base, int(vals.get("STEP1") or 0))
-                    r = reduce_rot_xy(context, target_len=target_len, report_fn=report)
-                    best = r.get("best", {})
+        elif self._state == "REDUCE_ROT_XY":
+            if "STEP1" in self._ge_list:
+                try:
+                    scene = context.scene
+                    base = int(self._cmp_result.get("baseline") or 0)
+                    v = int(self._cmp_result["values"].get("STEP1") or 0)
+                    target_len = max(base, v)
+                    res = reduce_rot_xy(context, target_len=target_len)
+                    best = res.get("best", {})
                     scene[SCENE_DEEPTEST_ROT_XY_BEST] = int(target_len)
-                    vals_ = best.get("values")
-                    if best.get("sf") is not None and isinstance(vals_, (tuple, list)) and len(vals_) == 2:
+                    vals = best.get("values")
+                    if vals:
                         _set_scene_props(scene,
-                            kaiserlich_rot_thresh_x=float(vals_[0]),
-                            kaiserlich_rot_thresh_y=float(vals_[1]),
-                        )
-                        ratio = best.get("ratio")
-                        ratio_info = f" ratio={_fmt8(ratio)}" if ratio is not None else ""
-                        report(f"[Reduce RotXY (X-only)] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])}){ratio_info} → Eingabefelder gesetzt")
-                    else:
-                        report("[Reduce RotXY (X-only)] kein erfolgreicher Wert gefunden – Eingabefelder unverändert")
+                            kaiserlich_rot_thresh_x=float(vals[0]),
+                            kaiserlich_rot_thresh_y=float(vals[1]))
+                        print(f"[Reduce RotXY] sf={_fmt8(best.get('sf'))} thr={_fmt8(vals[0])},{_fmt8(vals[1])}")
+                except Exception as e:
+                    print(f"[Reduce RotXY] Fehler: {e}")
+            self._state = "REDUCE_SCALE"
+            return {'RUNNING_MODAL'}
 
-                # STEP2 → Scale Min/Max
-                if "STEP2" in ge_list:
-                    target_len = max(base, int(vals.get("STEP2") or 0))
-                    r = reduce_scale_min_max(context, target_len=target_len, report_fn=report)
-                    best = r.get("best", {})
+        elif self._state == "REDUCE_SCALE":
+            if "STEP2" in self._ge_list:
+                try:
+                    scene = context.scene
+                    base = int(self._cmp_result.get("baseline") or 0)
+                    v = int(self._cmp_result["values"].get("STEP2") or 0)
+                    target_len = max(base, v)
+                    res = reduce_scale_min_max(context, target_len=target_len)
+                    best = res.get("best", {})
                     scene[SCENE_DEEPTEST_SCALE_BEST] = int(target_len)
-                    vals_ = best.get("values")
-                    if best.get("sf") is not None and isinstance(vals_, (tuple, list)) and len(vals_) == 2:
+                    vals = best.get("values")
+                    if vals:
                         _set_scene_props(scene,
-                            kaiserlich_scale_thresh_min=float(vals_[0]),
-                            kaiserlich_scale_thresh_max=float(vals_[1]),
-                        )
-                        report(f"[Reduce Scale] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])}) → Eingabefelder gesetzt")
-                    else:
-                        report("[Reduce Scale] kein erfolgreicher Wert gefunden – Eingabefelder unverändert")
+                            kaiserlich_scale_thresh_min=float(vals[0]),
+                            kaiserlich_scale_thresh_max=float(vals[1]))
+                        print(f"[Reduce Scale] sf={_fmt8(best.get('sf'))} thr={_fmt8(vals[0])},{_fmt8(vals[1])}")
+                except Exception as e:
+                    print(f"[Reduce Scale] Fehler: {e}")
+            self._state = "REDUCE_ROT_SCALE"
+            return {'RUNNING_MODAL'}
 
-                # STEP3 → Rot+Scale Pair
-                if "STEP3" in ge_list:
-                    target_len = max(base, int(vals.get("STEP3") or 0))
-                    r = reduce_rot_scale_pair(context, target_len=target_len, report_fn=report)
-                    best = r.get("best", {})
+        elif self._state == "REDUCE_ROT_SCALE":
+            if "STEP3" in self._ge_list:
+                try:
+                    scene = context.scene
+                    base = int(self._cmp_result.get("baseline") or 0)
+                    v = int(self._cmp_result["values"].get("STEP3") or 0)
+                    target_len = max(base, v)
+                    res = reduce_rot_scale_pair(context, target_len=target_len)
+                    best = res.get("best", {})
                     scene[SCENE_DEEPTEST_ROT_SCALE_BEST] = int(target_len)
-                    vals_ = best.get("values")
-                    if best.get("sf") is not None and isinstance(vals_, (tuple, list)) and len(vals_) == 2:
+                    vals = best.get("values")
+                    if vals:
                         _set_scene_props(scene,
-                            kaiserlich_rot_scale_thresh_rot=float(vals_[0]),
-                            kaiserlich_rot_scale_thresh_scale=float(vals_[1]),
-                        )
-                        report(f"[Reduce Rot+Scale] best sf={_fmt8(best.get('sf'))} | thresh=({_fmt8(vals_[0])}, {_fmt8(vals_[1])}) → Eingabefelder gesetzt")
-                    else:
-                        report("[Reduce Rot+Scale] kein erfolgreicher Wert gefunden – Eingabefelder unverändert")
+                            kaiserlich_rot_scale_thresh_rot=float(vals[0]),
+                            kaiserlich_rot_scale_thresh_scale=float(vals[1]))
+                        print(f"[Reduce Rot+Scale] sf={_fmt8(best.get('sf'))} thr={_fmt8(vals[0])},{_fmt8(vals[1])}")
+                except Exception as e:
+                    print(f"[Reduce Rot+Scale] Fehler: {e}")
+            self._state = "REDUCE_PERSPECTIVE"
+            return {'RUNNING_MODAL'}
 
-                # STEP4 → Perspective
-                if "STEP4" in ge_list:
-                    target_len = max(base, int(vals.get("STEP4") or 0))
-                    r = reduce_perspective(context, target_len=target_len, report_fn=report)
-                    best = r.get("best", {})
+        elif self._state == "REDUCE_PERSPECTIVE":
+            if "STEP4" in self._ge_list:
+                try:
+                    scene = context.scene
+                    base = int(self._cmp_result.get("baseline") or 0)
+                    v = int(self._cmp_result["values"].get("STEP4") or 0)
+                    target_len = max(base, v)
+                    res = reduce_perspective(context, target_len=target_len)
+                    best = res.get("best", {})
                     scene[SCENE_DEEPTEST_PERSPECTIVE_BEST] = int(target_len)
                     val_ = best.get("value")
-                    if best.get("sf") is not None and val_ is not None:
+                    if val_ is not None:
                         _set_scene_props(scene, kaiserlich_perspective_thresh=float(val_))
-                        report(f"[Reduce Perspective] best sf={_fmt8(best.get('sf'))} | thresh={_fmt8(val_)} → Eingabefeld gesetzt")
-                    else:
-                        report("[Reduce Perspective] kein erfolgreicher Wert gefunden – Eingabefeld unverändert")
+                        print(f"[Reduce Perspective] sf={_fmt8(best.get('sf'))} thr={_fmt8(val_)}")
+                except Exception as e:
+                    print(f"[Reduce Perspective] Fehler: {e}")
+            self._state = "DONE"
+            return {'RUNNING_MODAL'}
 
-            except Exception as e:
-                self.report({'ERROR'}, f"Auswertung/Long-Tests fehlgeschlagen: {e}")
-                return {'CANCELLED'}
+        elif self._state == "DONE":
+            print("[AutoCalibrate] ✅ Kalibrierung vollständig abgeschlossen.")
+            return self._stop(context)
 
-            return {'FINISHED'}
+        return {'RUNNING_MODAL'}
 
-        except Exception as e:
-            self.report({'ERROR'}, f"Auto-Calibrate fehlgeschlagen: {e}")
-            return {'CANCELLED'}
+    def _stop(self, context, cancelled=False):
+        wm = context.window_manager
+        if self._timer:
+            wm.event_timer_remove(self._timer)
+        print("[AutoCalibrate] Modal beendet." if not cancelled else "[AutoCalibrate] Abgebrochen.")
+        return {'FINISHED' if not cancelled else 'CANCELLED'}
 
 
 def register():
