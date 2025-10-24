@@ -21,20 +21,49 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
         scene = context.scene
         ef_target = int(scene.kaiserlich_markers_per_frame)
 
-        # Bootstrap wurde bereits durch den Master Operator ausgeführt.
-        # Die Parameter liegen in scene["bootstrap_params"] vor.
-        params = scene.get("bootstrap_params", None)
-        if not params:
-            self.report({'ERROR'}, "Bootstrap-Parameter fehlen (Master Operator nicht initialisiert).")
-            return {'CANCELLED'}
+        # ------------------------------------------------------------------
+        # Bootstrap-Parameter laden oder notfalls lokal berechnen
+        # ------------------------------------------------------------------
+        import math
 
-        md = float(params.get('md', 100))
-        ma = int(params.get('ma', 30))
-        tr = float(params.get('tr', 0.5))
-        pz = int(params.get('pz', 50))
-        sz = int(params.get('sz', 0))
-        hz = params.get('hz', 1)
-        vc = params.get('vc', False)
+        params = scene.get("bootstrap_params", None)
+
+        if params:
+            # ✅ Normale Initialisierung aus Master-Operator
+            md = float(params.get('md', 100))
+            ma = int(params.get('ma', 30))
+            tr = float(params.get('tr', 0.5))
+            pz = int(params.get('pz', 50))
+            sz = int(params.get('sz', 0))
+            hz = params.get('hz', 1)
+            vc = params.get('vc', False)
+        else:
+            # ⚠️ Fallback-Bootstrap falls kein Master-Bootstrap existiert
+            clip = context.space_data.clip if getattr(context, "space_data", None) else None
+            if clip is None:
+                self.report({'ERROR'}, "Kein aktiver Clip verfügbar (Fallback fehlgeschlagen).")
+                return {'CANCELLED'}
+
+            hz = clip.size[0]
+            vc = clip.size[1]
+
+            se = None
+            if getattr(context, "scene", None) is not None:
+                se = context.scene.frame_end
+
+            # Fallback-Werte aus Szene (oder Standard)
+            ma = getattr(scene, "kaiserlich_margin", 30)
+            pz = getattr(scene, "kaiserlich_pattern_size", 50)
+            sz = getattr(scene, "kaiserlich_search_size", 100)
+
+            md = hz * 0.025
+            tr = 0.0001
+            za = ef_target * 4
+            og = math.ceil(za * 1.1)
+            ug = math.floor(za * 0.9)
+
+            print(f"[Kaiserlich Tracker][DetectAdapt][Fallback] hz={hz}, vc={vc}, ma={ma}, md={md:.2f}, "
+                  f"pz={pz}, sz={sz}, tr={tr}, og={og}, ug={ug}, frame_end={se}")
 
         # ----------------------------------------------------------------------
         # BASELINE-FIX:
