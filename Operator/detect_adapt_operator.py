@@ -36,10 +36,22 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
         hz = params['hz']
         vc = params['vc']
 
-        # Snapshot vor Detect
+        # ----------------------------------------------------------------------
+        # BASELINE-FIX:
+        # Wir trennen jetzt zwei Konzepte:
+        #   (1) pre_snapshot = aktive Marker im Frame → für Cleanup-Vergleich
+        #   (2) baseline_start_tracknames = ALLE existierenden Tracks → für finale Selektion
+        # ----------------------------------------------------------------------
         pre_snapshot = snapshot_active_markers(context)
-        baseline_start_tracknames = {m['track'] for m in pre_snapshot}
-        print(f"[Kaiserlich Tracker][DetectAdapt] Ausgangsmarker: {len(pre_snapshot)}")
+
+        clip = getattr(context.space_data, "clip", None)
+        tracking = getattr(clip, "tracking", None) if clip else None
+        baseline_start_tracknames = set()
+        if tracking:
+            baseline_start_tracknames = {t.name for t in tracking.tracks}
+
+        print(f"[Kaiserlich Tracker][DetectAdapt] Ausgangsmarker: {len(pre_snapshot)} | BaselineTracks: {len(baseline_start_tracknames)}")
+
 
         # Adaptive Schleife
         max_loops = 8
@@ -86,6 +98,15 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
                 threshold=tr,
                 min_distance=int(max(1, round(last_md)))
             )
+            
+            # Nach Detect: Blender selektiert automatisch alle neuen Tracks → wir setzen zurück
+            clip = getattr(context.space_data, 'clip', None)
+            if clip and getattr(clip, 'tracking', None):
+                for trk in clip.tracking.tracks:
+                    try:
+                        trk.select = False
+                    except Exception:
+                        pass
 
             # Snapshot nach Detect
             post_snapshot = snapshot_active_markers(context)
@@ -146,6 +167,7 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
         clip = getattr(context.space_data, 'clip', None)
         if clip and getattr(clip, 'tracking', None):
             tracking = clip.tracking
+            # Nur wirklich neue Tracks selektieren (nicht in globaler Baseline enthalten)
             new_tracks = [trk for trk in tracking.tracks if trk.name not in baseline_start_tracknames]
             try:
                 for trk in tracking.tracks:
