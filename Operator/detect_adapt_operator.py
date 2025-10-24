@@ -39,31 +39,36 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
             vc = params.get('vc', False)
         else:
             # ⚠️ Fallback-Bootstrap falls kein Master-Bootstrap existiert
-            clip = context.space_data.clip if getattr(context, "space_data", None) else None
+            import math
+
+            clip = getattr(context.space_data, "clip", None)
             if clip is None:
                 self.report({'ERROR'}, "Kein aktiver Clip verfügbar (Fallback fehlgeschlagen).")
                 return {'CANCELLED'}
 
+            # --- Basisinformationen aus Clip ---
             hz = clip.size[0]
             vc = clip.size[1]
 
-            se = None
-            if getattr(context, "scene", None) is not None:
-                se = context.scene.frame_end
+            scene_obj = getattr(context, "scene", None)
+            frame_end = scene_obj.frame_end if scene_obj else None
 
-            # Fallback-Werte aus Szene (oder Standard)
-            ma = getattr(scene, "kaiserlich_margin", 30)
-            pz = getattr(scene, "kaiserlich_pattern_size", 50)
-            sz = getattr(scene, "kaiserlich_search_size", 100)
+            # --- Parameter aus Tracking-Settings ---
+            tracking_settings = getattr(clip.tracking, "settings", None)
+            ma = getattr(tracking_settings, "margin", 100) if tracking_settings else 100
+            pz = getattr(tracking_settings, "pattern_size", 50) if tracking_settings else 50
+            sz = getattr(tracking_settings, "search_size", 100) if tracking_settings else 100
 
+            # --- Abgeleitete Startwerte ---
             md = hz * 0.025
             tr = 0.0001
             za = ef_target * 4
             og = math.ceil(za * 1.1)
             ug = math.floor(za * 0.9)
 
-            print(f"[Kaiserlich Tracker][DetectAdapt][Fallback] hz={hz}, vc={vc}, ma={ma}, md={md:.2f}, "
-                  f"pz={pz}, sz={sz}, tr={tr}, og={og}, ug={ug}, frame_end={se}")
+            print(f"[Kaiserlich Tracker][DetectAdapt][Fallback] "
+                  f"hz={hz}, vc={vc}, margin={ma}, md={md:.2f}, "
+                  f"pattern={pz}, search={sz}, tr={tr}, og={og}, ug={ug}, frame_end={frame_end}")
 
         # ----------------------------------------------------------------------
         # BASELINE-FIX:
