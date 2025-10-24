@@ -1,7 +1,6 @@
 import bpy
 import time
 
-from ..Helper.bootstrap import run_bootstrap
 from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.detect import detect_features
 from ..Helper.newmarker import classify_markers
@@ -22,19 +21,20 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
         scene = context.scene
         ef_target = int(scene.kaiserlich_markers_per_frame)
 
-        # Bootstrap
-        params = run_bootstrap(context, ef_target)
+        # Bootstrap wurde bereits durch den Master Operator ausgeführt.
+        # Die Parameter liegen in scene["bootstrap_params"] vor.
+        params = scene.get("bootstrap_params", None)
         if not params:
-            self.report({'ERROR'}, "Bootstrap fehlgeschlagen")
+            self.report({'ERROR'}, "Bootstrap-Parameter fehlen (Master Operator nicht initialisiert).")
             return {'CANCELLED'}
 
-        md = float(params['md'])
-        ma = int(params['ma'])
-        tr = float(params['tr'])
-        pz = int(params['pz'])
-        sz = int(params['sz'])
-        hz = params['hz']
-        vc = params['vc']
+        md = float(params.get('md', 100))
+        ma = int(params.get('ma', 30))
+        tr = float(params.get('tr', 0.5))
+        pz = int(params.get('pz', 50))
+        sz = int(params.get('sz', 0))
+        hz = params.get('hz', 1)
+        vc = params.get('vc', False)
 
         # ----------------------------------------------------------------------
         # BASELINE-FIX:
