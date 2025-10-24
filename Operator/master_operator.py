@@ -123,104 +123,201 @@ def _call_op_in_clip(op_callable, context: bpy.types.Context, clip: Optional[bpy
 # Operator/master_operator.py (ersetzt execute() & ergänzt modal-Handling)
 
 class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
+    """Iterative Low-Marker-Pipeline (modal):
+    low_marker_frame -> (auto_calibrate?) -> detect_adapt -> track_backwards -> track_forwards,
+    bis kein Low-Marker-Frame mehr existiert.
+    """
     bl_idname = "kaiserlich_tracker.master_operator"
-    bl_label = "KAISERLICHTRACKER — Master Operator (Modal)"
+    bl_label = "KAISERLICHTRACKER — Master Operator"
     bl_options = {"REGISTER", "UNDO", "INTERNAL"}
+
+    set_playhead: bpy.props.BoolProperty(
+        name="Playhead setzen",
+        description="Playhead im Clip Editor auf den gefundenen Frame setzen",
+        default=True,
+    )
+
+    store_scene_key: bpy.props.StringProperty(
+        name="Scene Key",
+        description="Szenen-Property zum Ablegen des gefundenen Frames",
+        default="kaiserlich_low_marker_frame",
+    )
+
+    max_iterations: bpy.props.IntProperty(
+        name="Max Iterationen",
+        description="Safety-Stop gegen Endlosschleifen",
+        default=100,
+        min=1,
+        soft_min=1,
+    )
 
     _timer = None
     _phase = 0
     _iteration = 0
-    _max_iter = 50
+    _saved_selection = None
+    _active_clip = None
+    _current_frame = None
 
+    # -------------------------------------------------------------
+    # Start / Init
+    # -------------------------------------------------------------
     def execute(self, context):
         scene = context.scene
         clip = _get_active_clip(context)
         if not clip:
-            self.report({"ERROR"}, "Kein aktiver Clip gefunden.")
+            self.report({'ERROR'}, "Kein aktiver Clip im Movie Clip Editor gefunden.")
             return {'CANCELLED'}
 
-        # Flags setzen
-        scene["kaiserlich_tracking_in_progress"] = True
-        scene["kaiserlich_tracking_forward_done"] = False
-        scene["kaiserlich_tracking_backward_done"] = False
-        scene["kaiserlich_autocalibrate_done"] = False
-
-        # Tracking starten
-        print("[Kaiserlich Tracker][Master] Initiiere Tracking-Vorgang ...")
-        try:
-            bpy.ops.kaiserlich_tracker.track_cycle_backwards('INVOKE_DEFAULT')
-            bpy.ops.kaiserlich_tracker.track_cycle('INVOKE_DEFAULT')
-        except Exception as e:
-            self.report({'ERROR'}, f"Tracking konnte nicht gestartet werden: {e}")
-            return {'CANCELLED'}
+        self._active_clip = clip
+        self._saved_selection = _snapshot_selected_track_names(clip)
+        self._iteration = 0
+        self._phase = 0
+        scene["kaiserlich_master_running"] = True
 
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.3, window=context.window)
         wm.modal_handler_add(self)
-        self._phase = 1
+        print("[Kaiserlich Tracker][Master] Starte modale Iterations-Pipeline ...")
         return {'RUNNING_MODAL'}
 
+    # -------------------------------------------------------------
+    # Modal Loop
+    # -------------------------------------------------------------
     def modal(self, context, event):
-        scene = context.scene
         if event.type == 'ESC':
             self._finish(context, cancelled=True)
             return {'CANCELLED'}
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
 
-        # ----------------------------
-        # Phase 1: Tracking abwarten
-        # ----------------------------
+        scene = context.scene
+        clip = self._active_clip
+
+        # Safety
+        if self._iteration >= self.max_iterations:
+            self.report({'ERROR'}, f"Abbruch durch Safety-Stop nach {self.max_iterations} Iterationen.")
+            self._finish(context, cancelled=True)
+            return {'CANCELLED'}
+
+        # -------------------------------
+        # Phase 0 – neuen Low-Marker suchen
+        # -------------------------------
+        if self._phase == 0:
+            self._iteration += 1
+            print(f"[Master] Iteration {self._iteration} – Suche schwächsten Frame ...")
+            try:
+                res = find_first_weak_frame(context)
+                frame = _coerce_frame(res)
+                if frame is None:
+                    print("[Master] Kein Low-Marker-Frame mehr gefunden → Pipeline beendet.")
+                    self._finish(context)
+                    return {'FINISHED'}
+                self._current_frame = frame
+                scene[self.store_scene_key] = int(frame)
+                if self.set_playhead:
+                    _set_frame_in_scene_and_clip(context, frame)
+            except Exception as e:
+                self.report({'ERROR'}, f"find_first_weak_frame() Fehler: {e}")
+                self._finish(context, cancelled=True)
+                return {'CANCELLED'}
+
+            # prüfen ob AutoCalibrate übersprungen werden kann
+            try:
+                self._skip_auto = should_use_cached_thresholds(context, frame)
+            except Exception:
+                self._skip_auto = False
+
+            # → nächste Phase
+            self._phase = 1
+            return {'RUNNING_MODAL'}
+
+        # -------------------------------
+        # Phase 1 – AutoCalibrate (falls nötig)
+        # -------------------------------
         if self._phase == 1:
-            f_done = scene.get("kaiserlich_tracking_forward_done", False)
-            b_done = scene.get("kaiserlich_tracking_backward_done", False)
-            if f_done and b_done:
-                print("[Kaiserlich Tracker][Master] ✓ Tracking abgeschlossen → starte AutoCalibrate ...")
-                self._phase = 2
-                try:
-                    bpy.ops.kaiserlich_tracker.auto_calibrate_modal('INVOKE_DEFAULT')
-                except Exception as e:
-                    print(f"[Master] AutoCalibrate Modal Fehler: {e}")
-                    self._finish(context, cancelled=True)
-                    return {'CANCELLED'}
+            if not getattr(self, "_auto_started", False):
+                if not self._skip_auto:
+                    print("[Master] Starte Auto-Calibrate (modal) ...")
+                    try:
+                        bpy.ops.kaiserlich_tracker.auto_calibrate_modal('INVOKE_DEFAULT')
+                    except Exception as e:
+                        self.report({'ERROR'}, f"Auto-Calibrate konnte nicht gestartet werden: {e}")
+                        self._finish(context, cancelled=True)
+                        return {'CANCELLED'}
+                else:
+                    print("[Master] Überspringe Auto-Calibrate (Cache vorhanden).")
+                    self._phase = 2
+                    return {'RUNNING_MODAL'}
+                self._auto_started = True
+                return {'RUNNING_MODAL'}
+            else:
+                ac_done = scene.get("kaiserlich_autocalibrate_done", False)
+                if ac_done or self._skip_auto:
+                    try:
+                        if not self._skip_auto:
+                            save_after_autocalibrate(context, self._current_frame, bake_neighbors=True)
+                    except Exception:
+                        pass
+                    print("[Master] Auto-Calibrate abgeschlossen → starte DetectAdapt ...")
+                    self._phase = 2
+                    return {'RUNNING_MODAL'}
 
-        # ----------------------------
-        # Phase 2: Warte auf AutoCalibrate
-        # ----------------------------
-        elif self._phase == 2:
-            ac_done = scene.get("kaiserlich_autocalibrate_done", False)
-            if ac_done:
-                print("[Kaiserlich Tracker][Master] AutoCalibrate abgeschlossen → starte DetectAdapt ...")
-                self._phase = 3
-                try:
-                    bpy.ops.kaiserlich_tracker.detect_adapt('EXEC_DEFAULT')
-                except Exception as e:
-                    print(f"[Master] DetectAdapt Fehler: {e}")
+        # -------------------------------
+        # Phase 2 – Detect Adapt
+        # -------------------------------
+        if self._phase == 2:
+            print("[Master] Detect Adapt ...")
+            _call_op_in_clip(bpy.ops.kaiserlich_tracker.detect_adapt, context, clip)
+            self._phase = 3
+            return {'RUNNING_MODAL'}
 
-        # ----------------------------
-        # Phase 3: Filter + Cleanup
-        # ----------------------------
-        elif self._phase == 3:
-            print("[Kaiserlich Tracker][Master] Cleanup + Filter ...")
+        # -------------------------------
+        # Phase 3 – Track Backwards
+        # -------------------------------
+        if self._phase == 3:
+            print("[Master] Track Backwards ...")
+            bpy.ops.kaiserlich_tracker.track_cycle_backwards('INVOKE_DEFAULT')
+            self._phase = 4
+            return {'RUNNING_MODAL'}
+
+        # -------------------------------
+        # Phase 4 – Track Forwards
+        # -------------------------------
+        if self._phase == 4:
+            print("[Master] Track Forwards ...")
+            bpy.ops.kaiserlich_tracker.track_cycle('INVOKE_DEFAULT')
+            self._phase = 5
+            return {'RUNNING_MODAL'}
+
+        # -------------------------------
+        # Phase 5 – Cleanup + Nächste Iteration
+        # -------------------------------
+        if self._phase == 5:
+            print("[Master] Filter / Cleanup ...")
             try:
                 filter_problematic_tracks(context, threshold=10.0)
             except Exception:
                 pass
-            self._finish(context)
-            return {'FINISHED'}
+            _restore_selected_tracks_by_names(clip, self._saved_selection)
+            self._phase = 0  # -> nächste Iteration
+            return {'RUNNING_MODAL'}
 
         return {'RUNNING_MODAL'}
 
+    # -------------------------------------------------------------
+    # Abschluss
+    # -------------------------------------------------------------
     def _finish(self, context, cancelled=False):
         wm = context.window_manager
         if self._timer:
             wm.event_timer_remove(self._timer)
-        if cancelled:
-            print("[Kaiserlich Tracker][Master] Abgebrochen.")
-        else:
-            print("[Kaiserlich Tracker][Master] Modal beendet ✓")
         scene = context.scene
-        scene["kaiserlich_tracking_in_progress"] = False
+        _restore_selected_tracks_by_names(self._active_clip, self._saved_selection)
+        scene["kaiserlich_master_running"] = False
+        if cancelled:
+            print("[Kaiserlich Tracker][Master] Modal abgebrochen.")
+        else:
+            print("[Kaiserlich Tracker][Master] ✓ vollständig abgeschlossen.")
 
 # --- Registrierung ----------------------------------------------------------
 
