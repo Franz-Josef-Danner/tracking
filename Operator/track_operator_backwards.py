@@ -247,12 +247,17 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
         except Exception:
             pass
 
+        # ---- NEU: Signal an Auto-Calibrate ----
+        try:
+            context.scene.kaiserlich_tracking_done = True
+        except Exception:
+            pass
+
         print(
             "[Kaiserlich Tracker][Modal Rückwärts] Zyklus beendet."
             if not cancelled else
             "[Kaiserlich Tracker][Modal Rückwärts] Abgebrochen."
         )
-
 
 # ------------------------------------------------------------
 # Register
