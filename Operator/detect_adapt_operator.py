@@ -102,7 +102,7 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
             am = len(neue_marker)
             final_new_marker_count = am
 
-            # Cleanup
+            # Nach Cleanup
             cleaned_new, deleted_old = cleanup_new_markers(
                 context,
                 alte_marker,
@@ -111,8 +111,13 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
                 hz=hz,
                 vc=vc
             )
-
+            
+            deleted_old_names = [m['track'] for m in alte_marker if m['track'] not in [n['track'] for n in post_snapshot]]
+            if deleted_old_names:
+                print(f"[⚠️ Kaiserlich Tracker][DetectAdapt] WARNUNG: Alte Marker gelöscht: {deleted_old_names}")
+            
             print(f"[Kaiserlich Tracker][DetectAdapt] Nach Cleanup: {len(cleaned_new)} neue Marker übrig, {deleted_old} alte gelöscht")
+
 
             remaining = len(cleaned_new)
             diff = remaining - ef_target
