@@ -25,6 +25,18 @@ SCENE_DEEPTEST_PERSPECTIVE_BEST   = "kaiserlich_deeptest_perspective_best"
 #  Utility
 # =============================================================================
 
+def _is_tracker_running(self):
+    """Prüft, ob einer der beiden Tracking-Operatoren gerade modal aktiv ist."""
+    wm = bpy.context.window_manager
+    for op in wm.operators:
+        if op.bl_idname in {
+            "KAISERLICHTRACKER_OT_track_cycle",
+            "KAISERLICHTRACKER_OT_track_cycle_backwards"
+        }:
+            return True
+    return False
+
+
 def _fmt8(x: float) -> str:
     """Max. 8 Nachkommastellen, ohne unnötige Nullen/Dezimalpunkt."""
     try:
@@ -1345,6 +1357,27 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     _result_cache = {}
     _cmp_result = None
 
+    # ------------------------------------------------------------
+    # Helper: aktive Tracker prüfen
+    # ------------------------------------------------------------
+    def _is_tracker_running(self):
+        """Prüft, ob einer der Tracking-Operatoren gerade modal aktiv ist."""
+        wm = bpy.context.window_manager
+        for op in getattr(wm, "operators", []):
+            if op.bl_idname in {
+                "KAISERLICHTRACKER_OT_track_cycle",
+                "KAISERLICHTRACKER_OT_track_cycle_backwards"
+            }:
+                return True
+        return False
+
+    def _wait_if_tracker_active(self):
+        """Sperrt Zustandswechsel, solange Tracker laufen."""
+        if self._is_tracker_running():
+            # noch warten
+            return True
+        return False
+
     def execute(self, context):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
@@ -1381,6 +1414,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         elif self._state == "REDUCE_ROT_XY":
+            if self._wait_if_tracker_active():
+                return {'RUNNING_MODAL'}
             if "STEP1" in self._ge_list:
                 try:
                     scene = context.scene
@@ -1402,6 +1437,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         elif self._state == "REDUCE_SCALE":
+            if self._wait_if_tracker_active():
+                return {'RUNNING_MODAL'}
             if "STEP2" in self._ge_list:
                 try:
                     scene = context.scene
@@ -1423,6 +1460,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         elif self._state == "REDUCE_ROT_SCALE":
+            if self._wait_if_tracker_active():
+                return {'RUNNING_MODAL'}
             if "STEP3" in self._ge_list:
                 try:
                     scene = context.scene
@@ -1444,6 +1483,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         elif self._state == "REDUCE_PERSPECTIVE":
+            if self._wait_if_tracker_active():
+                return {'RUNNING_MODAL'}
             if "STEP4" in self._ge_list:
                 try:
                     scene = context.scene
