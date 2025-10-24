@@ -254,8 +254,14 @@ def short_test_track(
         # 2.5) Start-Frame
         start_frame = _call_get_start_frame(context)
 
-        # 3) Track Cycle
-        result = bpy.ops.kaiserlich_tracker.track_cycle('EXEC_DEFAULT')
+        # --- Forward Tracking ---
+        try:
+            op_result = bpy.ops.kaiserlich_tracker.track_cycle(
+                getattr(self, "_clip_override", {}), 
+                'INVOKE_DEFAULT'
+            )
+        except Exception as e:
+            raise RuntimeError(f"TrackCycle (vorwärts) fehlgeschlagen: {e}")
         if 'CANCELLED' in result:
             raise RuntimeError("Tracking Cycle wurde abgebrochen.")
 
@@ -1342,6 +1348,18 @@ def reduce_perspective(context, target_len: int, start: float = 1.0, report_fn=N
     cfg = ReduceConfig(target_len=target_len, start_single=start, **kw)
     return reduce_threshold_single(context, "kaiserlich_perspective_thresh", cfg, report_fn=report_fn)
 
+# ---------------------------------------------------------------------
+# UI-Redraw Helper
+# ---------------------------------------------------------------------
+def _force_redraw():
+    """Erzwingt Redraw aller Blender-Fenster für sichtbare Fortschritte."""
+    try:
+        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
+    except Exception:
+        pass
 
 
 # =============================================================================
@@ -1381,6 +1399,41 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
     def execute(self, context):
         wm = context.window_manager
+
+        # ---------------------------------------------------------------------
+        # Kontext-Override sichern (CLIP_EDITOR + aktiver Clip)
+        # ---------------------------------------------------------------------
+        area = region = space = clip = None
+        for window in bpy.context.window_manager.windows:
+            for a in window.screen.areas:
+                if a.type == 'CLIP_EDITOR':
+                    region = next((r for r in a.regions if r.type == 'WINDOW'), None)
+                    for s in a.spaces:
+                        if s.type == 'CLIP_EDITOR' and getattr(s, "clip", None):
+                            space = s
+                            clip = s.clip
+                            break
+                    if clip:
+                        area = a
+                        break
+            if clip:
+                self._window = window
+                break
+
+        if clip is None:
+            self.report({'ERROR'}, "Kein aktiver Movie Clip im Clip Editor gefunden.")
+            return {'CANCELLED'}
+
+        # Override-Dictionary speichern
+        self._clip_override = {
+            "window": self._window,
+            "area": area,
+            "region": region,
+            "space": space,
+        }
+        self._active_clip = clip
+
+        # Modal-Setup
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
         self._state = "INIT"
@@ -1388,19 +1441,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
+        _force_redraw()
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
-
-        # ------------------------------------------------------------
-        # 🟢 UI-Refresh: zwingt Blender zur Redraw-Aktualisierung
-        # ------------------------------------------------------------
-        try:
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-            for window in bpy.context.window_manager.windows:
-                for area in window.screen.areas:
-                    area.tag_redraw()
-        except Exception:
-            pass
 
         if self._state == "INIT":
             set_all_thresholds_to_one(context)
