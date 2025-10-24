@@ -14,13 +14,16 @@ def cleanup_new_markers(
     vc: int
 ) -> Tuple[List[MarkerSnapshot], int]:
 
+    print(f"[Cleanup] Eingabe: {len(alte_marker)} alte / {len(neue_marker)} neue Marker")
     if not neue_marker or not alte_marker:
+        print("[Cleanup] ❌ Keine Marker zum Bereinigen vorhanden.")
         return neue_marker, 0
 
     if pz <= 0:
+        print("[Cleanup] ⚠️ Parameter pz <= 0 – Cleanup übersprungen.")
         return neue_marker, 0
 
-    # Tracking referenzieren für Aktiv-Filter
+    # Tracking referenzieren
     space = getattr(context, "space_data", None)
     clip = getattr(space, "clip", None) if space else None
     tracking = getattr(clip, "tracking", None) if clip else None
@@ -34,7 +37,11 @@ def cleanup_new_markers(
     active_old = [m for m in alte_marker if _track_active(m["track"])]
     active_new = [m for m in neue_marker if _track_active(m["track"])]
 
+    print(f"[Cleanup] Aktive alte Marker: {len(active_old)}")
+    print(f"[Cleanup] Aktive neue Marker: {len(active_new)}")
+
     if not active_new or not active_old:
+        print("[Cleanup] ⚠️ Keine aktiven neuen oder alten Marker – Cleanup abgebrochen.")
         return neue_marker, 0
 
     deleted_old = 0
@@ -49,6 +56,7 @@ def cleanup_new_markers(
 
     old_pixels = build_old_pixel_map()
     thresh = float(pz) * 0.025
+    print(f"[Cleanup] Threshold: {thresh:.3f} px (basierend auf pz={pz})")
 
     for nm in active_new:
         nm_px_x = float(nm["co"][0]) * hz
@@ -56,19 +64,21 @@ def cleanup_new_markers(
 
         for key, ama_px_x, ama_px_y, ama_m in list(old_pixels):
             dx = abs(ama_px_x - nm_px_x)
-            if dx < thresh:
-                if delete_track_by_name(context, ama_m["track"]):
-                    deleted_old += 1
-                    remaining_old.pop(key, None)
-                    old_pixels = build_old_pixel_map()
-                continue
-
             dy = abs(ama_px_y - nm_px_y)
-            if dy < thresh:
+
+            if dx < thresh or dy < thresh:
+                print(
+                    f"[Cleanup][DEL] Alter Track '{ama_m['track']}' "
+                    f"entfernt wegen Nähe zu neuem '{nm['track']}' "
+                    f"(dx={dx:.2f}, dy={dy:.2f})"
+                )
                 if delete_track_by_name(context, ama_m["track"]):
                     deleted_old += 1
                     remaining_old.pop(key, None)
                     old_pixels = build_old_pixel_map()
-                continue
+                else:
+                    print(f"[Cleanup][WARN] Löschung von '{ama_m['track']}' fehlgeschlagen.")
+                break  # nur ein Treffer pro neuem Marker prüfen
 
+    print(f"[Cleanup] Ergebnis: {deleted_old} alte Marker gelöscht, {len(neue_marker)} neue behalten.")
     return neue_marker, deleted_old
