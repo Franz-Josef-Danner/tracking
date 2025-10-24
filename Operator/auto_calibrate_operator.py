@@ -3,6 +3,7 @@
 import bpy
 from typing import Iterable, List, Set, Optional, Tuple, Dict, Any
 from dataclasses import dataclass
+from contextlib import contextmanager
 
 from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.track_length_helper import get_total_track_length
@@ -177,11 +178,30 @@ def _get_hw_ratio(context: Optional[bpy.types.Context]) -> float:
 #  Short-Test inkl. Live-Logging
 # =============================================================================
 
+@contextmanager
+def _override_clip_context(clip_override: Optional[Dict[str, Any]] = None):
+    """
+    Sicheres Context-Override für CLIP_EDITOR Operator-Aufrufe.
+    Fällt auf bpy.context zurück, wenn kein Override verfügbar ist.
+    """
+    if not clip_override:
+        yield bpy.context
+        return
+    override = bpy.context.copy()
+    override.update({
+        "window": clip_override.get("window"),
+        "area": clip_override.get("area"),
+        "region": clip_override.get("region"),
+        "space_data": clip_override.get("space"),
+    })
+    yield override
+
 def short_test_track(
     context=None,
     tracks_to_delete=None,
     run_meta: Optional[Dict[str, Any]] = None,
-    report_fn: Optional[Any] = None
+    report_fn: Optional[Any] = None,
+    clip_override: Optional[Dict[str, Any]] = None,
 ):
     """
     Reihenfolge:
@@ -240,6 +260,27 @@ def short_test_track(
     pre_names: Set[str] = _get_current_track_names(context)
 
     try:
+        # Fallback: Falls kein clip_override übergeben wurde, versuche es ad-hoc zu ermitteln.
+        if clip_override is None:
+            area = region = space = clip = win = None
+            for window in bpy.context.window_manager.windows:
+                for a in window.screen.areas:
+                    if a.type == 'CLIP_EDITOR':
+                        region = next((r for r in a.regions if r.type == 'WINDOW'), None)
+                        for s in a.spaces:
+                            if s.type == 'CLIP_EDITOR' and getattr(s, "clip", None):
+                                space = s
+                                clip = s.clip
+                                break
+                        if clip:
+                            area = a
+                            win = window
+                            break
+                if clip:
+                    break
+            if clip:
+                clip_override = {"window": win, "area": area, "region": region, "space": space}
+
         # 1) Snapshot
         try:
             (snapshot_active_markers(context) if context is not None else snapshot_active_markers())
@@ -247,7 +288,8 @@ def short_test_track(
             snapshot_active_markers()
 
         # 2) Detect-Adapt
-        result = bpy.ops.kaiserlich_tracker.detect_adapt('EXEC_DEFAULT')
+        with _override_clip_context(clip_override):
+            result = bpy.ops.kaiserlich_tracker.detect_adapt('INVOKE_DEFAULT')
         if 'CANCELLED' in result:
             raise RuntimeError("Detect-Adapt wurde abgebrochen.")
 
@@ -256,13 +298,11 @@ def short_test_track(
 
         # --- Forward Tracking ---
         try:
-            op_result = bpy.ops.kaiserlich_tracker.track_cycle(
-                clip_override or {},
-                'INVOKE_DEFAULT'
-            )
+            with _override_clip_context(clip_override):
+                op_result = bpy.ops.kaiserlich_tracker.track_cycle('INVOKE_DEFAULT')
         except Exception as e:
             raise RuntimeError(f"TrackCycle (vorwärts) fehlgeschlagen: {e}")
-        if 'CANCELLED' in result:
+        if 'CANCELLED' in op_result:
             raise RuntimeError("Tracking Cycle wurde abgebrochen.")
 
         # 4) Optional: explizit angegebene Tracks löschen
@@ -373,7 +413,8 @@ def short_test_pipeline(context=None, tracks_to_delete=None, report_fn: Optional
         r1 = short_test_track(
             context=context,
             run_meta={"tag": "STEP1", "fields": ["kaiserlich_rot_thresh_x","kaiserlich_rot_thresh_y"]},
-            report_fn=report_fn
+            report_fn=report_fn,
+            clip_override=clip_override
         )
         results["step1"] = int(float(r1.get("total_track_length", 0.0)))
         try:
@@ -397,7 +438,8 @@ def short_test_pipeline(context=None, tracks_to_delete=None, report_fn: Optional
                 "kaiserlich_scale_thresh_min","kaiserlich_scale_thresh_max",
                 "kaiserlich_rot_thresh_x","kaiserlich_rot_thresh_y"
             ]},
-            report_fn=report_fn
+            report_fn=report_fn,
+            clip_override=clip_override
         )
         results["step2"] = int(float(r2.get("total_track_length", 0.0)))
         try:
@@ -421,7 +463,8 @@ def short_test_pipeline(context=None, tracks_to_delete=None, report_fn: Optional
                 "kaiserlich_rot_scale_thresh_rot","kaiserlich_rot_scale_thresh_scale",
                 "kaiserlich_scale_thresh_min","kaiserlich_scale_thresh_max"
             ]},
-            report_fn=report_fn
+            report_fn=report_fn,
+            clip_override=clip_override
         )
         results["step3"] = int(float(r3.get("total_track_length", 0.0)))
         try:
@@ -443,7 +486,8 @@ def short_test_pipeline(context=None, tracks_to_delete=None, report_fn: Optional
             run_meta={"tag": "STEP4", "fields": ["kaiserlich_perspective_thresh",
                                                  "kaiserlich_rot_scale_thresh_rot",
                                                  "kaiserlich_rot_scale_thresh_scale"]},
-            report_fn=report_fn
+            report_fn=report_fn,
+            clip_override=clip_override
         )
         results["step4"] = int(float(r4.get("total_track_length", 0.0)))
         try:
