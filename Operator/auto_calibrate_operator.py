@@ -1348,7 +1348,7 @@ def reduce_perspective(context, target_len: int, start: float = 1.0, report_fn=N
 # =============================================================================
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
-    bl_idname = "kaiserlich_tracker.auto_calibrate_modal"
+    bl_idname = "kaiserlich_tracker.auto_calibrate"
     bl_label = "Kaiserlich Tracker – Auto Calibrate (Modal)"
     bl_options = {"REGISTER", "UNDO", "INTERNAL"}
 
