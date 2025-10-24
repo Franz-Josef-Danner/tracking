@@ -10,6 +10,7 @@ from ..Helper.thresh_map import (
     should_use_cached_thresholds,
     save_after_autocalibrate,
 )
+from ..Helper.bootstrap import run_bootstrap
 
 # ---------------------------------------------------------------------------
 # Context & Selection Utilities
@@ -146,7 +147,7 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
         min=1,
         soft_min=1,
     )
-
+    
     def execute(self, context: bpy.types.Context):
         scene = context.scene
         clip = _get_active_clip(context)
@@ -155,6 +156,25 @@ class KAISERLICHTRACKER_OT_master_operator(bpy.types.Operator):
         saved_selection = _snapshot_selected_track_names(clip)
 
         iterations = 0
+
+        # ------------------------------------------------------------------
+        # Einmaliger Bootstrap (nur wenn noch nicht vorhanden)
+        # ------------------------------------------------------------------
+        try:
+            ef_target = int(scene.kaiserlich_markers_per_frame)
+            if "bootstrap_params" not in scene:
+                print(f"[Kaiserlich Tracker][Master] Bootstrap init (Ziel={ef_target}) …")
+                params = run_bootstrap(context, ef_target)
+                if not params:
+                    self.report({'ERROR'}, "Bootstrap fehlgeschlagen.")
+                    return {'CANCELLED'}
+                scene["bootstrap_params"] = params
+                print("[Kaiserlich Tracker][Master] Bootstrap abgeschlossen.")
+            else:
+                print("[Kaiserlich Tracker][Master] Bootstrap übersprungen (bereits vorhanden).")
+        except Exception as e:
+            self.report({'ERROR'}, f"Bootstrap-Fehler: {e}")
+            return {'CANCELLED'}
 
         while iterations < self.max_iterations:
             iterations += 1
