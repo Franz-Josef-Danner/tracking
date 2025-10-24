@@ -1537,35 +1537,42 @@ class KAISERLICHTRACKER_OT_auto_calibrate_modal(bpy.types.Operator):
                 return {"RUNNING_MODAL"}
 
             elif self._state == 2:
-                # Tracking vorwärts
-                if not scene.kaiserlich_tracking_done:
-                    # starten
+                # --- Vorwärts-Tracking ---
+                if scene.kaiserlich_tracking_done is False:
                     self.report({'INFO'}, "[AutoCalibrate] Tracking vorwärts starten...")
                     bpy.ops.kaiserlich_tracker.track_cycle('INVOKE_DEFAULT')
-                    scene.kaiserlich_tracking_done = None  # Wartestatus
+                    scene.kaiserlich_tracking_done = None  # jetzt im Wartezustand
                     return {"RUNNING_MODAL"}
-
+            
+                elif scene.kaiserlich_tracking_done is None:
+                    # Warten, bis Tracker fertig
+                    return {"RUNNING_MODAL"}
+            
                 elif scene.kaiserlich_tracking_done is True:
                     self.report({'INFO'}, "[AutoCalibrate] Vorwärts-Tracking abgeschlossen.")
                     scene.kaiserlich_tracking_done = False
                     self._state = 3
                     return {"RUNNING_MODAL"}
-
-                return {"RUNNING_MODAL"}
-
+            
+            
             elif self._state == 3:
-                # Tracking rückwärts
-                if not scene.kaiserlich_tracking_done:
+                # --- Rückwärts-Tracking ---
+                if scene.kaiserlich_tracking_done is False:
                     self.report({'INFO'}, "[AutoCalibrate] Tracking rückwärts starten...")
                     bpy.ops.kaiserlich_tracker.track_cycle_backwards('INVOKE_DEFAULT')
                     scene.kaiserlich_tracking_done = None
                     return {"RUNNING_MODAL"}
-
+            
+                elif scene.kaiserlich_tracking_done is None:
+                    # Warten
+                    return {"RUNNING_MODAL"}
+            
                 elif scene.kaiserlich_tracking_done is True:
                     self.report({'INFO'}, "[AutoCalibrate] Rückwärts-Tracking abgeschlossen.")
                     scene.kaiserlich_tracking_done = False
                     self._state = 4
                     return {"RUNNING_MODAL"}
+
 
                 return {"RUNNING_MODAL"}
 
