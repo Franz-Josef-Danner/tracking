@@ -12,12 +12,14 @@ import bpy
 from .UI.ui import KAISERLICHTRACKER_PT_panel
 from .Operator.track_operator import KAISERLICHTRACKER_OT_track_cycle
 from .Operator.auto_calibrate_operator import KAISERLICHTRACKER_OT_auto_calibrate
+from .Operator.auto_calibrate_modal import KAISERLICHTRACKER_OT_auto_calibrate_modal
 from .Operator.detect_adapt_operator import KAISERLICHTRACKER_OT_detect_adapt
 from .Operator.track_operator_backwards import KAISERLICHTRACKER_OT_track_cycle_backwards
 from .Operator.master_operator import KAISERLICHTRACKER_OT_master_operator
 classes = (
     KAISERLICHTRACKER_OT_track_cycle,
     KAISERLICHTRACKER_OT_auto_calibrate,
+    KAISERLICHTRACKER_OT_auto_calibrate_modal,
     KAISERLICHTRACKER_OT_detect_adapt,
     KAISERLICHTRACKER_OT_track_cycle_backwards,
     KAISERLICHTRACKER_OT_master_operator,
