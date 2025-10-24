@@ -1460,9 +1460,155 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             self.report({'ERROR'}, f"Auto-Calibrate fehlgeschlagen: {e}")
             return {'CANCELLED'}
 
+# =============================================================================
+#  Erweiterung: Modal-Modus für Auto-Calibrate
+# =============================================================================
+
+def ensure_scene_flag(scene):
+    """Hilfsfunktion zur Initialisierung der Flag-Property."""
+    if not hasattr(scene, "kaiserlich_tracking_done"):
+        try:
+            bpy.types.Scene.kaiserlich_tracking_done = bpy.props.BoolProperty(
+                name="Tracking Done Flag",
+                default=False,
+                description="Signalisiert Abschluss von Tracking-Operatoren"
+            )
+        except Exception:
+            pass
+
+
+class KAISERLICHTRACKER_OT_auto_calibrate_modal(bpy.types.Operator):
+    """
+    Modal gesteuerte Variante des Auto-Calibrate-Ablaufs:
+    - führt detect_adapt, track_cycle, track_cycle_backwards sequentiell aus
+    - wartet nach jedem Start, bis scene.kaiserlich_tracking_done == True
+    - UI bleibt währenddessen responsiv
+    - ESC: bricht gesamten Vorgang ab
+    """
+    bl_idname = "kaiserlich_tracker.auto_calibrate_modal"
+    bl_label = "KAISERLICHTRACKER — Auto Calibrate (Modal)"
+    bl_options = {"REGISTER", "UNDO", "INTERNAL"}
+
+    _timer = None
+    _state = 0
+    _context_cache = None
+
+    def execute(self, context):
+        scene = context.scene
+        ensure_scene_flag(scene)
+        scene.kaiserlich_tracking_done = False
+        self._context_cache = context
+        self._state = 0
+
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.2, window=context.window)  # 200 ms Polling
+        wm.modal_handler_add(self)
+
+        self.report({'INFO'}, "[AutoCalibrate] Starte modalisierten Ablauf...")
+        return {"RUNNING_MODAL"}
+
+    def modal(self, context, event):
+        scene = context.scene
+
+        if event.type == 'ESC':
+            self.report({'WARNING'}, "[AutoCalibrate] Abbruch durch Benutzer.")
+            self._finish(context, cancelled=True)
+            return {"CANCELLED"}
+
+        if event.type != 'TIMER':
+            return {"PASS_THROUGH"}
+
+        try:
+            # --- Ablaufsteuerung nach Phase ---
+            if self._state == 0:
+                # Initialphase
+                self.report({'INFO'}, "[AutoCalibrate] Thresholds setzen & Vorbereitung...")
+                set_all_thresholds_to_one(context)
+                scene.kaiserlich_tracking_done = False
+                self._state = 1
+                return {"RUNNING_MODAL"}
+
+            elif self._state == 1:
+                # Detect-Adapt synchron
+                self.report({'INFO'}, "[AutoCalibrate] Detect-Adapt starten...")
+                result = bpy.ops.kaiserlich_tracker.detect_adapt('EXEC_DEFAULT')
+                if 'CANCELLED' in result:
+                    raise RuntimeError("Detect-Adapt abgebrochen.")
+                scene.kaiserlich_tracking_done = False
+                self._state = 2
+                return {"RUNNING_MODAL"}
+
+            elif self._state == 2:
+                # Tracking vorwärts
+                if not scene.kaiserlich_tracking_done:
+                    # starten
+                    self.report({'INFO'}, "[AutoCalibrate] Tracking vorwärts starten...")
+                    bpy.ops.kaiserlich_tracker.track_cycle('INVOKE_DEFAULT')
+                    scene.kaiserlich_tracking_done = None  # Wartestatus
+                    return {"RUNNING_MODAL"}
+
+                elif scene.kaiserlich_tracking_done is True:
+                    self.report({'INFO'}, "[AutoCalibrate] Vorwärts-Tracking abgeschlossen.")
+                    scene.kaiserlich_tracking_done = False
+                    self._state = 3
+                    return {"RUNNING_MODAL"}
+
+                return {"RUNNING_MODAL"}
+
+            elif self._state == 3:
+                # Tracking rückwärts
+                if not scene.kaiserlich_tracking_done:
+                    self.report({'INFO'}, "[AutoCalibrate] Tracking rückwärts starten...")
+                    bpy.ops.kaiserlich_tracker.track_cycle_backwards('INVOKE_DEFAULT')
+                    scene.kaiserlich_tracking_done = None
+                    return {"RUNNING_MODAL"}
+
+                elif scene.kaiserlich_tracking_done is True:
+                    self.report({'INFO'}, "[AutoCalibrate] Rückwärts-Tracking abgeschlossen.")
+                    scene.kaiserlich_tracking_done = False
+                    self._state = 4
+                    return {"RUNNING_MODAL"}
+
+                return {"RUNNING_MODAL"}
+
+            elif self._state == 4:
+                # Abschlussphase
+                self.report({'INFO'}, "[AutoCalibrate] Abschluss und Bereinigung...")
+                try:
+                    # Den ursprünglichen Kalibrierungsablauf starten (Synchron)
+                    bpy.ops.kaiserlich_tracker.auto_calibrate('EXEC_DEFAULT')
+                except Exception as e:
+                    self.report({'ERROR'}, f"[AutoCalibrate] Abschlussfehler: {e}")
+                self._finish(context)
+                return {"FINISHED"}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"[AutoCalibrate][Modal] Fehler: {e}")
+            self._finish(context, cancelled=True)
+            return {"CANCELLED"}
+
+        return {"RUNNING_MODAL"}
+
+    def _finish(self, context, cancelled: bool = False):
+        wm = context.window_manager
+        if self._timer:
+            wm.event_timer_remove(self._timer)
+            self._timer = None
+
+        try:
+            context.scene.kaiserlich_tracking_done = False
+        except Exception:
+            pass
+
+        msg = "[AutoCalibrate] Modalprozess beendet." if not cancelled else "[AutoCalibrate] Abgebrochen."
+        print(msg)
+        self.report({'INFO'}, msg)
+
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate)
+    bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate_modal)
 
 def unregister():
+    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_auto_calibrate_modal)
     bpy.utils.unregister_class(KAISERLICHTRACKER_OT_auto_calibrate)
