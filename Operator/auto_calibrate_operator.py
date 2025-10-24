@@ -257,7 +257,7 @@ def short_test_track(
         # --- Forward Tracking ---
         try:
             op_result = bpy.ops.kaiserlich_tracker.track_cycle(
-                getattr(self, "_clip_override", {}), 
+                clip_override or {},
                 'INVOKE_DEFAULT'
             )
         except Exception as e:
@@ -321,7 +321,7 @@ def short_test_track(
 #  Short-Test-Pipeline (mit Live-Log)
 # =============================================================================
 
-def short_test_pipeline(context=None, tracks_to_delete=None, report_fn: Optional[Any] = None):
+def short_test_pipeline(context=None, tracks_to_delete=None, report_fn: Optional[Any] = None, clip_override=None):
     """
     Fährt 5 Tests in einem Run. Test 1 ist die Baseline.
     Persistiert STEP-Werte in Scene (inkl. BASE).
@@ -357,6 +357,7 @@ def short_test_pipeline(context=None, tracks_to_delete=None, report_fn: Optional
                 "kaiserlich_perspective_thresh",
             ]},
             report_fn=report_fn
+            clip_override=clip_override
         )
         results["baseline"] = int(float(rb.get("total_track_length", 0.0)))
         try:
@@ -745,7 +746,8 @@ def reduce_threshold_single(
     prop_name: str,
     cfg: ReduceConfig,
     tracks_to_delete: Optional[List[str]] = None,
-    report_fn: Optional[Any] = None,   # pro Kandidat live loggen
+    report_fn: Optional[Any] = None,
+    clip_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Downward-Reduce (Single) mit 'einen Durchlauf zurück':
@@ -1449,7 +1451,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             set_all_thresholds_to_one(context)
             print("[AutoCalibrate] Thresholds => 1.0")
             try:
-                self._result_cache = short_test_pipeline(context=context)
+                self._result_cache = short_test_pipeline(context=context, clip_override=self._clip_override)
                 self._state = "EVAL"
                 print("[AutoCalibrate] Short-Test-Pipeline abgeschlossen.")
             except Exception as e:
