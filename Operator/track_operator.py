@@ -248,17 +248,13 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         except Exception:
             pass
 
-        # ---- NEU: Signal an Auto-Calibrate ----
-        try:
-            context.scene.kaiserlich_tracking_done = True
-            print(f"[TrackCycle][Signal] Scene='{context.scene.name}' Clip='{getattr(context.space_data, 'clip', None).name if getattr(context, 'space_data', None) and getattr(context.space_data, 'clip', None) else 'None'}'")
-            print(f"[TrackCycle][Signal] tracking_done -> {context.scene.kaiserlich_tracking_done}")
-        except Exception as e:
-            print(f"[TrackCycle][Signal][Error] {e}")
+        print(
+            "[Kaiserlich Tracker][Modal] Zyklus beendet."
+            if not cancelled else
+            "[Kaiserlich Tracker][Modal] Abgebrochen."
+        )
 
-        msg = "[Kaiserlich Tracker][Modal] Zyklus beendet." if not cancelled else "[Kaiserlich Tracker][Modal] Abgebrochen."
-        print(msg)
-        print(f"[TrackCycle][Finish] tracking_done={context.scene.kaiserlich_tracking_done} cancelled={cancelled}")
+
 # ------------------------------------------------------------
 # Register
 # ------------------------------------------------------------
