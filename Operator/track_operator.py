@@ -2,14 +2,21 @@ import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
 
+# ------------------------------------------------------------
 # Helper-Importe
+# ------------------------------------------------------------
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
 from ..Helper.scene import get_end_frame
 from ..Helper.find_clip_editor_area import find_clip_editor_area
 from ..Helper.collect_selected_tracks import collect_selected_track_names
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
+from ..Helper.track_markers_helper import track_markers_with_override
 
+
+# ------------------------------------------------------------
+# Operator
+# ------------------------------------------------------------
 
 class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
     """Frame-by-Frame Tracking mit sichtbarem Fortschritt (nicht blockierend)."""
@@ -44,7 +51,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
     _frames_processed = 0
 
     # --------------------------------------------------------
-    # Init
+    # Initialisierung
     # --------------------------------------------------------
 
     def execute(self, context):
@@ -54,6 +61,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
             self.report({'ERROR'}, "Kein aktiver Clip.")
             return {"CANCELLED"}
 
+        # Start- und Endframes holen
         self._start_frame = ph_get_start_frame(context)
         self._end_frame = get_end_frame(context)
         if self._end_frame < self._start_frame:
@@ -86,11 +94,12 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         for tr in tracking.tracks:
             tr.select = (tr.name in self._original_selected)
 
+        # Timer aktivieren
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.05, window=context.window)  # alle 50ms ein Tick
+        self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
 
-        print("[Kaiserlich Tracker][Modal] Startet Tracking-Zyklus...")
+        print("[Kaiserlich Tracker][Modal] Tracking-Zyklus gestartet...")
         return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
@@ -98,11 +107,13 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
     # --------------------------------------------------------
 
     def modal(self, context, event):
+        # ESC = Abbruch
         if event.type == 'ESC':
-            print("[Kaiserlich Tracker][Modal] Abgebrochen durch Benutzer.")
+            print("[Kaiserlich Tracker][Modal] ❌ Vom Benutzer abgebrochen.")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
+        # Nur TIMER-Events verarbeiten
         if event.type != 'TIMER':
             return {"PASS_THROUGH"}
 
@@ -122,22 +133,24 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
             if mk:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
 
-        # Helper-Funktion anwenden (nicht ändern!)
+        # Formel anwenden (z. B. für Optimierungen)
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][Modal] ⚠️ apply_formula Fehler: {e}")
 
-        # Tracking-Operation
-        with bpy.context.temp_override(window=self._window, area=self._area, region=self._region, space_data=self._space):
-            try:
-                bpy.ops.clip.track_markers(backwards=False, sequence=False)
-            except Exception:
-                print("[Kaiserlich Tracker][Modal] Tracking-Fehler.")
-                self._finish(context, cancelled=True)
-                return {"CANCELLED"}
+        # Tracking-Schritt über Helper
+        success = track_markers_with_override(
+            self._window, self._area, self._region, self._space,
+            backwards=False, sequence=False
+        )
 
-        # Frame erhöhen
+        if not success:
+            print("[Kaiserlich Tracker][Modal] ⚠️ Tracking-Fehler, breche ab.")
+            self._finish(context, cancelled=True)
+            return {"CANCELLED"}
+
+        # Frame fortsetzen
         scene = context.scene
         if self._space.clip_user.frame_current == self._current_frame:
             self._space.clip_user.frame_current += 1
@@ -149,21 +162,25 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         self._frames_processed += 1
 
         # Aktive Tracks prüfen
-        self._processing_names, _ = filter_active_tracks_at_frame(context, self._processing_names, self._current_frame)
+        self._processing_names, _ = filter_active_tracks_at_frame(
+            context, self._processing_names, self._current_frame
+        )
 
-        # ✅ Beendigungskriterien
+        # ----------------------------------------------------
+        # Beendigungskriterien
+        # ----------------------------------------------------
         if self._current_frame >= self._end_frame:
-            print("[Kaiserlich Tracker][Modal] Szenenende erreicht.")
+            print("[Kaiserlich Tracker][Modal] ✅ Szenenende erreicht.")
             self._finish(context)
             return {"FINISHED"}
 
         if not self._processing_names:
-            print("[Kaiserlich Tracker][Modal] Keine aktiven Tracks mehr.")
+            print("[Kaiserlich Tracker][Modal] ✅ Keine aktiven Tracks mehr.")
             self._finish(context)
             return {"FINISHED"}
 
         if self.max_frames > 0 and self._frames_processed >= self.max_frames:
-            print("[Kaiserlich Tracker][Modal] Sicherheitslimit erreicht.")
+            print("[Kaiserlich Tracker][Modal] ⚠️ Sicherheitslimit erreicht.")
             self._finish(context)
             return {"FINISHED"}
 
@@ -179,7 +196,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
             wm.event_timer_remove(self._timer)
         self._timer = None
 
-        # Selektion wiederherstellen
+        # Ursprüngliche Selektion wiederherstellen
         clip = getattr(context.space_data, "clip", None)
         if clip and hasattr(clip, "tracking"):
             for tr in clip.tracking.tracks:
@@ -187,15 +204,19 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 
         try:
             reset_to_frame(context, self._start_frame)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][Modal] ⚠️ Fehler beim Frame-Reset: {e}")
 
         print(
-            "[Kaiserlich Tracker][Modal] Zyklus beendet."
+            "[Kaiserlich Tracker][Modal] ✅ Zyklus beendet."
             if not cancelled else
-            "[Kaiserlich Tracker][Modal] Abgebrochen."
+            "[Kaiserlich Tracker][Modal] ❌ Zyklus abgebrochen."
         )
 
+
+# ------------------------------------------------------------
+# Register
+# ------------------------------------------------------------
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle)
