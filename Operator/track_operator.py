@@ -2,66 +2,14 @@ import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
 
+# Helper-Importe
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
 from ..Helper.scene import get_end_frame
+from ..Helper.find_clip_editor_area import find_clip_editor_area
+from ..Helper.collect_selected_tracks import collect_selected_track_names
+from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 
-
-# ------------------------------------------------------------
-# Hilfsfunktionen
-# ------------------------------------------------------------
-
-def _find_clip_editor_area(clip):
-    """Finde eine CLIP_EDITOR Area für Context Override."""
-    for window in bpy.context.window_manager.windows:
-        screen = window.screen
-        for area in screen.areas:
-            if area.type == "CLIP_EDITOR":
-                for space in area.spaces:
-                    if space.type == "CLIP_EDITOR":
-                        if getattr(space, "clip", None) == clip or space.clip is None:
-                            region_window = next((r for r in area.regions if r.type == "WINDOW"), None)
-                            if region_window:
-                                return window, area, region_window, space
-    return None, None, None, None
-
-
-def _collect_selected_track_names(context) -> List[str]:
-    """Liefert Namen aller aktuell selektierten Tracks."""
-    clip = getattr(context.space_data, "clip", None)
-    if clip is None:
-        return []
-    tracking = getattr(clip, "tracking", None)
-    if tracking is None:
-        return []
-    return [t.name for t in tracking.tracks if getattr(t, "select", False)]
-
-
-def _filter_active_tracks_at_frame(context, track_names: List[str], frame: int) -> Tuple[List[str], int]:
-    """Prüft, welche der Tracks im angegebenen Frame aktiv sind (Marker vorhanden, nicht gemutet)."""
-    clip = getattr(context.space_data, "clip", None)
-    if clip is None:
-        return [], len(track_names)
-    tracking = getattr(clip, "tracking", None)
-    if tracking is None:
-        return [], len(track_names)
-
-    remaining = []
-    for name in track_names:
-        tr = tracking.tracks.get(name)
-        if not tr:
-            continue
-        mk = tr.markers.find_frame(frame)
-        if mk and not getattr(mk, "mute", False):
-            remaining.append(name)
-
-    dropped = len(track_names) - len(remaining)
-    return remaining, dropped
-
-
-# ------------------------------------------------------------
-# Modal Operator
-# ------------------------------------------------------------
 
 class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
     """Frame-by-Frame Tracking mit sichtbarem Fortschritt (nicht blockierend)."""
@@ -112,7 +60,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
             self._end_frame = self._start_frame
 
         # Selektion erfassen
-        self._original_selected = _collect_selected_track_names(context)
+        self._original_selected = collect_selected_track_names(context)
         if not self._original_selected:
             self.report({'WARNING'}, "Keine Tracks selektiert.")
             return {"CANCELLED"}
@@ -120,7 +68,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         self._processing_names = list(self._original_selected)
 
         # CLIP_EDITOR Bereich holen
-        self._window, self._area, self._region, self._space = _find_clip_editor_area(clip)
+        self._window, self._area, self._region, self._space = find_clip_editor_area(clip)
         if not self._window:
             self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
             return {"CANCELLED"}
@@ -201,25 +149,19 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         self._frames_processed += 1
 
         # Aktive Tracks prüfen
-        self._processing_names, _ = _filter_active_tracks_at_frame(context, self._processing_names, self._current_frame)
+        self._processing_names, _ = filter_active_tracks_at_frame(context, self._processing_names, self._current_frame)
 
-        # ---------------------------
         # ✅ Beendigungskriterien
-        # ---------------------------
-
-        # 1. Szenenende erreicht
         if self._current_frame >= self._end_frame:
             print("[Kaiserlich Tracker][Modal] Szenenende erreicht.")
             self._finish(context)
             return {"FINISHED"}
 
-        # 2. Keine aktiven Tracks mehr
         if not self._processing_names:
             print("[Kaiserlich Tracker][Modal] Keine aktiven Tracks mehr.")
             self._finish(context)
             return {"FINISHED"}
 
-        # 3. Sicherheitslimit
         if self.max_frames > 0 and self._frames_processed >= self.max_frames:
             print("[Kaiserlich Tracker][Modal] Sicherheitslimit erreicht.")
             self._finish(context)
@@ -254,10 +196,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
             "[Kaiserlich Tracker][Modal] Abgebrochen."
         )
 
-
-# ------------------------------------------------------------
-# Register
-# ------------------------------------------------------------
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle)
