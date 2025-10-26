@@ -1,3 +1,4 @@
+# detect_adapt_operator.py
 import bpy
 import time
 
