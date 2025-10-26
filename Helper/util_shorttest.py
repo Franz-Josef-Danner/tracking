@@ -8,6 +8,12 @@ from ..Helper.util_scene import call_get_start_frame, call_reset_to_frame, set_s
 from ..Helper.util_clip import get_current_track_names
 from ..Helper.util_format import fmt8
 
+# zusätzlich importiert für Inline DetectAdapt
+from ..Helper.detect import detect_features
+from ..Helper.newmarker import classify_markers
+from ..Helper.cleaneup import cleanup_new_markers
+import math, time
+
 # Scene Keys
 SCENE_TOTAL_TRACK_LEN_BASE  = "kaiserlich_len_baseline_00"
 SCENE_TOTAL_TRACK_LEN_STEP1 = "kaiserlich_len_rot_xy_00"
@@ -17,7 +23,7 @@ SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_0"
 
 
 # ---------------------------------------------------------------------------
-#  SHORT TEST
+#  SHORT TEST  (DetectAdapt inline, ohne Operator)
 # ---------------------------------------------------------------------------
 def short_test_track(
     context=None,
@@ -68,14 +74,86 @@ def short_test_track(
     try:
         snapshot_active_markers(context)
 
-        # Detect + Track
-        if 'CANCELLED' in bpy.ops.kaiserlich_tracker.detect_adapt('EXEC_DEFAULT'):
-            raise RuntimeError("Detect-Adapt abgebrochen.")
+        # ------------------------------------------------------------------
+        # DetectAdapt Inline Flow (anstelle des Operatoraufrufs)
+        # ------------------------------------------------------------------
+        clip = getattr(context.space_data, "clip", None)
+        if not clip:
+            raise RuntimeError("Kein aktiver Clip gefunden (DetectAdapt-Flow).")
+
+        hz, vc = clip.size
+        tracking_settings = getattr(clip.tracking, "settings", None)
+        ma = getattr(tracking_settings, "margin", 100)
+        pz = getattr(tracking_settings, "pattern_size", 50)
+        sz = getattr(tracking_settings, "search_size", 100)
+        ef_target = int(scene.kaiserlich_markers_per_frame)
+
+        md = hz * 0.025
+        tr = 0.0001
+
+        pre_snapshot = snapshot_active_markers(context)
+        baseline_start_tracknames = {t.name for t in clip.tracking.tracks}
+
+        max_loops = 8
+        loop = 0
+        last_md = md
+
+        while loop < max_loops:
+            loop += 1
+            print(f"\n[Kaiserlich Tracker][ShortTest][DetectAdapt] LOOP {loop} | min_distance={last_md:.2f}")
+
+            detect_features(
+                context,
+                placement='FRAME',
+                margin=ma,
+                threshold=tr,
+                min_distance=int(max(1, round(last_md)))
+            )
+
+            for trk in clip.tracking.tracks:
+                try:
+                    trk.select = False
+                except Exception:
+                    pass
+
+            post_snapshot = snapshot_active_markers(context)
+            alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
+            cleaned_new, deleted_old = cleanup_new_markers(context, alte_marker, neue_marker, pz=pz, hz=hz, vc=vc)
+
+            print(f"[Kaiserlich Tracker][ShortTest][DetectAdapt] Neue Marker: {len(cleaned_new)} | Alte gelöscht: {deleted_old}")
+
+            remaining = len(cleaned_new)
+            diff = remaining - ef_target
+            tolerance = ef_target * 0.10
+            if abs(diff) <= tolerance:
+                print(f"[Kaiserlich Tracker][ShortTest][DetectAdapt] Ziel erreicht ({remaining}/{ef_target})")
+                break
+
+            if len(cleaned_new) > 0:
+                ratio = ef_target / len(cleaned_new)
+                factor = max(0.5, min(2.0, ratio))
+                last_md = max(1.0, last_md / factor)
+            else:
+                last_md *= 1.5
+                print("[Kaiserlich Tracker][ShortTest][DetectAdapt] Keine neuen Marker → erhöhe min_distance.")
+
+            if loop < max_loops:
+                delete_tracks_by_names(context, [m['track'] for m in neue_marker])
+                time.sleep(0.1)
+
+        for trk in clip.tracking.tracks:
+            trk.select = (trk.name not in baseline_start_tracknames)
+
+        print(f"[Kaiserlich Tracker][ShortTest][DetectAdapt] Final selektierte Marker: "
+              f"{len([t for t in clip.tracking.tracks if t.select])}")
+
+        # ------------------------------------------------------------------
+        # Danach: Tracking per Operator (bleibt unverändert)
+        # ------------------------------------------------------------------
         start_frame = call_get_start_frame(context)
         if 'CANCELLED' in bpy.ops.kaiserlich_tracker.track_cycle('EXEC_DEFAULT'):
             raise RuntimeError("Tracking abgebrochen.")
 
-        # Optional explicit delete
         if tracks_to_delete:
             names = [n.strip() for n in tracks_to_delete if n and n.strip()]
             if names:
@@ -91,7 +169,6 @@ def short_test_track(
         except Exception:
             final_total_len = 0.0
 
-        # Delta cleanup
         try:
             post_names: Set[str] = get_current_track_names(context)
             new_names = sorted(list(post_names - pre_names))
