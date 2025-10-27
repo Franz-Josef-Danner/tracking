@@ -1,217 +1,224 @@
 # track_operator_backwards.py
 import bpy
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Tuple, Dict, Deque
+from collections import deque
 
-# ---------------------------------------------------------------------------
-# Imports
-# ---------------------------------------------------------------------------
-from ..Helper.util_scene import set_scene_props
-from ..Helper.util_thresholds import snapshot_thresholds, restore_thresholds
-from ..Helper.util_shorttest import short_test_track
-
-# Zusätzliche Helper für rückwärts Inline-Tracking
+# ------------------------------------------------------------
+# Helper-Importe
+# ------------------------------------------------------------
+from ..Helper.formula_helper import apply_formula_on_selected_tracks
+from ..Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
+from ..Helper.scene import get_end_frame
 from ..Helper.find_clip_editor_area import find_clip_editor_area
 from ..Helper.collect_selected_tracks import collect_selected_track_names
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ..Helper.track_markers_helper import track_markers_with_override
-from ..Helper.formula_helper import apply_formula_on_selected_tracks
-from ..Helper.playhead_helper import reset_to_frame
-from ..Helper.util_clip import get_current_track_names
-from ..Helper.track_length_helper import get_total_track_length
 
 
-# ---------------------------------------------------------------------------
-# Scene Keys
-# ---------------------------------------------------------------------------
-SCENE_DEEPTEST_ROT_XY_BEST        = "kaiserlich_deeptest_rot_xy_best"
-SCENE_DEEPTEST_SCALE_BEST         = "kaiserlich_deeptest_scale_best"
-SCENE_DEEPTEST_ROT_SCALE_BEST     = "kaiserlich_deeptest_rot_scale_best"
-SCENE_DEEPTEST_PERSPECTIVE_BEST   = "kaiserlich_deeptest_perspective_best"
+# ------------------------------------------------------------
+# Operator
+# ------------------------------------------------------------
 
+class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
+    """Frame-by-Frame Tracking rückwärts mit sichtbarem Fortschritt (nicht blockierend)."""
+    bl_idname = "kaiserlich_tracker.track_cycle_backwards"
+    bl_label = "Track Zyklus Rückwärts (Modal)"
+    bl_description = (
+        "Trackt selektierte Marker frameweise rückwärts mit Timer – UI bleibt responsiv, "
+        "Playhead und Markerupdates sichtbar."
+    )
+    bl_options = {"REGISTER", "INTERNAL"}
 
-# ---------------------------------------------------------------------------
-# INLINE BACKWARD TRACKING
-# ---------------------------------------------------------------------------
-def run_backward_track_inline(context) -> Dict[str, Any]:
-    """Führt einen vollständigen Rückwärts-Tracking-Zyklus inline aus."""
-    scene = context.scene
-    clip = getattr(context.space_data, "clip", None)
-    if not clip:
-        raise RuntimeError("Kein aktiver Clip (Backwards Inline).")
+    max_frames: bpy.props.IntProperty(  # type: ignore
+        name="Max Frames",
+        default=0,
+        min=0,
+        soft_max=100000,
+        description="Sicherheitslimit (0 = kein Limit)"
+    )
 
-    window, area, region, space = find_clip_editor_area(clip)
-    if not window:
-        raise RuntimeError("Keine CLIP_EDITOR Area gefunden (Backwards Inline).")
+    _timer = None
+    _context_cache = None
+    _processing_names: List[str]
+    _original_selected: List[str]
+    _histories: Dict[str, Deque[Tuple[int, float, float]]]
+    _window = None
+    _area = None
+    _region = None
+    _space = None
+    _start_frame = 0
+    _end_frame = 0
+    _current_frame = 0
+    _frames_processed = 0
 
-    start_frame = getattr(scene, "frame_start", 1)
-    end_frame = getattr(scene, "frame_end", start_frame)
-    if end_frame < start_frame:
-        end_frame = start_frame
+    # --------------------------------------------------------
+    # Initialisierung
+    # --------------------------------------------------------
 
-    selected = collect_selected_track_names(context)
-    if not selected:
-        raise RuntimeError("Keine Tracks selektiert (Backwards Inline).")
+    def execute(self, context):
+        scene = context.scene
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'ERROR'}, "Kein aktiver Clip.")
+            return {"CANCELLED"}
 
-    processing_names = list(selected)
-    frames_processed = 0
-    print("[Kaiserlich Tracker][InlineBackwards] ▶ Starte Rückwärts-Tracking-Zyklus...")
+        # Start- und Endframes holen
+        self._start_frame = ph_get_start_frame(context)
+        self._end_frame = get_end_frame(context)
+        if self._end_frame < self._start_frame:
+            self._end_frame = self._start_frame
 
-    for current_frame in range(end_frame, start_frame - 1, -1):
-        space.clip_user.frame_current = current_frame
-        scene.frame_current = current_frame
+        # Selektion erfassen
+        self._original_selected = collect_selected_track_names(context)
+        if not self._original_selected:
+            self.report({'WARNING'}, "Keine Tracks selektiert.")
+            return {"CANCELLED"}
 
+        self._processing_names = list(self._original_selected)
+
+        # CLIP_EDITOR Bereich holen
+        self._window, self._area, self._region, self._space = find_clip_editor_area(clip)
+        if not self._window:
+            self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
+            return {"CANCELLED"}
+
+        # Start mit aktuellem Frame oder Endframe
+        self._current_frame = min(self._end_frame, int(scene.frame_current))
+        self._space.clip_user.frame_current = self._current_frame
+        scene.frame_current = self._current_frame
+
+        # Historien initialisieren
+        self._histories = {name: deque(maxlen=10) for name in self._processing_names}
+
+        # Selektion fixieren
+        tracking = clip.tracking
+        for tr in tracking.tracks:
+            tr.select = (tr.name in self._original_selected)
+
+        # Timer aktivieren
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.05, window=context.window)
+        wm.modal_handler_add(self)
+
+        print("[Kaiserlich Tracker][ModalBackwards] Tracking-Zyklus rückwärts gestartet...")
+        return {"RUNNING_MODAL"}
+
+    # --------------------------------------------------------
+    # Modal-Loop
+    # --------------------------------------------------------
+
+    def modal(self, context, event):
+        # ESC = Abbruch
+        if event.type == 'ESC':
+            print("[Kaiserlich Tracker][ModalBackwards] ❌ Vom Benutzer abgebrochen.")
+            self._finish(context, cancelled=True)
+            return {"CANCELLED"}
+
+        # Nur TIMER-Events verarbeiten
+        if event.type != 'TIMER':
+            return {"PASS_THROUGH"}
+
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self._finish(context, cancelled=True)
+            return {"CANCELLED"}
+
+        tracking = clip.tracking
+
+        # Historien aktualisieren
+        for name in list(self._processing_names):
+            tr = tracking.tracks.get(name)
+            if not tr:
+                continue
+            mk = tr.markers.find_frame(self._current_frame)
+            if mk:
+                self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
+
+        # Formel anwenden (z. B. für Optimierungen)
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception as e:
-            print(f"[Kaiserlich Tracker][InlineBackwards] ⚠️ Formel-Fehler: {e}")
+            print(f"[Kaiserlich Tracker][ModalBackwards] ⚠️ apply_formula Fehler: {e}")
 
+        # Tracking-Schritt über Helper (rückwärts)
         success = track_markers_with_override(
-            window, area, region, space,
+            self._window, self._area, self._region, self._space,
             backwards=True, sequence=False
         )
+
         if not success:
-            print("[Kaiserlich Tracker][InlineBackwards] ⚠️ Tracking-Fehler, Abbruch.")
-            break
+            print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Tracking-Fehler, breche ab.")
+            self._finish(context, cancelled=True)
+            return {"CANCELLED"}
 
-        frames_processed += 1
-        processing_names, _ = filter_active_tracks_at_frame(context, processing_names, current_frame)
+        # Frame rückwärts fortsetzen
+        scene = context.scene
+        if self._space.clip_user.frame_current == self._current_frame:
+            self._space.clip_user.frame_current -= 1
+        if self._space.clip_user.frame_current < self._start_frame:
+            self._space.clip_user.frame_current = self._start_frame
 
-        if current_frame <= start_frame:
-            print("[Kaiserlich Tracker][InlineBackwards] ✅ Szenenstart erreicht.")
-            break
-        if not processing_names:
-            print("[Kaiserlich Tracker][InlineBackwards] ✅ Keine aktiven Tracks mehr.")
-            break
+        scene.frame_current = self._space.clip_user.frame_current
+        self._current_frame = self._space.clip_user.frame_current
+        self._frames_processed += 1
 
-    try:
-        reset_to_frame(context, start_frame)
-    except Exception as e:
-        print(f"[Kaiserlich Tracker][InlineBackwards] ⚠️ Reset-Fehler: {e}")
+        # Aktive Tracks prüfen
+        self._processing_names, _ = filter_active_tracks_at_frame(
+            context, self._processing_names, self._current_frame
+        )
 
-    print("[Kaiserlich Tracker][InlineBackwards] ✅ Zyklus abgeschlossen.")
-    total_len = float(get_total_track_length(context))
-    return {"total_track_length": total_len, "frames_processed": frames_processed}
+        # ----------------------------------------------------
+        # Beendigungskriterien
+        # ----------------------------------------------------
+        if self._current_frame <= self._start_frame:
+            print("[Kaiserlich Tracker][ModalBackwards] ✅ Szenenanfang erreicht.")
+            self._finish(context)
+            return {"FINISHED"}
 
+        if not self._processing_names:
+            print("[Kaiserlich Tracker][ModalBackwards] ✅ Keine aktiven Tracks mehr.")
+            self._finish(context)
+            return {"FINISHED"}
 
-# ---------------------------------------------------------------------------
-# GENERISCHES GRID (mit Vorwärts + Rückwärts)
-# ---------------------------------------------------------------------------
-def run_grid(context, apply_params_fn, grid: List[Dict[str, float]],
-             tracks_to_delete=None, persist_best_key=None) -> Dict[str, Any]:
-    """Führt einen kombinierten Deep-Test über Grid-Konfigurationen aus."""
-    scene = (context.scene if context else bpy.context.scene)
-    snap = snapshot_thresholds(scene)
+        if self.max_frames > 0 and self._frames_processed >= self.max_frames:
+            print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Sicherheitslimit erreicht.")
+            self._finish(context)
+            return {"FINISHED"}
 
-    measurements: List[Dict[str, Any]] = []
-    best_len = -1
-    best_cfg = {}
-    best_idx = -1
+        return {"RUNNING_MODAL"}
 
-    try:
-        for i, cfg in enumerate(grid):
-            try:
-                apply_params_fn(scene, cfg)
-            except Exception as e:
-                measurements.append({"index": i, "params": cfg, "error": str(e)})
-                continue
+    # --------------------------------------------------------
+    # Abschluss / Cleanup
+    # --------------------------------------------------------
 
-            try:
-                # --- Vorwärtslauf (DetectAdapt + TrackCycle)
-                res_fwd = short_test_track(context=context, tracks_to_delete=tracks_to_delete)
-                ttl_fwd = int(float(res_fwd.get("total_track_length", 0.0)))
+    def _finish(self, context, cancelled: bool = False):
+        wm = context.window_manager
+        if self._timer:
+            wm.event_timer_remove(self._timer)
+        self._timer = None
 
-                # --- Rückwärtslauf
-                res_bwd = run_backward_track_inline(context)
-                ttl_bwd = int(float(res_bwd.get("total_track_length", 0.0)))
+        # Ursprüngliche Selektion wiederherstellen
+        clip = getattr(context.space_data, "clip", None)
+        if clip and hasattr(clip, "tracking"):
+            for tr in clip.tracking.tracks:
+                tr.select = (tr.name in self._original_selected)
 
-                ttl_combined = ttl_fwd + ttl_bwd
-                print(f"[Kaiserlich Tracker][DeepTest] Index={i} → FWD={ttl_fwd}, BWD={ttl_bwd}, SUM={ttl_combined}")
-            except Exception as e:
-                ttl_combined = 0
-                res_fwd = {"error": str(e)}
-                res_bwd = {}
-                print(f"[Kaiserlich Tracker][DeepTest] ⚠️ Fehler bei Index {i}: {e}")
-
-            measurements.append({
-                "index": i,
-                "params": cfg,
-                "forward": res_fwd,
-                "backward": res_bwd,
-                "total_track_length": ttl_combined
-            })
-
-            if ttl_combined > best_len:
-                best_len, best_cfg, best_idx = ttl_combined, cfg, i
-
-        if persist_best_key and best_len >= 0:
-            scene[persist_best_key] = int(best_len)
-    finally:
-        restore_thresholds(scene, snap)
-
-    return {
-        "measurements": measurements,
-        "best": {"index": best_idx, "params": best_cfg, "total_track_length": best_len}
-    }
-
-
-# ---------------------------------------------------------------------------
-# SPEZIALISIERTE DEEP-TESTS
-# ---------------------------------------------------------------------------
-def deep_test_rot_xy(context=None, grid=None, tracks_to_delete=None):
-    if grid is None:
-        grid = [(0.0, 0.0), (0.01, 0.01), (0.05, 0.05), (0.1, 0.1), (0.2, 0.2), (0.5, 0.5)]
-    def _apply(scene, cfg): set_scene_props(scene, **cfg)
-    grid_dicts = [{"kaiserlich_rot_thresh_x": x, "kaiserlich_rot_thresh_y": y} for (x, y) in grid]
-    return run_grid(context, _apply, grid_dicts, tracks_to_delete, SCENE_DEEPTEST_ROT_XY_BEST)
-
-
-def deep_test_scale_min_max(context=None, grid=None, tracks_to_delete=None):
-    if grid is None:
-        grid = [(0.0, 0.0), (0.005, 0.005), (0.01, 0.01), (0.05, 0.05), (0.1, 0.1), (0.2, 0.2)]
-    def _apply(scene, cfg): set_scene_props(scene, **cfg)
-    grid_dicts = [{"kaiserlich_scale_thresh_min": mn, "kaiserlich_scale_thresh_max": mx} for (mn, mx) in grid]
-    return run_grid(context, _apply, grid_dicts, tracks_to_delete, SCENE_DEEPTEST_SCALE_BEST)
-
-
-def deep_test_rot_scale_pair(context=None, grid=None, tracks_to_delete=None):
-    if grid is None:
-        grid = [(0.0, 0.0), (0.01, 0.01), (0.05, 0.05), (0.1, 0.1), (0.2, 0.2)]
-    def _apply(scene, cfg): set_scene_props(scene, **cfg)
-    grid_dicts = [{"kaiserlich_rot_scale_thresh_rot": r, "kaiserlich_rot_scale_thresh_scale": s} for (r, s) in grid]
-    return run_grid(context, _apply, grid_dicts, tracks_to_delete, SCENE_DEEPTEST_ROT_SCALE_BEST)
-
-
-def deep_test_perspective(context=None, values=None, tracks_to_delete=None):
-    if values is None:
-        values = [0.0, 0.005, 0.01, 0.02, 0.05, 0.1]
-    def _apply(scene, cfg): set_scene_props(scene, **cfg)
-    grid_dicts = [{"kaiserlich_perspective_thresh": v} for v in values]
-    return run_grid(context, _apply, grid_dicts, tracks_to_delete, SCENE_DEEPTEST_PERSPECTIVE_BEST)
-
-
-# ---------------------------------------------------------------------------
-# OPERATOR-KLASSE (wird in __init__.py importiert)
-# ---------------------------------------------------------------------------
-class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
-    """Führt einen vollständigen Rückwärts-Tracking-Zyklus als Operator aus."""
-    bl_idname = "kaiserlich_tracker.track_cycle_backwards"
-    bl_label = "Kaiserlich Tracker – Track Cycle Backwards"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
         try:
-            result = run_backward_track_inline(context)
-            self.report({'INFO'}, f"Backwards Cycle abgeschlossen: {result}")
+            reset_to_frame(context, self._start_frame)
         except Exception as e:
-            self.report({'ERROR'}, f"Fehler beim Backwards Cycle: {e}")
-            print(f"[Kaiserlich Tracker][Backwards] Fehler: {e}")
-            return {'CANCELLED'}
-        return {'FINISHED'}
+            print(f"[Kaiserlich Tracker][ModalBackwards] ⚠️ Fehler beim Frame-Reset: {e}")
+
+        print(
+            "[Kaiserlich Tracker][ModalBackwards] ✅ Rückwärts-Zyklus beendet."
+            if not cancelled else
+            "[Kaiserlich Tracker][ModalBackwards] ❌ Rückwärts-Zyklus abgebrochen."
+        )
 
 
-# ---------------------------------------------------------------------------
-# Registrierung
-# ---------------------------------------------------------------------------
+# ------------------------------------------------------------
+# Register
+# ------------------------------------------------------------
+
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle_backwards)
 
