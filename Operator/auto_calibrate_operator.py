@@ -438,48 +438,24 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         """Selektions-Reset und Playhead-Reset nach Abschluss des nicht-blockierenden Trackings."""
         clip = getattr(context.space_data, "clip", None)
         tracking = getattr(clip, "tracking", None) if clip else None
-
-        if tracking:
-            # Ursprüngliche Selektion wiederherstellen (Konstanz)
-            original = set(self._state.track_original_selected)
-            for tr in tracking.tracks:
-                tr.select = (tr.name in original)
-
+    
+        # --------------------------------------------------------------------
+        # Ursprüngliche Selektion wiederherstellen + Playhead zurücksetzen
+        # --------------------------------------------------------------------
+        try:
+            if tracking:
+                original = set(self._state.track_original_selected)
+                for tr in tracking.tracks:
+                    tr.select = (tr.name in original)
+    
             # Playhead zurück auf Ursprungsposition vor Cleanup
             reset_to_frame(context, self._state.track_start_frame)
             print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead zurück auf Frame {self._state.track_start_frame}.")
         except Exception as e:
             print(f"[TrackCycle] ⚠️ Frame-Reset Fehler: {e}")
-
+    
         print("[Kaiserlich Tracker][TrackCycle] ✅ Zyklus beendet (nicht-blockierend).")
-
-        # --------------------------------------------------------------------
-        # Cleanup: Nur die gerade neu erzeugten & getrackten Tracks löschen
-        # --------------------------------------------------------------------
-        try:
-            w, a, r, s = (
-                self._state.track_window,
-                self._state.track_area,
-                self._state.track_region,
-                self._state.track_space,
-            )
-
-            # Sicherstellen, dass nur die aktuellen Tracks selektiert sind
-            clip = getattr(context.space_data, "clip", None)
-            tracking = getattr(clip, "tracking", None) if clip else None
-            if tracking:
-                for tr in tracking.tracks:
-                    tr.select = tr.name in self._state.track_names
-
-            ok = _operator_delete_selected(w, a, r, s)
-            if ok:
-                print(f"[Kaiserlich Tracker][Cleanup] {len(self._state.track_names)} neue Tracks gelöscht (Post-Calibrate Cleanup).")
-            else:
-                print("[Kaiserlich Tracker][Cleanup] ⚠️ Delete-Operator konnte nicht ausgeführt werden.")
-
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Löschen neuer Tracks: {e}")
-
+    
         # --------------------------------------------------------------------
         # Baseline: Gesamtlänge aller Tracks ab Startframe erfassen und merken
         # --------------------------------------------------------------------
@@ -492,7 +468,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}')")
         except Exception as e:
             print(f"[Kaiserlich Tracker][Baseline] ⚠️ Konnte Baseline-Länge nicht berechnen: {e}")
-
+    
         # --------------------------------------------------------------------
         # Cleanup: Nur die gerade neu erzeugten & getrackten Tracks löschen
         # --------------------------------------------------------------------
@@ -503,23 +479,24 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 self._state.track_region,
                 self._state.track_space,
             )
-
+    
             # Sicherstellen, dass nur die aktuellen Tracks selektiert sind
             clip = getattr(context.space_data, "clip", None)
             tracking = getattr(clip, "tracking", None) if clip else None
             if tracking:
                 for tr in tracking.tracks:
                     tr.select = tr.name in self._state.track_names
-
+    
             ok = _operator_delete_selected(w, a, r, s)
             if ok:
                 print(f"[Kaiserlich Tracker][Cleanup] {len(self._state.track_names)} neue Tracks gelöscht (Post-Calibrate Cleanup).")
             else:
                 print("[Kaiserlich Tracker][Cleanup] ⚠️ Delete-Operator konnte nicht ausgeführt werden.")
-
         except Exception as e:
             print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Löschen neuer Tracks: {e}")
+    
         return None
+
     # ------------------------------------------------------------------------
     # Cleanup / Teardown
     # ------------------------------------------------------------------------
