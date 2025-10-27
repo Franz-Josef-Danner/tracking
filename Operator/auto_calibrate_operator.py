@@ -3,6 +3,7 @@ import time
 import math
 from typing import Optional, List, Dict, Any, Tuple, Set, Deque
 from collections import deque
+from dataclasses import dataclass, field
 
 # ---- Helper-Importe ---------------------------------------------------------
 from ..Helper.util_clip import get_active_clip
