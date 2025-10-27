@@ -10,7 +10,7 @@ from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
 from ..Helper.scene import get_end_frame
 from ..Helper.find_clip_editor_area import find_clip_editor_area
-from ..Helper.collect_selected_tracks import collect_selected_track_names
+from ..Helper.selection_helper import collect_selected_track_names
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ..Helper.track_markers_helper import track_markers_with_override
 
