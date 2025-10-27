@@ -1,5 +1,9 @@
 import bpy
 from typing import Any, Dict, List, Optional, Tuple
+
+# ---------------------------------------------------------------------------
+# Imports
+# ---------------------------------------------------------------------------
 from ..Helper.util_scene import set_scene_props
 from ..Helper.util_thresholds import snapshot_thresholds, restore_thresholds
 from ..Helper.util_shorttest import short_test_track
@@ -43,7 +47,7 @@ def run_backward_track_inline(context) -> Dict[str, Any]:
     if end_frame < start_frame:
         end_frame = start_frame
 
-    selected = collect_selected_tracks(context)
+    selected = collect_selected_track_names(context)
     if not selected:
         raise RuntimeError("Keine Tracks selektiert (Backwards Inline).")
 
@@ -93,6 +97,7 @@ def run_backward_track_inline(context) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def run_grid(context, apply_params_fn, grid: List[Dict[str, float]],
              tracks_to_delete=None, persist_best_key=None) -> Dict[str, Any]:
+    """Führt einen kombinierten Deep-Test über Grid-Konfigurationen aus."""
     scene = (context.scene if context else bpy.context.scene)
     snap = snapshot_thresholds(scene)
 
@@ -181,3 +186,34 @@ def deep_test_perspective(context=None, values=None, tracks_to_delete=None):
     def _apply(scene, cfg): set_scene_props(scene, **cfg)
     grid_dicts = [{"kaiserlich_perspective_thresh": v} for v in values]
     return run_grid(context, _apply, grid_dicts, tracks_to_delete, SCENE_DEEPTEST_PERSPECTIVE_BEST)
+
+
+# ---------------------------------------------------------------------------
+# OPERATOR-KLASSE (wird in __init__.py importiert)
+# ---------------------------------------------------------------------------
+class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
+    """Führt einen vollständigen Rückwärts-Tracking-Zyklus als Operator aus."""
+    bl_idname = "kaiserlich_tracker.track_cycle_backwards"
+    bl_label = "Kaiserlich Tracker – Track Cycle Backwards"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            result = run_backward_track_inline(context)
+            self.report({'INFO'}, f"Backwards Cycle abgeschlossen: {result}")
+        except Exception as e:
+            self.report({'ERROR'}, f"Fehler beim Backwards Cycle: {e}")
+            print(f"[Kaiserlich Tracker][Backwards] Fehler: {e}")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+# ---------------------------------------------------------------------------
+# Registrierung
+# ---------------------------------------------------------------------------
+def register():
+    bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle_backwards)
+
+
+def unregister():
+    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_track_cycle_backwards)
