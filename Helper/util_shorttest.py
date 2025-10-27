@@ -1,11 +1,24 @@
-# util_shorttest.py
+"""
+This module provides an inline "short test" that performs a combined Detect‑Adapt and TrackCycle
+workflow within Blender's movie clip editor. It is adapted from the upstream helper
+implementation but updated to avoid importing removed modules. In particular, it now
+imports the `collect_selected_track_names` helper from ``selection_helper`` instead of the
+deprecated ``collect_selected_tracks`` module and calls the renamed function accordingly.
+
+The short test detects features, cleans up newly added markers, cycles through tracking
+frames while applying formulas, and logs relevant metadata. It returns a summary of
+deleted tracks and the total resulting track length. See the upstream documentation for
+further details.
+"""
+
 import bpy
-import math, time
+import math
+import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 from collections import deque
 
 # ------------------------------------------------------------
-# Helper-Importe
+# Helper imports
 # ------------------------------------------------------------
 from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.track_length_helper import get_total_track_length
@@ -17,33 +30,47 @@ from ..Helper.detect import detect_features
 from ..Helper.newmarker import classify_markers
 from ..Helper.cleaneup import cleanup_new_markers
 
-# Zusätzliche Operator-Helper (TrackCycle)
+# Additional operator helpers (TrackCycle)
 from ..Helper.find_clip_editor_area import find_clip_editor_area
-from ..Helper.collect_selected_tracks import collect_selected_track_names
+from ..Helper.selection_helper import collect_selected_track_names  # updated import
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ..Helper.track_markers_helper import track_markers_with_override
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.playhead_helper import reset_to_frame
 
 
-# Scene Keys
-SCENE_TOTAL_TRACK_LEN_BASE  = "kaiserlich_len_baseline_00"
+# Scene Keys for logging and persistence
+SCENE_TOTAL_TRACK_LEN_BASE = "kaiserlich_len_baseline_00"
 SCENE_TOTAL_TRACK_LEN_STEP1 = "kaiserlich_len_rot_xy_00"
 SCENE_TOTAL_TRACK_LEN_STEP2 = "kaiserlich_len_scale_00"
 SCENE_TOTAL_TRACK_LEN_STEP3 = "kaiserlich_len_rot_scale_00"
 SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_0"
 
 
-# ---------------------------------------------------------------------------
-# SHORT TEST (DetectAdapt + vollständiger TrackCycle inline)
-# ---------------------------------------------------------------------------
 def short_test_track(
     context=None,
     tracks_to_delete=None,
     run_meta: Optional[Dict[str, Any]] = None,
-    report_fn: Optional[Any] = None
-):
-    """Führt einen vollständigen Short-Test (DetectAdapt + TrackCycle) inline aus."""
+    report_fn: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Perform a full short test inline (DetectAdapt + TrackCycle).
+
+    Parameters
+    ----------
+    context : bpy.types.Context, optional
+        Blender context; if None, the current global context is used.
+    tracks_to_delete : list of str, optional
+        Explicit list of tracks to delete after the run.
+    run_meta : dict, optional
+        Metadata for logging, including fields to log and a tag.
+    report_fn : callable, optional
+        Function to call with log strings.
+
+    Returns
+    -------
+    dict
+        Summary of results, including total track length and lists of deleted tracks.
+    """
     scene = context.scene if context else bpy.context.scene
     start_frame = None
     deleted_explicit: List[str] = []
@@ -60,7 +87,7 @@ def short_test_track(
         run_meta = {}
 
     # ------------------------------------------------------------
-    # Parameterlogging
+    # Parameter logging
     # ------------------------------------------------------------
     fields: List[str] = run_meta.get("fields") or [
         "kaiserlich_rot_thresh_x",
@@ -88,7 +115,7 @@ def short_test_track(
     snapshot_active_markers(context)
 
     # ------------------------------------------------------------
-    # DetectAdapt Inline Flow
+    # DetectAdapt inline flow
     # ------------------------------------------------------------
     clip = getattr(context.space_data, "clip", None)
     if not clip:
@@ -159,7 +186,7 @@ def short_test_track(
           f"{len([t for t in clip.tracking.tracks if t.select])}")
 
     # ------------------------------------------------------------
-    # Inline TrackCycle Flow (vollständiger Ablauf)
+    # Inline TrackCycle flow (vollständiger Ablauf)
     # ------------------------------------------------------------
     clip = getattr(context.space_data, "clip", None)
     if not clip:
@@ -175,7 +202,8 @@ def short_test_track(
     if end_frame < start_frame:
         end_frame = start_frame
 
-    original_selected = collect_selected_tracks(context)
+    # Use renamed helper to collect selected track names
+    original_selected = collect_selected_track_names(context)
     if not original_selected:
         raise RuntimeError("Keine Tracks selektiert (TrackCycle Inline).")
 
@@ -186,16 +214,16 @@ def short_test_track(
 
     print("[Kaiserlich Tracker][InlineTrack] ▶ Starte Tracking-Zyklus...")
 
-    # Selektion fixieren
+    # Fix selection
     for tr in tracking.tracks:
         tr.select = (tr.name in original_selected)
 
-    # Frame-by-Frame Ablauf
+    # Frame-by-frame loop
     for current_frame in range(start_frame, end_frame + 1):
         space.clip_user.frame_current = current_frame
         scene.frame_current = current_frame
 
-        # Historien erfassen
+        # Record histories
         for name in list(processing_names):
             tr = tracking.tracks.get(name)
             if tr:
@@ -203,13 +231,13 @@ def short_test_track(
                 if mk:
                     _histories[name].append((current_frame, mk.co[0], mk.co[1]))
 
-        # Formel anwenden
+        # Apply formula
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception as e:
             print(f"[Kaiserlich Tracker][InlineTrack] ⚠️ Formel-Fehler: {e}")
 
-        # Tracking durchführen
+        # Perform tracking
         success = track_markers_with_override(
             window, area, region, space,
             backwards=False, sequence=False
@@ -220,10 +248,10 @@ def short_test_track(
 
         frames_processed += 1
 
-        # Aktive Tracks prüfen
+        # Check active tracks
         processing_names, _ = filter_active_tracks_at_frame(context, processing_names, current_frame)
 
-        # Abbruchbedingungen
+        # Termination conditions
         if current_frame >= end_frame:
             print("[Kaiserlich Tracker][InlineTrack] ✅ Szenenende erreicht.")
             break
