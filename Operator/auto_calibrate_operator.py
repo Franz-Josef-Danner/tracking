@@ -157,7 +157,22 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         # 5) Abschluss
         if not self._state.done and self._state.did_track_cycle:
             self._state.done = True
-            return self._teardown(context, cancelled=False)
+            # Robust gegen versehentlich ausgelagerte/ausgerückte Methode:
+            if hasattr(self, "_teardown"):
+                return self._teardown(context, cancelled=False)
+            # Fallback-Teardown, um AttributeError zu vermeiden
+            wm = context.window_manager
+            if getattr(self, "_timer", None):
+                try:
+                    wm.event_timer_remove(self._timer)
+                except Exception:
+                    pass
+                self._timer = None
+            try:
+                self.report({'INFO'}, "Auto Calibrate abgeschlossen.")
+            except Exception:
+                print("[Kaiserlich Tracker][AutoCalibrate] Auto Calibrate abgeschlossen.")
+            return {'FINISHED'}
 
         return {'RUNNING_MODAL'}
 
@@ -495,6 +510,25 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         print("[Kaiserlich Tracker][TrackCycle] ✅ Zyklus vollständig abgeschlossen.")
         return None
+
+    # ------------------------------------------------------------------------
+    # Cleanup / Teardown (muss innerhalb der Klasse definiert sein)
+    # ------------------------------------------------------------------------
+    def _teardown(self, context: bpy.types.Context, cancelled: bool):
+        """Timer sicher entfernen und Operator sauber beenden."""
+        wm = context.window_manager
+        if getattr(self, "_timer", None):
+            try:
+                wm.event_timer_remove(self._timer)
+            except Exception:
+                pass
+            self._timer = None
+        msg = "Auto Calibrate abgebrochen." if cancelled else "Auto Calibrate abgeschlossen."
+        try:
+            self.report({'INFO'}, msg)
+        except Exception:
+            print(f"[Kaiserlich Tracker][AutoCalibrate] {msg}")
+        return {'CANCELLED' if cancelled else 'FINISHED'}
 # ----------------------------------------------------------------------------
 #  Registration
 # ----------------------------------------------------------------------------
