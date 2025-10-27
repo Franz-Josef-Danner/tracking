@@ -32,7 +32,7 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
         if params:
             # ✅ Normale Initialisierung aus Master-Operator
             md = float(params.get('md', 100))
-            ma = int(params.get('ma', 30)) * 1.1
+            ma = int(round(ma * 1.1))
             tr = float(params.get('tr', 0.5))
             pz = int(params.get('pz', 50))
             sz = int(params.get('sz', 0))
