@@ -585,8 +585,18 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             # 2) Baseline-Länge der verbleibenden (alten) Tracks speichern
             scene = context.scene
             total_len = int(get_total_track_length(context, start_frame=start_f))
-            scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
-            print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}')")
+            # Cycle index berechnen: modal erhöht track_cycles_done erst **nach**
+            # dem Aufruf von _track_cycle_finish; daher +1, um den aktuellen Zyklus zu repräsentieren.
+            cycle_idx = int(getattr(self._state, "track_cycles_done", 0)) + 1
+            key_cycle = f"kaiserlich_len_cycle_{cycle_idx}"
+            scene[key_cycle] = total_len
+            # Kompatibilität: für den ersten Zyklus auch den alten Baseline-Key beibehalten
+            if cycle_idx == 1:
+                scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
+                print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}' und '{key_cycle}')")
+            else:
+                print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{key_cycle}')")
+
 
             # 3) Alle neu erzeugten Tracks deterministisch per Namen löschen
             deleted_total = 0
