@@ -61,6 +61,14 @@ class _AutoCalibState:
     # wird nach dem ersten Lauf angestoßen, um die Rot-Schwellenwerte auf 0 zu testen.
     track_cycles_done: int = 0
 
+    # Flags für zusätzliche Zyklen. second_cycle wird gesetzt, sobald der erste
+    # Durchlauf abgeschlossen wurde und ein zweiter Detect‑/Track‑Zyklus gestartet
+    # wird (Rot-Schwellenwerte = 0). third_cycle wird gesetzt, sobald der
+    # zweite Durchlauf abgeschlossen wurde und ein dritter Detect‑/Track‑Zyklus
+    # gestartet wird (Scale-Min/Max = 0). Diese Flags verhindern, dass die
+    # End-Logik zu früh ausgelöst wird.
+    second_cycle: bool = False
+    third_cycle: bool = False
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Kaiserlich Tracker — Auto Calibrate (komplette Pipeline, nicht-blockierend)"""
@@ -156,69 +164,56 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     self._state.track_active = False
                     # erhöhe Zähler für abgeschlossene Zyklen
                     self._state.track_cycles_done += 1
-                    if self._state.track_cycles_done == 1:
-                        # Nach dem ersten Tracking-Lauf Rot-Schwellenwerte auf 0 setzen und erneut tracken
-                        try:
-                            self._set_rot_thresholds_zero(context)
-                        except Exception as ex:
-                            print(f"[AutoCalibrate] Fehler beim Setzen der Rot-Schwellenwerte: {ex!r}")
-                        # Startet einen zweiten Track-Cycle
-                        try:
-                            self._track_cycle_start(context)
-                            print("[Kaiserlich Tracker][AutoCalibrate] Zweiter Track-Cycle gestartet (Rot-Schwellenwerte = 0).")
-                        except Exception as ex:
-                            print(f"[AutoCalibrate] Fehler beim Starten des zweiten Track-Cycle: {ex!r}")
-                            # Wenn der zweite Track-Cycle nicht gestartet werden kann, markiere als abgeschlossen
-                            self._state.did_track_cycle = True
-                    else:
-                        # Zweiter (oder weiterer) Lauf abgeschlossen -> markiere als fertig
-                        self._state.did_track_cycle = True
-                        print("[Kaiserlich Tracker][AutoCalibrate] Track-Cycle abgeschlossen.")
+                    # Markiere, dass ein Track-Cycle vollständig abgeschlossen wurde. Wir
+                    # starten mögliche weitere Detect-/Track‑Zyklen außerhalb dieses
+                    # Abschnitts im Modal-State-Loop. Dadurch wird nach jeder
+                    # Iteration erst wieder ein Detect-Adapt durchgeführt, bevor ein
+                    # neuer Track-Cycle beginnt.
+                    self._state.did_track_cycle = True
+                    print("[Kaiserlich Tracker][AutoCalibrate] Track-Cycle abgeschlossen.")
                     return {'RUNNING_MODAL'}
-                return {'RUNNING_MODAL'}
 
+        # 5) Abschluss oder Vorbereitung auf weitere Zyklen
         if not self._state.done and self._state.did_track_cycle:
-            # Prüfen, ob wir schon einen zweiten Durchlauf gemacht haben
-            if not getattr(self._state, "second_cycle", False):
+            # Wenn noch kein zweiter Durchlauf durchgeführt wurde, starte diesen:
+            if not self._state.second_cycle:
                 try:
-                    # Schwellen auf 0 setzen
+                    # Setze Rot-Schwellenwerte (X/Y) auf 0,0
                     print("[Kaiserlich Tracker][AutoCalibrate] Rot-Schwellwerte auf 0 gesetzt.")
                     set_scene_props(context.scene,
-                        kaiserlich_rot_thresh_x=0.0,
-                        kaiserlich_rot_thresh_y=0.0)
-
-                    # Detect-Adapt 2. Lauf
-                    print("[Kaiserlich Tracker][AutoCalibrate] Detect-Adapt (2. Durchlauf) gestartet.")
-                    self._detect_adapt_inline(context)
-
-                    # Flag merken und zweiten Track-Cycle starten
-                    self._state.second_cycle = True
-                    self._state.did_track_cycle = False
-                    self._state.detect_adapt_done_confirmed = True
-                    return {'RUNNING_MODAL'}
-
+                                    kaiserlich_rot_thresh_x=0.0,
+                                    kaiserlich_rot_thresh_y=0.0)
                 except Exception as ex:
-                    print(f"[AutoCalibrate] Fehler beim 2. Detect-Adapt: {ex!r}")
-                    self._state.done = True
-                    return self._teardown(context, cancelled=False)
+                    print(f"[AutoCalibrate] Fehler beim Setzen der Rot-Schwellenwerte: {ex!r}")
+                # Flags setzen, um zweiten Detect-/Track‑Durchlauf zu initiieren
+                self._state.second_cycle = True
+                # Detect-Adapt und Track-Cycle erneut ausführen
+                self._state.did_detect_adapt = False
+                self._state.detect_adapt_done_confirmed = False
+                self._state.did_track_cycle = False
+                return {'RUNNING_MODAL'}
 
-            # Wenn beide Zyklen durch sind → regulär beenden
-            self._state.done = True
-            if hasattr(self, "_teardown"):
-                return self._teardown(context, cancelled=False)
-            # Fallback-Teardown, um AttributeError zu vermeiden
-            wm = context.window_manager
-            if getattr(self, "_timer", None):
+            # Wenn der zweite Durchlauf bereits erledigt ist, aber noch kein dritter:
+            if self._state.second_cycle and not self._state.third_cycle:
                 try:
-                    wm.event_timer_remove(self._timer)
-                except Exception:
-                    pass
-                self._timer = None
-            try:
-                self.report({'INFO'}, "Auto Calibrate abgeschlossen.")
-            except Exception:
-                print("[Kaiserlich Tracker][AutoCalibrate] Auto Calibrate abgeschlossen.")
-            return {'RUNNING_MODAL'}
+                    # Setze alle Thresholds auf 1.0 zurück und Scale-Min/Max auf 0.0
+                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Scale-Min/Max auf 0.0.")
+                    reset_all_thresholds(context, active_props=[])
+                    set_scene_props(context.scene,
+                                    kaiserlich_scale_thresh_min=0.0,
+                                    kaiserlich_scale_thresh_max=0.0)
+                except Exception as ex:
+                    print(f"[AutoCalibrate] Fehler beim Zurücksetzen der Thresholds: {ex!r}")
+                # Flags setzen, um dritten Detect-/Track‑Durchlauf zu initiieren
+                self._state.third_cycle = True
+                self._state.did_detect_adapt = False
+                self._state.detect_adapt_done_confirmed = False
+                self._state.did_track_cycle = False
+                return {'RUNNING_MODAL'}
+
+            # Wenn sowohl zweiter als auch dritter Durchlauf abgeschlossen wurden, beenden.
+            self._state.done = True
+            return self._teardown(context, cancelled=False)
 
         # 6) Dritter Durchlauf (Scale-Test)
         if getattr(self._state, "second_cycle", False) and not getattr(self._state, "third_cycle", False):
