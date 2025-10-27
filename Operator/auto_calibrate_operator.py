@@ -69,6 +69,10 @@ class _AutoCalibState:
     # End-Logik zu früh ausgelöst wird.
     second_cycle: bool = False
     third_cycle: bool = False
+    # Vierter Zyklus: Rot-Scale-Paar testen (rot_scale_thresh_rot/scale = 0)
+    fourth_cycle: bool = False
+    # Fünfter (letzter) Zyklus: Perspective-Test (kaiserlich_perspective_thresh = 0)
+    fifth_cycle: bool = False
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Kaiserlich Tracker — Auto Calibrate (komplette Pipeline, nicht-blockierend)"""
@@ -210,14 +214,51 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 self._state.detect_adapt_done_confirmed = False
                 self._state.did_track_cycle = False
                 return {'RUNNING_MODAL'}
+            # Wenn der dritte Durchlauf bereits erledigt ist, aber noch kein vierter:
+            if self._state.third_cycle and not self._state.fourth_cycle:
+                try:
+                    # Setze alle Thresholds auf 1.0 zurück und Rot-Scale-Paar auf 0.0
+                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Rot-Scale (rot/scale) auf 0.0.")
+                    reset_all_thresholds(context, active_props=[])
+                    set_scene_props(context.scene,
+                                    kaiserlich_rot_scale_thresh_rot=0.0,
+                                    kaiserlich_rot_scale_thresh_scale=0.0)
+                except Exception as ex:
+                    print(f"[AutoCalibrate] Fehler beim Zurücksetzen für 4. Durchlauf: {ex!r}")
+                # Flags setzen, um vierten Detect-/Track-Durchlauf zu initiieren
+                self._state.fourth_cycle = True
+                self._state.did_detect_adapt = False
+                self._state.detect_adapt_done_confirmed = False
+                self._state.did_track_cycle = False
+                return {'RUNNING_MODAL'}
 
-            # Wenn sowohl zweiter als auch dritter Durchlauf abgeschlossen wurden, beenden.
-            self._state.done = True
-            return self._teardown(context, cancelled=False)
+            # Wenn der vierte Durchlauf bereits erledigt ist, aber noch kein fünfter:
+            if self._state.fourth_cycle and not self._state.fifth_cycle:
+                try:
+                    # Setze alle Thresholds auf 1.0 und perspective_thresh auf 0.0
+                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Perspective-Thresh auf 0.0.")
+                    reset_all_thresholds(context, active_props=[])
+                    set_scene_props(context.scene,
+                                    kaiserlich_perspective_thresh=0.0)
+                except Exception as ex:
+                    print(f"[AutoCalibrate] Fehler beim Vorbereiten des 5. Durchlaufs: {ex!r}")
+                # Flag und Reset der Detect/Track Flags, damit DetectAdapt erneut läuft
+                self._state.fifth_cycle = True
+                self._state.did_detect_adapt = False
+                self._state.detect_adapt_done_confirmed = False
+                self._state.did_track_cycle = False
+                return {'RUNNING_MODAL'}
 
-        # (entfernt) Dritter Durchlauf darf nur im Abschnitt
-        # "5) Abschluss oder Vorbereitung auf weitere Zyklen"
-        # nach did_track_cycle==True getriggert werden.
+            # Wenn alle zusätzlichen Zyklen (2..5) abgeschlossen sind -> finaler Reset & Abbruch
+            if self._state.second_cycle and self._state.third_cycle and self._state.fourth_cycle and self._state.fifth_cycle:
+                try:
+                    # Final: alle Thresholds wieder auf 1.0 zurücksetzen
+                    print("[Kaiserlich Tracker][AutoCalibrate] Finaler Reset: Alle Thresholds auf 1.0.")
+                    reset_all_thresholds(context, active_props=[])
+                except Exception as ex:
+                    print(f"[AutoCalibrate] Fehler beim finalen Reset: {ex!r}")
+                self._state.done = True
+                return self._teardown(context, cancelled=False)
 
         return {'RUNNING_MODAL'}
 
