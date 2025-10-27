@@ -31,7 +31,7 @@ from ..Helper.newmarker import classify_markers
 from ..Helper.cleaneup import cleanup_new_markers
 from ..Helper.delete import delete_tracks_by_names
 from ..Helper.find_clip_editor_area import find_clip_editor_area
-from ..Helper.collect_selected_tracks import collect_selected_track_names
+from ..Helper.selection_helper import collect_selected_track_names
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ..Helper.track_markers_helper import track_markers_with_override
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
