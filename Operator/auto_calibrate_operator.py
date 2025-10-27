@@ -218,7 +218,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 self.report({'INFO'}, "Auto Calibrate abgeschlossen.")
             except Exception:
                 print("[Kaiserlich Tracker][AutoCalibrate] Auto Calibrate abgeschlossen.")
-            return {'FINISHED'}
+            return {'RUNNING_MODAL'}
 
         # 6) Dritter Durchlauf (Scale-Test)
         if getattr(self._state, "second_cycle", False) and not getattr(self._state, "third_cycle", False):
