@@ -151,30 +151,14 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
-        # Frame rückwärts fortsetzen
-        scene = context.scene
-        if self._space.clip_user.frame_current == self._current_frame:
-            self._space.clip_user.frame_current -= 1
-        if self._space.clip_user.frame_current < self._start_frame:
-            self._space.clip_user.frame_current = self._start_frame
-
-        scene.frame_current = self._space.clip_user.frame_current
-        self._current_frame = self._space.clip_user.frame_current
-        self._frames_processed += 1
-
         # Aktive Tracks prüfen
         self._processing_names, _ = filter_active_tracks_at_frame(
             context, self._processing_names, self._current_frame
         )
 
         # ----------------------------------------------------
-        # Beendigungskriterien
+        # Beendigungskriterien (vor Frame-Decrement prüfen)
         # ----------------------------------------------------
-        if self._current_frame <= self._start_frame:
-            print("[Kaiserlich Tracker][ModalBackwards] ✅ Szenenanfang erreicht.")
-            self._finish(context)
-            return {"FINISHED"}
-
         if not self._processing_names:
             print("[Kaiserlich Tracker][ModalBackwards] ✅ Keine aktiven Tracks mehr.")
             self._finish(context)
@@ -184,6 +168,20 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
             print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Sicherheitslimit erreicht.")
             self._finish(context)
             return {"FINISHED"}
+
+        # ----------------------------------------------------
+        # Frame rückwärts fortsetzen (nach Prüfung)
+        # ----------------------------------------------------
+        scene = context.scene
+        self._frames_processed += 1
+        self._current_frame -= 1
+        if self._current_frame < self._start_frame:
+            print("[Kaiserlich Tracker][ModalBackwards] ✅ Szenenanfang erreicht.")
+            self._finish(context)
+            return {"FINISHED"}
+
+        self._space.clip_user.frame_current = self._current_frame
+        scene.frame_current = self._current_frame
 
         return {"RUNNING_MODAL"}
 
