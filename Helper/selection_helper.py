@@ -1,3 +1,4 @@
+# selection_helper.py
 import bpy
 from typing import List
 
