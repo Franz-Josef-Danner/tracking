@@ -17,6 +17,7 @@ from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.detect import detect_features
 from ..Helper.cleaneup import cleanup_new_markers
 from ..Helper.delete import delete_tracks_by_names
+from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.selection_helper import collect_selected_track_names
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.track_markers_helper import track_markers_with_override
@@ -26,6 +27,9 @@ from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 # ----------------------------------------------------------------------------
 #  Modal-Operator mit deterministischer State-Steuerung
 # ----------------------------------------------------------------------------
+# Szene-Key für Baseline-Tracklänge (späterer Vergleich)
+SCENE_TOTAL_TRACK_LEN_BASE = "kaiserlich_len_baseline_00"
+
 
 @dataclass
 class _AutoCalibState:
@@ -447,7 +451,19 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             print(f"[TrackCycle] Frame-Reset Fehler: {e}")
 
         print("[Kaiserlich Tracker][TrackCycle] ✅ Zyklus beendet (nicht-blockierend).")
-
+        # --------------------------------------------------------------------
+        # Baseline: Gesamtlänge aller Tracks ab Startframe erfassen und merken
+        # --------------------------------------------------------------------
+        try:
+            start_f = int(self._state.track_start_frame) if getattr(self._state, "track_start_frame", None) else 1
+            total_len = int(get_total_track_length(context, start_frame=start_f))
+            # In Szene persistieren (als Vergleichsbasis für spätere Schritte)
+            scene = context.scene
+            scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
+            print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}')")
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][Baseline] ⚠️ Konnte Baseline-Länge nicht berechnen: {e}")
+        return None
     # ------------------------------------------------------------------------
     # Cleanup / Teardown
     # ------------------------------------------------------------------------
