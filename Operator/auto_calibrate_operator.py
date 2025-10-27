@@ -54,7 +54,9 @@ class _AutoCalibState:
     track_frame_current: int = 0
     track_frame_end: int = 0
     track_start_frame: int = 0
-
+    # Namen-Listen zur sauberen Identifikation neuer Tracks (Fix für "nur 1 Track gelöscht")
+    baseline_track_names: List[str] = field(default_factory=list)
+    created_track_names: List[str]  = field(default_factory=list)
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Kaiserlich Tracker — Auto Calibrate (komplette Pipeline, nicht-blockierend)"""
@@ -209,6 +211,8 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         baseline_start_tracknames: Set[str] = {t.name for t in tracking.tracks} if tracking else set()
 
         print(f"[Kaiserlich Tracker][DetectAdapt] Ausgangsmarker: {len(pre_snapshot)} | BaselineTracks: {len(baseline_start_tracknames)}")
+        # Baseline im State merken, damit wir später exakt die neu entstandenen Tracks identifizieren können.
+        self._state.baseline_track_names = list(baseline_start_tracknames)
 
         max_loops = 8
         loop = 0
@@ -316,6 +320,20 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     md_dict[str(f)] = interp_val
 
         print(f"[Kaiserlich Tracker][DetectAdapt] Frame {frame_num}: final min_distance = {md_value:.2f}")
+        # Liste der neu angelegten Tracks bestimmen und persistieren
+        try:
+            if tracking and getattr(tracking, "tracks", None):
+                current_names = [t.name for t in tracking.tracks]
+                base_set = set(self._state.baseline_track_names or [])
+                created = [n for n in current_names if n not in base_set]
+                self._state.created_track_names = created
+                print(f"[Kaiserlich Tracker][DetectAdapt] Neu erzeugte Tracks: {len(created)} → {created[:5]}{' …' if len(created) > 5 else ''}")
+            else:
+                self._state.created_track_names = []
+                print("[Kaiserlich Tracker][DetectAdapt] ⚠️ Konnte neue Tracks nicht bestimmen (keine Tracking-Daten).")
+        except Exception as _e:
+            self._state.created_track_names = []
+            print(f"[Kaiserlich Tracker][DetectAdapt] ⚠️ Fehler beim Ermitteln neuer Tracks: {_e!r}")
 
     # ------------------------------------------------------------------------
     # Track-Cycle: Start (Initialisierung, nicht-blockierend)
@@ -434,49 +452,49 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     # Track-Cycle: Cleanup/Finish
     # ------------------------------------------------------------------------
     def _track_cycle_finish(self, context: bpy.types.Context):
-        """Selektions-Reset, Baseline und Cleanup per Namensliste."""
+        """Selektions-Reset, Baseline und Cleanup per Namensliste (löscht **alle** neu erzeugten Tracks)."""
+        clip = getattr(context.space_data, "clip", None)
+        tracking = getattr(clip, "tracking", None) if clip else None
+
         try:
-            # 1) Playhead zurück auf Ursprungs-Frame
+            # 1) Playhead sicher auf Ursprungs-Frame fixieren
             start_f = int(self._state.track_start_frame or 1)
             reset_to_frame(context, start_f)
             context.scene.frame_current = start_f
             if self._state.track_space:
                 self._state.track_space.clip_user.frame_current = start_f
             bpy.context.view_layer.update()
-    
+            print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead fixiert auf Frame {start_f}.")
+
             # 2) Baseline-Länge der verbleibenden (alten) Tracks speichern
             scene = context.scene
             total_len = int(get_total_track_length(context, start_frame=start_f))
             scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
-    
-            # 3) Alle neu erzeugten Tracks einzeln löschen
+            print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}')")
+
+            # 3) Alle neu erzeugten Tracks deterministisch per Namen löschen
             deleted_total = 0
-            if hasattr(self._state, "created_track_names"):
-                # created_track_names enthält alle neu erzeugten Tracks
-                for name in self._state.created_track_names:
-                    deleted_total += delete_tracks_by_names(context, [name])
+            # Primäre Quelle: created_track_names (wurde in _detect_adapt_inline gesetzt)
+            names_to_delete = list(dict.fromkeys(getattr(self._state, "created_track_names", [])))
+            # Fallback: falls leer, letzte aktive Liste verwenden (kann nur 1 Name enthalten)
+            if not names_to_delete:
+                names_to_delete = list(dict.fromkeys(self._state.track_names or []))
+
+            if names_to_delete:
+                for name in names_to_delete:
+                    try:
+                        deleted_total += delete_tracks_by_names(context, [name])
+                    except Exception as _e:
+                        print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Löschen von '{name}': {_e!r}")
+                print(f"[Kaiserlich Tracker][Cleanup] {deleted_total} Tracks gelöscht (pro Name).")
             else:
-                # Fallback: use current list, although it might only contain last active track
-                for name in self._state.track_names:
-                    deleted_total += delete_tracks_by_names(context, [name])
-    
-            print(f"[Cleanup] {deleted_total} Tracks gelöscht (pro Name).")
-    
+                print("[Kaiserlich Tracker][Cleanup] ⚠️ Keine gültigen Tracks zum Löschen gefunden.")
+
         except Exception as e:
-            print(f"[Cleanup] Fehler beim Abschlusslauf: {e}")
-    # ------------------------------------------------------------------------
-    # Cleanup / Teardown
-    # ------------------------------------------------------------------------
-    def _teardown(self, context: bpy.types.Context, cancelled: bool):
-        wm = context.window_manager
-        if self._timer:
-            wm.event_timer_remove(self._timer)
-            self._timer = None
-        msg = "Auto Calibrate abgebrochen." if cancelled else "Auto Calibrate abgeschlossen."
-        self.report({'INFO'}, msg)
-        return {'CANCELLED' if cancelled else 'FINISHED'}
+            print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Abschlusslauf: {e}")
 
-
+        print("[Kaiserlich Tracker][TrackCycle] ✅ Zyklus vollständig abgeschlossen.")
+        return None
 # ----------------------------------------------------------------------------
 #  Registration
 # ----------------------------------------------------------------------------
