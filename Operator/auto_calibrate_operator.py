@@ -1,34 +1,36 @@
-# Operator/auto_calibrate_operator.py
-import bpy
-from typing import List, Any
+# auto_calibrate_operator.py
+import bpy, time
+from collections import deque
+from typing import Any, Dict, List, Optional, Tuple
 
-# ---- Imports aus Helper ----------------------------------------------------
+# --- Low-Level Helper (atomare Schritte, keine langen Schleifen) -------------
 from ..Helper.util_format import fmt8
 from ..Helper.util_thresholds import set_all_thresholds_to_one
-from ..Helper.util_shorttest import short_test_track
-from ..Helper.util_scene import set_scene_props
-from ..Helper.util_reduce import (
-    reduce_rot_xy,
-    reduce_scale_min_max,
-    reduce_rot_scale_pair,
-    reduce_perspective,
-)
-from ..Helper.util_shorttest import SCENE_TOTAL_TRACK_LEN_BASE
-from ..Helper.util_deeptest import (
-    SCENE_DEEPTEST_ROT_XY_BEST,
-    SCENE_DEEPTEST_SCALE_BEST,
-    SCENE_DEEPTEST_ROT_SCALE_BEST,
-    SCENE_DEEPTEST_PERSPECTIVE_BEST,
-)
+from ..Helper.util_scene import set_scene_props, call_get_start_frame
+from ..Helper.snapshot import snapshot_active_markers
+from ..Helper.delete import delete_tracks_by_names
+from ..Helper.find_clip_editor_area import find_clip_editor_area
+from ..Helper.selection_helper import collect_selected_track_names
+from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
+from ..Helper.track_markers_helper import track_markers_with_override
+from ..Helper.formula_helper import apply_formula_on_selected_tracks
+from ..Helper.playhead_helper import reset_to_frame
 
+# Detection/Cleanup Primitives
+from ..Helper.detect import detect_features
+from ..Helper.newmarker import classify_markers
+from ..Helper.cleaneup import cleanup_new_markers
+
+# Optional: Deep/Reduce belassen – hier nicht fokussiert
+from ..Helper.util_shorttest import SCENE_TOTAL_TRACK_LEN_BASE
 
 # ----------------------------------------------------------------------------
-#  MODAL AUTO-CALIBRATE OPERATOR
+#  MODAL AUTO-CALIBRATE (ShortTest embedded)
 # ----------------------------------------------------------------------------
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
-    """Automatische Kalibrierung der Thresholds (Rot, Scale, Perspective)."""
+    """Automatische Kalibrierung (ShortTest: Detect-Adapt + Inline-TrackCycle) mit Live-UI."""
     bl_idname = "kaiserlich_tracker.auto_calibrate"
-    bl_label = "Kaiserlich Tracker — Auto Calibrate (Modal)"
+    bl_label = "Kaiserlich Tracker — Auto Calibrate (Modal, Inline)"
     bl_options = {"REGISTER", "INTERNAL"}
 
     tracks_to_delete: bpy.props.StringProperty(
@@ -37,133 +39,323 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         description="Optional: Namen der zu löschenden Tracks (Komma-getrennt)"
     )
 
-    # interne Zustandsvariablen
+    # ---- Runtime State ------------------------------------------------------
     _timer = None
-    _phase = 0
+    _budget_ms: float = 12.0          # CPU-Budget pro Tick (UI bleibt smooth)
+    _phase: str = "INIT"              # INIT -> DA_INIT -> DA_DETECT/CLASS/DECIDE -> TRACK_INIT -> TRACK_FRAME -> DONE
     _scene = None
-    _ge_list = []
-    _vals = {}
-    _base = 0
-    _step_keys = {}
-    _done = False
+    _clip = None
+    _window = _area = _region = _space = None
 
-    # ------------------------------------------------------------------------
+    # Detect-Adapt State
+    _hz = 0
+    _vc = 0
+    _ma = 100
+    _pz = 50
+    _sz = 100
+    _ef_target = 25
+    _md = 0.0
+    _tr = 0.0001
+    _loop = 0
+    _max_loops = 8
+    _baseline_start_names: set = set()
+    _pre_snapshot = None
+    _last_detect_new: List[Dict[str, Any]] = []
+    _last_deleted_old: int = 0
+
+    # Tracking-State
+    _start_frame: int = 0
+    _end_frame: int = 0
+    _cur_frame: int = 0
+    _original_selected: List[str] = []
+    _frames_processed: int = 0
+    _max_frames: int = 0  # 0 = kein Limit
+
+    # Ergebnis
+    _final_total_len: float = 0.0
+
+    # ------------------------------------------------------------
+    def _r(self, msg: str):
+        try:
+            self.report({'INFO'}, msg)
+        except Exception:
+            pass
+        print(msg)
+
+    # ------------------------------------------------------------
     def execute(self, context):
         self._scene = context.scene
-        self.report({'INFO'}, "[Kaiserlich Tracker][AutoCalibrate] Initialisierung...")
+        self._clip = getattr(context.space_data, "clip", None)
+        if not self._clip:
+            self.report({'ERROR'}, "Kein aktiver Clip.")
+            return {'CANCELLED'}
+
+        # Reset & Basissetup
         set_all_thresholds_to_one(context)
-        self.report({'INFO'}, "[AutoCalibrate] Thresholds auf 1.0 gesetzt.")
-        self._phase = 0
+        self._r("[AutoCalibrate] Thresholds auf 1.0 gesetzt.")
+
+        # Modal starten
+        self._phase = "DA_INIT"
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)
+        self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
+        self._r("[AutoCalibrate] Modal gestartet.")
         return {'RUNNING_MODAL'}
 
-    # ------------------------------------------------------------------------
+    # ------------------------------------------------------------
+    def cancel(self, context):
+        self._cleanup(context, cancelled=True)
+
+    # ------------------------------------------------------------
     def modal(self, context, event):
-        if event.type == 'TIMER':
-            try:
-                if self._done:
+        if event.type == 'ESC':
+            self._cleanup(context, cancelled=True)
+            return {'CANCELLED'}
+
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        t0 = time.perf_counter()
+        progressed = False
+
+        try:
+            while (time.perf_counter() - t0) * 1000.0 < self._budget_ms:
+                if self._phase == "DA_INIT":
+                    self._da_init(context); progressed = True; continue
+                if self._phase == "DA_DETECT":
+                    self._da_detect(context); progressed = True; continue
+                if self._phase == "DA_CLASS":
+                    self._da_classify_cleanup(context); progressed = True; continue
+                if self._phase == "DA_DECIDE":
+                    if self._da_decide_next(context):
+                        progressed = True
+                        continue
+                    else:
+                        # Ziel erreicht oder MaxLoops → weiter zu Tracking
+                        self._phase = "TRACK_INIT"
+                        progressed = True
+                        continue
+                if self._phase == "TRACK_INIT":
+                    self._track_init(context); progressed = True; continue
+                if self._phase == "TRACK_FRAME":
+                    if not self._track_one_frame(context):
+                        # fertig
+                        self._phase = "DONE"
+                    progressed = True
+                    continue
+                if self._phase == "DONE":
                     self._finish(context)
                     return {'FINISHED'}
+                break
 
-                if self._phase == 0:
-                    self._run_short_test(context)
-                elif self._phase == 1:
-                    self._prepare_steps(context)
-                elif self._phase == 2:
-                    self._process_step(context, "STEP1", reduce_rot_xy, SCENE_DEEPTEST_ROT_XY_BEST)
-                elif self._phase == 3:
-                    self._process_step(context, "STEP2", reduce_scale_min_max, SCENE_DEEPTEST_SCALE_BEST)
-                elif self._phase == 4:
-                    self._process_step(context, "STEP3", reduce_rot_scale_pair, SCENE_DEEPTEST_ROT_SCALE_BEST)
-                elif self._phase == 5:
-                    self._process_step(context, "STEP4", reduce_perspective, SCENE_DEEPTEST_PERSPECTIVE_BEST)
-                else:
-                    self._done = True
+            if progressed:
+                try:
+                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                except:
+                    pass
 
-            except Exception as e:
-                self.report({'ERROR'}, f"[AutoCalibrate][Error] {e}")
-                self._done = True
-        return {'RUNNING_MODAL'}
+            return {'RUNNING_MODAL'}
 
-    # ------------------------------------------------------------------------
-    def _run_short_test(self, context):
-        names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
-        result = short_test_track(context=context, tracks_to_delete=names,
-                                  report_fn=lambda msg: self.report({'INFO'}, msg))
-        self.report({'INFO'}, f"[AutoCalibrate] Short-Test abgeschlossen. Ergebnis: {result}")
-        self._phase = 1
+        except Exception as e:
+            self.report({'ERROR'}, f"[AutoCalibrate] Fehler: {e}")
+            self._cleanup(context, cancelled=True)
+            return {'CANCELLED'}
 
-    # ------------------------------------------------------------------------
-    def _prepare_steps(self, context):
-        scene = self._scene
-        self._base = int(scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
-        self._step_keys = {
-            "STEP1": "kaiserlich_len_rot_xy_00",
-            "STEP2": "kaiserlich_len_scale_00",
-            "STEP3": "kaiserlich_len_rot_scale_00",
-            "STEP4": "kaiserlich_len_perspective_0",
-        }
-        self._vals = {k: float(scene.get(p, 0)) for k, p in self._step_keys.items()}
-        self._ge_list = [k for k, p in self._step_keys.items()
-                         if float(scene.get(p, 0)) >= self._base]
-        self.report({'INFO'}, f"[AutoCalibrate] Step-Vorbereitung abgeschlossen: {self._ge_list}")
-        self._phase = 2
+    # ===================== Detect-Adapt ==========================
+    def _da_init(self, context):
+        # Clip-Parameter
+        self._hz, self._vc = self._clip.size
+        settings = getattr(self._clip.tracking, "settings", None)
+        self._ma = getattr(settings, "margin", 100)
+        self._pz = getattr(settings, "pattern_size", 50)
+        self._sz = getattr(settings, "search_size", 100)
 
-    # ------------------------------------------------------------------------
-    def _process_step(self, context, key, reduce_fn, deeptest_key):
-        if key not in self._ge_list:
-            self._phase += 1
-            return
+        # Ziel: Marker pro Frame
+        self._ef_target = int(getattr(self._scene, "kaiserlich_markers_per_frame", 25) or 25)
 
-        target = max(self._base, int(self._vals.get(key) or 0))
-        self.report({'INFO'}, f"[AutoCalibrate] {key} → Ziel={target}")
-        r = reduce_fn(context, target_len=target,
-                      report_fn=lambda msg: self.report({'INFO'}, msg))
-        self._scene[deeptest_key] = int(target)
-        best = r.get("best", {})
+        # Start-Mindestabstand
+        self._md = float(self._hz) * 0.025
+        self._tr = 0.0001
+        self._loop = 0
 
-        # Parameter-Update je nach Step
-        if key == "STEP1" and best.get("values"):
-            val = best["values"]
-            set_scene_props(self._scene,
-                kaiserlich_rot_thresh_x=float(val[0]),
-                kaiserlich_rot_thresh_y=float(val[1]))
-        elif key == "STEP2" and best.get("values"):
-            val = best["values"]
-            set_scene_props(self._scene,
-                kaiserlich_scale_thresh_min=float(val[0]),
-                kaiserlich_scale_thresh_max=float(val[1]))
-        elif key == "STEP3" and best.get("values"):
-            val = best["values"]
-            set_scene_props(self._scene,
-                kaiserlich_rot_scale_thresh_rot=float(val[0]),
-                kaiserlich_rot_scale_thresh_scale=float(val[1]))
-        elif key == "STEP4" and best.get("value") is not None:
-            set_scene_props(self._scene,
-                kaiserlich_perspective_thresh=float(best["value"]))
+        # Baseline-Names & Snapshot
+        self._baseline_start_names = {t.name for t in self._clip.tracking.tracks}
+        self._pre_snapshot = snapshot_active_markers(context)
 
-        self.report({'INFO'}, f"[AutoCalibrate] {key} abgeschlossen.")
-        self._phase += 1
+        self._r(f"[ShortTest][Init] ef_target={self._ef_target} pz={self._pz} sz={self._sz} md={fmt8(self._md)}")
+        self._phase = "DA_DETECT"
 
-    # ------------------------------------------------------------------------
+    def _da_detect(self, context):
+        self._loop += 1
+        self._r(f"[ShortTest][Detect] LOOP={self._loop} md={fmt8(self._md)}")
+        detect_features(
+            context,
+            placement='FRAME',
+            margin=self._ma,
+            threshold=self._tr,
+            min_distance=int(max(1, round(self._md))),
+        )
+        # Für saubere Klassifikation: alle deselektieren
+        for trk in self._clip.tracking.tracks:
+            trk.select = False
+        self._phase = "DA_CLASS"
+
+    def _da_classify_cleanup(self, context):
+        post = snapshot_active_markers(context)
+        alte, neue = classify_markers(self._pre_snapshot, post)
+        cleaned_new, deleted_old = cleanup_new_markers(
+            context, alte, neue, pz=self._pz, hz=self._hz, vc=self._vc
+        )
+        self._last_detect_new = cleaned_new
+        self._last_deleted_old = deleted_old
+        self._r(f"[ShortTest][Cleanup] new={len(cleaned_new)} del_old={deleted_old}")
+        self._phase = "DA_DECIDE"
+
+    def _da_decide_next(self, context) -> bool:
+        """Return True, wenn eine weitere Detect-Iteration gewünscht ist."""
+        remaining = len(self._last_detect_new)
+        diff = remaining - self._ef_target
+        tolerance = max(1, int(self._ef_target * 0.10))
+
+        if abs(diff) <= tolerance:
+            self._r(f"[ShortTest] Ziel erreicht ({remaining}/{self._ef_target})")
+            # Selektiere neue Marker (alles, was nicht baseline war)
+            for trk in self._clip.tracking.tracks:
+                trk.select = (trk.name not in self._baseline_start_names)
+            return False  # weiter zum Tracking
+
+        # Noch nicht im Ziel → min_distance adaptieren
+        if remaining > 0:
+            ratio = self._ef_target / remaining
+            factor = max(0.5, min(2.0, ratio))
+            self._md = max(1.0, self._md / factor)
+        else:
+            self._md *= 1.5
+            self._r("[ShortTest] Keine neuen Marker → erhöhe min_distance.")
+
+        # Cleanup der neu erzeugten Marker, falls weitere Loops folgen
+        if self._loop < self._max_loops:
+            try:
+                delete_tracks_by_names(context, [m['track'] for m in self._last_detect_new])
+            except Exception:
+                pass
+
+        if self._loop >= self._max_loops:
+            self._r("[ShortTest] Max Loops erreicht.")
+            # Marker selektieren, die nicht baseline sind (was übrig blieb)
+            for trk in self._clip.tracking.tracks:
+                trk.select = (trk.name not in self._baseline_start_names)
+            return False
+
+        self._phase = "DA_DETECT"
+        return True
+
+    # ===================== Frameweises Tracking ==================
+    def _track_init(self, context):
+        self._r("[InlineTrack] ▶ Start")
+        self._window, self._area, self._region, self._space = find_clip_editor_area(self._clip)
+        if not self._window:
+            raise RuntimeError("Keine CLIP_EDITOR Area gefunden.")
+
+        self._start_frame = int(call_get_start_frame(context))
+        self._end_frame = int(getattr(self._scene, "frame_end", self._start_frame))
+        if self._end_frame < self._start_frame:
+            self._end_frame = self._start_frame
+
+        self._original_selected = collect_selected_track_names(context)
+        if not self._original_selected:
+            raise RuntimeError("Keine Tracks selektiert (InlineTrack).")
+
+        # Selektion fixieren
+        for tr in self._clip.tracking.tracks:
+            tr.select = (tr.name in self._original_selected)
+
+        self._cur_frame = max(self._start_frame, int(self._scene.frame_current))
+        self._space.clip_user.frame_current = self._cur_frame
+        self._scene.frame_current = self._cur_frame
+        self._frames_processed = 0
+        self._max_frames = int(getattr(self._scene, "kaiserlich_max_frames", 0) or 0)
+        self._phase = "TRACK_FRAME"
+
+    def _track_one_frame(self, context) -> bool:
+        """Trackt genau EINEN Frame. Return False, wenn fertig."""
+        # Playhead ist gesetzt
+        try:
+            apply_formula_on_selected_tracks(context, max_frames=5)
+        except Exception as e:
+            print(f"[InlineTrack] ⚠️ Formel-Fehler: {e}")
+
+        ok = track_markers_with_override(
+            self._window, self._area, self._region, self._space,
+            backwards=False, sequence=False
+        )
+        if not ok:
+            self._r("[InlineTrack] ⚠️ Tracking-Fehler, Abbruch.")
+            return False
+
+        self._frames_processed += 1
+
+        # Nächster Frame
+        if self._space.clip_user.frame_current == self._cur_frame:
+            self._space.clip_user.frame_current += 1
+        if self._space.clip_user.frame_current > self._end_frame:
+            self._space.clip_user.frame_current = self._end_frame
+
+        self._scene.frame_current = self._space.clip_user.frame_current
+        self._cur_frame = self._space.clip_user.frame_current
+
+        # Aktivität prüfen
+        processing_names, _ = filter_active_tracks_at_frame(context, self._original_selected, self._cur_frame)
+
+        # Stop-Kriterien
+        if self._cur_frame >= self._end_frame:
+            self._r("[InlineTrack] ✅ Szenenende erreicht.")
+            return False
+        if not processing_names:
+            self._r("[InlineTrack] ✅ Keine aktiven Tracks mehr.")
+            return False
+        if self._max_frames > 0 and self._frames_processed >= self._max_frames:
+            self._r("[InlineTrack] ⚠️ Sicherheitslimit erreicht.")
+            return False
+
+        return True  # noch weiter tracken
+
+    # ===================== Abschluss & Cleanup ===================
     def _finish(self, context):
-        wm = context.window_manager
-        wm.event_timer_remove(self._timer)
-        self.report({'INFO'}, "[AutoCalibrate] Alle Schritte abgeschlossen.")
-        self._done = True
+        # Ursprungs-Selektion wiederherstellen
+        for tr in self._clip.tracking.tracks:
+            tr.select = (tr.name in self._original_selected)
 
-    # ------------------------------------------------------------------------
-    def cancel(self, context):
+        try:
+            reset_to_frame(context, self._start_frame)
+        except Exception as e:
+            print(f"[InlineTrack] ⚠️ Reset-Fehler: {e}")
+
+        # Optional: explizit genannte Tracks löschen
+        if self.tracks_to_delete:
+            names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
+            if names:
+                delete_tracks_by_names(context, names)
+
+        # Optional: total length bestimmen (falls benötigt)
+        try:
+            # Falls du eine eigene get_total_track_length hast, hier importieren und nutzen.
+            pass
+        except Exception:
+            pass
+
+        self._r("[AutoCalibrate] Erfolgreich abgeschlossen.")
+        self._cleanup(context, cancelled=False)
+
+    def _cleanup(self, context, cancelled: bool):
         wm = context.window_manager
         if self._timer:
             wm.event_timer_remove(self._timer)
-        self.report({'INFO'}, "[AutoCalibrate] Abgebrochen.")
+        self._timer = None
+        self._phase = "DONE"
+        self._r("[AutoCalibrate] Abgebrochen." if cancelled else "[AutoCalibrate] Ende.")
 
 
-# ----------------------------------------------------------------------------
-#  REGISTER / UNREGISTER
 # ----------------------------------------------------------------------------
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate)
