@@ -434,46 +434,46 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     # ------------------------------------------------------------------------
     # Track-Cycle: Cleanup/Finish
     # ------------------------------------------------------------------------
-def _track_cycle_finish(self, context: bpy.types.Context):
-    """Selektions-Reset, Baseline und Cleanup — löscht Tracks deterministisch per Name."""
-    clip = getattr(context.space_data, "clip", None)
-    tracking = getattr(clip, "tracking", None) if clip else None
-
-    try:
-        # --- 1) Playhead zuerst sicher zurücksetzen ---
-        start_f = int(self._state.track_start_frame) if getattr(self._state, "track_start_frame", None) else 1
-        reset_to_frame(context, start_f)
-        context.scene.frame_current = start_f
-        if self._state.track_space:
-            self._state.track_space.clip_user.frame_current = start_f
-        bpy.context.view_layer.update()
-        print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead fixiert auf Frame {start_f}.")
-
-        # --- 2) Baseline berechnen ---
-        total_len = int(get_total_track_length(context, start_frame=start_f))
-        scene = context.scene
-        scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
-        print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}')")
-
-        # --- 3) Tracks direkt anhand der gespeicherten Namen löschen ---
-        if tracking and self._state.track_names:
-            tracks_to_delete = [name for name in self._state.track_names if name in tracking.tracks]
-            print(f"[Kaiserlich Tracker][Cleanup] Lösche {len(tracks_to_delete)} Tracks direkt per Name...")
-            for name in tracks_to_delete:
-                tr = tracking.tracks.get(name)
-                if tr:
-                    tracking.tracks.remove(tr)
-                    print(f"   [DEL] {name}")
+    def _track_cycle_finish(self, context: bpy.types.Context):
+        """Selektions-Reset, Baseline und Cleanup — löscht Tracks deterministisch per Name."""
+        clip = getattr(context.space_data, "clip", None)
+        tracking = getattr(clip, "tracking", None) if clip else None
+    
+        try:
+            # --- 1) Playhead zuerst sicher zurücksetzen ---
+            start_f = int(self._state.track_start_frame) if getattr(self._state, "track_start_frame", None) else 1
+            reset_to_frame(context, start_f)
+            context.scene.frame_current = start_f
+            if self._state.track_space:
+                self._state.track_space.clip_user.frame_current = start_f
             bpy.context.view_layer.update()
-            print(f"[Kaiserlich Tracker][Cleanup] {len(tracks_to_delete)} neue Tracks gelöscht (per Name).")
-        else:
-            print("[Kaiserlich Tracker][Cleanup] ⚠️ Keine gültigen Tracks zum Löschen gefunden.")
-
-    except Exception as e:
-        print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Abschlusslauf: {e}")
-
-    print("[Kaiserlich Tracker][TrackCycle] ✅ Zyklus vollständig abgeschlossen.")
-    return None
+            print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead fixiert auf Frame {start_f}.")
+    
+            # --- 2) Baseline berechnen ---
+            total_len = int(get_total_track_length(context, start_frame=start_f))
+            scene = context.scene
+            scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
+            print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}')")
+    
+            # --- 3) Tracks direkt anhand der gespeicherten Namen löschen ---
+            if tracking and self._state.track_names:
+                tracks_to_delete = [name for name in self._state.track_names if name in tracking.tracks]
+                print(f"[Kaiserlich Tracker][Cleanup] Lösche {len(tracks_to_delete)} Tracks direkt per Name...")
+                for name in tracks_to_delete:
+                    tr = tracking.tracks.get(name)
+                    if tr:
+                        tracking.tracks.remove(tr)
+                        print(f"   [DEL] {name}")
+                bpy.context.view_layer.update()
+                print(f"[Kaiserlich Tracker][Cleanup] {len(tracks_to_delete)} neue Tracks gelöscht (per Name).")
+            else:
+                print("[Kaiserlich Tracker][Cleanup] ⚠️ Keine gültigen Tracks zum Löschen gefunden.")
+    
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Abschlusslauf: {e}")
+    
+        print("[Kaiserlich Tracker][TrackCycle] ✅ Zyklus vollständig abgeschlossen.")
+        return None
 
     # ------------------------------------------------------------------------
     # Cleanup / Teardown
