@@ -71,8 +71,11 @@ class _AutoCalibState:
     third_cycle: bool = False
     # Vierter Zyklus: Rot-Scale-Paar testen (rot_scale_thresh_rot/scale = 0)
     fourth_cycle: bool = False
-    # Fünfter (letzter) Zyklus: Perspective-Test (kaiserlich_perspective_thresh = 0)
+    # Fünfter Zyklus: Perspective-Test (perspective_thresh = 0)
     fifth_cycle: bool = False
+    # Speichert pro Zyklus die verwendeten Schwellenwerte, z. B. {2: {"kaiserlich_rot_thresh_x": 0.0, ...}}
+    cycle_thresholds: Dict[int, Dict[str, float]] = field(default_factory=dict)
+
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Kaiserlich Tracker — Auto Calibrate (komplette Pipeline, nicht-blockierend)"""
@@ -176,6 +179,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     self._state.did_track_cycle = True
                     print("[Kaiserlich Tracker][AutoCalibrate] Track-Cycle abgeschlossen.")
                     return {'RUNNING_MODAL'}
+                return {'RUNNING_MODAL'}
 
         # 5) Abschluss oder Vorbereitung auf weitere Zyklen
         if not self._state.done and self._state.did_track_cycle:
@@ -191,6 +195,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     print(f"[AutoCalibrate] Fehler beim Setzen der Rot-Schwellenwerte: {ex!r}")
                 # Flags setzen, um zweiten Detect-/Track‑Durchlauf zu initiieren
                 self._state.second_cycle = True
+                # Merke die in diesem Durchlauf verwendeten Schwellenwerte
+                self._state.cycle_thresholds[2] = {
+                    'kaiserlich_rot_thresh_x': 0.0,
+                    'kaiserlich_rot_thresh_y': 0.0,
+                }
                 # Detect-Adapt und Track-Cycle erneut ausführen
                 self._state.did_detect_adapt = False
                 self._state.detect_adapt_done_confirmed = False
@@ -210,12 +219,18 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     print(f"[AutoCalibrate] Fehler beim Zurücksetzen der Thresholds: {ex!r}")
                 # Flags setzen, um dritten Detect-/Track‑Durchlauf zu initiieren
                 self._state.third_cycle = True
+                # Merke die in diesem Durchlauf verwendeten Schwellenwerte
+                self._state.cycle_thresholds[3] = {
+                    'kaiserlich_scale_thresh_min': 0.0,
+                    'kaiserlich_scale_thresh_max': 0.0,
+                }
                 self._state.did_detect_adapt = False
                 self._state.detect_adapt_done_confirmed = False
                 self._state.did_track_cycle = False
                 return {'RUNNING_MODAL'}
+
             # Wenn der dritte Durchlauf bereits erledigt ist, aber noch kein vierter:
-            if self._state.third_cycle and not self._state.fourth_cycle:
+            if self._state.third_cycle and not getattr(self._state, 'fourth_cycle', False):
                 try:
                     # Setze alle Thresholds auf 1.0 zurück und Rot-Scale-Paar auf 0.0
                     print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Rot-Scale (rot/scale) auf 0.0.")
@@ -224,41 +239,69 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                                     kaiserlich_rot_scale_thresh_rot=0.0,
                                     kaiserlich_rot_scale_thresh_scale=0.0)
                 except Exception as ex:
-                    print(f"[AutoCalibrate] Fehler beim Zurücksetzen für 4. Durchlauf: {ex!r}")
-                # Flags setzen, um vierten Detect-/Track-Durchlauf zu initiieren
+                    print(f"[AutoCalibrate] Fehler beim Zurücksetzen der Thresholds für 4. Durchlauf: {ex!r}")
+                # Flag setzen und Schwellenwerte merken
                 self._state.fourth_cycle = True
+                self._state.cycle_thresholds[4] = {
+                    'kaiserlich_rot_scale_thresh_rot': 0.0,
+                    'kaiserlich_rot_scale_thresh_scale': 0.0,
+                }
+                # Detect-Adapt und Track-Cycle erneut ausführen
                 self._state.did_detect_adapt = False
                 self._state.detect_adapt_done_confirmed = False
                 self._state.did_track_cycle = False
                 return {'RUNNING_MODAL'}
 
             # Wenn der vierte Durchlauf bereits erledigt ist, aber noch kein fünfter:
-            if self._state.fourth_cycle and not self._state.fifth_cycle:
+            if getattr(self._state, 'fourth_cycle', False) and not getattr(self._state, 'fifth_cycle', False):
                 try:
-                    # Setze alle Thresholds auf 1.0 und perspective_thresh auf 0.0
+                    # Setze alle Thresholds auf 1.0 zurück und Perspective-Thresh auf 0.0
                     print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Perspective-Thresh auf 0.0.")
                     reset_all_thresholds(context, active_props=[])
                     set_scene_props(context.scene,
                                     kaiserlich_perspective_thresh=0.0)
                 except Exception as ex:
-                    print(f"[AutoCalibrate] Fehler beim Vorbereiten des 5. Durchlaufs: {ex!r}")
-                # Flag und Reset der Detect/Track Flags, damit DetectAdapt erneut läuft
+                    print(f"[AutoCalibrate] Fehler beim Zurücksetzen der Thresholds für 5. Durchlauf: {ex!r}")
+                # Flag setzen und Schwellenwerte merken
                 self._state.fifth_cycle = True
+                self._state.cycle_thresholds[5] = {
+                    'kaiserlich_perspective_thresh': 0.0,
+                }
+                # Detect-Adapt und Track-Cycle erneut ausführen
                 self._state.did_detect_adapt = False
                 self._state.detect_adapt_done_confirmed = False
                 self._state.did_track_cycle = False
                 return {'RUNNING_MODAL'}
 
-            # Wenn alle zusätzlichen Zyklen (2..5) abgeschlossen sind -> finaler Reset & Abbruch
-            if self._state.second_cycle and self._state.third_cycle and self._state.fourth_cycle and self._state.fifth_cycle:
+            # Wenn alle zusätzlichen Durchläufe abgeschlossen wurden → Vergleich und Finale
+            if self._state.second_cycle and self._state.third_cycle and getattr(self._state, 'fourth_cycle', False) and getattr(self._state, 'fifth_cycle', False):
                 try:
-                    # Final: alle Thresholds wieder auf 1.0 zurücksetzen
-                    print("[Kaiserlich Tracker][AutoCalibrate] Finaler Reset: Alle Thresholds auf 1.0.")
+                    # Baseline-Länge aus Szene lesen
+                    baseline_len = int(context.scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
+                    best_thresholds: Dict[str, float] = {}
+                    # Über alle gespeicherten Zyklen (2-5) iterieren
+                    for cycle_num, thresh_dict in self._state.cycle_thresholds.items():
+                        length_key = f"kaiserlich_len_cycle_{cycle_num}"
+                        cycle_len = int(context.scene.get(length_key, 0))
+                        if cycle_len > baseline_len:
+                            # Verbesserter Wert gefunden → Thresholds hinzufügen
+                            best_thresholds.update(thresh_dict)
+                    # In Szene speichern
+                    context.scene["kaiserlich_best_thresholds"] = best_thresholds
+                    print(f"[Kaiserlich Tracker][AutoCalibrate] Beste Thresholds: {best_thresholds}")
+                except Exception as ex:
+                    print(f"[AutoCalibrate] Fehler beim Vergleich der Track-Längen: {ex!r}")
+                # Final: Alle Thresholds auf 1.0 zurücksetzen
+                try:
                     reset_all_thresholds(context, active_props=[])
                 except Exception as ex:
                     print(f"[AutoCalibrate] Fehler beim finalen Reset: {ex!r}")
                 self._state.done = True
                 return self._teardown(context, cancelled=False)
+
+            # Wenn keine der obigen Bedingungen zutrifft → finale Routine (Fallback)
+            self._state.done = True
+            return self._teardown(context, cancelled=False)
 
         return {'RUNNING_MODAL'}
 
@@ -582,21 +625,20 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             bpy.context.view_layer.update()
             print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead fixiert auf Frame {start_f}.")
 
-            # 2) Baseline-Länge der verbleibenden (alten) Tracks speichern
+            # 2) Gesamt-Track-Länge der verbleibenden (alten) Tracks speichern
             scene = context.scene
             total_len = int(get_total_track_length(context, start_frame=start_f))
-            # Cycle index berechnen: modal erhöht track_cycles_done erst **nach**
-            # dem Aufruf von _track_cycle_finish; daher +1, um den aktuellen Zyklus zu repräsentieren.
+            # Zyklusindex berechnen: track_cycles_done wird erst nach Aufruf dieser
+            # Methode erhöht. Daher +1, um den aktuellen Durchgang korrekt zu nummerieren.
             cycle_idx = int(getattr(self._state, "track_cycles_done", 0)) + 1
             key_cycle = f"kaiserlich_len_cycle_{cycle_idx}"
             scene[key_cycle] = total_len
-            # Kompatibilität: für den ersten Zyklus auch den alten Baseline-Key beibehalten
             if cycle_idx == 1:
+                # Baseline zusätzlich unter dem traditionellen Schlüssel speichern
                 scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
                 print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}' und '{key_cycle}')")
             else:
                 print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{key_cycle}')")
-
 
             # 3) Alle neu erzeugten Tracks deterministisch per Namen löschen
             deleted_total = 0
