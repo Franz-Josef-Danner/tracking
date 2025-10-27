@@ -435,44 +435,35 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     # Track-Cycle: Cleanup/Finish
     # ------------------------------------------------------------------------
     def _track_cycle_finish(self, context: bpy.types.Context):
-        """Selektions-Reset und Playhead-Reset nach Abschluss des nicht-blockierenden Trackings."""
+        """Selektions-Reset, Baseline und Cleanup — synchronisiert auf Ausgangsframe."""
         clip = getattr(context.space_data, "clip", None)
         tracking = getattr(clip, "tracking", None) if clip else None
     
-        # --------------------------------------------------------------------
-        # Ursprüngliche Selektion wiederherstellen + Playhead zurücksetzen
-        # --------------------------------------------------------------------
         try:
+            # --- 1) Playhead zuerst sicher zurücksetzen ---
+            start_f = int(self._state.track_start_frame) if getattr(self._state, "track_start_frame", None) else 1
+            reset_to_frame(context, start_f)
+            context.scene.frame_current = start_f
+            if self._state.track_space:
+                self._state.track_space.clip_user.frame_current = start_f
+            bpy.context.view_layer.update()
+            print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead zuerst fixiert auf Frame {start_f}.")
+    
+            # --- 2) Selektion der Originaltracks wiederherstellen ---
             if tracking:
                 original = set(self._state.track_original_selected)
                 for tr in tracking.tracks:
                     tr.select = (tr.name in original)
     
-            # Playhead zurück auf Ursprungsposition vor Cleanup
-            reset_to_frame(context, self._state.track_start_frame)
-            print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead zurück auf Frame {self._state.track_start_frame}.")
-        except Exception as e:
-            print(f"[TrackCycle] ⚠️ Frame-Reset Fehler: {e}")
+            print("[Kaiserlich Tracker][TrackCycle] ✅ Zyklus beendet (nicht-blockierend).")
     
-        print("[Kaiserlich Tracker][TrackCycle] ✅ Zyklus beendet (nicht-blockierend).")
-    
-        # --------------------------------------------------------------------
-        # Baseline: Gesamtlänge aller Tracks ab Startframe erfassen und merken
-        # --------------------------------------------------------------------
-        try:
-            start_f = int(self._state.track_start_frame) if getattr(self._state, "track_start_frame", None) else 1
+            # --- 3) Baseline berechnen ---
             total_len = int(get_total_track_length(context, start_frame=start_f))
-            # In Szene persistieren (als Vergleichsbasis für spätere Schritte)
             scene = context.scene
             scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
             print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}')")
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Baseline] ⚠️ Konnte Baseline-Länge nicht berechnen: {e}")
     
-        # --------------------------------------------------------------------
-        # Cleanup: Nur die gerade neu erzeugten & getrackten Tracks löschen
-        # --------------------------------------------------------------------
-        try:
+            # --- 4) Cleanup vorbereiten (nach sicherer Positionsfixierung) ---
             w, a, r, s = (
                 self._state.track_window,
                 self._state.track_area,
@@ -480,20 +471,22 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 self._state.track_space,
             )
     
-            # Sicherstellen, dass nur die aktuellen Tracks selektiert sind
-            clip = getattr(context.space_data, "clip", None)
-            tracking = getattr(clip, "tracking", None) if clip else None
+            # Sicherstellen, dass nur die gerade erzeugten Tracks selektiert sind
             if tracking:
                 for tr in tracking.tracks:
-                    tr.select = tr.name in self._state.track_names
+                    tr.select = (tr.name in self._state.track_names)
+    
+            bpy.context.view_layer.update()
+            bpy.ops.clip.view_all('INVOKE_DEFAULT')  # Optional: UI refresh (sorgt für stabile Contextbindung)
     
             ok = _operator_delete_selected(w, a, r, s)
             if ok:
                 print(f"[Kaiserlich Tracker][Cleanup] {len(self._state.track_names)} neue Tracks gelöscht (Post-Calibrate Cleanup).")
             else:
                 print("[Kaiserlich Tracker][Cleanup] ⚠️ Delete-Operator konnte nicht ausgeführt werden.")
+    
         except Exception as e:
-            print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Löschen neuer Tracks: {e}")
+            print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Abschlusslauf: {e}")
     
         return None
 
