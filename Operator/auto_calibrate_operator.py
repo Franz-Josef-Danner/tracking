@@ -177,10 +177,33 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     return {'RUNNING_MODAL'}
                 return {'RUNNING_MODAL'}
 
-        # 5) Abschluss
         if not self._state.done and self._state.did_track_cycle:
+            # Prüfen, ob wir schon einen zweiten Durchlauf gemacht haben
+            if not getattr(self._state, "second_cycle", False):
+                try:
+                    # Schwellen auf 0 setzen
+                    print("[Kaiserlich Tracker][AutoCalibrate] Rot-Schwellwerte auf 0 gesetzt.")
+                    set_scene_props(context.scene,
+                        kaiserlich_rot_thresh_x=0.0,
+                        kaiserlich_rot_thresh_y=0.0)
+
+                    # Detect-Adapt 2. Lauf
+                    print("[Kaiserlich Tracker][AutoCalibrate] Detect-Adapt (2. Durchlauf) gestartet.")
+                    self._detect_adapt_inline(context)
+
+                    # Flag merken und zweiten Track-Cycle starten
+                    self._state.second_cycle = True
+                    self._state.did_track_cycle = False
+                    self._state.detect_adapt_done_confirmed = True
+                    return {'RUNNING_MODAL'}
+
+                except Exception as ex:
+                    print(f"[AutoCalibrate] Fehler beim 2. Detect-Adapt: {ex!r}")
+                    self._state.done = True
+                    return self._teardown(context, cancelled=False)
+
+            # Wenn beide Zyklen durch sind → regulär beenden
             self._state.done = True
-            # Robust gegen versehentlich ausgelagerte/ausgerückte Methode:
             if hasattr(self, "_teardown"):
                 return self._teardown(context, cancelled=False)
             # Fallback-Teardown, um AttributeError zu vermeiden
