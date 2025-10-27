@@ -86,6 +86,12 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         except Exception:
             self._start_frame = int(context.scene.frame_current)
 
+        # WICHTIG: Sync-Mode deaktivieren, damit Tracking der Playhead-Bewegung nicht folgt
+        try:
+            clip.tracking.settings.use_sync_mode = False
+        except Exception:
+            pass
+
         # Bootstrap-Parameter besorgen (oder Fallback)
         self._bootstrap = self._ensure_bootstrap(context)
         self._target_markers = int(self._bootstrap.get("ef", 25))  # Zielanzahl
@@ -119,7 +125,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         try:
             if self._phase == "BASE_DETECT":
-                # 1) Basis: Marker setzen (adaptiv)
+                # 1) Basis: Playhead sauber setzen + Marker setzen (adaptiv)
+                try:
+                    reset_to_frame(context, int(self._start_frame))
+                except Exception:
+                    context.scene.frame_current = int(self._start_frame)
                 self._current_test_tracks = self._run_detection_adapt(
                     context,
                     md_init=float(self._bootstrap["md"]),
@@ -139,9 +149,13 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
 
             if self._phase == "STEP_DETECT":
-                # 4) Für den aktuellen Step (Paar/Einzel) Marker detektieren
+                # 4) Für den aktuellen Step (Paar/Einzel): Playhead zurück + Marker detektieren
                 step = self._steps[self._step_index]
                 self.report({'INFO'}, f"[STEP {self._step_index+1}/{len(self._steps)}] {step['name']} — Detect")
+                try:
+                    reset_to_frame(context, int(self._start_frame))
+                except Exception:
+                    context.scene.frame_current = int(self._start_frame)
                 self._current_test_tracks = self._run_detection_adapt(
                     context,
                     md_init=float(self._bootstrap["md"]),
@@ -240,6 +254,11 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         md = float(md_init)
         loops = 0
+        # sicherstellen, dass keine Reste selektiert sind
+        clip = getattr(getattr(context, "space_data", None), "clip", None)
+        if clip:
+            for t in clip.tracking.tracks:
+                t.select = False
         pre = snapshot_active_markers(context)  # "alte" Marker vor Detect
         last_cleaned_new: List[Dict[str, Any]] = []
 
@@ -293,7 +312,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         # Finale Auswahl: nur die **neuen** Tracks selektieren
         new_names = [m["track"] for m in last_cleaned_new]
-        clip = context.space_data.clip
+        clip = getattr(getattr(context, "space_data", None), "clip", None)
         if clip and new_names:
             for trk in clip.tracking.tracks:
                 trk.select = (trk.name in new_names)
@@ -314,10 +333,19 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         if not window or not area or not region or not space:
             self.report({'ERROR'}, "Keine CLIP_EDITOR-Area für Tracking gefunden.")
             return 0
+        # sicherstellen, dass der Space wirklich auf den Clip zeigt
+        try:
+            if getattr(space, "clip", None) is None:
+                space.clip = clip
+        except Exception:
+            pass
 
         scene = context.scene
         start = int(scene.frame_current)
-
+        # Obergrenze der Track-Schritte an Timeline anpassen
+        max_to_end = max(0, int(getattr(scene, "frame_end", start)) - start)
+        max_steps = min(int(max_frames), int(max_to_end) if max_to_end > 0 else int(max_frames))
+ 
         # Sicherstellen, dass es selektierte Tracks gibt
         sel_now = [t.name for t in clip.tracking.tracks if getattr(t, "select", False)]
         if not sel_now:
