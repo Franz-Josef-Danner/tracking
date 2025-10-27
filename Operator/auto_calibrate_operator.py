@@ -1,10 +1,8 @@
-# Operator/auto_calibrate_operator.py
 import bpy
 import time
 import math
 from typing import Optional, List, Dict, Any, Tuple, Set, Deque
 from collections import deque
-from dataclasses import dataclass, field
 
 # ---- Helper-Importe ---------------------------------------------------------
 from ..Helper.util_clip import get_active_clip
@@ -22,6 +20,7 @@ from ..Helper.selection_helper import collect_selected_track_names
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.track_markers_helper import track_markers_with_override
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
+from ..Helper.util_scene import set_scene_props
 
 # ----------------------------------------------------------------------------
 #  Modal-Operator mit deterministischer State-Steuerung
@@ -57,6 +56,10 @@ class _AutoCalibState:
     # Namen-Listen zur sauberen Identifikation neuer Tracks (Fix für "nur 1 Track gelöscht")
     baseline_track_names: List[str] = field(default_factory=list)
     created_track_names: List[str]  = field(default_factory=list)
+    # Anzahl der abgeschlossenen Track-Cycle-Iterationen. Ein zusätzlicher Track-Cycle
+    # wird nach dem ersten Lauf angestoßen, um die Rot-Schwellenwerte auf 0 zu testen.
+    track_cycles_done: int = 0
+
 
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Kaiserlich Tracker — Auto Calibrate (komplette Pipeline, nicht-blockierend)"""
@@ -150,8 +153,27 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     # Tracking abgeschlossen oder abgebrochen
                     self._track_cycle_finish(context)
                     self._state.track_active = False
-                    self._state.did_track_cycle = True
-                    print("[Kaiserlich Tracker][AutoCalibrate] Track-Cycle abgeschlossen.")
+                    # erhöhe Zähler für abgeschlossene Zyklen
+                    self._state.track_cycles_done += 1
+                    if self._state.track_cycles_done == 1:
+                        # Nach dem ersten Tracking-Lauf Rot-Schwellenwerte auf 0 setzen und erneut tracken
+                        try:
+                            self._set_rot_thresholds_zero(context)
+                        except Exception as ex:
+                            print(f"[AutoCalibrate] Fehler beim Setzen der Rot-Schwellenwerte: {ex!r}")
+                        # Startet einen zweiten Track-Cycle
+                        try:
+                            self._track_cycle_start(context)
+                            print("[Kaiserlich Tracker][AutoCalibrate] Zweiter Track-Cycle gestartet (Rot-Schwellenwerte = 0).")
+                        except Exception as ex:
+                            print(f"[AutoCalibrate] Fehler beim Starten des zweiten Track-Cycle: {ex!r}")
+                            # Wenn der zweite Track-Cycle nicht gestartet werden kann, markiere als abgeschlossen
+                            self._state.did_track_cycle = True
+                    else:
+                        # Zweiter (oder weiterer) Lauf abgeschlossen -> markiere als fertig
+                        self._state.did_track_cycle = True
+                        print("[Kaiserlich Tracker][AutoCalibrate] Track-Cycle abgeschlossen.")
+                    return {'RUNNING_MODAL'}
                 return {'RUNNING_MODAL'}
 
         # 5) Abschluss
@@ -464,6 +486,21 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         return True
 
     # ------------------------------------------------------------------------
+    # Hilfsmethode: Rot-Schwellenwerte auf 0 setzen
+    # ------------------------------------------------------------------------
+    def _set_rot_thresholds_zero(self, context: bpy.types.Context) -> None:
+        """Setzt die Rot-Schwellenwerte (X und Y) auf 0.0.
+        Dies nutzt util_scene.set_scene_props, um die Szene-Attribute sicher zu setzen.
+        """
+        scene = context.scene
+        try:
+            # Verwende set_scene_props, um die Attribute zu setzen, falls verfügbar.
+            set_scene_props(scene, kaiserlich_rot_thresh_x=0.0, kaiserlich_rot_thresh_y=0.0)
+            print("[Kaiserlich Tracker][AutoCalibrate] Rot-Schwellwerte auf 0 gesetzt.")
+        except Exception as ex:
+            print(f"[AutoCalibrate] Fehler beim Setzen der Rot-Schwellwerte auf 0: {ex!r}")
+
+    # ------------------------------------------------------------------------
     # Track-Cycle: Cleanup/Finish
     # ------------------------------------------------------------------------
     def _track_cycle_finish(self, context: bpy.types.Context):
@@ -529,6 +566,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         except Exception:
             print(f"[Kaiserlich Tracker][AutoCalibrate] {msg}")
         return {'CANCELLED' if cancelled else 'FINISHED'}
+
 # ----------------------------------------------------------------------------
 #  Registration
 # ----------------------------------------------------------------------------
