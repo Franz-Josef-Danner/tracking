@@ -220,6 +220,33 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 print("[Kaiserlich Tracker][AutoCalibrate] Auto Calibrate abgeschlossen.")
             return {'FINISHED'}
 
+        # 6) Dritter Durchlauf (Scale-Test)
+        if getattr(self._state, "second_cycle", False) and not getattr(self._state, "third_cycle", False):
+            try:
+                print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Scale-Min/Max auf 0.0.")
+                # Setze alle Thresholds zurück auf 1.0 und scale-min/max auf 0.0
+                reset_all_thresholds(context, active_props=[])
+                set_scene_props(
+                    context.scene,
+                    kaiserlich_scale_thresh_min=0.0,
+                    kaiserlich_scale_thresh_max=0.0,
+                )
+
+                # Detect-Adapt 3. Lauf
+                print("[Kaiserlich Tracker][AutoCalibrate] Detect-Adapt (3. Durchlauf) gestartet.")
+                self._detect_adapt_inline(context)
+
+                # Flag merken und dritten Track-Cycle starten
+                self._state.third_cycle = True
+                self._state.did_track_cycle = False
+                self._state.detect_adapt_done_confirmed = True
+                return {'RUNNING_MODAL'}
+
+            except Exception as ex:
+                print(f"[AutoCalibrate] Fehler beim 3. Detect-Adapt: {ex!r}")
+                self._state.done = True
+                return self._teardown(context, cancelled=False)
+
         return {'RUNNING_MODAL'}
 
     # ------------------------------------------------------------------------
