@@ -82,10 +82,21 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
             self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
             return {"CANCELLED"}
 
-        # Start mit aktuellem Frame oder Endframe
-        self._current_frame = min(self._end_frame, int(scene.frame_current))
+        # ------------------------------
+        # Startlogik (Backwards)
+        # ------------------------------
+        # Wenn der aktuelle Frame <= start_frame oder außerhalb [start,end], beginne am Ende
+        scene_current = int(scene.frame_current)
+        if scene_current <= self._start_frame or scene_current > self._end_frame:
+            self._current_frame = self._end_frame
+        else:
+            self._current_frame = scene_current
+
         self._space.clip_user.frame_current = self._current_frame
         scene.frame_current = self._current_frame
+
+        print(f"[Kaiserlich Tracker][ModalBackwards] Init start={self._start_frame}, "
+              f"end={self._end_frame}, current={self._current_frame}")
 
         # Historien initialisieren
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
@@ -157,7 +168,7 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
         )
 
         # ----------------------------------------------------
-        # Beendigungskriterien (vor Frame-Decrement prüfen)
+        # Beendigungskriterien (vor Step prüfen)
         # ----------------------------------------------------
         if not self._processing_names:
             print("[Kaiserlich Tracker][ModalBackwards] ✅ Keine aktiven Tracks mehr.")
@@ -170,18 +181,28 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
             return {"FINISHED"}
 
         # ----------------------------------------------------
-        # Frame rückwärts fortsetzen (nach Prüfung)
+        # Frame rückwärts fortsetzen (Forward-Parity)
         # ----------------------------------------------------
         scene = context.scene
+
+        # Wenn der Helper den Frame NICHT verändert hat, machen wir den Step selbst
+        if self._space.clip_user.frame_current == self._current_frame:
+            self._space.clip_user.frame_current -= 1
+
+        # Clamp auf Startframe (nicht darunter laufen)
+        if self._space.clip_user.frame_current < self._start_frame:
+            self._space.clip_user.frame_current = self._start_frame
+
+        # Sichtbar übernehmen
+        scene.frame_current = self._space.clip_user.frame_current
+        self._current_frame = self._space.clip_user.frame_current
         self._frames_processed += 1
-        self._current_frame -= 1
-        if self._current_frame < self._start_frame:
+
+        # Nach dem Step: Endcheck (Parität zu Forward)
+        if self._current_frame <= self._start_frame:
             print("[Kaiserlich Tracker][ModalBackwards] ✅ Szenenanfang erreicht.")
             self._finish(context)
             return {"FINISHED"}
-
-        self._space.clip_user.frame_current = self._current_frame
-        scene.frame_current = self._current_frame
 
         return {"RUNNING_MODAL"}
 
