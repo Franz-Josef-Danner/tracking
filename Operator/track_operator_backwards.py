@@ -7,8 +7,8 @@ from collections import deque
 # Helper-Importe
 # ------------------------------------------------------------
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
-from ..Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
-from ..Helper.scene import get_end_frame
+from ..Helper.playhead_helper import reset_to_frame
+from ..Helper.scene import get_end_frame, get_start_frame as scene_get_start_frame
 from ..Helper.find_clip_editor_area import find_clip_editor_area
 from ..Helper.selection_helper import collect_selected_track_names
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
@@ -38,7 +38,6 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
     )
 
     _timer = None
-    _context_cache = None
     _processing_names: List[str]
     _original_selected: List[str]
     _histories: Dict[str, Deque[Tuple[int, float, float]]]
@@ -46,9 +45,10 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
     _area = None
     _region = None
     _space = None
-    _start_frame = 0
-    _end_frame = 0
-    _current_frame = 0
+    _start_frame = 0     # Szenenstart
+    _end_frame = 0       # Szenenende
+    _reset_frame = 0     # ursprünglicher Playhead
+    _current_frame = 0   # Laufzeit-Playhead
     _frames_processed = 0
 
     # --------------------------------------------------------
@@ -62,8 +62,11 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
             self.report({'ERROR'}, "Kein aktiver Clip.")
             return {"CANCELLED"}
 
-        # Start- und Endframes holen
-        self._start_frame = ph_get_start_frame(context)
+        # ------------------------------------------
+        # Szenen-Start und -Ende bestimmen
+        # ------------------------------------------
+        # _start_frame = Szenenanfang (nicht Playhead-Position)
+        self._start_frame = scene_get_start_frame(context)
         self._end_frame = get_end_frame(context)
         if self._end_frame < self._start_frame:
             self._end_frame = self._start_frame
@@ -76,22 +79,28 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
 
         self._processing_names = list(self._original_selected)
 
-        # CLIP_EDITOR Bereich holen
+        # CLIP_EDITOR-Bereich holen
         self._window, self._area, self._region, self._space = find_clip_editor_area(clip)
         if not self._window:
             self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
             return {"CANCELLED"}
 
-        # ------------------------------
-        # Startlogik (Backwards)
-        # ------------------------------
-        # Wenn der aktuelle Frame <= start_frame oder außerhalb [start,end], beginne am Ende
-        scene_current = int(scene.frame_current)
-        if scene_current <= self._start_frame or scene_current > self._end_frame:
+        # ------------------------------------------
+        # Playhead-Startposition bestimmen
+        # ------------------------------------------
+        # Ursprüngliche Playhead-Position merken (für Reset)
+        self._reset_frame = int(scene.frame_current)
+
+        # Initialer Laufzeit-Frame = aktuelle Playhead-Position, auf Range geklemmt
+        scene_current = self._reset_frame
+        if scene_current < self._start_frame:
+            self._current_frame = self._start_frame
+        elif scene_current > self._end_frame:
             self._current_frame = self._end_frame
         else:
             self._current_frame = scene_current
 
+        # Playhead setzen
         self._space.clip_user.frame_current = self._current_frame
         scene.frame_current = self._current_frame
 
@@ -181,15 +190,15 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
             return {"FINISHED"}
 
         # ----------------------------------------------------
-        # Frame rückwärts fortsetzen (Forward-Parity)
+        # Frame rückwärts fortsetzen (analog zu Forward)
         # ----------------------------------------------------
         scene = context.scene
 
-        # Wenn der Helper den Frame NICHT verändert hat, machen wir den Step selbst
+        # Wenn der Helper den Frame NICHT verändert hat, mache den Step selbst
         if self._space.clip_user.frame_current == self._current_frame:
             self._space.clip_user.frame_current -= 1
 
-        # Clamp auf Startframe (nicht darunter laufen)
+        # Clamp: nicht unter Szenenstart fallen
         if self._space.clip_user.frame_current < self._start_frame:
             self._space.clip_user.frame_current = self._start_frame
 
@@ -198,7 +207,8 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
         self._current_frame = self._space.clip_user.frame_current
         self._frames_processed += 1
 
-        # Nach dem Step: Endcheck (Parität zu Forward)
+        # Nach dem Step: Szenenstart erreicht?
+        # (<= bedeutet: beim ersten Frame unterhalb/gleich Start stoppen)
         if self._current_frame <= self._start_frame:
             print("[Kaiserlich Tracker][ModalBackwards] ✅ Szenenanfang erreicht.")
             self._finish(context)
@@ -222,8 +232,9 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
             for tr in clip.tracking.tracks:
                 tr.select = (tr.name in self._original_selected)
 
+        # Playhead auf ursprüngliche Position zurücksetzen
         try:
-            reset_to_frame(context, self._start_frame)
+            reset_to_frame(context, self._reset_frame)
         except Exception as e:
             print(f"[Kaiserlich Tracker][ModalBackwards] ⚠️ Fehler beim Frame-Reset: {e}")
 
