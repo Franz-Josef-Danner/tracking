@@ -440,7 +440,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         tracking = getattr(clip, "tracking", None) if clip else None
     
         try:
-            # --- 1) Playhead zuerst sicher zurücksetzen ---
+            # --- 1) Playhead sicher zurücksetzen ---
             start_f = int(self._state.track_start_frame) if getattr(self._state, "track_start_frame", None) else 1
             reset_to_frame(context, start_f)
             context.scene.frame_current = start_f
@@ -449,23 +449,37 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             bpy.context.view_layer.update()
             print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead fixiert auf Frame {start_f}.")
     
-            # --- 2) Baseline berechnen ---
+            # --- 2) Baseline erfassen ---
             total_len = int(get_total_track_length(context, start_frame=start_f))
             scene = context.scene
             scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
             print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}')")
     
-            # --- 3) Tracks direkt anhand der gespeicherten Namen löschen ---
+            # --- 3) Direkter Track-Löschvorgang über bpy_prop_collection.remove() ---
             if tracking and self._state.track_names:
-                tracks_to_delete = [name for name in self._state.track_names if name in tracking.tracks]
-                print(f"[Kaiserlich Tracker][Cleanup] Lösche {len(tracks_to_delete)} Tracks direkt per Name...")
-                for name in tracks_to_delete:
-                    tr = tracking.tracks.get(name)
-                    if tr:
-                        tracking.tracks.remove(tr)
-                        print(f"   [DEL] {name}")
+                # Zugriffsobjekt bestimmen (tracks hängt entweder an clip.tracking oder tracking.objects.active)
+                tracks_collection = None
+                if getattr(tracking.objects, "active", None):
+                    tracks_collection = tracking.objects.active.tracks
+                else:
+                    tracks_collection = tracking.tracks
+    
+                if not tracks_collection:
+                    print("[Kaiserlich Tracker][Cleanup] ⚠️ Keine Track-Collection gefunden.")
+                    return None
+    
+                tracks_to_delete = [t for t in tracks_collection if t.name in self._state.track_names]
+                print(f"[Kaiserlich Tracker][Cleanup] Lösche {len(tracks_to_delete)} Tracks direkt über API...")
+    
+                for tr in tracks_to_delete:
+                    try:
+                        tracks_collection.remove(tr)
+                        print(f"   [DEL] {tr.name}")
+                    except Exception as inner:
+                        print(f"   ⚠️ Konnte Track {tr.name} nicht löschen: {inner}")
+    
                 bpy.context.view_layer.update()
-                print(f"[Kaiserlich Tracker][Cleanup] {len(tracks_to_delete)} neue Tracks gelöscht (per Name).")
+                print(f"[Kaiserlich Tracker][Cleanup] {len(tracks_to_delete)} Tracks gelöscht (direkt über API).")
             else:
                 print("[Kaiserlich Tracker][Cleanup] ⚠️ Keine gültigen Tracks zum Löschen gefunden.")
     
@@ -474,6 +488,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     
         print("[Kaiserlich Tracker][TrackCycle] ✅ Zyklus vollständig abgeschlossen.")
         return None
+
 
     # ------------------------------------------------------------------------
     # Cleanup / Teardown
