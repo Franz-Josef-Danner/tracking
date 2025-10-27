@@ -5,7 +5,7 @@ from typing import List, Any
 # ---- Imports aus Helper ----------------------------------------------------
 from ..Helper.util_format import fmt8
 from ..Helper.util_thresholds import set_all_thresholds_to_one
-from ..Helper.util_shorttest import short_test_track     # <-- angepasst
+from ..Helper.util_shorttest import short_test_track
 from ..Helper.util_scene import set_scene_props
 from ..Helper.util_reduce import (
     reduce_rot_xy,
@@ -23,13 +23,13 @@ from ..Helper.util_deeptest import (
 
 
 # ----------------------------------------------------------------------------
-#  OPERATOR
+#  MODAL AUTO-CALIBRATE OPERATOR
 # ----------------------------------------------------------------------------
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Automatische Kalibrierung der Thresholds (Rot, Scale, Perspective)."""
     bl_idname = "kaiserlich_tracker.auto_calibrate"
-    bl_label = "Kaiserlich Tracker — Auto Calibrate"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_label = "Kaiserlich Tracker — Auto Calibrate (Modal)"
+    bl_options = {"REGISTER", "INTERNAL"}
 
     tracks_to_delete: bpy.props.StringProperty(
         name="Tracks to delete (comma-separated)",
@@ -37,104 +37,129 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         description="Optional: Namen der zu löschenden Tracks (Komma-getrennt)"
     )
 
-    # ------------------------------------------------------------------------
-    #  EXECUTE
+    # interne Zustandsvariablen
+    _timer = None
+    _phase = 0
+    _scene = None
+    _ge_list = []
+    _vals = {}
+    _base = 0
+    _step_keys = {}
+    _done = False
+
     # ------------------------------------------------------------------------
     def execute(self, context):
-        report = lambda msg: self.report({'INFO'}, msg)
-        scene = context.scene
+        self._scene = context.scene
+        self.report({'INFO'}, "[Kaiserlich Tracker][AutoCalibrate] Initialisierung...")
+        set_all_thresholds_to_one(context)
+        self.report({'INFO'}, "[AutoCalibrate] Thresholds auf 1.0 gesetzt.")
+        self._phase = 0
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
-        try:
-            # --- 1) RESET THRESHOLDS ---------------------------------------
-            set_all_thresholds_to_one(context)
-            report("Kaiserlich Tracker: Thresholds auf 1.0 gesetzt.")
+    # ------------------------------------------------------------------------
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            try:
+                if self._done:
+                    self._finish(context)
+                    return {'FINISHED'}
 
-            # --- 2) SHORT TEST (vereint) -----------------------------------
-            names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
-            result = short_test_track(context=context, tracks_to_delete=names, report_fn=report)
-            report(f"Short-Test abgeschlossen. Ergebnis: {result}")
+                if self._phase == 0:
+                    self._run_short_test(context)
+                elif self._phase == 1:
+                    self._prepare_steps(context)
+                elif self._phase == 2:
+                    self._process_step(context, "STEP1", reduce_rot_xy, SCENE_DEEPTEST_ROT_XY_BEST)
+                elif self._phase == 3:
+                    self._process_step(context, "STEP2", reduce_scale_min_max, SCENE_DEEPTEST_SCALE_BEST)
+                elif self._phase == 4:
+                    self._process_step(context, "STEP3", reduce_rot_scale_pair, SCENE_DEEPTEST_ROT_SCALE_BEST)
+                elif self._phase == 5:
+                    self._process_step(context, "STEP4", reduce_perspective, SCENE_DEEPTEST_PERSPECTIVE_BEST)
+                else:
+                    self._done = True
 
-            # Nach short_test_track liegen alle Längenwerte bereits in der Szene
-            base = int(scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
-            step_keys = {
-                "STEP1": "kaiserlich_len_rot_xy_00",
-                "STEP2": "kaiserlich_len_scale_00",
-                "STEP3": "kaiserlich_len_rot_scale_00",
-                "STEP4": "kaiserlich_len_perspective_0",
-            }
+            except Exception as e:
+                self.report({'ERROR'}, f"[AutoCalibrate][Error] {e}")
+                self._done = True
+        return {'RUNNING_MODAL'}
 
-            # Liste der verbesserten oder gültigen Steps bestimmen
-            ge_list = [
-                key for key, prop in step_keys.items()
-                if float(scene.get(prop, 0)) >= base
-            ]
+    # ------------------------------------------------------------------------
+    def _run_short_test(self, context):
+        names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
+        result = short_test_track(context=context, tracks_to_delete=names,
+                                  report_fn=lambda msg: self.report({'INFO'}, msg))
+        self.report({'INFO'}, f"[AutoCalibrate] Short-Test abgeschlossen. Ergebnis: {result}")
+        self._phase = 1
 
-            # --- 3) LONG TESTS ---------------------------------------------
-            vals = {key: float(scene.get(prop, 0)) for key, prop in step_keys.items()}
+    # ------------------------------------------------------------------------
+    def _prepare_steps(self, context):
+        scene = self._scene
+        self._base = int(scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
+        self._step_keys = {
+            "STEP1": "kaiserlich_len_rot_xy_00",
+            "STEP2": "kaiserlich_len_scale_00",
+            "STEP3": "kaiserlich_len_rot_scale_00",
+            "STEP4": "kaiserlich_len_perspective_0",
+        }
+        self._vals = {k: float(scene.get(p, 0)) for k, p in self._step_keys.items()}
+        self._ge_list = [k for k, p in self._step_keys.items()
+                         if float(scene.get(p, 0)) >= self._base]
+        self.report({'INFO'}, f"[AutoCalibrate] Step-Vorbereitung abgeschlossen: {self._ge_list}")
+        self._phase = 2
 
-            # STEP 1 – ROT/XY (gekoppelt)
-            if "STEP1" in ge_list:
-                target = max(base, int(vals.get("STEP1") or 0))
-                r = reduce_rot_xy(context, target_len=target, report_fn=report)
-                scene[SCENE_DEEPTEST_ROT_XY_BEST] = int(target)
-                best = r.get("best", {})
-                val = best.get("values")
-                if best.get("sf") and val and len(val) == 2:
-                    set_scene_props(scene,
-                        kaiserlich_rot_thresh_x=float(val[0]),
-                        kaiserlich_rot_thresh_y=float(val[1]))
-                    ratio = best.get("ratio")
-                    report(f"[Reduce RotXY] sf={fmt8(best['sf'])} "
-                           f"→ ({fmt8(val[0])}, {fmt8(val[1])}) "
-                           f"{'(ratio='+fmt8(ratio)+')' if ratio else ''}")
+    # ------------------------------------------------------------------------
+    def _process_step(self, context, key, reduce_fn, deeptest_key):
+        if key not in self._ge_list:
+            self._phase += 1
+            return
 
-            # STEP 2 – SCALE MIN/MAX (gekoppelt)
-            if "STEP2" in ge_list:
-                target = max(base, int(vals.get("STEP2") or 0))
-                r = reduce_scale_min_max(context, target_len=target, report_fn=report)
-                scene[SCENE_DEEPTEST_SCALE_BEST] = int(target)
-                best = r.get("best", {})
-                val = best.get("values")
-                if best.get("sf") and val and len(val) == 2:
-                    set_scene_props(scene,
-                        kaiserlich_scale_thresh_min=float(val[0]),
-                        kaiserlich_scale_thresh_max=float(val[1]))
-                    report(f"[Reduce Scale] sf={fmt8(best['sf'])} "
-                           f"→ ({fmt8(val[0])}, {fmt8(val[1])})")
+        target = max(self._base, int(self._vals.get(key) or 0))
+        self.report({'INFO'}, f"[AutoCalibrate] {key} → Ziel={target}")
+        r = reduce_fn(context, target_len=target,
+                      report_fn=lambda msg: self.report({'INFO'}, msg))
+        self._scene[deeptest_key] = int(target)
+        best = r.get("best", {})
 
-            # STEP 3 – ROT + SCALE PAIR
-            if "STEP3" in ge_list:
-                target = max(base, int(vals.get("STEP3") or 0))
-                r = reduce_rot_scale_pair(context, target_len=target, report_fn=report)
-                scene[SCENE_DEEPTEST_ROT_SCALE_BEST] = int(target)
-                best = r.get("best", {})
-                val = best.get("values")
-                if best.get("sf") and val and len(val) == 2:
-                    set_scene_props(scene,
-                        kaiserlich_rot_scale_thresh_rot=float(val[0]),
-                        kaiserlich_rot_scale_thresh_scale=float(val[1]))
-                    report(f"[Reduce Rot+Scale] sf={fmt8(best['sf'])} "
-                           f"→ ({fmt8(val[0])}, {fmt8(val[1])})")
+        # Parameter-Update je nach Step
+        if key == "STEP1" and best.get("values"):
+            val = best["values"]
+            set_scene_props(self._scene,
+                kaiserlich_rot_thresh_x=float(val[0]),
+                kaiserlich_rot_thresh_y=float(val[1]))
+        elif key == "STEP2" and best.get("values"):
+            val = best["values"]
+            set_scene_props(self._scene,
+                kaiserlich_scale_thresh_min=float(val[0]),
+                kaiserlich_scale_thresh_max=float(val[1]))
+        elif key == "STEP3" and best.get("values"):
+            val = best["values"]
+            set_scene_props(self._scene,
+                kaiserlich_rot_scale_thresh_rot=float(val[0]),
+                kaiserlich_rot_scale_thresh_scale=float(val[1]))
+        elif key == "STEP4" and best.get("value") is not None:
+            set_scene_props(self._scene,
+                kaiserlich_perspective_thresh=float(best["value"]))
 
-            # STEP 4 – PERSPECTIVE
-            if "STEP4" in ge_list:
-                target = max(base, int(vals.get("STEP4") or 0))
-                r = reduce_perspective(context, target_len=target, report_fn=report)
-                scene[SCENE_DEEPTEST_PERSPECTIVE_BEST] = int(target)
-                best = r.get("best", {})
-                val = best.get("value")
-                if best.get("sf") and val is not None:
-                    set_scene_props(scene, kaiserlich_perspective_thresh=float(val))
-                    report(f"[Reduce Perspective] sf={fmt8(best['sf'])} "
-                           f"→ {fmt8(val)}")
+        self.report({'INFO'}, f"[AutoCalibrate] {key} abgeschlossen.")
+        self._phase += 1
 
-            # --- 4) FINAL SUCCESS ------------------------------------------
-            report("Auto-Calibrate erfolgreich abgeschlossen.")
-            return {'FINISHED'}
+    # ------------------------------------------------------------------------
+    def _finish(self, context):
+        wm = context.window_manager
+        wm.event_timer_remove(self._timer)
+        self.report({'INFO'}, "[AutoCalibrate] Alle Schritte abgeschlossen.")
+        self._done = True
 
-        except Exception as e:
-            self.report({'ERROR'}, f"Auto-Calibrate fehlgeschlagen: {e}")
-            return {'CANCELLED'}
+    # ------------------------------------------------------------------------
+    def cancel(self, context):
+        wm = context.window_manager
+        if self._timer:
+            wm.event_timer_remove(self._timer)
+        self.report({'INFO'}, "[AutoCalibrate] Abgebrochen.")
 
 
 # ----------------------------------------------------------------------------
