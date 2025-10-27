@@ -20,7 +20,7 @@ from ..Helper.delete import delete_tracks_by_names
 from ..Helper.selection_helper import collect_selected_track_names
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.track_markers_helper import track_markers_with_override
-# (optional) from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
+from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 
 
 # ----------------------------------------------------------------------------
