@@ -5,7 +5,7 @@ from typing import List, Any
 # ---- Imports aus Helper ----------------------------------------------------
 from ..Helper.util_format import fmt8
 from ..Helper.util_thresholds import set_all_thresholds_to_one
-from ..Helper.util_shorttest import short_test_pipeline, compare_len_steps_to_total
+from ..Helper.util_shorttest import short_test_track     # <-- angepasst
 from ..Helper.util_scene import set_scene_props
 from ..Helper.util_reduce import (
     reduce_rot_xy,
@@ -49,18 +49,30 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             set_all_thresholds_to_one(context)
             report("Kaiserlich Tracker: Thresholds auf 1.0 gesetzt.")
 
-            # --- 2) SHORT-TEST PIPELINE ------------------------------------
+            # --- 2) SHORT TEST (vereint) -----------------------------------
             names = [n.strip() for n in self.tracks_to_delete.split(",") if n.strip()]
-            results = short_test_pipeline(context=context, tracks_to_delete=names, report_fn=report)
-            report(f"Short-Test abgeschlossen. Ergebnisse: {results}")
+            result = short_test_track(context=context, tracks_to_delete=names, report_fn=report)
+            report(f"Short-Test abgeschlossen. Ergebnis: {result}")
+
+            # Nach short_test_track liegen alle Längenwerte bereits in der Szene
+            base = int(scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
+            step_keys = {
+                "STEP1": "kaiserlich_len_rot_xy_00",
+                "STEP2": "kaiserlich_len_scale_00",
+                "STEP3": "kaiserlich_len_rot_scale_00",
+                "STEP4": "kaiserlich_len_perspective_0",
+            }
+
+            # Liste der verbesserten oder gültigen Steps bestimmen
+            ge_list = [
+                key for key, prop in step_keys.items()
+                if float(scene.get(prop, 0)) >= base
+            ]
 
             # --- 3) LONG TESTS ---------------------------------------------
-            cmp = compare_len_steps_to_total(context)
-            base = int(cmp.get("baseline") or 0)
-            vals = cmp.get("values", {})
-            ge_list = cmp.get("better_or_equal", [])
+            vals = {key: float(scene.get(prop, 0)) for key, prop in step_keys.items()}
 
-            # STEP 1 – ROT/XY (gekoppelt, X-only)
+            # STEP 1 – ROT/XY (gekoppelt)
             if "STEP1" in ge_list:
                 target = max(base, int(vals.get("STEP1") or 0))
                 r = reduce_rot_xy(context, target_len=target, report_fn=report)
@@ -116,7 +128,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     report(f"[Reduce Perspective] sf={fmt8(best['sf'])} "
                            f"→ {fmt8(val)}")
 
-            # --- 5) FINAL SUCCESS ------------------------------------------
+            # --- 4) FINAL SUCCESS ------------------------------------------
             report("Auto-Calibrate erfolgreich abgeschlossen.")
             return {'FINISHED'}
 
