@@ -1,9 +1,10 @@
-# auto_calibrate_operator.py
-import bpy, time
+# Operator/auto_calibrate_operator.py
+import bpy
+import time
 from collections import deque
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Set
 
-# --- Low-Level Helper (atomare Schritte, keine langen Schleifen) -------------
+# ---- Low-Level Helper (atomare Schritte, keine langen Block-Schleifen) -----
 from ..Helper.util_format import fmt8
 from ..Helper.util_thresholds import set_all_thresholds_to_one
 from ..Helper.util_scene import set_scene_props, call_get_start_frame
@@ -16,17 +17,83 @@ from ..Helper.track_markers_helper import track_markers_with_override
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.playhead_helper import reset_to_frame
 
-# Detection/Cleanup Primitives
+# Detection/Cleanup
 from ..Helper.detect import detect_features
 from ..Helper.newmarker import classify_markers
 from ..Helper.cleaneup import cleanup_new_markers
 
-# Optional: Deep/Reduce belassen – hier nicht fokussiert
-from ..Helper.util_shorttest import SCENE_TOTAL_TRACK_LEN_BASE
 
-# ----------------------------------------------------------------------------
-#  MODAL AUTO-CALIBRATE (ShortTest embedded)
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+#  Bootstrap: Master-Parameter bevorzugen, sonst Fallback aus Clip/Settings
+# -----------------------------------------------------------------------------
+def _bootstrap_params(context, scene, ef_target: int):
+    """
+    Liefert Startparameter für Detect-Adapt.
+    Rückgabe:
+        md, ma, tr, pz, sz, hz, vc, og, ug, frame_end, source
+    """
+    import math
+
+    params = scene.get("bootstrap_params", None)
+    if params:
+        # ✅ Normale Initialisierung aus Master-Operator
+        md = float(params.get('md', 100.0))
+        ma = params.get('ma', 30)
+        try:
+            ma = int(ma)
+        except Exception:
+            ma = 30
+        ma = int(round(ma * 1.1))  # leichte Anhebung gemäß Vorgabe
+
+        tr = float(params.get('tr', 0.5))
+        pz = int(params.get('pz', 50))
+        sz = int(params.get('sz', 0))
+        hz = int(params.get('hz', 1))
+        vc = bool(params.get('vc', False))
+
+        # Zielbänder aus ef_target ableiten
+        za = max(1, int(ef_target) * 4)
+        og = int(math.ceil(za * 1.1))
+        ug = int(math.floor(za * 0.9))
+
+        frame_end = getattr(scene, "frame_end", None)
+        source = "master"
+        return md, ma, tr, pz, sz, hz, vc, og, ug, frame_end, source
+
+    # ⚠️ Fallback-Bootstrap falls kein Master-Bootstrap existiert
+    clip = getattr(context.space_data, "clip", None)
+    if clip is None:
+        raise RuntimeError("Kein aktiver Clip verfügbar (Fallback fehlgeschlagen).")
+
+    # --- Basisinformationen aus Clip ---
+    hz = int(clip.size[0])
+    vc = int(clip.size[1])
+    frame_end = getattr(scene, "frame_end", None)
+
+    # --- Parameter aus Tracking-Settings ---
+    tracking_settings = getattr(clip, "tracking", None)
+    tracking_settings = getattr(tracking_settings, "settings", None)
+    ma = int(getattr(tracking_settings, "margin", 100) if tracking_settings else 100)
+    pz = int(getattr(tracking_settings, "pattern_size", 50) if tracking_settings else 50)
+    sz = int(getattr(tracking_settings, "search_size", 100) if tracking_settings else 100)
+
+    # --- Abgeleitete Startwerte ---
+    md = float(hz) * 0.025
+    tr = 0.0001
+    za = max(1, int(ef_target) * 4)
+    og = int(math.ceil(za * 1.1))
+    ug = int(math.floor(za * 0.9))
+
+    print(f"[Kaiserlich Tracker][DetectAdapt][Fallback] "
+          f"hz={hz}, vc={vc}, margin={ma}, md={md:.2f}, "
+          f"pattern={pz}, search={sz}, tr={tr}, og={og}, ug={ug}, frame_end={frame_end}")
+    source = "fallback"
+    return md, ma, tr, pz, sz, hz, vc, og, ug, frame_end, source
+
+
+# -----------------------------------------------------------------------------
+#  MODAL AUTO-CALIBRATE (ShortTest inline: Detect-Adapt + frameweises Tracking)
+# -----------------------------------------------------------------------------
 class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     """Automatische Kalibrierung (ShortTest: Detect-Adapt + Inline-TrackCycle) mit Live-UI."""
     bl_idname = "kaiserlich_tracker.auto_calibrate"
@@ -58,10 +125,12 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     _tr = 0.0001
     _loop = 0
     _max_loops = 8
-    _baseline_start_names: set = set()
+    _baseline_start_names: Set[str] = set()
     _pre_snapshot = None
     _last_detect_new: List[Dict[str, Any]] = []
     _last_deleted_old: int = 0
+    _og = 0
+    _ug = 0
 
     # Tracking-State
     _start_frame: int = 0
@@ -70,9 +139,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     _original_selected: List[str] = []
     _frames_processed: int = 0
     _max_frames: int = 0  # 0 = kein Limit
-
-    # Ergebnis
-    _final_total_len: float = 0.0
 
     # ------------------------------------------------------------
     def _r(self, msg: str):
@@ -163,26 +229,33 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
     # ===================== Detect-Adapt ==========================
     def _da_init(self, context):
-        # Clip-Parameter
-        self._hz, self._vc = self._clip.size
-        settings = getattr(self._clip.tracking, "settings", None)
-        self._ma = getattr(settings, "margin", 100)
-        self._pz = getattr(settings, "pattern_size", 50)
-        self._sz = getattr(settings, "search_size", 100)
+        scene = self._scene
 
-        # Ziel: Marker pro Frame
-        self._ef_target = int(getattr(self._scene, "kaiserlich_markers_per_frame", 25) or 25)
+        # Ziel: Marker pro Frame (Default 25)
+        self._ef_target = int(getattr(scene, "kaiserlich_markers_per_frame", 25) or 25)
 
-        # Start-Mindestabstand
-        self._md = float(self._hz) * 0.025
-        self._tr = 0.0001
-        self._loop = 0
+        # --- Bootstrap laden ---
+        md, ma, tr, pz, sz, hz, vc, og, ug, frame_end, source = _bootstrap_params(context, scene, self._ef_target)
 
-        # Baseline-Names & Snapshot
+        # Operator-State setzen
+        self._hz, self._vc = hz, vc
+        self._ma, self._pz, self._sz = int(ma), int(pz), int(sz)
+        self._md, self._tr = float(md), float(tr)
+        self._og, self._ug = int(og), int(ug)
+
+        # Logging
+        self._r(f"[ShortTest][Bootstrap:{source}] ef_target={self._ef_target} "
+                f"hz={self._hz} vc={self._vc} margin={self._ma} "
+                f"md={fmt8(self._md)} pz={self._pz} sz={self._sz} tr={self._tr} "
+                f"og={self._og} ug={self._ug} frame_end={frame_end}")
+
+        # Baseline & Snapshot
         self._baseline_start_names = {t.name for t in self._clip.tracking.tracks}
         self._pre_snapshot = snapshot_active_markers(context)
 
-        self._r(f"[ShortTest][Init] ef_target={self._ef_target} pz={self._pz} sz={self._sz} md={fmt8(self._md)}")
+        # Loop-Setup
+        self._loop = 0
+        self._max_loops = 8
         self._phase = "DA_DETECT"
 
     def _da_detect(self, context):
@@ -214,6 +287,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     def _da_decide_next(self, context) -> bool:
         """Return True, wenn eine weitere Detect-Iteration gewünscht ist."""
         remaining = len(self._last_detect_new)
+
+        # Zielband-Check: nutze og/ug als weiches Fenster rund um Zielmenge*4 (aus Bootstrap)
+        # plus zusätzlich ±10%-Toleranz rund um ef_target als harte Bedingung.
         diff = remaining - self._ef_target
         tolerance = max(1, int(self._ef_target * 0.10))
 
@@ -270,21 +346,24 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         for tr in self._clip.tracking.tracks:
             tr.select = (tr.name in self._original_selected)
 
+        # Start-Frame setzen
         self._cur_frame = max(self._start_frame, int(self._scene.frame_current))
         self._space.clip_user.frame_current = self._cur_frame
         self._scene.frame_current = self._cur_frame
+
         self._frames_processed = 0
         self._max_frames = int(getattr(self._scene, "kaiserlich_max_frames", 0) or 0)
         self._phase = "TRACK_FRAME"
 
     def _track_one_frame(self, context) -> bool:
         """Trackt genau EINEN Frame. Return False, wenn fertig."""
-        # Playhead ist gesetzt
+        # Formel/Optimierung
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception as e:
             print(f"[InlineTrack] ⚠️ Formel-Fehler: {e}")
 
+        # Tracking
         ok = track_markers_with_override(
             self._window, self._area, self._region, self._space,
             backwards=False, sequence=False
@@ -318,7 +397,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             self._r("[InlineTrack] ⚠️ Sicherheitslimit erreicht.")
             return False
 
-        return True  # noch weiter tracken
+        return True  # weiter tracken
 
     # ===================== Abschluss & Cleanup ===================
     def _finish(self, context):
@@ -337,13 +416,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             if names:
                 delete_tracks_by_names(context, names)
 
-        # Optional: total length bestimmen (falls benötigt)
-        try:
-            # Falls du eine eigene get_total_track_length hast, hier importieren und nutzen.
-            pass
-        except Exception:
-            pass
-
         self._r("[AutoCalibrate] Erfolgreich abgeschlossen.")
         self._cleanup(context, cancelled=False)
 
@@ -356,7 +428,9 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         self._r("[AutoCalibrate] Abgebrochen." if cancelled else "[AutoCalibrate] Ende.")
 
 
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+#  Register / Unregister
+# -----------------------------------------------------------------------------
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_auto_calibrate)
 
