@@ -22,7 +22,7 @@ from ..Helper.selection_helper import collect_selected_track_names
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.track_markers_helper import track_markers_with_override
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
-
+from ..Helper.delete import _operator_delete_selected
 
 # ----------------------------------------------------------------------------
 #  Modal-Operator mit deterministischer State-Steuerung
@@ -463,6 +463,33 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}')")
         except Exception as e:
             print(f"[Kaiserlich Tracker][Baseline] ⚠️ Konnte Baseline-Länge nicht berechnen: {e}")
+
+        # --------------------------------------------------------------------
+        # Cleanup: Nur die gerade neu erzeugten & getrackten Tracks löschen
+        # --------------------------------------------------------------------
+        try:
+            w, a, r, s = (
+                self._state.track_window,
+                self._state.track_area,
+                self._state.track_region,
+                self._state.track_space,
+            )
+
+            # Sicherstellen, dass nur die aktuellen Tracks selektiert sind
+            clip = getattr(context.space_data, "clip", None)
+            tracking = getattr(clip, "tracking", None) if clip else None
+            if tracking:
+                for tr in tracking.tracks:
+                    tr.select = tr.name in self._state.track_names
+
+            ok = _operator_delete_selected(w, a, r, s)
+            if ok:
+                print(f"[Kaiserlich Tracker][Cleanup] {len(self._state.track_names)} neue Tracks gelöscht (Post-Calibrate Cleanup).")
+            else:
+                print("[Kaiserlich Tracker][Cleanup] ⚠️ Delete-Operator konnte nicht ausgeführt werden.")
+
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Löschen neuer Tracks: {e}")
         return None
     # ------------------------------------------------------------------------
     # Cleanup / Teardown
