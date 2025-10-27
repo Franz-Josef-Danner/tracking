@@ -365,8 +365,13 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     # ------------------------------------------------------------------------
     # Track-Cycle: Tick (ein Frame pro Timer, nicht-blockierend)
     # ------------------------------------------------------------------------
+    # ------------------------------------------------------------------------
+    # Track-Cycle: Tick (ein Frame pro Timer, nicht-blockierend)
+    # ------------------------------------------------------------------------
     def _track_cycle_tick(self, context: bpy.types.Context) -> bool:
-        """Gibt True zurück, solange weitergetrackt werden soll; False bei Abschluss/Abbruch."""
+        """Führt genau einen Tracking-Schritt aus.
+        Gibt True zurück, solange weitergetrackt werden soll; False bei Abschluss/Abbruch.
+        """
         s = self._state
         if not s.track_active:
             return False
@@ -382,13 +387,24 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         current = s.track_frame_current
         end = s.track_frame_end
 
-        # Optional: pro Tick Formelanwendung
+        # --- 1) Aktive Tracks prüfen ---------------------------------------
+        active_tracks, dropped = filter_active_tracks_at_frame(context, s.track_names, current)
+        if not active_tracks:
+            print("[TrackCycle] ✅ Keine aktiven Tracks mehr – Tracking beendet.")
+            s.track_active = False
+            return False
+
+        s.track_names = active_tracks  # Update der Liste
+        if dropped > 0:
+            print(f"[TrackCycle] {dropped} inaktive Tracks entfernt → {len(active_tracks)} verbleibend.")
+
+        # --- 2) Formel anwenden (optional) ----------------------------------
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception as e:
             print(f"[TrackCycle] Formel-Fehler: {e}")
 
-        # Ein Tracking-Schritt (nicht-sequenziell, ein Frame)
+        # --- 3) Einen Frame weiter tracken ----------------------------------
         success = track_markers_with_override(
             s.track_window, s.track_area, s.track_region, s.track_space,
             backwards=False, sequence=False
@@ -398,7 +414,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             s.track_active = False
             return False
 
-        # Frame-Advance
+        # --- 4) Frame fortsetzen -------------------------------------------
         current += 1
         if current > end:
             print("[TrackCycle] ✅ Szenenende erreicht.")
@@ -408,6 +424,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         scene.frame_current = current
         s.track_space.clip_user.frame_current = current
         s.track_frame_current = current
+
         return True
 
     # ------------------------------------------------------------------------
