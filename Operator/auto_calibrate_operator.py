@@ -434,40 +434,36 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
     # Track-Cycle: Cleanup/Finish
     # ------------------------------------------------------------------------
     def _track_cycle_finish(self, context: bpy.types.Context):
-        """Selektions-Reset, Baseline und Cleanup — nutzt delete_tracks_by_names aus Helper."""
-        clip = getattr(context.space_data, "clip", None)
-        tracking = getattr(clip, "tracking", None) if clip else None
-    
+        """Selektions-Reset, Baseline und Cleanup per Namensliste."""
         try:
-            # --- 1) Playhead sicher zurücksetzen ---
-            start_f = int(self._state.track_start_frame) if getattr(self._state, "track_start_frame", None) else 1
+            # 1) Playhead zurück auf Ursprungs-Frame
+            start_f = int(self._state.track_start_frame or 1)
             reset_to_frame(context, start_f)
             context.scene.frame_current = start_f
             if self._state.track_space:
                 self._state.track_space.clip_user.frame_current = start_f
             bpy.context.view_layer.update()
-            print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead fixiert auf Frame {start_f}.")
     
-            # --- 2) Baseline erfassen ---
-            total_len = int(get_total_track_length(context, start_frame=start_f))
+            # 2) Baseline-Länge der verbleibenden (alten) Tracks speichern
             scene = context.scene
+            total_len = int(get_total_track_length(context, start_frame=start_f))
             scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
-            print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}')")
     
-            # --- 3) Cleanup über bestehenden Helper -----------------------------------
-            if tracking and self._state.track_names:
-                track_names = list(dict.fromkeys(self._state.track_names))  # doppelte vermeiden
-                removed = delete_tracks_by_names(context, track_names)
-                print(f"[Kaiserlich Tracker][Cleanup] {removed} Tracks gelöscht (Helper delete_tracks_by_names).")
+            # 3) Alle neu erzeugten Tracks einzeln löschen
+            deleted_total = 0
+            if hasattr(self._state, "created_track_names"):
+                # created_track_names enthält alle neu erzeugten Tracks
+                for name in self._state.created_track_names:
+                    deleted_total += delete_tracks_by_names(context, [name])
             else:
-                print("[Kaiserlich Tracker][Cleanup] ⚠️ Keine gültigen Tracks zum Löschen gefunden.")
+                # Fallback: use current list, although it might only contain last active track
+                for name in self._state.track_names:
+                    deleted_total += delete_tracks_by_names(context, [name])
+    
+            print(f"[Cleanup] {deleted_total} Tracks gelöscht (pro Name).")
     
         except Exception as e:
-            print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Abschlusslauf: {e}")
-    
-        print("[Kaiserlich Tracker][TrackCycle] ✅ Zyklus vollständig abgeschlossen.")
-        return None
-
+            print(f"[Cleanup] Fehler beim Abschlusslauf: {e}")
     # ------------------------------------------------------------------------
     # Cleanup / Teardown
     # ------------------------------------------------------------------------
