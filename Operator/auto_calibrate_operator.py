@@ -4,7 +4,7 @@ import time
 import math
 from typing import Optional, List, Dict, Any, Tuple, Set, Deque
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # ---- Helper-Imports ---------------------------------------------------------
 from ..Helper.util_clip import (
@@ -49,7 +49,7 @@ class _AutoCalibState:
     initialized: bool = False
     done: bool = False
     step: int = 0
-    notes: Deque[str] = deque(maxlen=200)
+    notes: Deque[str] = field(default_factory=lambda: deque(maxlen=200))
     did_reset_thresholds: bool = False
     did_detect_adapt: bool = False
 
@@ -71,13 +71,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
         wm.modal_handler_add(self)
 
         # State init
-        self._state = _AutoCalibState(
-            initialized=False,
-            done=False,
-            step=0,
-            did_reset_thresholds=False,
-            did_detect_adapt=False
-        )
+        self._state = _AutoCalibState()
 
         # Grundprüfung Clip
         clip = get_active_clip(context)
@@ -119,7 +113,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     self._state.notes.append(f"Detect-Adapt failed: {ex!r}")
                 return {'RUNNING_MODAL'}
 
-            # 3) (Platzhalter) Weitere Kalibrier-Schritte werden hier angebunden
+            # 3) (Platzhalter) Weitere Kalibrier-Schritte
             self._state.done = True
             return {'RUNNING_MODAL'}
 
@@ -140,18 +134,15 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
     # ------------------------------------------------------------------------
     # INLINE-IMPLEMENTIERUNG von Detect-Adapt (aus detect_adapt_operator.py)
-    #  - 1:1 Logikübernahme, ohne externen ops-Aufruf
-    #  - Param-Fix im params-Zweig (direkte Zuweisungen)
     # ------------------------------------------------------------------------
     def _detect_adapt_inline(self, context: bpy.types.Context) -> None:
         scene = context.scene
         ef_target = int(scene.kaiserlich_markers_per_frame)
 
-        # Bootstrap-Parameter laden oder lokal berechnen (Fallback)
+        # Bootstrap-Parameter laden oder lokal berechnen
         params = scene.get("bootstrap_params", None)
 
         if params:
-            # Normale Initialisierung aus Master-Operator
             md = float(params.get('md', 100))
             ma = int(params.get('ma', 30))
             tr = float(params.get('tr', 0.5))
@@ -160,25 +151,21 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             hz = params.get('hz', 1)
             vc = params.get('vc', False)
         else:
-            # Fallback-Bootstrap
             clip = getattr(context.space_data, "clip", None)
             if clip is None:
                 raise RuntimeError("Kein aktiver Clip verfügbar (Fallback fehlgeschlagen).")
 
-            # Basisinformationen aus Clip
             hz = clip.size[0]
             vc = clip.size[1]
 
             scene_obj = getattr(context, "scene", None)
             frame_end = scene_obj.frame_end if scene_obj else None
 
-            # Parameter aus Tracking-Settings
             tracking_settings = getattr(clip.tracking, "settings", None)
             ma = getattr(tracking_settings, "margin", 100) if tracking_settings else 100
             pz = getattr(tracking_settings, "pattern_size", 50) if tracking_settings else 50
             sz = getattr(tracking_settings, "search_size", 100) if tracking_settings else 100
 
-            # Abgeleitete Startwerte
             md = hz * 0.025
             tr = 0.0001
             za = ef_target * 4
@@ -200,7 +187,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 
         print(f"[Kaiserlich Tracker][DetectAdapt] Ausgangsmarker: {len(pre_snapshot)} | BaselineTracks: {len(baseline_start_tracknames)}")
 
-        # Adaptive Schleife
         max_loops = 8
         loop = 0
         final_new_marker_count = 0
@@ -237,7 +223,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             print(f"\n[Kaiserlich Tracker][DetectAdapt] --- LOOP {loop} ---")
             print(f"[Kaiserlich Tracker][DetectAdapt] Aktuelles min_distance = {last_md:.2f}")
 
-            # Detect ausführen
             detect_features(
                 context,
                 placement='FRAME',
@@ -246,7 +231,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 min_distance=int(max(1, round(last_md)))
             )
 
-            # Nach Detect: Blender selektiert automatisch alle neuen Tracks → zurücksetzen
             clip = getattr(context.space_data, 'clip', None)
             if clip and getattr(clip, 'tracking', None):
                 for trk in clip.tracking.tracks:
@@ -255,22 +239,15 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                     except Exception:
                         pass
 
-            # Snapshot nach Detect
             post_snapshot = snapshot_active_markers(context)
             alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
 
             print(f"[Kaiserlich Tracker][DetectAdapt] Alte Marker erkannt: {len(alte_marker)}")
             print(f"[Kaiserlich Tracker][DetectAdapt] Neue Marker erkannt: {len(neue_marker)}")
 
-            if len(neue_marker) > 0:
-                print("   ➤ Beispiel neue Marker:", [m['track'] for m in neue_marker[:5]])
-            if len(alte_marker) > 0:
-                print("   ➤ Beispiel alte Marker:", [m['track'] for m in alte_marker[:5]])
-
             am = len(neue_marker)
             final_new_marker_count = am
 
-            # Cleanup (inkl. Nähe zu aktiven alten Markern, pz/hz/vc gesteuert)
             cleaned_new, deleted_old = cleanup_new_markers(
                 context,
                 alte_marker,
@@ -280,36 +257,29 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                 vc=vc
             )
 
-            deleted_old_names = [m['track'] for m in alte_marker if m['track'] not in [n['track'] for n in post_snapshot]]
-            if deleted_old_names:
-                print(f"[⚠️ Kaiserlich Tracker][DetectAdapt] WARNUNG: Alte Marker gelöscht: {deleted_old_names}")
-
             print(f"[Kaiserlich Tracker][DetectAdapt] Nach Cleanup: {len(cleaned_new)} neue Marker übrig, {deleted_old} alte gelöscht")
 
             remaining = len(cleaned_new)
             diff = remaining - ef_target
-            tolerance = ef_target * 0.10  # 10 % Toleranz
+            tolerance = ef_target * 0.10
             if abs(diff) <= tolerance:
                 print(f"[Kaiserlich Tracker][DetectAdapt] Ziel erreicht: {remaining}/{ef_target} Marker (Toleranz ±{tolerance:.1f})")
                 break
 
-            # Dynamische Anpassung des Mindestabstands
             if am > 0:
                 ratio = ef_target / am
                 factor = max(0.5, min(2.0, ratio))
                 new_md = last_md / factor
                 last_md = max(1.0, new_md)
             else:
-                last_md = last_md * 1.5
+                last_md *= 1.5
                 print("[Kaiserlich Tracker][DetectAdapt] Keine neuen Marker, erhöhe min_distance stark")
 
-            # Nur löschen, wenn weiterer Durchlauf folgt
             if loop < max_loops:
                 delete_tracks_by_names(context, [m['track'] for m in neue_marker])
                 print(f"[Kaiserlich Tracker][DetectAdapt] {len(neue_marker)} neue Marker gelöscht für nächsten Zyklus")
                 time.sleep(0.1)
 
-        # Selektion der finalen Marker (nur wirklich neue Tracks selektieren)
         clip = getattr(context.space_data, 'clip', None)
         if clip and getattr(clip, 'tracking', None):
             tracking = clip.tracking
@@ -323,7 +293,6 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
             except Exception:
                 pass
 
-        # Frame-spezifische min_distance speichern & Interpolation auffüllen
         frame_num = scene.frame_current
         md_value = float(last_md)
         if "min_distance_values" not in scene:
@@ -357,9 +326,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 #  Registration
 # ----------------------------------------------------------------------------
 
-_classes = (
-    KAISERLICHTRACKER_OT_auto_calibrate,
-)
+_classes = (KAISERLICHTRACKER_OT_auto_calibrate,)
 
 def register():
     for cls in _classes:
