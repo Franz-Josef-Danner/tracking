@@ -1,3 +1,4 @@
+# shorttest_operator.py
 import bpy
 import time
 import math
