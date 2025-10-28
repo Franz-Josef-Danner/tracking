@@ -23,9 +23,9 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         
         # ▶️ Buttons
         col.operator("kaiserlich_tracker.master_operator", text="Master", icon="PLUGIN")
-        col.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="MOD_WAVE")
-        col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="MOD_WAVE")
-        col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="FILE_TICK")
+        col.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="INFO")
+        col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="CONSOLE")
+        col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="CHECKMARK")
         col.operator("kaiserlich_tracker.track_cycle_backwards", text="Track Cycle (Backwards)", icon="TRACKING")
         col.operator("kaiserlich_tracker.track_cycle", text="Track Cycle (Forward)", icon="TRACKING")
 
