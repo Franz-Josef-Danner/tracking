@@ -25,8 +25,8 @@ from ..Helper.util_scene import set_scene_props
 
 # ----------------------------------------------------------------------------
 #  Modal-Operator mit deterministischer State-Steuerung
+#  (inkl. integriertem DeepTest-Ablauf, basierend auf util_deeptest.py)
 # ----------------------------------------------------------------------------
-# Szene-Key für Baseline-Tracklänge (späterer Vergleich)
 SCENE_TOTAL_TRACK_LEN_BASE = "kaiserlich_len_baseline_00"
 
 
@@ -286,9 +286,69 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                         if cycle_len > baseline_len:
                             # Verbesserter Wert gefunden → Thresholds hinzufügen
                             best_thresholds.update(thresh_dict)
-                    # In Szene speichern
+                            # ---------------------------------------------------
+                            # Inline DeepTest (ehemals util_deeptest.run_grid)
+                            # ---------------------------------------------------
+                            print(f"[Kaiserlich Tracker][AutoCalibrate] DeepTest gestartet für Cycle {cycle_num} ({thresh_dict})")
+                            try:
+                                scene = context.scene
+
+                                # Snapshot der aktuellen Thresholds (Baseline)
+                                snap_thresholds = {
+                                    k: getattr(scene, k) for k in dir(scene)
+                                    if k.startswith("kaiserlich_") and "thresh" in k
+                                }
+
+                                # Grid definieren (hier nur 1 Eintrag: aktuelle Thresholds)
+                                grid = [thresh_dict]
+                                best_score = -1.0
+                                best_params = {}
+
+                                for params in grid:
+                                    # Thresholds auf Szene anwenden
+                                    for k, v in params.items():
+                                        if hasattr(scene, k):
+                                            setattr(scene, k, v)
+
+                                    # Scene props aktualisieren
+                                    set_scene_props(scene, **params)
+
+                                    # ShortTest (erneuter Track-Durchlauf)
+                                    try:
+                                        pre_len = int(scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
+                                        total_len = int(get_total_track_length(context))
+                                        score = float(total_len - pre_len)
+                                    except Exception as _e:
+                                        print(f"[DeepTest] Fehler bei Messung: {_e!r}")
+                                        score = 0
+
+                                    print(f"[DeepTest] Cycle {cycle_num}: Score={score:.2f} (Thresholds={params})")
+
+                                    if score > best_score:
+                                        best_score = score
+                                        best_params = params.copy()
+
+                                # Beste Parameter persistieren
+                                result_key = f"kaiserlich_deeptest_cycle_{cycle_num}_result"
+                                scene[result_key] = {
+                                    "best_score": best_score,
+                                    "best_params": best_params,
+                                }
+                                print(f"[Kaiserlich Tracker][DeepTest] Beste Parameter (Cycle {cycle_num}): {best_params} mit Score={best_score:.2f}")
+
+                                # Thresholds nach Abschluss wiederherstellen
+                                for k, v in snap_thresholds.items():
+                                    try:
+                                        setattr(scene, k, v)
+                                    except Exception:
+                                        pass
+
+                            except Exception as deepex:
+                                print(f"[Kaiserlich Tracker][AutoCalibrate][DeepTest] ⚠️ Fehler in Inline-DeepTest (Cycle {cycle_num}): {deepex!r}")
+
+                    # In Szene speichern (abschließend)
                     context.scene["kaiserlich_best_thresholds"] = best_thresholds
-                    print(f"[Kaiserlich Tracker][AutoCalibrate] Beste Thresholds: {best_thresholds}")
+
                 except Exception as ex:
                     print(f"[AutoCalibrate] Fehler beim Vergleich der Track-Längen: {ex!r}")
                 # Final: Alle Thresholds auf 1.0 zurücksetzen
