@@ -26,6 +26,7 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         # ▶️ Buttons
         col = layout.column(align=True)
         col.operator("kaiserlich_tracker.master_operator", text="Master", icon="TRACKER")
+        col.operator("kaiserlich_tracker.master_operator", text="Master", icon="SYSTEM")
 
         # Zwei Buttons nebeneinander
         row = col.row(align=True)
