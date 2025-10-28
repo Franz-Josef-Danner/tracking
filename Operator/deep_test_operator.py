@@ -57,7 +57,7 @@ SCENE_TOTAL_TRACK_LEN_STEP3 = "kaiserlich_len_rot_scale_00"
 SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_0"
 
 
-class KAISERLICHTRACKER_OT_deep_test(Operator):
+class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
     """Kaiserlich Tracker – Deep Threshold Test
 
     Dieser Operator führt automatisierte, iterative Threshold‑Tests für
@@ -67,7 +67,7 @@ class KAISERLICHTRACKER_OT_deep_test(Operator):
     Messen der Track‑Längen.
     """
 
-    bl_idname = "kaiserlich_tracker.deep_test"
+    bl_idname = "kaiserlich_tracker.deep_test_operator"
     bl_label = "Kaiserlich Tracker – Deep Test"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -345,8 +345,8 @@ class KAISERLICHTRACKER_OT_deep_test(Operator):
 
 # Registrierung
 def register():
-    bpy.utils.register_class(KAISERLICHTRACKER_OT_deep_test)
+    bpy.utils.register_class(KAISERLICHTRACKER_OT_deep_test_operator)
 
 
 def unregister():
-    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_deep_test)
+    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_deep_test_operator)
