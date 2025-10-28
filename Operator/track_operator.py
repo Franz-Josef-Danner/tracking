@@ -1,4 +1,4 @@
-# track_operator.py
+# Operator/track_operator.py
 import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
@@ -44,6 +44,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         default=True,
         description="Vor jedem Tracking-Schritt das Motion-Model je Track adaptiv anpassen"
     )
+
     _timer = None
     _context_cache = None
     _processing_names: List[str]
@@ -142,24 +143,25 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
             mk = tr.markers.find_frame(self._current_frame)
             if mk:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
+
         # ----------------------------------------------------
         # Adaptive Motion-Modelle vor dem Tracking anpassen
         # ----------------------------------------------------
         if self.use_adaptive_models:
             try:
-                # Nur aktuell relevante Tracks betrachten (Selektion + aktiv am Frame)
                 active_names, _ = filter_active_tracks_at_frame(
                     context, self._processing_names, self._current_frame
                 )
                 if active_names:
-                    # Subset erstellen
                     subset = [tracking.tracks.get(nm) for nm in active_names if tracking.tracks.get(nm)]
-                    # Schnelle Stats je Track (kann später durch echten Provider ersetzt werden)
                     per_stats = {tr.name: quick_stats_from_track(tr) for tr in subset}
-                    # Framekontext übergeben (für Survival/Last-Switch Marker)
                     apply_adaptive_models_for_tracks(
-                        subset, per_stats, scene=context.scene,
-                        frame_current=self._current_frame, log=True
+                        subset,
+                        per_stats,
+                        scene=context.scene,
+                        frame_current=self._current_frame,
+                        log=True,
+                        clip=clip,  # <<<<< State auf dem aktiven MovieClip
                     )
             except Exception as e:
                 print(f"[Kaiserlich Tracker][Modal] ⚠️ Adaptive-Model-Update Fehler: {e}")
