@@ -305,10 +305,31 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
                                         setattr(scene, k, v)
                                 set_scene_props(scene, **thresh_dict)
 
-                                # DeepTest-Messung (analog util_deeptest.run_grid)
-                                pre_len = int(scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
+                                # ---------------------------------------------------
+                                # ECHTER DeepTest: Detect + Tracking neu ausführen
+                                # ---------------------------------------------------
+                                print(f"[DeepTest] Cycle {cycle_num}: Detect/Track gestartet ...")
+
+                                # 1) Detect unter aktuellen Thresholds
+                                try:
+                                    self._detect_adapt_inline(context)
+                                except Exception as _e:
+                                    print(f"[DeepTest] DetectAdapt Fehler: {_e!r}")
+
+                                # 2) Tracking unter denselben Parametern
+                                try:
+                                    self._track_cycle_start(context)
+                                    while self._track_cycle_tick(context):
+                                        pass
+                                    self._track_cycle_finish(context)
+                                except Exception as _e:
+                                    print(f"[DeepTest] TrackCycle Fehler: {_e!r}")
+
+                                # 3) Neue Länge messen
                                 total_len = int(get_total_track_length(context))
-                                deep_score = float(total_len - pre_len)
+                                base_len = int(scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
+                                deep_score = float(total_len - base_len)
+                                print(f"[DeepTest] Cycle {cycle_num}: TrackLen={total_len}, Δ={deep_score}")
 
                                 result_key = f"kaiserlich_deeptest_cycle_{cycle_num}_result"
                                 scene[result_key] = {
