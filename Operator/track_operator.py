@@ -1,8 +1,7 @@
-# Operator/track_operator.py
+# track_operator.py
 import bpy
-from typing import List, Tuple, Dict, Deque, Optional
+from typing import List, Tuple, Dict, Deque
 from collections import deque
-import math
 
 # ------------------------------------------------------------
 # Helper-Importe
@@ -14,10 +13,7 @@ from ..Helper.find_clip_editor_area import find_clip_editor_area
 from ..Helper.selection_helper import collect_selected_track_names
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ..Helper.track_markers_helper import track_markers_with_override
-from ..Helper.motion_model_controller import (
-    quick_stats_from_track,
-    apply_adaptive_models_for_tracks,
-)
+
 
 # ------------------------------------------------------------
 # Operator
@@ -41,23 +37,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         description="Sicherheitslimit (0 = kein Limit)"
     )
 
-    use_adaptive_models: bpy.props.BoolProperty(  # type: ignore
-        name="Adaptive Motion-Modelle",
-        default=True,
-        description="Motion-Model je Track adaptiv anpassen"
-    )
-
-    adapt_phase: bpy.props.EnumProperty(  # type: ignore
-        name="Adaptionsphase",
-        items=[
-            ("PRE",  "Vor Tracking",   "Anpassung VOR dem Tracking-Schritt"),
-            ("POST", "Nach Tracking",  "Anpassung NACH dem Tracking-Schritt"),
-            ("BOTH", "Vor & Nach",     "Beide Phasen"),
-        ],
-        default="POST",
-        description="Zeitpunkt der Modellanpassung"
-    )
-
     _timer = None
     _context_cache = None
     _processing_names: List[str]
@@ -71,7 +50,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
     _end_frame = 0
     _current_frame = 0
     _frames_processed = 0
-    _clip = None
 
     # --------------------------------------------------------
     # Initialisierung
@@ -79,8 +57,8 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        self._clip = getattr(context.space_data, "clip", None)
-        if self._clip is None:
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
             self.report({'ERROR'}, "Kein aktiver Clip.")
             return {"CANCELLED"}
 
@@ -99,7 +77,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         self._processing_names = list(self._original_selected)
 
         # CLIP_EDITOR Bereich holen
-        self._window, self._area, self._region, self._space = find_clip_editor_area(self._clip)
+        self._window, self._area, self._region, self._space = find_clip_editor_area(clip)
         if not self._window:
             self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
             return {"CANCELLED"}
@@ -113,7 +91,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
 
         # Selektion fixieren
-        tracking = self._clip.tracking
+        tracking = clip.tracking
         for tr in tracking.tracks:
             tr.select = (tr.name in self._original_selected)
 
@@ -124,78 +102,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 
         print("[Kaiserlich Tracker][Modal] Tracking-Zyklus gestartet...")
         return {"RUNNING_MODAL"}
-
-    # --------------------------------------------------------
-    # Metriken
-    # --------------------------------------------------------
-
-    def _rich_stats_from_track(self, tr: bpy.types.MovieTrackingTrack) -> Dict[str, Optional[float]]:
-        """
-        Liefert brauchbare Delta-Werte (Scale/Rot) aus pattern_corners zwischen
-        aktuellem und vorherigem Frame. Fällt robust auf quick_stats zurück.
-        """
-        scene = bpy.context.scene
-        curr = tr.markers.find_frame(self._current_frame)
-        prev = tr.markers.find_frame(self._current_frame - 1)
-
-        # Fallback, wenn Marker nicht existiert
-        if not curr or not prev:
-            return quick_stats_from_track(tr)
-
-        # Pattern-Ecken lesen (4x2)
-        try:
-            pc_curr = curr.pattern_corners
-            pc_prev = prev.pattern_corners
-
-            # Größe via Diagonale (0-2)
-            def diag_len(pcs):
-                return ((pcs[0][0]-pcs[2][0])**2 + (pcs[0][1]-pcs[2][1])**2) ** 0.5
-
-            # Winkel via Kante (0->1)
-            def edge_angle_deg(pcs):
-                return math.degrees(math.atan2(pcs[1][1]-pcs[0][1],
-                                               pcs[1][0]-pcs[0][0]))
-
-            size_prev = diag_len(pc_prev)
-            size_curr = diag_len(pc_curr)
-            if size_prev > 1e-8:
-                ds = (size_curr / size_prev) - 1.0
-            else:
-                ds = 0.0
-
-            ang_prev = edge_angle_deg(pc_prev)
-            ang_curr = edge_angle_deg(pc_curr)
-            dr = ang_curr - ang_prev
-
-            # Error nur als Platzhalter, da average_error ohne Solve wenig aussagt
-            try:
-                err = float(getattr(tr, "average_error", None))
-            except Exception:
-                err = None
-
-            # Korrelation ist in der API nicht als Markerfeld standardisiert verfügbar;
-            # wir lassen sie hier None. (Optional: eigene NCC-Messung implementieren)
-            corr = None
-
-            # Survival wird im Controller verwaltet, kann hier None bleiben
-            return {
-                "error": err,
-                "corr": corr,
-                "delta_scale": ds,
-                "delta_rot": dr,
-                "survival": None,
-            }
-        except Exception:
-            # Defensive Rückfallebene
-            return quick_stats_from_track(tr)
-
-    def _collect_active_subset_and_stats(self, context, tracking) -> Tuple[List[bpy.types.MovieTrackingTrack], Dict[str, Dict[str, Optional[float]]]]:
-        active_names, _ = filter_active_tracks_at_frame(
-            context, self._processing_names, self._current_frame
-        )
-        subset = [tracking.tracks.get(nm) for nm in active_names if tracking.tracks.get(nm)]
-        per_stats = {tr.name: self._rich_stats_from_track(tr) for tr in subset}
-        return subset, per_stats
 
     # --------------------------------------------------------
     # Modal-Loop
@@ -212,8 +118,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         if event.type != 'TIMER':
             return {"PASS_THROUGH"}
 
-        # Clip prüfen (konservativ)
-        clip = self._clip or getattr(context.space_data, "clip", None)
+        clip = getattr(context.space_data, "clip", None)
         if clip is None:
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
@@ -228,20 +133,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
             mk = tr.markers.find_frame(self._current_frame)
             if mk:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
-
-        # ----------------------------------------------------
-        # Adaptive PRE
-        # ----------------------------------------------------
-        if self.use_adaptive_models and self.adapt_phase in {"PRE", "BOTH"}:
-            try:
-                subset, per_stats = self._collect_active_subset_and_stats(context, tracking)
-                if subset:
-                    apply_adaptive_models_for_tracks(
-                        subset, per_stats, scene=context.scene,
-                        frame_current=self._current_frame, log=True, clip=clip
-                    )
-            except Exception as e:
-                print(f"[Kaiserlich Tracker][Modal] ⚠️ Adaptive-Model-Update (PRE) Fehler: {e}")
 
         # Formel anwenden (z. B. für Optimierungen)
         try:
@@ -259,20 +150,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
             print("[Kaiserlich Tracker][Modal] ⚠️ Tracking-Fehler, breche ab.")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
-
-        # ----------------------------------------------------
-        # Adaptive POST (empfohlen)
-        # ----------------------------------------------------
-        if self.use_adaptive_models and self.adapt_phase in {"POST", "BOTH"}:
-            try:
-                subset, per_stats = self._collect_active_subset_and_stats(context, tracking)
-                if subset:
-                    apply_adaptive_models_for_tracks(
-                        subset, per_stats, scene=context.scene,
-                        frame_current=self._current_frame, log=True, clip=clip
-                    )
-            except Exception as e:
-                print(f"[Kaiserlich Tracker][Modal] ⚠️ Adaptive-Model-Update (POST) Fehler: {e}")
 
         # Frame fortsetzen
         scene = context.scene
@@ -321,7 +198,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         self._timer = None
 
         # Ursprüngliche Selektion wiederherstellen
-        clip = self._clip or getattr(context.space_data, "clip", None)
+        clip = getattr(context.space_data, "clip", None)
         if clip and hasattr(clip, "tracking"):
             for tr in clip.tracking.tracks:
                 tr.select = (tr.name in self._original_selected)
