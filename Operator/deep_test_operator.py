@@ -24,7 +24,7 @@ SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_0"
 
 class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
     """Kaiserlich Tracker — Deep Threshold Test"""
-    bl_idname = "kaiserlich_tracker.deep_test"
+    bl_idname = "kaiserlich_tracker.deep_test_operator"
     bl_label = "Kaiserlich Tracker — Deep Test"
     bl_options = {'REGISTER', 'UNDO'}
 
