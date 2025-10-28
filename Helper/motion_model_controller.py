@@ -11,17 +11,13 @@ Kernfeatures
 - Sauberes Logging via fmt8()
 - State-Speicherung pro Track auf MovieClip (Fallback: Scene), NICHT auf Track!
 
-Integration
-- Vor dem Tracking-Zyklus pro Track aufrufen
-- Optional: Nach dem Tracking mit frischen Stats erneut evaluieren
-
-Stats-Dict je Track:
+Erwartete Stats pro Track:
 {
-  "error": float|None,        # Re-Projection/Track-Error (avg)
-  "corr": float|None,         # Patch-Korrelation [0..1] (optional)
-  "delta_scale": float|None,  # relative Skalierung (optional)
-  "delta_rot": float|None,    # Rotation in Grad (optional)
-  "survival": int|None        # stabile Frames seit letztem Switch
+  "error": float|None,
+  "corr": float|None,
+  "delta_scale": float|None,
+  "delta_rot": float|None,      # in Grad
+  "survival": int|None
 }
 """
 
@@ -70,7 +66,6 @@ SCENE_KEYS = {
 PFX = "kaiserlich_model"
 def _k(key: str, track_name: str) -> str:
     return f"{PFX}_{key}_{track_name}"
-
 
 # ---------------------------------------------------------------------------
 # Utilities
@@ -131,7 +126,6 @@ def _cap_highest_model(model: str, allow_perspective: bool) -> str:
 
 
 def _resolve_clip(track: bpy.types.MovieTrackingTrack) -> Optional[bpy.types.MovieClip]:
-    # Fallback über aktuellen Context; im Operator wird clip explizit übergeben.
     try:
         return getattr(bpy.context.space_data, "clip", None)
     except Exception:
@@ -140,7 +134,6 @@ def _resolve_clip(track: bpy.types.MovieTrackingTrack) -> Optional[bpy.types.Mov
 
 def _idprops_supported(x) -> bool:
     try:
-        # MovieClip/Scene sind ID-Datablocks mit IDProperties
         getattr(x, "keys")
         x["__probe__"] = 1
         del x["__probe__"]
@@ -169,7 +162,6 @@ def _set_state(key: str, track_name: str, value, clip=None, scene=None):
         scene[_k(key, track_name)] = value
         return
     # sonst silent no-op
-
 
 # ---------------------------------------------------------------------------
 # Kernlogik
