@@ -13,18 +13,20 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         return context.space_data and context.space_data.clip is not None
 
     def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-
-        # --- Hauptbereich ---
-        col = layout.column(align=True)
+        box = layout.box()
+        box.use_property_split = True
+        box.use_property_decorate = False
+        col = box.column(align=True)
         col.prop(scene, "kaiserlich_markers_per_frame", text="Marker per Frame")
         col.prop(scene, "kaiserlich_frames_per_track", text="Frames per Track")
+
         
         # ▶️ Buttons
         col.operator("kaiserlich_tracker.master_operator", text="Master", icon="TRACKER")
-        col.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="VIEWZOOM")
-        col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="ZOOM_IN")
+        col.operator("kaiserlich_tracker.master_operator", text="Master", icon="SYSTEM")
+        grid = col.grid_flow(columns=2, even_columns=True, align=True)
+        grid.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="VIEWZOOM")
+        grid.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="ZOOM_IN")
         col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="STICKY_UVS_DISABLE")
         col.operator("kaiserlich_tracker.track_cycle_backwards", text="Track Cycle (Backwards)", icon="TRACKING_BACKWARDS")
         col.operator("kaiserlich_tracker.track_cycle", text="Track Cycle (Forward)", icon="TRACKING_FORWARDS")
