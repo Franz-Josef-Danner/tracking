@@ -29,7 +29,7 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="CONSOLE")
         col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="VIEW_ZOOM")
         col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="ZOOM_IN")
-        col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="GRIP_V")
+        col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="POINTCLOUD_DATA")
         col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="SNAP_VERTEX")
         col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="STICKY_UVS_DISABLE")
         col.operator("kaiserlich_tracker.track_cycle_backwards", text="Track Cycle (Backwards)", icon="TRACKING_BACKWARDS")
