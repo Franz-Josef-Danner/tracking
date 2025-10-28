@@ -32,8 +32,10 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         row.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="ZOOM_IN")
 
         col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="STICKY_UVS_DISABLE")
-        col.operator("kaiserlich_tracker.track_cycle_backwards", text="Track Cycle (Backwards)", icon="TRACKING_BACKWARDS")
-        col.operator("kaiserlich_tracker.track_cycle", text="Track Cycle (Forward)", icon="TRACKING_FORWARDS")
+        
+        row = col.row(align=True)
+        row.operator("kaiserlich_tracker.track_cycle_backwards", text="Track Cycle (Backwards)", icon="TRACKING_BACKWARDS")
+        row.operator("kaiserlich_tracker.track_cycle", text="Track Cycle (Forward)", icon="TRACKING_FORWARDS")
 
         layout.separator()
 
