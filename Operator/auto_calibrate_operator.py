@@ -80,9 +80,9 @@ class _AutoCalibState:
     cycle_thresholds: Dict[int, Dict[str, float]] = field(default_factory=dict)
 
 
-class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
+class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
     """Kaiserlich Tracker — Auto Calibrate (komplette Pipeline, nicht-blockierend)"""
-    bl_idname = "kaiserlich_tracker.auto_calibrate"
+    bl_idname = "kaiserlich_tracker.shorttest_operator"
     bl_label = "Kaiserlich Tracker — Auto Calibrate"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -690,7 +690,7 @@ class KAISERLICHTRACKER_OT_auto_calibrate(bpy.types.Operator):
 #  Registration
 # ----------------------------------------------------------------------------
 
-_classes = (KAISERLICHTRACKER_OT_auto_calibrate,)
+_classes = (KAISERLICHTRACKER_OT_shorttest_operator,)
 
 def register():
     for cls in _classes:
