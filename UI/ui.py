@@ -22,7 +22,7 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.prop(scene, "kaiserlich_frames_per_track", text="Frames per Track")
         
         # ▶️ Buttons
-        col.operator("kaiserlich_tracker.master_operator", text="Master", icon="PLUGIN")
+        col.operator("kaiserlich_tracker.master_operator", text="Master", icon="TRACKER")
         col.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="VIEWZOOM")
         col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="ZOOM_IN")
         col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="STICKY_UVS_DISABLE")
