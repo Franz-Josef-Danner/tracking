@@ -280,26 +280,55 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             # Wenn alle zusätzlichen Durchläufe abgeschlossen wurden → Vergleich und Finale
             if self._state.second_cycle and self._state.third_cycle and getattr(self._state, 'fourth_cycle', False) and getattr(self._state, 'fifth_cycle', False):
                 try:
+                    scene = context.scene
                     # Baseline-Länge aus Szene lesen
-                    baseline_len = int(context.scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
+                    baseline_len = int(scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
+
+                    # Mapping Cycle → Zielvariable
+                    step_map = {
+                        2: SCENE_TOTAL_TRACK_LEN_STEP1,  # Rot XY
+                        3: SCENE_TOTAL_TRACK_LEN_STEP2,  # Scale
+                        4: SCENE_TOTAL_TRACK_LEN_STEP3,  # Rot-Scale
+                        5: SCENE_TOTAL_TRACK_LEN_STEP4,  # Perspective
+                    }
+
+                    # Vorab bereinigen: alte Werte löschen/leer lassen
+                    for key in step_map.values():
+                        if key in scene:
+                            del scene[key]
+
                     best_thresholds: Dict[str, float] = {}
-                    # Über alle gespeicherten Zyklen (2-5) iterieren
+
+                    # Über alle gespeicherten Zyklen (2–5) iterieren und gegen Baseline evaluieren
                     for cycle_num, thresh_dict in self._state.cycle_thresholds.items():
+                        step_key = step_map.get(cycle_num)
+                        if not step_key:
+                            continue
                         length_key = f"kaiserlich_len_cycle_{cycle_num}"
-                        cycle_len = int(context.scene.get(length_key, 0))
+                        cycle_len = int(scene.get(length_key, 0))
+
                         if cycle_len > baseline_len:
-                            # Verbesserter Wert gefunden → Thresholds hinzufügen
+                            # Besser als Baseline → in Zielvariable persistieren
+                            scene[step_key] = cycle_len
                             best_thresholds.update(thresh_dict)
-                    # In Szene speichern
-                    context.scene["kaiserlich_best_thresholds"] = best_thresholds
+                            print(f"[Kaiserlich Tracker][AutoCalibrate] 🔹 Verbesserter Wert in Cycle {cycle_num}: {cycle_len} > {baseline_len} → gespeichert unter '{step_key}'")
+                        else:
+                            # Kein Zugewinn → Zielvariable bleibt leer
+                            print(f"[Kaiserlich Tracker][AutoCalibrate] Kein Zugewinn in Cycle {cycle_num}: {cycle_len} ≤ {baseline_len}")
+
+                    # Beste Thresholds (Aggregat der Gewinner) in Szene persistieren
+                    scene["kaiserlich_best_thresholds"] = best_thresholds
                     print(f"[Kaiserlich Tracker][AutoCalibrate] Beste Thresholds: {best_thresholds}")
+
                 except Exception as ex:
                     print(f"[AutoCalibrate] Fehler beim Vergleich der Track-Längen: {ex!r}")
+
                 # Final: Alle Thresholds auf 1.0 zurücksetzen
                 try:
                     reset_all_thresholds(context, active_props=[])
                 except Exception as ex:
                     print(f"[AutoCalibrate] Fehler beim finalen Reset: {ex!r}")
+
                 self._state.done = True
                 return self._teardown(context, cancelled=False)
 
