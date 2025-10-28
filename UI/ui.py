@@ -28,7 +28,7 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="viewzoom")
         col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="CONSOLE")
         col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="view_zoom")
-        col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="zoom_in")
+        col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="ZOOM_IN")
         col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="grip_v")
         col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="snap_vertex")
         col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="sticky_uvs_disable ")
