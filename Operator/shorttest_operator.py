@@ -643,6 +643,28 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             else:
                 print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{key_cycle}')")
 
+            # --- Persistente Sammelstruktur für spätere Analyse ---
+            # Speichert alle gemessenen Längen in einer Liste unter 'kaiserlich_len_results'
+            results = scene.get("kaiserlich_len_results", [])
+            results.append({
+                "cycle": cycle_idx,
+                "length": total_len,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "thresholds": self._state.cycle_thresholds.get(cycle_idx, {}),
+            })
+            scene["kaiserlich_len_results"] = results
+
+            # Optional: Fortschritt loggen
+            print(f"[Kaiserlich Tracker][Persistenz] Zyklus {cycle_idx}: Länge={total_len}, Thresholds={self._state.cycle_thresholds.get(cycle_idx, {})}")
+
+            # --- Best-Value Tracking (fortlaufend) ---
+            best_len = scene.get("kaiserlich_len_best", 0)
+            if total_len > best_len:
+                scene["kaiserlich_len_best"] = total_len
+                scene["kaiserlich_len_best_cycle"] = cycle_idx
+                scene["kaiserlich_len_best_thresholds"] = self._state.cycle_thresholds.get(cycle_idx, {})
+                print(f"[Kaiserlich Tracker][Persistenz] 🔹 Neuer Bestwert in Zyklus {cycle_idx}: {total_len}")
+
             # 3) Alle neu erzeugten Tracks deterministisch per Namen löschen
             deleted_total = 0
             # Primäre Quelle: created_track_names (wurde in _detect_adapt_inline gesetzt)
