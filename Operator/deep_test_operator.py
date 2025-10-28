@@ -1,5 +1,5 @@
 """
-deep_test.py – Operator zum automatisierten Schwellenwert‑Feintuning
+deep_test_operator.py – Operator zum automatisierten Schwellenwert‑Feintuning
 ===============================================================
 
 Dieser Operator implementiert einen iterativen Testalgorithmus zur
@@ -48,6 +48,12 @@ from typing import Dict, Tuple, Optional
 from ..Helper.util_clip import get_active_clip
 from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.util_scene import set_scene_props
+from ..Helper.snapshot import snapshot_active_markers
+from ..Helper.newmarker import classify_markers
+from ..Helper.delete import delete_tracks_by_names
+from ..Helper.detect import detect_features
+from ..Helper.find_clip_editor_area import find_clip_editor_area
+from ..Helper.track_markers_helper import track_markers_with_override
 
 # Konstanten für die Schlüsselnamen der Zielwerte
 SCENE_TOTAL_TRACK_LEN_BASE = "kaiserlich_len_baseline_00"
@@ -162,7 +168,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         set_scene_props(scene, **results)
 
         # Ergebnis protokollieren
-        scene['kaiserlich_deep_test_results'] = results
+        scene['kaiserlich_deep_test_operator_results'] = results
         self.report({'INFO'}, f"Deep Test abgeschlossen. Ergebnis: {results}")
         return {'FINISHED'}
 
@@ -170,20 +176,65 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
     # Helper‑Funktionen
     # ------------------------------------------------------------------
     def _track_and_measure(self, context: Context) -> int:
-        """Führt eine vollständige Tracking‑Sequenz der aktuell selektierten
-        Tracks aus und gibt die Gesamtlänge aller Tracks ab dem
-        Szenenstart zurück.
+        """Erzeugt neue Marker, führt ein vollständiges Tracking durch,
+        misst die Gesamtlänge der Tracks und entfernt anschließend alle
+        neu erzeugten Tracks.
 
-        Hinweis: Diese Methode setzt voraus, dass die relevanten
-        Scene‑Properties vor dem Aufruf korrekt gesetzt wurden.
+        Das Verfahren folgt dem in der Aufgabenstellung beschriebenen
+        Ablauf: Snapshot → Detect → Track → Messen → Cleanup.
         """
         scene = context.scene
-        clip = getattr(context.space_data, 'clip', None)
+        # Ermittle aktiven Clip über Helper (robuster als direkter Zugriff auf space_data)
+        clip = get_active_clip(context)
         if clip is None:
             return 0
 
-        # Selektion: Alle Tracks aktivieren (mute deaktivieren, Auswahl setzen)
-        tracking = clip.tracking
+        # Suche eine gültige CLIP_EDITOR Area für Context Override.
+        window, area, region, space = find_clip_editor_area(clip)
+        if not window:
+            # Ohne gültige Clip‑Editor Area können wir nicht sinnvoll tracken
+            return 0
+
+        # Tracking‑Datenobjekt abrufen
+        tracking = getattr(clip, 'tracking', None)
+        if tracking is None:
+            return 0
+
+        # Frame merken und auf Startframe setzen
+        start_frame = scene.frame_start
+        current_frame = scene.frame_current
+        scene.frame_current = start_frame
+        try:
+            space.clip_user.frame_current = start_frame
+        except Exception:
+            pass
+
+        # Snapshot vor Detect – aktive Marker erfassen
+        pre_snapshot = snapshot_active_markers(context)
+
+        # Feature‑Detection innerhalb eines Override‑Kontextes ausführen. Dadurch
+        # wird sichergestellt, dass der Clip‑Editor die Operation ausführt.
+        try:
+            with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+                bpy.ops.clip.detect_features(
+                    placement='FRAME',
+                    margin=100,
+                    threshold=0.001,
+                    min_distance=50
+                )
+        except Exception:
+            # Fehler beim Detect werden toleriert
+            pass
+
+        # Snapshot nach Detect – neue Marker identifizieren
+        post_snapshot = snapshot_active_markers(context)
+        _, new_markers = classify_markers(pre_snapshot, post_snapshot)
+        # Extrahiere die Namen der Tracks aus den neuen Markern
+        new_track_names = [m['track'] for m in new_markers]
+        # Einmalige Liste der neuen Tracks
+        unique_new_tracks = list(dict.fromkeys(new_track_names))
+
+        # Alle Tracks (bestehend + neu) selektieren und entmuten
         for tr in tracking.tracks:
             try:
                 tr.select = True
@@ -191,29 +242,28 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             except Exception:
                 pass
 
-        # Playhead auf Startframe setzen
-        start_frame = scene.frame_start
-        scene.frame_current = start_frame
+        # Tracking über die gesamte Sequenz im Override‑Kontext durchführen.
         try:
-            context.space_data.clip_user.frame_current = start_frame  # type: ignore[attr-defined]
-        except Exception:
-            pass
-
-        # Tracking durchführen – sequence=True verfolgt bis zum Ende
-        try:
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+            track_markers_with_override(window, area, region, space, backwards=False, sequence=True)
         except Exception:
             # Fehler beim Tracking werden ignoriert; es wird die aktuelle
             # Track‑Länge ausgewertet
             pass
 
-        # Gesamtlänge ablesen
+        # Gesamtlänge aller Tracks ab Startframe messen
         total_len = int(get_total_track_length(context, start_frame=start_frame))
 
-        # Playhead wieder auf Start setzen (für nachfolgenden Test)
-        scene.frame_current = start_frame
+        # Cleanup: Neu erzeugte Tracks entfernen
+        if unique_new_tracks:
+            try:
+                delete_tracks_by_names(context, unique_new_tracks)
+            except Exception:
+                pass
+
+        # Playhead wieder auf ursprünglichen Frame zurücksetzen
+        scene.frame_current = current_frame
         try:
-            context.space_data.clip_user.frame_current = start_frame  # type: ignore[attr-defined]
+            space.clip_user.frame_current = current_frame
         except Exception:
             pass
 
