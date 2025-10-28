@@ -24,10 +24,16 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         # ▶️ Buttons
         col.operator("kaiserlich_tracker.master_operator", text="Master", icon="PLUGIN")
         col.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="INFO")
+        col.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="preview_range")
+        col.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="viewzoom")
         col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="CONSOLE")
-        col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="CHECKMARK")
-        col.operator("kaiserlich_tracker.track_cycle_backwards", text="Track Cycle (Backwards)", icon="TRACKING")
-        col.operator("kaiserlich_tracker.track_cycle", text="Track Cycle (Forward)", icon="TRACKING")
+        col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="view_zoom")
+        col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="zoom_in")
+        col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="grip_v")
+        col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="snap_vertex")
+        col.operator("kaiserlich_tracker.detect_adapt", text="Run Detect Adapt", icon="sticky_uvs_disable ")
+        col.operator("kaiserlich_tracker.track_cycle_backwards", text="Track Cycle (Backwards)", icon="tracking_backwards")
+        col.operator("kaiserlich_tracker.track_cycle", text="Track Cycle (Forward)", icon="tracking_forwards")
 
         layout.separator()
 
