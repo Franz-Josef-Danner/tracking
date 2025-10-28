@@ -15,11 +15,10 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
-        # Property-Layout: Label links, Feld rechts
-        box = layout.box()
-        box.use_property_split = True
-        box.use_property_decorate = False
-        col = box.column(align=True)
+        # Property-Layout: Label links, Feld rechts – ohne dunklen Box-Hintergrund
+        col = layout.column(align=True)
+        col.use_property_split = True
+        col.use_property_decorate = False
         col.prop(scene, "kaiserlich_markers_per_frame", text="Marker per Frame")
         col.prop(scene, "kaiserlich_frames_per_track", text="Frames per Track")
 
