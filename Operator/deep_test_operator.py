@@ -13,7 +13,7 @@ from ..Helper.snapshot import snapshot_active_markers
 from ..Helper.newmarker import classify_markers
 from ..Helper.delete import delete_tracks_by_names
 from ..Helper.detect import detect_features
-from ..Helper.cleaneup import cleanup_new_markers  # wichtig für adaptive Bereinigung
+from ..Helper.cleaneup import cleanup_new_markers
 
 # ---- Szenen-Keys ------------------------------------------------------------
 SCENE_TOTAL_TRACK_LEN_BASE  = "kaiserlich_len_baseline_00"
@@ -87,7 +87,10 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
 
         hz, vc = clip.size[0], clip.size[1]
         tracking = clip.tracking
-        pattern_size = tracking.settings.pattern_size or 50
+
+        # Pattern-Size aus detect_adapt-artigem Bootstrap
+        ma = getattr(tracking.settings, "margin", 100)
+        pz = getattr(tracking.settings, "pattern_size", 50)
 
         ef_target = int(scene.get("kaiserlich_markers_per_frame", 150))
         tolerance = ef_target * 0.1
@@ -112,12 +115,12 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
 
         while loop < max_loops:
             loop += 1
-            detect_features(context, placement='FRAME', margin=100, threshold=0.01, min_distance=min_distance)
+            detect_features(context, placement='FRAME', margin=ma, threshold=0.01, min_distance=min_distance)
 
             post_snapshot = snapshot_active_markers(context)
             old, new = classify_markers(pre_snapshot, post_snapshot)
 
-            cleaned_new, _ = cleanup_new_markers(context, old, new, pz=pattern_size, hz=hz, vc=vc)
+            cleaned_new, _ = cleanup_new_markers(context, old, new, pz=pz, hz=hz, vc=vc)
             print(f"[DeepTest] LOOP {loop}: Marker = {len(cleaned_new)}, Ziel = {ef_target}")
 
             if abs(len(cleaned_new) - ef_target) <= tolerance:
