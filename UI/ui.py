@@ -25,7 +25,7 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.operator("kaiserlich_tracker.master_operator", text="Master", icon="PLUGIN")
         col.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="INFO")
         col.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="preview_range")
-        col.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="viewzoom")
+        col.operator("kaiserlich_tracker.shorttest_operator", text="Short Test Thresholds", icon="VIEWZOOM")
         col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="CONSOLE")
         col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="view_zoom")
         col.operator("kaiserlich_tracker.deep_test_operator", text="Deep Test Thresholds", icon="ZOOM_IN")
