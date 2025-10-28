@@ -13,7 +13,10 @@ from ..Helper.find_clip_editor_area import find_clip_editor_area
 from ..Helper.selection_helper import collect_selected_track_names
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ..Helper.track_markers_helper import track_markers_with_override
-
+from ..Helper.motion_model_controller import (
+    quick_stats_from_track,
+    apply_adaptive_models_for_tracks,
+)
 
 # ------------------------------------------------------------
 # Operator
@@ -36,7 +39,11 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         soft_max=100000,
         description="Sicherheitslimit (0 = kein Limit)"
     )
-
+    use_adaptive_models: bpy.props.BoolProperty(  # type: ignore
+        name="Adaptive Motion-Modelle",
+        default=True,
+        description="Vor jedem Tracking-Schritt das Motion-Model je Track adaptiv anpassen"
+    )
     _timer = None
     _context_cache = None
     _processing_names: List[str]
@@ -50,6 +57,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
     _end_frame = 0
     _current_frame = 0
     _frames_processed = 0
+    _clip = None
 
     # --------------------------------------------------------
     # Initialisierung
@@ -57,8 +65,8 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        clip = getattr(context.space_data, "clip", None)
-        if clip is None:
+        self._clip = getattr(context.space_data, "clip", None)
+        if self._clip is None:
             self.report({'ERROR'}, "Kein aktiver Clip.")
             return {"CANCELLED"}
 
@@ -77,7 +85,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         self._processing_names = list(self._original_selected)
 
         # CLIP_EDITOR Bereich holen
-        self._window, self._area, self._region, self._space = find_clip_editor_area(clip)
+        self._window, self._area, self._region, self._space = find_clip_editor_area(self._clip)
         if not self._window:
             self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
             return {"CANCELLED"}
@@ -91,7 +99,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
 
         # Selektion fixieren
-        tracking = clip.tracking
+        tracking = self._clip.tracking
         for tr in tracking.tracks:
             tr.select = (tr.name in self._original_selected)
 
@@ -118,7 +126,8 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         if event.type != 'TIMER':
             return {"PASS_THROUGH"}
 
-        clip = getattr(context.space_data, "clip", None)
+        # Clip prüfen (konservativ)
+        clip = self._clip or getattr(context.space_data, "clip", None)
         if clip is None:
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
@@ -133,6 +142,27 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
             mk = tr.markers.find_frame(self._current_frame)
             if mk:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
+        # ----------------------------------------------------
+        # Adaptive Motion-Modelle vor dem Tracking anpassen
+        # ----------------------------------------------------
+        if self.use_adaptive_models:
+            try:
+                # Nur aktuell relevante Tracks betrachten (Selektion + aktiv am Frame)
+                active_names, _ = filter_active_tracks_at_frame(
+                    context, self._processing_names, self._current_frame
+                )
+                if active_names:
+                    # Subset erstellen
+                    subset = [tracking.tracks.get(nm) for nm in active_names if tracking.tracks.get(nm)]
+                    # Schnelle Stats je Track (kann später durch echten Provider ersetzt werden)
+                    per_stats = {tr.name: quick_stats_from_track(tr) for tr in subset}
+                    # Framekontext übergeben (für Survival/Last-Switch Marker)
+                    apply_adaptive_models_for_tracks(
+                        subset, per_stats, scene=context.scene,
+                        frame_current=self._current_frame, log=True
+                    )
+            except Exception as e:
+                print(f"[Kaiserlich Tracker][Modal] ⚠️ Adaptive-Model-Update Fehler: {e}")
 
         # Formel anwenden (z. B. für Optimierungen)
         try:
@@ -198,7 +228,7 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         self._timer = None
 
         # Ursprüngliche Selektion wiederherstellen
-        clip = getattr(context.space_data, "clip", None)
+        clip = self._clip or getattr(context.space_data, "clip", None)
         if clip and hasattr(clip, "tracking"):
             for tr in clip.tracking.tracks:
                 tr.select = (tr.name in self._original_selected)
