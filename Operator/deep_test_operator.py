@@ -243,7 +243,8 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         if self._current_category == "rot_xy":
             set_scene_props(self._scene, kaiserlich_rot_thresh_x=1.0, kaiserlich_rot_thresh_y=1.0)
         elif self._current_category == "scale":
-            set_scene_props(self._scene, kaiserlich_scale_thresh_min=1.0, kaiserlich_scale_thresh_max=0.0)
+            set_scene_props(self._scene,
+                kaiserlich_scale_thresh_min=1.0, kaiserlich_scale_thresh_max=1.1)
         elif self._current_category == "rot_scale":
             set_scene_props(self._scene, kaiserlich_rot_scale_thresh_rot=1.0, kaiserlich_rot_scale_thresh_scale=0.0)
         elif self._current_category == "perspective":
@@ -274,7 +275,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         elif self._current_category == "scale":
             set_scene_props(self._scene,
                             kaiserlich_scale_thresh_min=next_val,
-                            kaiserlich_scale_thresh_max=0.0)
+                            kaiserlich_scale_thresh_max=next_val * 1.1)
     
         elif self._current_category == "rot_scale":
             set_scene_props(self._scene,
@@ -504,7 +505,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
                 self._scene[SCENE_TOTAL_TRACK_LEN_STEP2] = total_len
                 set_scene_props(self._scene,
                     kaiserlich_scale_thresh_min=self._current_value,
-                    kaiserlich_scale_thresh_max=0.0)
+                    kaiserlich_scale_thresh_max=self._current_value * 1.1)
             elif self._current_category == "rot_scale":
                 self._scene[SCENE_TOTAL_TRACK_LEN_STEP3] = total_len
                 set_scene_props(self._scene,
@@ -522,7 +523,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             elif self._current_category == "scale":
                 set_scene_props(self._scene,
                     kaiserlich_scale_thresh_min=1.0,
-                    kaiserlich_scale_thresh_max=0.0)
+                    kaiserlich_scale_thresh_max=1.1)
             elif self._current_category == "rot_scale":
                 set_scene_props(self._scene,
                     kaiserlich_rot_scale_thresh_rot=1.0,
