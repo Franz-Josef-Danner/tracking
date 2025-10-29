@@ -368,6 +368,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             og = math.ceil(za * 1.1)
             ug = math.floor(za * 0.9)
 
+            frame_end = get_end_frame(context)
             print(f"[Kaiserlich Tracker][DetectAdapt][Fallback] "
                   f"hz={hz}, vc={vc}, margin={ma}, md={md:.2f}, "
                   f"pattern={pz}, search={sz}, tr={tr}, og={og}, ug={ug}, frame_end={frame_end}")
