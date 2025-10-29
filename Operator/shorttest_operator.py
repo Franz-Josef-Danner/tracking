@@ -23,6 +23,7 @@ from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.track_markers_helper import track_markers_with_override
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ..Helper.util_scene import set_scene_props
+from ..Helper.detect_config import adjust_min_distance
 
 # ----------------------------------------------------------------------------
 #  Modal-Operator mit deterministischer State-Steuerung
