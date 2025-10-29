@@ -23,7 +23,7 @@ from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.track_markers_helper import track_markers_with_override
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ..Helper.util_scene import set_scene_props
-from ..Helper.detect_config import adjust_min_distance
+from ..Helper.init_detect_state import init_detect_state
 
 # ----------------------------------------------------------------------------
 #  Modal-Operator mit deterministischer State-Steuerung
@@ -357,21 +357,16 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             hz = params.get('hz', 1)
             vc = params.get('vc', False)
         else:
-            from ..Helper.detect_config import get_detect_params, adjust_min_distance
-            
-            params = get_detect_params(context)
-            hz, vc = params["hz"], params["vc"]
-            ma, pz, sz = params["margin"], params["pattern_size"], params["search_size"]
-            tr = params["threshold"]
-            md = params["min_distance"]
-            za = ef_target * 4
-            og = math.ceil(za * 1.1)
-            ug = math.floor(za * 0.9)
-
-            frame_end = get_end_frame(context)
-            print(f"[Kaiserlich Tracker][DetectAdapt][Fallback] "
-                  f"hz={hz}, vc={vc}, margin={ma}, md={md:.2f}, "
-                  f"pattern={pz}, search={sz}, tr={tr}, og={og}, ug={ug}, frame_end={frame_end}")
+            # Einheitliche Initialisierung über Helper
+            state = init_detect_state(context)
+            hz = state["hz"]
+            vc = state["vc"]
+            ma = state["margin"]
+            pz = state["pattern_size"]
+            sz = state["search_size"]
+            tr = state["threshold"]
+            md = state["min_distance"]
+            print(f"[Kaiserlich Tracker][DetectAdapt][InitState] hz={hz}, vc={vc}, margin={ma}, md={md:.2f}, pattern={pz}, search={sz}, tr={tr}")
 
         # Baseline erfassen
         pre_snapshot = snapshot_active_markers(context)
