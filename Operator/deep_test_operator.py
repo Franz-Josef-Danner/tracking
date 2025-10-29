@@ -477,7 +477,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         compare_len = int(self._goal_map.get(self._current_category, 0))
         print(f"[DeepTest][{self._current_category}] Track-Länge = {total_len}, Vergleich = {compare_len}")
 
-        # ---- Bewertung (alte adaptive Logik) -------------------------------
+        # ---- Bewertung (adaptive Stufenlogik) -------------------------------
         if total_len >= compare_len:
             print(f"[DeepTest][{self._current_category}] ✅ Verbesserte oder gleiche Länge ({total_len} >= {compare_len})")
             self._goal_map[self._current_category] = total_len
@@ -519,7 +519,6 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             elif self._current_category == "perspective":
                 set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
 
-            self._base_value = 1.0
             self._current_step_index += 1
             print(f"[DeepTest][Eval] ✓ Ziel erreicht | next step ({self._current_step_index})")
 
@@ -528,7 +527,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             if self._current_value <= MIN_THRESHOLD_VAL + 1e-12:
                 print(f"[DeepTest][Eval] ✗ Kein Zugewinn, MIN erreicht → nächste Stufe")
                 self._current_step_index += 1
-                self._base_value = 1.0
+                # Basiswert unverändert lassen – nächste Stufe startet vom aktuellen Startpunkt.
             else:
                 # gleiche Stufe wiederholen mit weiter abgesenktem Basiswert
                 self._base_value = self._current_value
