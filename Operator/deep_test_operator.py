@@ -295,69 +295,108 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         for trk in getattr(self._clip.tracking, "tracks", []):
             trk.select = (trk.name in self._final_new_tracks)
 
+    # ------------------------------------------------------------------------
+    # Nicht-blockierendes Tracking (Modal-Parität zum Shorttest)
+    # ------------------------------------------------------------------------
     def _track_and_measure(self, context) -> int:
-        """Trackt frameweise wie im Shorttest und misst die Gesamtlänge aller aktiven Tracks."""
+        """Nicht-blockierende Tracking-Schleife analog zum Shorttest."""
         scene = self._scene
         clip = self._clip
         window, area, region, space = self._window, self._area, self._region, self._space
 
-        # --- Initialisierung (identisch zur Shorttest-Struktur) ---
+        # Initiale Frame-Setup
         start_frame = self._start_frame
         end_frame = self._end_frame
         if end_frame < start_frame:
             end_frame = start_frame
 
-        # Selektion initialisieren (alle neuen Tracks aktivieren)
-        if clip and getattr(clip, "tracking", None):
-            for trk in clip.tracking.tracks:
-                trk.select = (trk.name in self._final_new_tracks)
-
-        # Tracking-Loop (nicht-blockierend innerhalb dieses Aufrufs)
-        current = start_frame
-        scene.frame_current = current
-        space.clip_user.frame_current = current
-
+        # Start-Tracking-Parameter (wie Shorttest)
         active_names = list(self._final_new_tracks)
         if not active_names:
-            print("[DeepTest][Track] ⚠️ Keine aktiven Tracks zum Start gefunden.")
+            print("[DeepTest][Track] ⚠️ Keine neuen Tracks vorhanden.")
             return 0
 
-        print(f"[DeepTest][Track] ▶️ Start {start_frame} → {end_frame} | {len(active_names)} aktive Tracks")
+        # Selektiere die Tracks
+        if clip and getattr(clip, "tracking", None):
+            for trk in clip.tracking.tracks:
+                trk.select = (trk.name in active_names)
 
-        # --- Frameweise Tracking ---
-        while current <= end_frame:
-            # 1) Aktive Tracks prüfen
+        # Lokale Tracking-State-Variablen (modaler Ablauf)
+        self._tracking_state = {
+            "active": True,
+            "current": start_frame,
+            "end": end_frame,
+            "active_names": active_names,
+            "total_len": 0,
+        }
+
+        # --- Innere Funktion für einen Frame ---
+        def do_tick():
+            s = self._tracking_state
+            current = s["current"]
+            active_names = s["active_names"]
+
+            # Filtere inaktive Tracks
             active_names, dropped = filter_active_tracks_at_frame(context, active_names, current)
+            s["active_names"] = active_names
+            if dropped > 0:
+                print(f"[DeepTest][Track] {dropped} inaktive entfernt → {len(active_names)} aktiv")
+
+            # Keine aktiven → beenden
             if not active_names:
                 print(f"[DeepTest][Track] ✅ Keine aktiven Tracks mehr bei Frame {current}")
-                break
-            if dropped > 0:
-                print(f"[DeepTest][Track] {dropped} inaktive Tracks entfernt → {len(active_names)} verbleibend")
+                s["active"] = False
+                return False
 
-            # 2) Einen Frame weiter tracken
-            success = track_markers_with_override(window, area, region, space, backwards=False, sequence=False)
-            if not success:
+            # Einen Frame tracken
+            ok = track_markers_with_override(window, area, region, space, backwards=False, sequence=False)
+            if not ok:
                 print("[DeepTest][Track] ⚠️ Tracking-Fehler – Abbruch.")
-                break
+                s["active"] = False
+                return False
 
-            # 3) Einen Frame fortsetzen
+            # Nächster Frame
             current += 1
-            if current > end_frame:
-                break
+            if current > s["end"]:
+                print("[DeepTest][Track] ✅ Szenenende erreicht.")
+                s["active"] = False
+                return False
+
             scene.frame_current = current
             space.clip_user.frame_current = current
+            s["current"] = current
+            return True
 
-        # --- Nachlauf: Track-Länge messen (identisch zum Shorttest) ---
-        total_len = int(get_total_track_length(context, start_frame=start_frame))
-        print(f"[DeepTest][Track] ✅ Tracking abgeschlossen – Total Length = {total_len}")
+        # --- Modal-Schleife über Blender-Timer (nicht blockierend) ---
+        wm = bpy.context.window_manager
+        def modal_timer(self, context):
+            s = self._tracking_state
+            if not s["active"]:
+                # Abschluss
+                total_len = int(get_total_track_length(context, start_frame=start_frame))
+                s["total_len"] = total_len
+                print(f"[DeepTest][Track] ✅ Tracking abgeschlossen – Total = {total_len}")
+                delete_tracks_by_names(context, self._final_new_tracks)
+                wm.event_timer_remove(self._tracking_timer)
+                self._tracking_timer = None
+                return None
+            if not do_tick():
+                # Letzter Tick
+                total_len = int(get_total_track_length(context, start_frame=start_frame))
+                s["total_len"] = total_len
+                print(f"[DeepTest][Track] ✅ Ende – Total = {total_len}")
+                delete_tracks_by_names(context, self._final_new_tracks)
+                wm.event_timer_remove(self._tracking_timer)
+                self._tracking_timer = None
+                return None
+            return None
 
-        # --- Cleanup wie im Shorttest ---
-        try:
-            delete_tracks_by_names(context, self._final_new_tracks)
-        except Exception as e:
-            print(f"[DeepTest][Track] ⚠️ Fehler beim Löschen der Tracks: {e!r}")
+        # Timer anlegen (echte UI-Asynchronität)
+        self._tracking_timer = wm.event_timer_add(0.05, window=window)
+        wm.modal_handler_add(type("KAISERLICH_TRACK_TIMER", (), {"modal": modal_timer})())
 
-        return total_len
+        # Rückgabe-Placeholder – tatsächliche Länge wird nach Abschluss in self._tracking_state gesetzt
+        return 0
 
     # ------------------------------------------------------------------------
     def _finish(self, context):
