@@ -244,9 +244,20 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             set_scene_props(self._scene, kaiserlich_rot_thresh_x=1.0, kaiserlich_rot_thresh_y=1.0)
         elif self._current_category == "scale":
             set_scene_props(self._scene,
-                kaiserlich_scale_thresh_min=1.0, kaiserlich_scale_thresh_max=1.1)
+                kaiserlich_scale_thresh_min=1.0, kaiserlich_scale_thresh_max=1.0)
         elif self._current_category == "rot_scale":
-            set_scene_props(self._scene, kaiserlich_rot_scale_thresh_rot=1.0, kaiserlich_rot_scale_thresh_scale=0.0)
+            # Initial: zuerst rot testen, scale=0
+            if not hasattr(self, "_rot_scale_phase"):
+                self._rot_scale_phase = "rot"  # Erster Durchlauf
+            if self._rot_scale_phase == "rot":
+                set_scene_props(self._scene,
+                    kaiserlich_rot_scale_thresh_rot=1.0,
+                    kaiserlich_rot_scale_thresh_scale=0.0)
+            elif self._rot_scale_phase == "scale":
+                set_scene_props(self._scene,
+                    kaiserlich_rot_scale_thresh_rot=0.0,
+                    kaiserlich_rot_scale_thresh_scale=1.0)
+            print(f"[DeepTest][rot_scale] Init Phase = {self._rot_scale_phase.upper()}")
         elif self._current_category == "perspective":
             set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
 
@@ -275,12 +286,22 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         elif self._current_category == "scale":
             set_scene_props(self._scene,
                             kaiserlich_scale_thresh_min=next_val,
-                            kaiserlich_scale_thresh_max=next_val * 1.1)
+                            kaiserlich_scale_thresh_max=min(1,next_val * 1.1))
     
         elif self._current_category == "rot_scale":
-            set_scene_props(self._scene,
-                            kaiserlich_rot_scale_thresh_rot=next_val,
-                            kaiserlich_rot_scale_thresh_scale=0.0)
+            # Zweiphasiger Test: rot -> scale
+            if not hasattr(self, "_rot_scale_phase"):
+                self._rot_scale_phase = "rot"
+            if self._rot_scale_phase == "rot":
+                set_scene_props(self._scene,
+                    kaiserlich_rot_scale_thresh_rot=next_val,
+                    kaiserlich_rot_scale_thresh_scale=0.0)
+                print(f"[DeepTest][rot_scale] Phase ROT → {next_val:.6f}")
+            elif self._rot_scale_phase == "scale":
+                set_scene_props(self._scene,
+                    kaiserlich_rot_scale_thresh_rot=0.0,
+                    kaiserlich_rot_scale_thresh_scale=next_val)
+                print(f"[DeepTest][rot_scale] Phase SCALE → {next_val:.6f}")
     
         elif self._current_category == "perspective":
             set_scene_props(self._scene, kaiserlich_perspective_thresh=next_val)
@@ -505,12 +526,30 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
                 self._scene[SCENE_TOTAL_TRACK_LEN_STEP2] = total_len
                 set_scene_props(self._scene,
                     kaiserlich_scale_thresh_min=self._current_value,
-                    kaiserlich_scale_thresh_max=self._current_value * 1.1)
+                    kaiserlich_scale_thresh_max=min(1,self._current_value * 1.1))
             elif self._current_category == "rot_scale":
                 self._scene[SCENE_TOTAL_TRACK_LEN_STEP3] = total_len
-                set_scene_props(self._scene,
-                    kaiserlich_rot_scale_thresh_rot=self._current_value,
-                    kaiserlich_rot_scale_thresh_scale=0.0)
+                if not hasattr(self, "_rot_scale_phase"):
+                    self._rot_scale_phase = "rot"
+                if self._rot_scale_phase == "rot":
+                    set_scene_props(self._scene,
+                        kaiserlich_rot_scale_thresh_rot=self._current_value,
+                        kaiserlich_rot_scale_thresh_scale=0.0)
+                    # Wechsel auf zweite Phase (scale)
+                    self._rot_scale_phase = "scale"
+                    print("[DeepTest][rot_scale] → Nächste Phase: SCALE")
+                    # sofort auf neue Phase umstellen und Stufenindex resetten
+                    self._current_step_index = 0
+                    return False
+                elif self._rot_scale_phase == "scale":
+                    set_scene_props(self._scene,
+                        kaiserlich_rot_scale_thresh_rot=0.0,
+                        kaiserlich_rot_scale_thresh_scale=self._current_value)
+                    # Nach zweiter Phase zurücksetzen
+                    set_scene_props(self._scene,
+                        kaiserlich_rot_scale_thresh_rot=1.0,
+                        kaiserlich_rot_scale_thresh_scale=1.0)
+                    print("[DeepTest][rot_scale] ✓ Beide Phasen abgeschlossen – reset to 1.0")
             elif self._current_category == "perspective":
                 self._scene[SCENE_TOTAL_TRACK_LEN_STEP4] = total_len
                 set_scene_props(self._scene, kaiserlich_perspective_thresh=self._current_value)
@@ -523,11 +562,13 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             elif self._current_category == "scale":
                 set_scene_props(self._scene,
                     kaiserlich_scale_thresh_min=1.0,
-                    kaiserlich_scale_thresh_max=1.1)
+                    kaiserlich_scale_thresh_max=1.0)
             elif self._current_category == "rot_scale":
+                # Reset nach Abschluss beider Phasen
                 set_scene_props(self._scene,
                     kaiserlich_rot_scale_thresh_rot=1.0,
-                    kaiserlich_rot_scale_thresh_scale=0.0)
+                    kaiserlich_rot_scale_thresh_scale=1.0)
+                self._rot_scale_phase = "rot"
             elif self._current_category == "perspective":
                 set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
 
