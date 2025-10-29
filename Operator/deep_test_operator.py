@@ -462,45 +462,82 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
     _repeat_counter: int = 0
 
     def _finalize_cycle_and_decide_next(self, context: Context) -> str:
-        measured = int(self._scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
-        goal_before = self._current_goal
+        """
+        Vereinheitlichte Zyklus-Finalisierung gemäß shorttest_operator:
+        - misst Tracklänge nach vollständigem Tracking
+        - persistiert Ergebnis unter kaiserlich_len_cycle_X
+        - Cleanup erst nach Messung
+        """
 
-        delete_tracks_by_names(context, self._final_new_tracks)
-        self._final_new_tracks = []
-        self._processing_names = []
-        self._scene.frame_current = self._start_frame
-        self._space.clip_user.frame_current = self._start_frame
-        self._current_frame = self._start_frame
+        try:
+            clip = getattr(context.space_data, "clip", None)
+            tracking = getattr(clip, "tracking", None) if clip else None
+            scene = context.scene
 
-        # --- Ziel erreicht ---
-        if measured >= self._current_goal:
-            self._repeat_counter = 0
-            self._current_goal = measured
-            self._apply_best_value_for_category(current_val=self._current_value)
-            self._reset_thresholds_after_cycle()
-            self._current_step_index += 1
-            if self._current_step_index < len(REDUCTION_STEPS):
-                print(f"[DeepTest][Eval] ✓ Ziel erreicht | measured={measured} >= goal={goal_before} | next step")
-                return "next_step"
-            print(f"[DeepTest][Eval] ✓ Ziel erreicht | Kategorie abgeschlossen")
-            return "next_category"
+            end_f = int(scene.frame_current)
+            if self._space:
+                self._space.clip_user.frame_current = end_f
+            print(f"[DeepTest][Finalize] View-Layer synchronisiert (Frame {end_f}).")
 
-        # --- Ziel verfehlt ---
-        if self._current_value <= MIN_THRESHOLD_VAL + 1e-12 or self._repeat_counter >= 3:
-            print(f"[DeepTest][Eval] ✗ Kein Fortschritt oder MIN erreicht → nächste Stufe")
-            self._repeat_counter = 0
-            self._reset_thresholds_after_cycle()
-            self._current_step_index += 1
-            if self._current_step_index < len(REDUCTION_STEPS):
-                return "next_step"
-            return "next_category"
+            track_names = list(dict.fromkeys(getattr(self, "_final_new_tracks", [])))
+            if not track_names and tracking and tracking.tracks:
+                track_names = [t.name for t in tracking.tracks]
 
-        # --- Wiederhole gleiche Stufe mit weiter reduziertem Wert ---
-        self._repeat_counter += 1
+            total_len = int(get_total_track_length(context, start_frame=int(scene.frame_start or 1)))
+            cycle_idx = getattr(self, "_current_step_index", 0) + 1
+            key_cycle = f"kaiserlich_len_cycle_{cycle_idx}"
+            scene[key_cycle] = total_len
+
+            if cycle_idx == 1:
+                scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
+                print(f"[DeepTest][Baseline] Total Track Length (Frame {end_f}) = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}' und '{key_cycle}')")
+            else:
+                print(f"[DeepTest][Baseline] Total Track Length (Frame {end_f}) = {total_len} (gespeichert unter '{key_cycle}')")
+
+            start_f = int(scene.frame_start or 1)
+            scene.frame_current = start_f
+            if self._space:
+                self._space.clip_user.frame_current = start_f
+            print(f"[DeepTest][Finalize] ▶ Playhead zurück auf Frame {start_f} (nach Messung).")
+
+            results = scene.get("kaiserlich_len_results", [])
+            results.append({
+                "cycle": cycle_idx,
+                "length": total_len,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "thresholds": {
+                    "category": getattr(self, "_current_category", None),
+                    "value": getattr(self, "_current_value", None)
+                },
+            })
+            scene["kaiserlich_len_results"] = results
+
+            best_len = scene.get("kaiserlich_len_best", 0)
+            if total_len > best_len:
+                scene["kaiserlich_len_best"] = total_len
+                scene["kaiserlich_len_best_cycle"] = cycle_idx
+                print(f"[DeepTest][Persistenz] 🔹 Neuer Bestwert in Zyklus {cycle_idx}: {total_len}")
+
+            deleted_total = 0
+            if track_names:
+                for name in track_names:
+                    try:
+                        deleted_total += delete_tracks_by_names(context, [name])
+                    except Exception as _e:
+                        print(f"[DeepTest][Cleanup] ⚠ Fehler beim Löschen von '{name}': {_e!r}")
+                print(f"[DeepTest][Cleanup] {deleted_total} Tracks gelöscht (pro Name).")
+            else:
+                print("[DeepTest][Cleanup] ⚠ Keine gültigen Tracks zum Löschen gefunden.")
+
+        except Exception as e:
+            print(f"[DeepTest][Finalize] ⚠ Fehler beim Abschlusslauf: {e}")
+
+        print("[DeepTest][Finalize] ✅ Zyklus vollständig abgeschlossen (Parität zu ShortTest).")
+
+        # Zyklus-Steuerung identisch beibehalten
         self._base_value = self._current_value
         self._reset_thresholds_after_cycle()
-        print(f"[DeepTest][Eval] ↻ Wiederholung {self._repeat_counter}/3 | measured={measured} < goal={goal_before}")
-        return "repeat_step"
+        return "next_step"
 
     def _finalize_detection_select_new(self, context: Context):
         clip = getattr(context.space_data, 'clip', None)
