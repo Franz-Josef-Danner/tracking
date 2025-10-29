@@ -137,19 +137,24 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             print(f"[DeepTest][InitDetect] ⚠️ Fallback – init_detect_state fehlgeschlagen: {_e!r}")
 
         # Zielwerte laden
+        # Zielwerte aus den Szenenvariablen ermitteln
         self._goal_map = {
             "rot_xy": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 0)),
             "scale": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 0)),
             "rot_scale": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 0)),
-            "perspective": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP4, 0))
+            "perspective": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP4, 0)),
         }
 
-        self._categories_queue = [k for k, v in self._goal_map.items() if v > 0]
+        # Nur Kategorien mit gesetztem Wert in die Queue aufnehmen
+        self._categories_queue = [cat for cat, val in self._goal_map.items() if val > 0]
+
         if not self._categories_queue:
-            self.report({'INFO'}, "Keine Zielwerte vorhanden – Test abgebrochen.")
+            print("[DeepTest] ❌ Keine Zielwerte gefunden – Abbruch.")
+            self.report({'INFO'}, "Keine aktiven Szenenwerte – DeepTest übersprungen.")
             return {'CANCELLED'}
 
-        print(f"[Kaiserlich Tracker][DeepTest] Start – Kategorien: {self._categories_queue}")
+        print(f"[Kaiserlich Tracker][DeepTest] Starte Test für Kategorien mit gesetzten Szenenwerten: {self._categories_queue}")
+
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
@@ -209,7 +214,8 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         print(f"\n[DeepTest][Category] → {self._current_category}")
         self._base_value = 1.0
         self._current_step_index = 0
-        self._current_goal = self._goal_map.get(self._current_category, 0)
+        # Vergleichslänge direkt aus Szenenwert der Kategorie
+        self._current_goal = int(self._goal_map.get(self._current_category, 0))
         self._best_thresholds[self._current_category] = 1.0
         self._pre_snapshot = snapshot_active_markers(context)
         self._baseline_start_tracknames = {t.name for t in self._clip.tracking.tracks}
@@ -404,16 +410,25 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         Rückgabe: True = Kategorie fertig, False = nächste Stufe derselben Kategorie.
         """
         total_len = int(self._track_state.total_len if self._track_state.total_len >= 0 else 0)
-        baseline_len = int(self._scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
-        print(f"[DeepTest][{self._current_category}] Track-Länge = {total_len}, Baseline = {baseline_len}")
+        compare_len = int(self._goal_map.get(self._current_category, 0))
+        print(f"[DeepTest][{self._current_category}] Track-Länge = {total_len}, Vergleich = {compare_len}")
 
         # ---- Bewertung -----------------------------------------------------
-        if total_len > self._current_goal:
-            print(f"[DeepTest][{self._current_category}] ✅ Ziel verbessert: {total_len} > {self._current_goal}")
+        if total_len > compare_len:
+            print(f"[DeepTest][{self._current_category}] ✅ Verbesserte Länge ({total_len} > {compare_len})")
             self._best_thresholds[self._current_category] = self._current_value
-            self._current_goal = total_len
+            # Szene-Wert aktualisieren auf neuen besten Wert
+            if self._current_category == "rot_xy":
+                self._scene[SCENE_TOTAL_TRACK_LEN_STEP1] = total_len
+            elif self._current_category == "scale":
+                self._scene[SCENE_TOTAL_TRACK_LEN_STEP2] = total_len
+            elif self._current_category == "rot_scale":
+                self._scene[SCENE_TOTAL_TRACK_LEN_STEP3] = total_len
+            elif self._current_category == "perspective":
+                self._scene[SCENE_TOTAL_TRACK_LEN_STEP4] = total_len
+            self._goal_map[self._current_category] = total_len
         else:
-            print(f"[DeepTest][{self._current_category}] Kein Zugewinn (aktuell {total_len} ≤ {self._current_goal}).")
+            print(f"[DeepTest][{self._current_category}] Kein Zugewinn ({total_len} ≤ {compare_len})")
 
         # ---- Vorbereitung nächste Stufe -----------------------------------
         self._base_value = self._current_value
