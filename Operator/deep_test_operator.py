@@ -416,13 +416,19 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             print(f"[DeepTest][Track] ✅ Keine aktiven Tracks mehr bei Frame {ts.current}")
             return self._track_finish(context)
 
-        # 2) Einen Frame tracken
+        # 2) Formel anwenden (ShortTest-Parität)
+        try:
+            apply_formula_on_selected_tracks(context, max_frames=5)
+        except Exception as e:
+            print(f"[DeepTest][Track] ⚠️ Formel-Fehler: {e!r}")
+
+        # 3) Einen Frame tracken
         ok = track_markers_with_override(window, area, region, space, backwards=False, sequence=False)
         if not ok:
             print("[DeepTest][Track] ⚠️ Tracking-Fehler – Abbruch.")
             return self._track_finish(context)
 
-        # 3) Nächster Frame / Ende prüfen
+        # 4) Nächster Frame / Ende prüfen
         ts.current += 1
         if ts.current > ts.end:
             print("[DeepTest][Track] ✅ Szenenende erreicht.")
