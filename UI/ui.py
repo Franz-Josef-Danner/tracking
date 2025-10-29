@@ -42,6 +42,8 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         # --- Rotation Thresholds ---
         layout.label(text="Rotation Thresholds")
         col = layout.column(align=True)
+        col.use_property_split = True
+        col.use_property_decorate = False
         col.prop(scene, "kaiserlich_rot_thresh_x", text="ΔX-Threshold")
         col.prop(scene, "kaiserlich_rot_thresh_y", text="ΔY-Threshold")
 
@@ -50,6 +52,8 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         # --- Scale Thresholds ---
         layout.label(text="Scale Thresholds")
         col = layout.column(align=True)
+        col.use_property_split = True
+        col.use_property_decorate = False
         col.prop(scene, "kaiserlich_scale_thresh_min", text="Min Scale Δ")
         col.prop(scene, "kaiserlich_scale_thresh_max", text="Max Scale Δ")
 
@@ -58,6 +62,8 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         # --- LocRotScale Thresholds ---
         layout.label(text="LocRotScale Thresholds")
         col = layout.column(align=True)
+        col.use_property_split = True
+        col.use_property_decorate = False
         col.prop(scene, "kaiserlich_rot_scale_thresh_rot", text="Rot+Scale ΔRot")
         col.prop(scene, "kaiserlich_rot_scale_thresh_scale", text="Rot+Scale ΔScale")
 
@@ -66,6 +72,8 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         # --- Perspective Thresholds ---
         layout.label(text="Perspective Thresholds")
         col = layout.column(align=True)
+        col.use_property_split = True
+        col.use_property_decorate = False
         col.prop(scene, "kaiserlich_perspective_thresh", text="Perspective Δ")
 
 # ==========================================================
