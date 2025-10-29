@@ -1,4 +1,4 @@
-# shorttest_operator.py
+# deep_test_operator.py
 import bpy
 import time
 import math
@@ -82,10 +82,10 @@ class _AutoCalibState:
     cycle_thresholds: Dict[int, Dict[str, float]] = field(default_factory=dict)
 
 
-class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
+class KAISERLICHTRACKER_OT_deep_test_operator(bpy.types.Operator):
     """Kaiserlich Tracker — Auto Calibrate (komplette Pipeline, nicht-blockierend)"""
-    bl_idname = "kaiserlich_tracker.shorttest_operator"
-    bl_label = "Kaiserlich Tracker — Auto Calibrate"
+    bl_idname = "kaiserlich_tracker.Deep Test Operator"
+    bl_label = "Kaiserlich Tracker — Deep Test Operator"
     bl_options = {'REGISTER', 'UNDO'}
 
     _timer: Optional[Any] = None
@@ -744,7 +744,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
 #  Registration
 # ----------------------------------------------------------------------------
 
-_classes = (KAISERLICHTRACKER_OT_shorttest_operator,)
+_classes = (KAISERLICHTRACKER_OT_deep_test_operator,)
 
 def register():
     for cls in _classes:
