@@ -541,6 +541,8 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         self._state.track_frame_end = end_frame
         self._state.track_frame_current = max(start_frame, int(scene.frame_current))
 
+        # Gesamtanzahl speichern für 75%-Abbruchbedingung
+        self._state.track_total_count = len(original_selected)
         # Frame sync
         space.clip_user.frame_current = self._state.track_frame_current
         scene.frame_current = self._state.track_frame_current
@@ -583,6 +585,15 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         if dropped > 0:
             print(f"[TrackCycle] {dropped} inaktive Tracks entfernt → {len(active_tracks)} verbleibend.")
 
+        # --- Abbruchbedingung: 75% der Tracks inaktiv ---
+        total_initial = getattr(s, "track_total_count", len(active_tracks))
+        active_now = len(active_tracks)
+        if total_initial > 0:
+            inactive_ratio = 1.0 - (active_now / total_initial)
+            if inactive_ratio >= 0.75:
+                print(f"[TrackCycle] ⏹️ 75% der Tracks inaktiv ({inactive_ratio*100:.1f}%) – Tracking beendet.")
+                s.track_active = False
+                return False
         # --- 2) Formel anwenden (optional) ----------------------------------
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
