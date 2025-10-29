@@ -77,7 +77,7 @@ class _AutoCalibState:
     fourth_cycle: bool = False
     # Fünfter Zyklus: Perspective-Test (perspective_thresh = 0)
     fifth_cycle: bool = False
-    # Speichert pro Zyklus die verwendeten Schwellenwerte, z. B. {2: {"kaiserlich_rot_thresh_x": 0.0, ...}}
+    # Speichert pro Zyklus die verwendeten Schwellenwerte, z. B. {2: {"kaiserlich_rot_thresh_x": 0.00001, ...}}
     cycle_thresholds: Dict[int, Dict[str, float]] = field(default_factory=dict)
 
 
@@ -193,16 +193,16 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                     # Setze Rot-Schwellenwerte (X/Y) auf 0,0
                     print("[Kaiserlich Tracker][AutoCalibrate] Rot-Schwellwerte auf 0 gesetzt.")
                     set_scene_props(context.scene,
-                                    kaiserlich_rot_thresh_x=0.0,
-                                    kaiserlich_rot_thresh_y=0.0)
+                                    kaiserlich_rot_thresh_x=0.00001,
+                                    kaiserlich_rot_thresh_y=0.00001)
                 except Exception as ex:
                     print(f"[AutoCalibrate] Fehler beim Setzen der Rot-Schwellenwerte: {ex!r}")
                 # Flags setzen, um zweiten Detect-/Track‑Durchlauf zu initiieren
                 self._state.second_cycle = True
                 # Merke die in diesem Durchlauf verwendeten Schwellenwerte
                 self._state.cycle_thresholds[2] = {
-                    'kaiserlich_rot_thresh_x': 0.0,
-                    'kaiserlich_rot_thresh_y': 0.0,
+                    'kaiserlich_rot_thresh_x': 0.00001,
+                    'kaiserlich_rot_thresh_y': 0.00001,
                 }
                 # Detect-Adapt und Track-Cycle erneut ausführen
                 self._state.did_detect_adapt = False
@@ -213,20 +213,20 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             # Wenn der zweite Durchlauf bereits erledigt ist, aber noch kein dritter:
             if self._state.second_cycle and not self._state.third_cycle:
                 try:
-                    # Setze alle Thresholds auf 1.0 zurück und Scale-Min/Max auf 0.0
-                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Scale-Min/Max auf 0.0.")
+                    # Setze alle Thresholds auf 1.0 zurück und Scale-Min/Max auf 0.00001
+                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Scale-Min/Max auf 0.00001.")
                     reset_all_thresholds(context, active_props=[])
                     set_scene_props(context.scene,
-                                    kaiserlich_scale_thresh_min=0.0,
-                                    kaiserlich_scale_thresh_max=0.0)
+                                    kaiserlich_scale_thresh_min=0.00001,
+                                    kaiserlich_scale_thresh_max=0.00001)
                 except Exception as ex:
                     print(f"[AutoCalibrate] Fehler beim Zurücksetzen der Thresholds: {ex!r}")
                 # Flags setzen, um dritten Detect-/Track‑Durchlauf zu initiieren
                 self._state.third_cycle = True
                 # Merke die in diesem Durchlauf verwendeten Schwellenwerte
                 self._state.cycle_thresholds[3] = {
-                    'kaiserlich_scale_thresh_min': 0.0,
-                    'kaiserlich_scale_thresh_max': 0.0,
+                    'kaiserlich_scale_thresh_min': 0.00001,
+                    'kaiserlich_scale_thresh_max': 0.00001,
                 }
                 self._state.did_detect_adapt = False
                 self._state.detect_adapt_done_confirmed = False
@@ -236,19 +236,19 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             # Wenn der dritte Durchlauf bereits erledigt ist, aber noch kein vierter:
             if self._state.third_cycle and not getattr(self._state, 'fourth_cycle', False):
                 try:
-                    # Setze alle Thresholds auf 1.0 zurück und Rot-Scale-Paar auf 0.0
-                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Rot-Scale (rot/scale) auf 0.0.")
+                    # Setze alle Thresholds auf 1.0 zurück und Rot-Scale-Paar auf 0.00001
+                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Rot-Scale (rot/scale) auf 0.00001.")
                     reset_all_thresholds(context, active_props=[])
                     set_scene_props(context.scene,
-                                    kaiserlich_rot_scale_thresh_rot=0.0,
-                                    kaiserlich_rot_scale_thresh_scale=0.0)
+                                    kaiserlich_rot_scale_thresh_rot=0.00001,
+                                    kaiserlich_rot_scale_thresh_scale=0.00001)
                 except Exception as ex:
                     print(f"[AutoCalibrate] Fehler beim Zurücksetzen der Thresholds für 4. Durchlauf: {ex!r}")
                 # Flag setzen und Schwellenwerte merken
                 self._state.fourth_cycle = True
                 self._state.cycle_thresholds[4] = {
-                    'kaiserlich_rot_scale_thresh_rot': 0.0,
-                    'kaiserlich_rot_scale_thresh_scale': 0.0,
+                    'kaiserlich_rot_scale_thresh_rot': 0.00001,
+                    'kaiserlich_rot_scale_thresh_scale': 0.00001,
                 }
                 # Detect-Adapt und Track-Cycle erneut ausführen
                 self._state.did_detect_adapt = False
@@ -259,17 +259,17 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             # Wenn der vierte Durchlauf bereits erledigt ist, aber noch kein fünfter:
             if getattr(self._state, 'fourth_cycle', False) and not getattr(self._state, 'fifth_cycle', False):
                 try:
-                    # Setze alle Thresholds auf 1.0 zurück und Perspective-Thresh auf 0.0
-                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Perspective-Thresh auf 0.0.")
+                    # Setze alle Thresholds auf 1.0 zurück und Perspective-Thresh auf 0.00001
+                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Perspective-Thresh auf 0.00001.")
                     reset_all_thresholds(context, active_props=[])
                     set_scene_props(context.scene,
-                                    kaiserlich_perspective_thresh=0.0)
+                                    kaiserlich_perspective_thresh=0.00001)
                 except Exception as ex:
                     print(f"[AutoCalibrate] Fehler beim Zurücksetzen der Thresholds für 5. Durchlauf: {ex!r}")
                 # Flag setzen und Schwellenwerte merken
                 self._state.fifth_cycle = True
                 self._state.cycle_thresholds[5] = {
-                    'kaiserlich_perspective_thresh': 0.0,
+                    'kaiserlich_perspective_thresh': 0.00001,
                 }
                 # Detect-Adapt und Track-Cycle erneut ausführen
                 self._state.did_detect_adapt = False
@@ -629,13 +629,13 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
     # Hilfsmethode: Rot-Schwellenwerte auf 0 setzen
     # ------------------------------------------------------------------------
     def _set_rot_thresholds_zero(self, context: bpy.types.Context) -> None:
-        """Setzt die Rot-Schwellenwerte (X und Y) auf 0.0.
+        """Setzt die Rot-Schwellenwerte (X und Y) auf 0.00001.
         Dies nutzt util_scene.set_scene_props, um die Szene-Attribute sicher zu setzen.
         """
         scene = context.scene
         try:
             # Verwende set_scene_props, um die Attribute zu setzen, falls verfügbar.
-            set_scene_props(scene, kaiserlich_rot_thresh_x=0.0, kaiserlich_rot_thresh_y=0.0)
+            set_scene_props(scene, kaiserlich_rot_thresh_x=0.00001, kaiserlich_rot_thresh_y=0.00001)
             print("[Kaiserlich Tracker][AutoCalibrate] Rot-Schwellwerte auf 0 gesetzt.")
         except Exception as ex:
             print(f"[AutoCalibrate] Fehler beim Setzen der Rot-Schwellwerte auf 0: {ex!r}")
