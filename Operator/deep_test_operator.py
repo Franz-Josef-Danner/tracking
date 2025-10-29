@@ -16,7 +16,7 @@ from ..Helper.delete import delete_tracks_by_names
 from ..Helper.detect import detect_features
 from ..Helper.cleaneup import cleanup_new_markers
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
-from ..Helper.detect_config import adjust_min_distance
+from ..Helper.init_detect_state import init_detect_state
 
 # ---- Szenen-Keys (Zielwerte pro Kategorie) ---------------------------------
 SCENE_TOTAL_TRACK_LEN_BASE  = "kaiserlich_len_baseline_00"
@@ -125,15 +125,18 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         if not self._window:
             self.report({'ERROR'}, "Kein CLIP_EDITOR-Kontext gefunden.")
             return {'CANCELLED'}
-
-        from ..Helper.detect_config import get_detect_params
-        params = get_detect_params(context)
-        self._hz, self._vc = params["hz"], params["vc"]
-        self._margin = params["margin"]
-        self._pattern_size = params["pattern_size"]
-        self._search_size = params["search_size"]
-        self._threshold_detect = params["threshold"]
-        self._last_md = params["min_distance"]
+        
+        # --- Einheitliche Initialisierung über Helper ---
+        state = init_detect_state(context)
+        self._hz = state["hz"]
+        self._vc = state["vc"]
+        self._margin = state["margin"]
+        self._pattern_size = state["pattern_size"]
+        self._search_size = state["search_size"]
+        self._threshold_detect = state["threshold"]
+        self._last_md = state["min_distance"]
+        self._pre_snapshot = state["snapshot"]
+        self._baseline_start_tracknames = state["baseline_tracks"]
 
 
         self._ef_target = int(self._scene.kaiserlich_markers_per_frame)
@@ -144,10 +147,6 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         self._current_frame = max(self._start_frame, int(self._scene.frame_current))
         self._space.clip_user.frame_current = self._current_frame
         self._scene.frame_current = self._current_frame
-
-        self._pre_snapshot = snapshot_active_markers(context)
-        self._baseline_start_tracknames = {t.name for t in self._clip.tracking.tracks}
-        self._last_md = self._hz * 0.025
 
         self._goal_step1 = int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 0))
         self._goal_step2 = int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 0))
