@@ -21,6 +21,9 @@ from ..Helper.track_markers_helper import track_markers_with_override
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ..Helper.util_scene import set_scene_props
 from ..Helper.init_detect_state import init_detect_state
+from ..Helper.reset_helper import reset_all_thresholds
+from ..Helper.selection_helper import collect_selected_track_names
+from ..Helper.formula_helper import apply_formula_on_selected_tracks
 
 # ---- Szenen-Keys ------------------------------------------------------------
 SCENE_TOTAL_TRACK_LEN_BASE  = "kaiserlich_len_baseline_00"
@@ -117,6 +120,13 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         self._current_frame = max(self._start_frame, int(self._scene.frame_current))
         self._space.clip_user.frame_current = self._current_frame
         self._scene.frame_current = self._current_frame
+
+        # Thresholds global auf 1.0 zurücksetzen (ShortTest-Parität)
+        try:
+            reset_all_thresholds(context, active_props=[])
+            print("[DeepTest][Init] Alle Thresholds auf 1.0 zurückgesetzt.")
+        except Exception as e:
+            print(f"[DeepTest][Init] ⚠️ Threshold-Reset fehlgeschlagen: {e!r}")
         # Detect-Parameter initialisieren (wie im Shorttest)
         try:
             _state = init_detect_state(context)
@@ -278,27 +288,63 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
               f"{next_val:.6f} (×{step_factor})")
     
         # ---- Detect (UI-non-blocking bleibt gewahrt) ---------------------------
-        # Parität zum Shorttest: placement='FRAME', margin, threshold, min_distance (framebasiert)
-        try:
-            md_int = int(max(1, round(self._last_md)))
-            print(f"[DeepTest][{self._current_category}] → Detect gestartet | margin={self._margin}, "
-                  f"threshold={self._threshold}, min_distance={md_int}, pattern={self._pattern_size}, search={self._search_size}")
+        # ---- DetectAdapt-Parität (komplette Schleife aus ShortTest) ----------
+        ef_target = int(self._scene.kaiserlich_markers_per_frame)
+        tolerance = ef_target * 0.10
+        last_md = float(self._last_md)
+
+        pre_snapshot = snapshot_active_markers(context)
+        baseline_names = {t.name for t in self._clip.tracking.tracks}
+
+        reached = False
+        for loop in range(self._detect_loop_max):
+            print(f"\n[DeepTest][DetectAdapt] --- LOOP {loop+1} ---")
+            print(f"[DeepTest][DetectAdapt] Aktuelles min_distance = {last_md:.2f}")
             detect_features(
                 context,
                 placement='FRAME',
                 margin=self._margin,
                 threshold=self._threshold,
-                min_distance=md_int
+                min_distance=int(max(1, round(last_md)))
             )
-        except Exception as e:
-            print(f"[DeepTest][{self._current_category}] ⚠️ Fehler bei detect_features: {e!r}")
- 
-    
-        # Cleanup, Snapshot und Marker-Update bleiben identisch
-        post_snapshot = snapshot_active_markers(context)
-        alte, neue = classify_markers(self._pre_snapshot, post_snapshot)
-        cleanup_new_markers(context, alte, neue, pz=50, hz=self._hz, vc=self._vc)
-        self._final_new_tracks = [m['track'] for m in neue]
+            post_snapshot = snapshot_active_markers(context)
+            alte, neue = classify_markers(pre_snapshot, post_snapshot)
+            cleaned_new, _ = cleanup_new_markers(context, alte, neue, pz=self._pattern_size, hz=self._hz, vc=self._vc)
+            remaining = len(cleaned_new)
+            diff = remaining - ef_target
+
+            print(f"[DeepTest][DetectAdapt] {remaining} Marker → Ziel {ef_target} (±{tolerance:.0f})")
+            if abs(diff) <= tolerance:
+                print("[DeepTest][DetectAdapt] ✅ Ziel erreicht")
+                reached = True
+                break
+
+            # Adaptive Anpassung min_distance (wie ShortTest)
+            am = len(cleaned_new)
+            if am > 0:
+                ratio = ef_target / am
+                factor = max(0.5, min(2.0, ratio))
+                last_md = max(1.0, last_md / factor)
+            else:
+                last_md *= 1.5
+
+            if loop < self._detect_loop_max - 1:
+                delete_tracks_by_names(context, [m['track'] for m in neue])
+                time.sleep(0.05)
+
+        self._last_md = last_md
+        print(f"[DeepTest][DetectAdapt] Final min_distance = {self._last_md:.2f}")
+
+        # Finale Marker selektieren
+        self._final_new_tracks = [m['track'] for m in cleaned_new]
+        for trk in getattr(self._clip.tracking, "tracks", []):
+            trk.select = (trk.name in self._final_new_tracks)
+
+        # View-Layer synchronisieren (ShortTest-Parität)
+        try:
+            bpy.context.view_layer.update()
+        except:
+            pass
     
         # ---- Tracking (nicht-blockierend) -------------------------------------
         self._track_start(context)          # Initialisierung des tick-basierten Trackings
@@ -391,15 +437,27 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         ts = self._track_state
         ts.active = False
         try:
+            # View-Layer-Sync wie ShortTest
+            bpy.context.view_layer.update()
+            # Formel anwenden (ShortTest-Parität)
+            apply_formula_on_selected_tracks(context, max_frames=5)
+            # Länge messen
             ts.total_len = int(get_total_track_length(context, start_frame=self._start_frame))
         except Exception as e:
             print(f"[DeepTest][Track] ⚠️ Messfehler: {e!r}")
             ts.total_len = 0
+
         print(f"[DeepTest][Track] ✅ Tracking abgeschlossen – Gesamtlänge = {ts.total_len}")
+
+        # Playhead zurücksetzen
+        reset_to_frame(context, self._start_frame)
+
+        # Temporäre Tracks löschen
         try:
             delete_tracks_by_names(context, self._final_new_tracks)
         except Exception as e:
             print(f"[DeepTest][Track] ⚠️ Fehler beim Löschen: {e!r}")
+
         return False
 
     # -------------------------------------------------------------------------
