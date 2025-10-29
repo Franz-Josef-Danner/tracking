@@ -647,34 +647,40 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         tracking = getattr(clip, "tracking", None) if clip else None
 
         try:
-            # 1) Playhead sicher auf Ursprungs-Frame fixieren
+            # 1) Letzten aktiven Frame sichern (DeepTest-kompatibel)
+            end_f = int(self._state.track_frame_current or context.scene.frame_current)
+            scene = context.scene
+            scene.frame_current = end_f
+            if self._state.track_space:
+                self._state.track_space.clip_user.frame_current = end_f
+
+            # Sicherstellen, dass View-Layer den letzten Tracking-Status widerspiegelt
+            try:
+                bpy.context.view_layer.update()
+                print(f"[TrackCycle] View-Layer synchronisiert (Frame {end_f}).")
+            except Exception as ex:
+                print(f"[TrackCycle] ⚠️ View-Layer-Update fehlgeschlagen: {ex!r}")
+
+            # 2) Gesamt-Track-Länge der verbleibenden Tracks messen, bevor irgendetwas gelöscht wird
+            total_len = int(get_total_track_length(context, start_frame=int(self._state.track_start_frame or 1)))
+            cycle_idx = int(getattr(self._state, "track_cycles_done", 0)) + 1
+            key_cycle = f"kaiserlich_len_cycle_{cycle_idx}"
+            scene[key_cycle] = total_len
+
+            # Baseline im ersten Zyklus zusätzlich speichern (wie bisher)
+            if cycle_idx == 1:
+                scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
+                print(f"[Kaiserlich Tracker][Baseline] Total Track Length (Frame {end_f}) = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}' und '{key_cycle}')")
+            else:
+                print(f"[Kaiserlich Tracker][Baseline] Total Track Length (Frame {end_f}) = {total_len} (gespeichert unter '{key_cycle}')")
+
+            # 3) Danach Playhead optional zurücksetzen (nicht mehr vor der Messung)
             start_f = int(self._state.track_start_frame or 1)
             reset_to_frame(context, start_f)
             context.scene.frame_current = start_f
             if self._state.track_space:
                 self._state.track_space.clip_user.frame_current = start_f
-            # DeepTest-Gleichstand: View-Layer-Update erzwingen, damit alle Marker-Visibility synchronisiert ist
-            try:
-                bpy.context.view_layer.update()
-                print("[TrackCycle] View-Layer synchronisiert (DeepTest-Gleichstand).")
-            except Exception as ex:
-                print(f"[TrackCycle] ⚠️ View-Layer-Update fehlgeschlagen: {ex!r}")
-            print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead fixiert auf Frame {start_f}.")
-
-            # 2) Gesamt-Track-Länge der verbleibenden (alten) Tracks speichern
-            scene = context.scene
-            total_len = int(get_total_track_length(context, start_frame=start_f))
-            # Zyklusindex berechnen: track_cycles_done wird erst nach Aufruf dieser
-            # Methode erhöht. Daher +1, um den aktuellen Durchgang korrekt zu nummerieren.
-            cycle_idx = int(getattr(self._state, "track_cycles_done", 0)) + 1
-            key_cycle = f"kaiserlich_len_cycle_{cycle_idx}"
-            scene[key_cycle] = total_len
-            if cycle_idx == 1:
-                # Baseline zusätzlich unter dem traditionellen Schlüssel speichern
-                scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
-                print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}' und '{key_cycle}')")
-            else:
-                print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{key_cycle}')")
+            print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead zurück auf Frame {start_f} (nach Messung).")
 
             # Start-Frame-Konsistenz erzwingen (DeepTest-Parität)
             scene.frame_current = scene.frame_start
