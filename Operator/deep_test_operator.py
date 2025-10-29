@@ -347,17 +347,28 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             set_scene_props(self._scene, kaiserlich_perspective_thresh=next_val)
             self._current_value = next_val
 
-        # Detect-Loop zurücksetzen
-        self._pre_snapshot = snapshot_active_markers(context)
-        self._baseline_start_tracknames = {t.name for t in self._clip.tracking.tracks}
+        # Detect-Loop zurücksetzen (ShortTest-kompatibel)
+        # Wenn Marker vom letzten Zyklus vorhanden sind, zuerst vollständig löschen
+        if self._clip and getattr(self._clip, "tracking", None):
+            all_names = [t.name for t in self._clip.tracking.tracks]
+            if all_names:
+                delete_tracks_by_names(context, all_names)
+                print(f"[DeepTest][CycleInit] Alte Marker/Tracks entfernt → {len(all_names)} gelöscht.")
+
+        # Snapshot- und Baseline-Struktur wie im ShortTest initialisieren
+        self._pre_snapshot = []
+        self._baseline_start_tracknames = set()
         self._detect_loop = 0
         self._final_new_tracks = []
         self._last_new_names = []
         self._deleted_old_total = 0
-        self._last_md = self._load_or_interpolate_md_for_frame(self._scene, self._current_frame, self._hz * 0.025)
+        self._last_md = self._load_or_interpolate_md_for_frame(
+            self._scene, self._current_frame, self._hz * 0.025
+        )
 
         print(f"[DeepTest][Cycle] {self._current_category} | step={self._current_step_index+1}/{len(REDUCTION_STEPS)} "
               f"| base={self._base_value:.6f} → curr={self._current_value:.6f} (×{step_factor}) | goal={self._current_goal}")
+
 
     # ------------------------ DetectAdapt (1 Iteration pro TIMER) ------------------------
 
@@ -372,11 +383,20 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         print(f"\n[Kaiserlich Tracker][DetectAdapt] --- LOOP {loop} ---")
         print(f"[Kaiserlich Tracker][DetectAdapt] Aktuelles min_distance = {self._last_md:.2f}")
 
-        # Snapshot vor Detect
-        pre_snapshot = snapshot_active_markers(context)
+        # Snapshot-Reset beim ersten Detect-Loop (ShortTest-kompatibel)
         clip = getattr(context.space_data, "clip", None)
         tracking = getattr(clip, "tracking", None) if clip else None
-        baseline_start_tracknames: Set[str] = {t.name for t in tracking.tracks} if tracking else set()
+
+        if loop == 1:
+            # Vor erstem Detect: alle evtl. verbliebenen Marker löschen und Snapshot leeren
+            if tracking and tracking.tracks:
+                delete_tracks_by_names(context, [t.name for t in tracking.tracks])
+                print(f"[DeepTest][DetectInit] Vor Loop-1: Alte Marker vollständig gelöscht.")
+            pre_snapshot = []
+            baseline_start_tracknames = set()
+        else:
+            pre_snapshot = snapshot_active_markers(context)
+            baseline_start_tracknames = {t.name for t in tracking.tracks} if tracking else set()
 
         # Detect ausführen
         detect_features(
