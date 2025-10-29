@@ -396,6 +396,8 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             active_names=active_names,
             total_len=-1
         )
+        # Gesamtanzahl speichern für Abbruchbedingung (75%-Regel)
+        self._track_state.start_count = len(active_names)
         print(f"[DeepTest][Track] ▶️ Start {start_frame} → {end_frame} | {len(active_names)} Tracks aktiv")
 
     def _track_tick(self, context) -> bool:
@@ -415,6 +417,15 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         if not ts.active_names:
             print(f"[DeepTest][Track] ✅ Keine aktiven Tracks mehr bei Frame {ts.current}")
             return self._track_finish(context)
+
+        # --- Abbruchbedingung: 75% der Tracks inaktiv ---
+        total_initial = getattr(ts, "start_count", len(ts.active_names))
+        active_now = len(ts.active_names)
+        if total_initial > 0:
+            inactive_ratio = 1.0 - (active_now / total_initial)
+            if inactive_ratio >= 0.75:
+                print(f"[DeepTest][Track] ⏹️ 75% der Tracks inaktiv ({inactive_ratio*100:.1f}%) – Tracking beendet.")
+                return self._track_finish(context)
 
         # 2) Formel anwenden (ShortTest-Parität)
         try:
