@@ -16,6 +16,7 @@ from ..Helper.delete import delete_tracks_by_names
 from ..Helper.detect import detect_features
 from ..Helper.cleaneup import cleanup_new_markers
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
+from ..Helper.detect_config import adjust_min_distance
 
 # ---- Szenen-Keys (Zielwerte pro Kategorie) ---------------------------------
 SCENE_TOTAL_TRACK_LEN_BASE  = "kaiserlich_len_baseline_00"
@@ -125,14 +126,15 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             self.report({'ERROR'}, "Kein CLIP_EDITOR-Kontext gefunden.")
             return {'CANCELLED'}
 
-        self._hz, self._vc = self._clip.size
-        self._ratio_xy = (self._hz / self._vc) if self._vc else 1.0
+        from ..Helper.detect_config import get_detect_params
+        params = get_detect_params(context)
+        self._hz, self._vc = params["hz"], params["vc"]
+        self._margin = params["margin"]
+        self._pattern_size = params["pattern_size"]
+        self._search_size = params["search_size"]
+        self._threshold_detect = params["threshold"]
+        self._last_md = params["min_distance"]
 
-        ts = getattr(self._clip, "tracking", None).settings if getattr(self._clip, "tracking", None) else None
-        self._margin = getattr(ts, "margin", 100) if ts else 100
-        self._pattern_size = getattr(ts, "pattern_size", 50) if ts else 50
-        self._search_size = getattr(ts, "search_size", 100) if ts else 100
-        self._threshold_detect = 0.0001
 
         self._ef_target = int(self._scene.kaiserlich_markers_per_frame)
         self._tolerance = max(1.0, self._ef_target * 0.10)
