@@ -356,23 +356,13 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             hz = params.get('hz', 1)
             vc = params.get('vc', False)
         else:
-            clip = getattr(context.space_data, "clip", None)
-            if clip is None:
-                raise RuntimeError("Kein aktiver Clip verfügbar (Fallback fehlgeschlagen).")
-
-            hz = clip.size[0]
-            vc = clip.size[1]
-
-            scene_obj = getattr(context, "scene", None)
-            frame_end = scene_obj.frame_end if scene_obj else None
-
-            tracking_settings = getattr(clip.tracking, "settings", None)
-            ma = getattr(tracking_settings, "margin", 100) if tracking_settings else 100
-            pz = getattr(tracking_settings, "pattern_size", 50) if tracking_settings else 50
-            sz = getattr(tracking_settings, "search_size", 100) if tracking_settings else 100
-
-            md = hz * 0.025
-            tr = 0.0001
+            from ..Helper.detect_config import get_detect_params, adjust_min_distance
+            
+            params = get_detect_params(context)
+            hz, vc = params["hz"], params["vc"]
+            ma, pz, sz = params["margin"], params["pattern_size"], params["search_size"]
+            tr = params["threshold"]
+            md = params["min_distance"]
             za = ef_target * 4
             og = math.ceil(za * 1.1)
             ug = math.floor(za * 0.9)
