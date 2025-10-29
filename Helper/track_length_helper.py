@@ -1,26 +1,6 @@
 from __future__ import annotations
 import bpy
-from typing import List, Tuple
-
-def _segments_from_frames(frames: List[int]) -> List[Tuple[int, int, int]]:
-    """
-    Wandelt eine sortierte Frameliste in Segmente um.
-    Rückgabe: Liste aus (seg_start, seg_end, seg_len).
-    """
-    if not frames:
-        return []
-    segs: List[Tuple[int, int, int]] = []
-    seg_start = frames[0]
-    prev = frames[0]
-    for f in frames[1:]:
-        if f - prev > 1:
-            segs.append((seg_start, prev, prev - seg_start + 1))
-            seg_start = f
-        prev = f
-    # letztes Segment
-    segs.append((seg_start, prev, prev - seg_start + 1))
-    return segs
-
+from typing import List
 
 def get_total_track_length(
     context: bpy.types.Context,
@@ -30,9 +10,11 @@ def get_total_track_length(
     log_prefix: str = "[Kaiserlich Tracker][TrackLen]"
 ) -> int:
     """
-    Ermittelt die Gesamt-Trackinglänge über alle Tracks (segmentbasiert).
-    Optional mit ausführlichem Log pro Track und Gesamtsumme.
+    Ermittelt die Gesamtanzahl aller aktiven Marker über alle Tracks.
+    Jeder Frame, an dem ein Marker existiert, zählt als 1.
+    Segmente werden ignoriert, es wird rein die Anzahl aktiver Marker summiert.
     """
+
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
         if log:
@@ -58,29 +40,24 @@ def get_total_track_length(
     total_length = 0
     tracked_tracks = 0
 
-    # === Hauptlogik: Segmentbasierte Längenberechnung inkl. Logs ===
+    # === Hauptlogik: Aktive Marker zählen ===
     for tr in tracks:
-        # Marker ab Start-Frame
-        marker_frames = sorted([mk.frame for mk in tr.markers if mk.frame >= start_frame])
+        # Nur Marker ab Start-Frame zählen
+        marker_frames = [mk.frame for mk in tr.markers if mk.frame >= start_frame]
         if not marker_frames:
             if log:
                 print(f"{log_prefix} Track '{tr.name}': keine Marker ≥ {start_frame} → skip")
             continue
 
-        segs = _segments_from_frames(marker_frames)
-        seg_sum = sum(seg_len for _, _, seg_len in segs)
-        total_length += seg_sum
+        count_active = len(marker_frames)
+        total_length += count_active
         tracked_tracks += 1
 
         if log:
-            # Segmente kompakt loggen: "a-b(len)"
-            seg_str = ", ".join([f"{a}-{b}({l})" for (a, b, l) in segs])
-            print(
-                f"{log_prefix} Track '{tr.name}': Segmente=[{seg_str}] | Sum={seg_sum}"
-            )
+            print(f"{log_prefix} Track '{tr.name}': {count_active} aktive Marker gezählt")
 
     if log:
         print(f"{log_prefix} Ausgewertete Tracks: {tracked_tracks}")
-        print(f"{log_prefix} Gesamt-Länge (ab Frame {start_frame}): {total_length}")
+        print(f"{log_prefix} Gesamtanzahl aktiver Marker (ab Frame {start_frame}): {total_length}")
 
     return total_length
