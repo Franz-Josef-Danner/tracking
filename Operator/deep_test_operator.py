@@ -419,14 +419,12 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             self._store_md_with_interpolation(self._scene, self._current_frame, self._last_md)
             return True
 
-        if am > 0:
-            ratio = self._ef_target / am
-            factor = max(0.5, min(2.0, ratio))
-            new_md = self._last_md / factor
-            self._last_md = max(1.0, new_md)
-        else:
-            self._last_md = self._last_md * 1.5
-            print("[Kaiserlich Tracker][DetectAdapt] Keine neuen Marker, erhöhe min_distance stark")
+        # --- Einheitliche adaptive Anpassung via Helper --------------------------
+        from ..Helper.detect_config import adjust_min_distance
+        old_md = self._last_md
+        self._last_md = adjust_min_distance(self._last_md, self._ef_target, am)
+        print(f"[Kaiserlich Tracker][DetectAdapt] Anpassung min_distance: {old_md:.2f} → {self._last_md:.2f}")
+
 
         if loop < self._detect_loop_max:
             self._last_new_names = [m['track'] for m in neue_marker]
