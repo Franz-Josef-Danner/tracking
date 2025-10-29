@@ -267,12 +267,17 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             set_scene_props(self._scene, kaiserlich_scale_thresh_max=1.0)
             self._base_value = 1.0
         elif self._current_category == "rot_scale_rot":
-            set_scene_props(self._scene, kaiserlich_rot_scale_thresh_scale=0.0,
-                            kaiserlich_rot_scale_thresh_rot=0.0)
-            self._base_value = 0.0
-        elif self._current_category == "rot_scale_scale":
-            set_scene_props(self._scene, kaiserlich_rot_scale_thresh_rot=0.0,
-                            kaiserlich_rot_scale_thresh_scale=1.0)
+            # Start: rot wird getestet (1.0), scale bleibt fix 0.0
+            set_scene_props(self._scene,
+                            kaiserlich_rot_scale_thresh_rot=1.0,
+                            kaiserlich_rot_scale_thresh_scale=0.0)
+            self._base_value = 1.0
+        elif self._current_category == "rot_scale_rot":
+            # Reset auf Anfangszustand der Kategorie:
+            # rot = 1.0 (wird getestet), scale = 0.0 (fix)
+            set_scene_props(self._scene,
+                            kaiserlich_rot_scale_thresh_rot=1.0,
+                            kaiserlich_rot_scale_thresh_scale=0.0)
             self._base_value = 1.0
         elif self._current_category == "perspective":
             set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
