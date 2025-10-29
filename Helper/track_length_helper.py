@@ -10,9 +10,11 @@ def get_total_track_length(
     log_prefix: str = "[Kaiserlich Tracker][TrackLen]"
 ) -> int:
     """
-    Ermittelt die Gesamtanzahl aller aktiven Marker über alle Tracks.
-    Jeder Frame, an dem ein Marker existiert, zählt als 1.
-    Segmente werden ignoriert, es wird rein die Anzahl aktiver Marker summiert.
+    Zählt nur Frames mit *aktiven* Markern pro Track.
+    Ein Marker gilt als aktiv, wenn:
+      - marker.mute == False
+      - marker.pattern_corners nicht leer oder Null ist
+    Danach werden alle aktiven Frames pro Track summiert.
     """
 
     clip = getattr(context.space_data, "clip", None)
@@ -27,7 +29,7 @@ def get_total_track_length(
             print(f"{log_prefix} Kein Tracking-Container gefunden → Länge=0")
         return 0
 
-    # aktives Tracking-Objekt
+    # aktives Tracking-Objekt verwenden
     if getattr(tracking.objects, "active", None):
         tracks = tracking.objects.active.tracks
         if log:
@@ -40,16 +42,23 @@ def get_total_track_length(
     total_length = 0
     tracked_tracks = 0
 
-    # === Hauptlogik: Aktive Marker zählen ===
+    # === Hauptlogik: Nur aktive Marker zählen ===
     for tr in tracks:
-        # Nur Marker ab Start-Frame zählen
-        marker_frames = [mk.frame for mk in tr.markers if mk.frame >= start_frame]
-        if not marker_frames:
+        # aktive Marker nach Startframe
+        active_frames = [
+            mk.frame
+            for mk in tr.markers
+            if mk.frame >= start_frame
+            and not getattr(mk, "mute", False)
+            and any(corner != (0.0, 0.0) for corner in getattr(mk, "pattern_corners", []))
+        ]
+
+        if not active_frames:
             if log:
-                print(f"{log_prefix} Track '{tr.name}': keine Marker ≥ {start_frame} → skip")
+                print(f"{log_prefix} Track '{tr.name}': keine aktiven Marker ≥ {start_frame} → skip")
             continue
 
-        count_active = len(marker_frames)
+        count_active = len(active_frames)
         total_length += count_active
         tracked_tracks += 1
 
