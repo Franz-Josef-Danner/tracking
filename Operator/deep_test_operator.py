@@ -264,7 +264,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             set_scene_props(self._scene, kaiserlich_scale_thresh_min=1.0)
             self._base_value = 1.0
         elif self._current_category == "scale_max":
-            set_scene_props(self._scene, kaiserlich_scale_thresh_max=1.0)
+            set_scene_props(self._scene, kaiserlich_scale_thresh_max=0.0)
             self._base_value = 1.0
         elif self._current_category == "rot_scale_rot":
             # Start: rot wird getestet (1.0), scale bleibt fix 0.0
