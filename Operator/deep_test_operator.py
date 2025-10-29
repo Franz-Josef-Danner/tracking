@@ -515,44 +515,20 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             print(f"[DeepTest][{self._current_category}] ✅ Verbesserte oder gleiche Länge ({total_len} >= {compare_len})")
             self._goal_map[self._current_category] = total_len
             self._best_thresholds[self._current_category] = self._current_value
-
-            # Szene-Wert aktualisieren auf neuen besten Wert
-            if self._current_category == "rot_xy":
-                self._scene[SCENE_TOTAL_TRACK_LEN_STEP1] = total_len
-                set_scene_props(self._scene,
-                    kaiserlich_rot_thresh_x=self._current_value,
-                    kaiserlich_rot_thresh_y=self._current_value)
-            elif self._current_category == "scale":
-                self._scene[SCENE_TOTAL_TRACK_LEN_STEP2] = total_len
-                set_scene_props(self._scene,
-                    kaiserlich_scale_thresh_min=self._current_value,
-                    kaiserlich_scale_thresh_max=min(1,self._current_value * 1.1))
-            elif self._current_category == "rot_scale":
-                self._scene[SCENE_TOTAL_TRACK_LEN_STEP3] = total_len
+            # Nur intern speichern, Szene erst am Ende (_finish) updaten
+            if self._current_category == "rot_scale":
                 if not hasattr(self, "_rot_scale_phase"):
                     self._rot_scale_phase = "rot"
                 if self._rot_scale_phase == "rot":
-                    set_scene_props(self._scene,
-                        kaiserlich_rot_scale_thresh_rot=self._current_value,
-                        kaiserlich_rot_scale_thresh_scale=0.0)
-                    # Wechsel auf zweite Phase (scale)
+                    self._best_thresholds["rot_scale_rot"] = self._current_value
                     self._rot_scale_phase = "scale"
-                    print("[DeepTest][rot_scale] → Nächste Phase: SCALE")
-                    # sofort auf neue Phase umstellen und Stufenindex resetten
                     self._current_step_index = 0
+                    print("[DeepTest][rot_scale] → Nächste Phase: SCALE")
                     return False
                 elif self._rot_scale_phase == "scale":
-                    set_scene_props(self._scene,
-                        kaiserlich_rot_scale_thresh_rot=0.0,
-                        kaiserlich_rot_scale_thresh_scale=self._current_value)
-                    # Nach zweiter Phase zurücksetzen
-                    set_scene_props(self._scene,
-                        kaiserlich_rot_scale_thresh_rot=1.0,
-                        kaiserlich_rot_scale_thresh_scale=1.0)
-                    print("[DeepTest][rot_scale] ✓ Beide Phasen abgeschlossen – reset to 1.0")
-            elif self._current_category == "perspective":
-                self._scene[SCENE_TOTAL_TRACK_LEN_STEP4] = total_len
-                set_scene_props(self._scene, kaiserlich_perspective_thresh=self._current_value)
+                    self._best_thresholds["rot_scale_scale"] = self._current_value
+                    print("[DeepTest][rot_scale] ✓ Beide Phasen abgeschlossen – Werte gespeichert")
+                    self._rot_scale_phase = "rot"
 
             # Erfolgreich → Thresholds nach Zyklus zurücksetzen
             if self._current_category == "rot_xy":
@@ -601,7 +577,31 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         print("\n[DeepTest] ✅ Abschluss – beste Thresholds:")
         for k, v in self._best_thresholds.items():
             print(f"  {k}: {v:.6f}")
-        context.scene["kaiserlich_best_thresholds"] = self._best_thresholds
+        # Ergebnisse global in die Szene schreiben
+        scene = context.scene
+        scene["kaiserlich_best_thresholds"] = self._best_thresholds
+
+        # ---- Thresholds in Szene anwenden ----
+        if "rot_xy" in self._best_thresholds:
+            set_scene_props(scene,
+                kaiserlich_rot_thresh_x=self._best_thresholds["rot_xy"],
+                kaiserlich_rot_thresh_y=self._best_thresholds["rot_xy"])
+        if "scale" in self._best_thresholds:
+            set_scene_props(scene,
+                kaiserlich_scale_thresh_min=self._best_thresholds["scale"],
+                kaiserlich_scale_thresh_max=min(1,self._best_thresholds["scale"] * 1.1))
+        # rot_scale ist zweigeteilt gespeichert
+        rot_val = self._best_thresholds.get("rot_scale_rot")
+        scale_val = self._best_thresholds.get("rot_scale_scale")
+        if rot_val or scale_val:
+            set_scene_props(scene,
+                kaiserlich_rot_scale_thresh_rot=(rot_val or 1.0),
+                kaiserlich_rot_scale_thresh_scale=(scale_val or 1.0))
+        if "perspective" in self._best_thresholds:
+            set_scene_props(scene,
+                kaiserlich_perspective_thresh=self._best_thresholds["perspective"])
+
+        print("[DeepTest] 💾 Alle finalen Threshold-Werte in Szene eingetragen.")
         return self._teardown(context, cancelled=False)
 
     def _teardown(self, context, cancelled=False):
