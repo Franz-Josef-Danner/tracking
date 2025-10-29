@@ -19,6 +19,7 @@ from ..Helper.track_length_helper import get_total_track_length
 from ..Helper.track_markers_helper import track_markers_with_override
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ..Helper.util_scene import set_scene_props
+from ..Helper.init_detect_state import init_detect_state
 
 # ---- Szenen-Keys ------------------------------------------------------------
 SCENE_TOTAL_TRACK_LEN_BASE  = "kaiserlich_len_baseline_00"
@@ -78,6 +79,11 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
     _goal_map: Dict[str, int] = {}
     _best_thresholds: Dict[str, float] = {}
 
+    # Detect-Parameter (paritätisch zum Shorttest)
+    _margin: int = 100
+    _threshold: float = 0.0001
+    _pattern_size: int = 50
+    _search_size: int = 0
     # ------------------------------------------------------------------------
     def execute(self, context: Context):
         self._scene = context.scene
@@ -100,6 +106,24 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         self._current_frame = max(self._start_frame, int(self._scene.frame_current))
         self._space.clip_user.frame_current = self._current_frame
         self._scene.frame_current = self._current_frame
+        # Detect-Parameter initialisieren (wie im Shorttest)
+        try:
+            _state = init_detect_state(context)
+            self._hz = _state.get("hz", self._hz)
+            self._vc = _state.get("vc", self._vc)
+            self._margin = _state.get("margin", 100)
+            self._pattern_size = _state.get("pattern_size", 50)
+            self._search_size = _state.get("search_size", 0)
+            self._threshold = _state.get("threshold", 0.0001)
+            self._last_md = float(_state.get("min_distance", 100.0))
+            # Frame-spezifisches md ggf. überschreiben
+            _md_cache = self._scene.get("min_distance_values", {})
+            if _md_cache:
+                fn = str(self._scene.frame_current)
+                if fn in _md_cache:
+                    self._last_md = float(_md_cache[fn])
+        except Exception as _e:
+            print(f"[DeepTest][InitDetect] ⚠️ Fallback – init_detect_state fehlgeschlagen: {_e!r}")
 
         # Zielwerte laden
         self._goal_map = {
@@ -157,6 +181,15 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         self._best_thresholds[self._current_category] = 1.0
         self._pre_snapshot = snapshot_active_markers(context)
         self._baseline_start_tracknames = {t.name for t in self._clip.tracking.tracks}
+        # Für jede Kategorie den frame-spezifischen md-Wert prüfen (wie Shorttest)
+        try:
+            _md_cache = self._scene.get("min_distance_values", {})
+            if _md_cache:
+                fn = str(self._scene.frame_current)
+                if fn in _md_cache:
+                    self._last_md = float(_md_cache[fn])
+        except Exception:
+            pass
 
         # Reset Thresholds auf 1.0 für die Kategorie
         if self._current_category == "rot_xy":
@@ -207,12 +240,21 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
               f"{next_val:.6f} (×{step_factor})")
     
         # ---- Detect & Tracking -------------------------------------------------
-        # Wichtig: detect_features liest Thresholds aus der Szene → daher jetzt sofort ausführen
+        # Parität zum Shorttest: placement='FRAME', margin, threshold, min_distance (framebasiert)
         try:
-            print(f"[DeepTest][{self._current_category}] → Detect gestartet mit aktuellem Threshold {next_val:.6f}")
-            detect_features(context)
+            md_int = int(max(1, round(self._last_md)))
+            print(f"[DeepTest][{self._current_category}] → Detect gestartet | margin={self._margin}, "
+                  f"threshold={self._threshold}, min_distance={md_int}, pattern={self._pattern_size}, search={self._search_size}")
+            detect_features(
+                context,
+                placement='FRAME',
+                margin=self._margin,
+                threshold=self._threshold,
+                min_distance=md_int
+            )
         except Exception as e:
-            print(f"[DeepTest][{self._current_category}] ⚠️ Fehler bei detect_features: {e}")
+            print(f"[DeepTest][{self._current_category}] ⚠️ Fehler bei detect_features: {e!r}")
+ 
     
         # Cleanup, Snapshot und Marker-Update bleiben identisch
         post_snapshot = snapshot_active_markers(context)
