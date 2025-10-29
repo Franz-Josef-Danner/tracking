@@ -362,11 +362,23 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
     # ------------------------ DetectAdapt (1 Iteration pro TIMER) ------------------------
 
     def _detect_adapt_iteration(self, context: Context) -> bool:
-        self._detect_loop += 1
-        loop = self._detect_loop
+        """Detect-Adapt identisch zur Logik des ShortTest-Operators."""
+        scene = context.scene
+        ef_target = int(scene.kaiserlich_markers_per_frame)
+        tolerance = ef_target * 0.10
+        loop = getattr(self, "_detect_loop", 0) + 1
+        self._detect_loop = loop
+
         print(f"\n[Kaiserlich Tracker][DetectAdapt] --- LOOP {loop} ---")
         print(f"[Kaiserlich Tracker][DetectAdapt] Aktuelles min_distance = {self._last_md:.2f}")
 
+        # Snapshot vor Detect
+        pre_snapshot = snapshot_active_markers(context)
+        clip = getattr(context.space_data, "clip", None)
+        tracking = getattr(clip, "tracking", None) if clip else None
+        baseline_start_tracknames: Set[str] = {t.name for t in tracking.tracks} if tracking else set()
+
+        # Detect ausführen
         detect_features(
             context,
             placement='FRAME',
@@ -375,26 +387,12 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             min_distance=int(max(1, round(self._last_md)))
         )
 
-        clip = getattr(context.space_data, 'clip', None)
-        if clip and getattr(clip, 'tracking', None):
-            for trk in clip.tracking.tracks:
-                try:
-                    trk.select = False
-                except Exception:
-                    pass
-
+        # Snapshot nach Detect
         post_snapshot = snapshot_active_markers(context)
-        alte_marker, neue_marker = classify_markers(self._pre_snapshot, post_snapshot)
+        alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
+        print(f"[Kaiserlich Tracker][DetectAdapt] Alte Marker: {len(alte_marker)}, Neue Marker: {len(neue_marker)}")
 
-        print(f"[Kaiserlich Tracker][DetectAdapt] Alte Marker erkannt: {len(alte_marker)}")
-        print(f"[Kaiserlich Tracker][DetectAdapt] Neue Marker erkannt: {len(neue_marker)}")
-        if len(neue_marker) > 0:
-            print("   ➤ Beispiel neue Marker:", [m['track'] for m in neue_marker[:5]])
-        if len(alte_marker) > 0:
-            print("   ➤ Beispiel alte Marker:", [m['track'] for m in alte_marker[:5]])
-
-        am = len(neue_marker)
-
+        # Cleanup
         cleaned_new, deleted_old = cleanup_new_markers(
             context,
             alte_marker,
@@ -403,38 +401,32 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             hz=self._hz,
             vc=self._vc
         )
-        self._deleted_old_total += int(deleted_old)
-
-        deleted_old_names = [m['track'] for m in alte_marker
-                             if m['track'] not in [n['track'] for n in post_snapshot]]
-        if deleted_old_names:
-            print(f"[⚠️ Kaiserlich Tracker][DetectAdapt] WARNUNG: Alte Marker gelöscht: {deleted_old_names}")
-
         remaining = len(cleaned_new)
-        print(f"[Kaiserlich Tracker][DetectAdapt] Nach Cleanup: {remaining} neue Marker übrig, {deleted_old} alte gelöscht")
 
-        if abs(remaining - self._ef_target) <= self._tolerance:
+        if abs(remaining - ef_target) <= tolerance:
+            print(f"[Kaiserlich Tracker][DetectAdapt] Ziel erreicht: {remaining}/{ef_target} (±{tolerance:.1f})")
             self._last_new_names = [m['track'] for m in cleaned_new]
-            self._store_md_with_interpolation(self._scene, self._current_frame, self._last_md)
+            self._store_md_with_interpolation(scene, self._current_frame, self._last_md)
             return True
 
-        # --- Einheitliche adaptive Anpassung via Helper --------------------------
-        from ..Helper.detect_config import adjust_min_distance
-        old_md = self._last_md
-        self._last_md = adjust_min_distance(self._last_md, self._ef_target, am)
-        print(f"[Kaiserlich Tracker][DetectAdapt] Anpassung min_distance: {old_md:.2f} → {self._last_md:.2f}")
-
+        # Dynamische Anpassung min_distance analog ShortTest
+        am = len(neue_marker)
+        if am > 0:
+            ratio = ef_target / am
+            factor = max(0.5, min(2.0, ratio))
+            self._last_md = max(1.0, self._last_md / factor)
+        else:
+            self._last_md *= 1.5
+            print("[DetectAdapt] Keine neuen Marker → erhöhe min_distance stark")
 
         if loop < self._detect_loop_max:
-            self._last_new_names = [m['track'] for m in neue_marker]
-            delete_tracks_by_names(context, self._last_new_names)
-            print(f"[Kaiserlich Tracker][DetectAdapt] {len(self._last_new_names)} neue Marker gelöscht für nächsten Zyklus")
+            delete_tracks_by_names(context, [m['track'] for m in neue_marker])
             time.sleep(0.05)
             return False
 
-        self._last_new_names = [m['track'] for m in cleaned_new]
-        self._store_md_with_interpolation(self._scene, self._current_frame, self._last_md)
         print("[Kaiserlich Tracker][DetectAdapt] ⚠️ Max. Loops erreicht – übernehme aktuellen Zustand.")
+        self._last_new_names = [m['track'] for m in cleaned_new]
+        self._store_md_with_interpolation(scene, self._current_frame, self._last_md)
         return True
 
     def _finalize_detection_select_new(self, context: Context):
