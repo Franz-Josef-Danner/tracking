@@ -575,7 +575,18 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         # --- 1) Aktive Tracks prüfen ---------------------------------------
         active_tracks, dropped = filter_active_tracks_at_frame(context, s.track_names, current)
         if not active_tracks:
-            print("[TrackCycle] ✅ Keine aktiven Tracks mehr – Tracking beendet.")
+            print("[TrackCycle] ✅ Keine aktiven Tracks mehr – Tracking beendet (inkl. finalem Frame-Count-Angleich).")
+            # DeepTest-Kompatibilität: Letzten Frame mitzählen
+            s.track_frame_current += 1
+            # Sicherstellen, dass dieser Frame noch in den Scene-Kontext geschrieben wird
+            try:
+                scene.frame_current = s.track_frame_current
+                s.track_space.clip_user.frame_current = s.track_frame_current
+                bpy.context.view_layer.update()
+                print(f"[TrackCycle] Letzter Frame ({s.track_frame_current}) für Track-Längen-Auswertung übernommen.")
+            except Exception as ex:
+                print(f"[TrackCycle] ⚠️ Letzter Frame konnte nicht gesetzt werden: {ex!r}")
+
             s.track_active = False
             return False
 
@@ -642,7 +653,12 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             context.scene.frame_current = start_f
             if self._state.track_space:
                 self._state.track_space.clip_user.frame_current = start_f
-            bpy.context.view_layer.update()
+            # DeepTest-Gleichstand: View-Layer-Update erzwingen, damit alle Marker-Visibility synchronisiert ist
+            try:
+                bpy.context.view_layer.update()
+                print("[TrackCycle] View-Layer synchronisiert (DeepTest-Gleichstand).")
+            except Exception as ex:
+                print(f"[TrackCycle] ⚠️ View-Layer-Update fehlgeschlagen: {ex!r}")
             print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead fixiert auf Frame {start_f}.")
 
             # 2) Gesamt-Track-Länge der verbleibenden (alten) Tracks speichern
@@ -660,6 +676,10 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             else:
                 print(f"[Kaiserlich Tracker][Baseline] Total Track Length ab Frame {start_f} = {total_len} (gespeichert unter '{key_cycle}')")
 
+            # Start-Frame-Konsistenz erzwingen (DeepTest-Parität)
+            scene.frame_current = scene.frame_start
+            if self._state.track_space:
+                self._state.track_space.clip_user.frame_current = scene.frame_start
             # --- Persistente Sammelstruktur für spätere Analyse ---
             # Speichert alle gemessenen Längen in einer Liste unter 'kaiserlich_len_results'
             results = scene.get("kaiserlich_len_results", [])
