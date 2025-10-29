@@ -289,19 +289,25 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
                             kaiserlich_scale_thresh_max=min(1,next_val * 1.1))
     
         elif self._current_category == "rot_scale":
-            # Zweiphasiger Test: rot -> scale
+            # Zweiphasiger Test: zuerst alle Stufen rot, dann alle Stufen scale
             if not hasattr(self, "_rot_scale_phase"):
                 self._rot_scale_phase = "rot"
+
+            # Falls nach Phase-Wechsel, Stufenindex und Basiswert neu starten
+            if self._current_step_index == 0 and self._base_value != 1.0:
+                self._base_value = 1.0
+
             if self._rot_scale_phase == "rot":
                 set_scene_props(self._scene,
                     kaiserlich_rot_scale_thresh_rot=next_val,
                     kaiserlich_rot_scale_thresh_scale=0.0)
-                print(f"[DeepTest][rot_scale] Phase ROT → {next_val:.6f}")
+                print(f"[DeepTest][rot_scale] ▶ Test ROT | Step {self._current_step_index+1}/{len(REDUCTION_STEPS)} | val={next_val:.6f}")
+
             elif self._rot_scale_phase == "scale":
                 set_scene_props(self._scene,
                     kaiserlich_rot_scale_thresh_rot=0.0,
                     kaiserlich_rot_scale_thresh_scale=next_val)
-                print(f"[DeepTest][rot_scale] Phase SCALE → {next_val:.6f}")
+                print(f"[DeepTest][rot_scale] ▶ Test SCALE | Step {self._current_step_index+1}/{len(REDUCTION_STEPS)} | val={next_val:.6f}")
     
         elif self._current_category == "perspective":
             set_scene_props(self._scene, kaiserlich_perspective_thresh=next_val)
@@ -567,6 +573,30 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
 
         # Kategorie fertig, wenn alle Reduktionsstufen durch oder MIN erreicht
         if self._current_step_index >= len(REDUCTION_STEPS):
+            # Sonderfall rot_scale: nach Abschluss ROT auf SCALE umschalten
+            if self._current_category == "rot_scale":
+                if not hasattr(self, "_rot_scale_phase"):
+                    self._rot_scale_phase = "rot"
+                if self._rot_scale_phase == "rot":
+                    self._best_thresholds["rot_scale_rot"] = self._best_thresholds.get("rot_scale_rot", self._current_value)
+                    print("[DeepTest][rot_scale] 🔁 Phase ROT abgeschlossen → wechsle zu SCALE")
+                    self._rot_scale_phase = "scale"
+                    # Reset für zweite Phase
+                    self._base_value = 1.0
+                    self._current_step_index = 0
+                    set_scene_props(self._scene,
+                        kaiserlich_rot_scale_thresh_rot=0.0,
+                        kaiserlich_rot_scale_thresh_scale=1.0)
+                    return False
+                elif self._rot_scale_phase == "scale":
+                    self._best_thresholds["rot_scale_scale"] = self._best_thresholds.get("rot_scale_scale", self._current_value)
+                    print("[DeepTest][rot_scale] ✅ Beide Phasen abgeschlossen – Werte gespeichert und zurückgesetzt")
+                    self._rot_scale_phase = "rot"
+                    # Abschluss dieser Kategorie
+                    set_scene_props(self._scene,
+                        kaiserlich_rot_scale_thresh_rot=1.0,
+                        kaiserlich_rot_scale_thresh_scale=1.0)
+                    return True
             print(f"[DeepTest][{self._current_category}] Kategorie abgeschlossen (alle Stufen durchlaufen).")
             return True
 
