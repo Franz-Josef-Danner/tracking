@@ -599,7 +599,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         elif self._current_category == "scale_min":
             set_scene_props(self._scene, kaiserlich_scale_thresh_min=1.0)
         elif self._current_category == "scale_max":
-            set_scene_props(self._scene, kaiserlich_scale_thresh_max=1.0)
+            set_scene_props(self._scene, kaiserlich_scale_thresh_max=0.0)
         elif self._current_category == "rot_scale_rot":
             set_scene_props(self._scene, kaiserlich_rot_scale_thresh_rot=0.0,
                             kaiserlich_rot_scale_thresh_scale=0.0)
