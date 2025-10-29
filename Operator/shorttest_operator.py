@@ -194,8 +194,8 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                     # Setze Rot-Schwellenwerte (X/Y) auf 0,0
                     print("[Kaiserlich Tracker][AutoCalibrate] Rot-Schwellwerte auf 0 gesetzt.")
                     set_scene_props(context.scene,
-                                    kaiserlich_rot_thresh_x=0.005,
-                                    kaiserlich_rot_thresh_y=0.005)
+                                    kaiserlich_rot_thresh_x=0.00001,
+                                    kaiserlich_rot_thresh_y=0.00001)
                 except Exception as ex:
                     print(f"[AutoCalibrate] Fehler beim Setzen der Rot-Schwellenwerte: {ex!r}")
                 # Flags setzen, um zweiten Detect-/Track‑Durchlauf zu initiieren
