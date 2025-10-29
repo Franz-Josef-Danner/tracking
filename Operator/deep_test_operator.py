@@ -274,14 +274,13 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
     
         # ---- Threshold setzen (Szene aktualisieren) ----------------------------
         if self._current_category == "rot_xy":
-            try:
-                delta = (math.log10(1 * 1_000_000) - math.log10(next_val * 1_000_000))
-                adj = pow((delta * (self._vc / self._hz)), 10) / 1_000_000
-            except ValueError:
-                adj = 0.0
-            set_scene_props(self._scene,
-                            kaiserlich_rot_thresh_x=next_val,
-                            kaiserlich_rot_thresh_y=next_val + adj)
+            # Neue Formel: kaiserlich_rot_thresh_y = min(1, kaiserlich_rot_thresh_x * (Vertikale / Horizontale Auflösung))
+            y_val = min(1.0, next_val * (self._vc / self._hz)) if self._hz > 0 else next_val
+            set_scene_props(
+                self._scene,
+                kaiserlich_rot_thresh_x=next_val,
+                kaiserlich_rot_thresh_y=y_val
+            )
     
         elif self._current_category == "scale":
             set_scene_props(self._scene,
