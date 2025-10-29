@@ -477,31 +477,72 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         compare_len = int(self._goal_map.get(self._current_category, 0))
         print(f"[DeepTest][{self._current_category}] Track-Länge = {total_len}, Vergleich = {compare_len}")
 
-        # ---- Bewertung -----------------------------------------------------
-        if total_len > compare_len:
-            print(f"[DeepTest][{self._current_category}] ✅ Verbesserte Länge ({total_len} > {compare_len})")
+        # ---- Bewertung (alte adaptive Logik) -------------------------------
+        if total_len >= compare_len:
+            print(f"[DeepTest][{self._current_category}] ✅ Verbesserte oder gleiche Länge ({total_len} >= {compare_len})")
+            self._goal_map[self._current_category] = total_len
             self._best_thresholds[self._current_category] = self._current_value
+
             # Szene-Wert aktualisieren auf neuen besten Wert
             if self._current_category == "rot_xy":
                 self._scene[SCENE_TOTAL_TRACK_LEN_STEP1] = total_len
+                set_scene_props(self._scene,
+                    kaiserlich_rot_thresh_x=self._current_value,
+                    kaiserlich_rot_thresh_y=self._current_value)
             elif self._current_category == "scale":
                 self._scene[SCENE_TOTAL_TRACK_LEN_STEP2] = total_len
+                set_scene_props(self._scene,
+                    kaiserlich_scale_thresh_min=self._current_value,
+                    kaiserlich_scale_thresh_max=0.0)
             elif self._current_category == "rot_scale":
                 self._scene[SCENE_TOTAL_TRACK_LEN_STEP3] = total_len
+                set_scene_props(self._scene,
+                    kaiserlich_rot_scale_thresh_rot=self._current_value,
+                    kaiserlich_rot_scale_thresh_scale=0.0)
             elif self._current_category == "perspective":
                 self._scene[SCENE_TOTAL_TRACK_LEN_STEP4] = total_len
-            self._goal_map[self._current_category] = total_len
+                set_scene_props(self._scene, kaiserlich_perspective_thresh=self._current_value)
+
+            # Erfolgreich → Thresholds nach Zyklus zurücksetzen
+            if self._current_category == "rot_xy":
+                set_scene_props(self._scene,
+                    kaiserlich_rot_thresh_x=1.0,
+                    kaiserlich_rot_thresh_y=1.0)
+            elif self._current_category == "scale":
+                set_scene_props(self._scene,
+                    kaiserlich_scale_thresh_min=1.0,
+                    kaiserlich_scale_thresh_max=0.0)
+            elif self._current_category == "rot_scale":
+                set_scene_props(self._scene,
+                    kaiserlich_rot_scale_thresh_rot=1.0,
+                    kaiserlich_rot_scale_thresh_scale=0.0)
+            elif self._current_category == "perspective":
+                set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
+
+            self._base_value = 1.0
+            self._current_step_index += 1
+            print(f"[DeepTest][Eval] ✓ Ziel erreicht | next step ({self._current_step_index})")
+
         else:
-            print(f"[DeepTest][{self._current_category}] Kein Zugewinn ({total_len} ≤ {compare_len})")
+            # Kein Zugewinn → prüfen, ob MIN erreicht
+            if self._current_value <= MIN_THRESHOLD_VAL + 1e-12:
+                print(f"[DeepTest][Eval] ✗ Kein Zugewinn, MIN erreicht → nächste Stufe")
+                self._current_step_index += 1
+                self._base_value = 1.0
+            else:
+                # gleiche Stufe wiederholen mit weiter abgesenktem Basiswert
+                self._base_value = self._current_value
+                print(f"[DeepTest][Eval] ↻ Ziel verfehlt | Wiederhole Stufe {self._current_step_index+1} mit niedrigerem Threshold")
 
-        # ---- Vorbereitung nächste Stufe -----------------------------------
-        self._base_value = self._current_value
-        self._current_step_index += 1
+        # Reset Playhead
         reset_to_frame(context, self._start_frame)
-        # KEIN time.sleep – Modal-Tick hält UI frei
 
-        # Kategorie fertig, wenn alle Reduktionsstufen durch sind
-        return self._current_step_index >= len(REDUCTION_STEPS)
+        # Kategorie fertig, wenn alle Reduktionsstufen durch oder MIN erreicht
+        if self._current_step_index >= len(REDUCTION_STEPS):
+            print(f"[DeepTest][{self._current_category}] Kategorie abgeschlossen (alle Stufen durchlaufen).")
+            return True
+
+        return False
 
     # ------------------------------------------------------------------------
     def _finish(self, context):
