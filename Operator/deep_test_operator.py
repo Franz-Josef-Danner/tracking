@@ -174,12 +174,12 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         if self._current_step_index >= len(REDUCTION_STEPS):
             print(f"[DeepTest][{self._current_category}] Alle Reduktionsstufen abgeschlossen.")
             return True
-
+    
         step_factor = REDUCTION_STEPS[self._current_step_index]
         next_val = max(MIN_THRESHOLD_VAL, self._base_value * step_factor)
         self._current_value = next_val
-
-        # Thresholds setzen
+    
+        # ---- Threshold setzen (Szene aktualisieren) ----------------------------
         if self._current_category == "rot_xy":
             try:
                 delta = (math.log10(1 * 1_000_000) - math.log10(next_val * 1_000_000))
@@ -189,37 +189,58 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             set_scene_props(self._scene,
                             kaiserlich_rot_thresh_x=next_val,
                             kaiserlich_rot_thresh_y=next_val + adj)
+    
         elif self._current_category == "scale":
-            set_scene_props(self._scene, kaiserlich_scale_thresh_min=next_val)
+            set_scene_props(self._scene,
+                            kaiserlich_scale_thresh_min=next_val,
+                            kaiserlich_scale_thresh_max=0.0)
+    
         elif self._current_category == "rot_scale":
-            set_scene_props(self._scene, kaiserlich_rot_scale_thresh_rot=next_val,
+            set_scene_props(self._scene,
+                            kaiserlich_rot_scale_thresh_rot=next_val,
                             kaiserlich_rot_scale_thresh_scale=0.0)
+    
         elif self._current_category == "perspective":
             set_scene_props(self._scene, kaiserlich_perspective_thresh=next_val)
-
-        print(f"[DeepTest][{self._current_category}] Test Step {self._current_step_index + 1}/{len(REDUCTION_STEPS)}: {next_val}")
-
-        # Detect
-        self._detect_adapt_cycle(context)
-
-        # Track
+    
+        print(f"[DeepTest][{self._current_category}] Test Step {self._current_step_index + 1}/{len(REDUCTION_STEPS)}: "
+              f"{next_val:.6f} (×{step_factor})")
+    
+        # ---- Detect & Tracking -------------------------------------------------
+        # Wichtig: detect_features liest Thresholds aus der Szene → daher jetzt sofort ausführen
+        try:
+            print(f"[DeepTest][{self._current_category}] → Detect gestartet mit aktuellem Threshold {next_val:.6f}")
+            detect_features(context)
+        except Exception as e:
+            print(f"[DeepTest][{self._current_category}] ⚠️ Fehler bei detect_features: {e}")
+    
+        # Cleanup, Snapshot und Marker-Update bleiben identisch
+        post_snapshot = snapshot_active_markers(context)
+        alte, neue = classify_markers(self._pre_snapshot, post_snapshot)
+        cleanup_new_markers(context, alte, neue, pz=50, hz=self._hz, vc=self._vc)
+        self._final_new_tracks = [m['track'] for m in neue]
+    
+        # ---- Tracking durchführen ---------------------------------------------
         total_len = self._track_and_measure(context)
         baseline_len = int(self._scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
-        print(f"[DeepTest][{self._current_category}] Ergebnis Track Length = {total_len}, Baseline = {baseline_len}")
-
-        # Bewertung
+        print(f"[DeepTest][{self._current_category}] Track-Länge = {total_len}, Baseline = {baseline_len}")
+    
+        # ---- Bewertung ---------------------------------------------------------
         if total_len > self._current_goal:
             print(f"[DeepTest][{self._current_category}] ✅ Ziel verbessert: {total_len} > {self._current_goal}")
             self._best_thresholds[self._current_category] = self._current_value
             self._current_goal = total_len
         else:
-            print(f"[DeepTest][{self._current_category}] Kein Zugewinn.")
-
+            print(f"[DeepTest][{self._current_category}] Kein Zugewinn (aktuell {total_len} ≤ {self._current_goal}).")
+    
+        # ---- Vorbereitung nächste Stufe ---------------------------------------
         self._base_value = self._current_value
         self._current_step_index += 1
         reset_to_frame(context, self._start_frame)
-
+        time.sleep(0.05)  # kleine Pause für Stabilität
+    
         return False
+
 
     # ------------------------------------------------------------------------
     def _detect_adapt_cycle(self, context):
