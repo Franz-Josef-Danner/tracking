@@ -508,24 +508,20 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             self._final_new_tracks = []
             self._processing_names = []
             return
+
         tracking = clip.tracking
-        # ------------------------------------------------------------
-        # Stabilitäts-Modus:
-        # Nur Marker aus der ursprünglichen Baseline (erster Detect)
-        # werden berücksichtigt, keine neu erzeugten Marker.
-        # Dadurch entspricht das Verhalten dem ShortTest-Tracking.
-        # ------------------------------------------------------------
-        stable_tracks = [trk for trk in tracking.tracks if trk.name in self._baseline_start_tracknames]
+
+        # ShortTest-kompatibel: Alle neu erzeugten Tracks auswählen
         try:
             for trk in tracking.tracks:
-                trk.select = False
-            for stable_trk in stable_tracks:
-                stable_trk.select = True
-        except Exception:
-            pass
-        self._final_new_tracks = [t.name for t in stable_tracks]
-        self._processing_names = list(self._final_new_tracks)
-        print(f"[Kaiserlich Tracker][DetectAdapt][Stable] Selektierte Baseline-Tracks: {len(stable_tracks)} (keine neuen Marker berücksichtigt)")
+                trk.select = True
+            self._final_new_tracks = [t.name for t in tracking.tracks]
+            self._processing_names = list(self._final_new_tracks)
+            print(f"[Kaiserlich Tracker][DetectAdapt][Select] Alle {len(self._final_new_tracks)} Tracks für Tracking aktiviert.")
+        except Exception as ex:
+            print(f"[Kaiserlich Tracker][DetectAdapt][Select] ⚠️ Fehler bei Track-Selektion: {ex}")
+            self._final_new_tracks = []
+            self._processing_names = []
 
     # ------------------------ Modal Tracking pro Cycle ------------------------
 
