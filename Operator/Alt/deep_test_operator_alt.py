@@ -1,4 +1,4 @@
-# Operator/deep_test_operator.py
+# Operator/deep_test_operator_alt.py
 import bpy
 import time
 from typing import Any, Dict, Optional, Tuple, List, Set
