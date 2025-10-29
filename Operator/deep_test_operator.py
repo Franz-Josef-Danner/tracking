@@ -535,6 +535,29 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
                     print("[DeepTest][rot_scale] ✓ Beide Phasen abgeschlossen – Werte gespeichert")
                     self._rot_scale_phase = "rot"
 
+        else:
+            # --- Kein Zugewinn: Phasehandling repariert ---
+            if self._current_category == "rot_scale":
+                # Bei ROT-Phase: Wenn Ziel verfehlt und letzte Stufe erreicht, auf SCALE umschalten
+                if self._rot_scale_phase == "rot" and self._current_step_index >= len(REDUCTION_STEPS) - 1:
+                    print("[DeepTest][rot_scale] ↻ ROT-Phase abgeschlossen (Ziel nicht erreicht) → wechsle zu SCALE")
+                    self._rot_scale_phase = "scale"
+                    self._base_value = 1.0
+                    self._current_step_index = 0
+                    set_scene_props(self._scene,
+                        kaiserlich_rot_scale_thresh_rot=0.0,
+                        kaiserlich_rot_scale_thresh_scale=1.0)
+                    return False
+                # Bei SCALE-Phase: wenn ebenfalls fertig → Kategorie-Ende
+                elif self._rot_scale_phase == "scale" and self._current_step_index >= len(REDUCTION_STEPS) - 1:
+                    print("[DeepTest][rot_scale] ↻ SCALE-Phase abgeschlossen (Ziel nicht erreicht) → abschließen und reset")
+                    set_scene_props(self._scene,
+                        kaiserlich_rot_scale_thresh_rot=1.0,
+                        kaiserlich_rot_scale_thresh_scale=1.0)
+                    self._rot_scale_phase = "rot"
+                    return True
+
+            # Normaler Pfad (andere Kategorien)
             # Erfolgreich → Thresholds nach Zyklus zurücksetzen
             if self._current_category == "rot_xy":
                 set_scene_props(self._scene,
