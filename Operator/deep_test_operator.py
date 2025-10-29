@@ -369,6 +369,46 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         print(f"[DeepTest][Cycle] {self._current_category} | step={self._current_step_index+1}/{len(REDUCTION_STEPS)} "
               f"| base={self._base_value:.6f} → curr={self._current_value:.6f} (×{step_factor}) | goal={self._current_goal}")
 
+        # --- Patch Start: Parität zu ShortTest sicherstellen ---
+        # 1. Thresholds komplett resetten, um Restwerte aus vorherigen Tests zu eliminieren
+        from ..Helper.reset_helper import reset_all_thresholds
+        try:
+            reset_all_thresholds(context, active_props=[])
+            print("[DeepTest][CycleInit] Alle Thresholds auf 1.0 zurückgesetzt (ShortTest-Parität).")
+        except Exception as ex:
+            print(f"[DeepTest][CycleInit] ⚠ Threshold-Reset fehlgeschlagen: {ex!r}")
+
+        # 2. Sicherstellen, dass Szene, Clip und ViewLayer synchronisiert sind
+        try:
+            context.scene.frame_current = context.scene.frame_start
+            if self._space:
+                self._space.clip_user.frame_current = context.scene.frame_start
+            bpy.context.view_layer.update()
+            print("[DeepTest][CycleInit] Szene- und View-Layer synchronisiert (FrameStart).")
+        except Exception as ex:
+            print(f"[DeepTest][CycleInit] ⚠ Szene-Update fehlgeschlagen: {ex!r}")
+
+        # 3. Dummy-Durchlauf (ohne Messung) zur Initialisierung — analog shorttest_operator
+        try:
+            detect_features(
+                context,
+                placement='FRAME',
+                margin=self._margin,
+                threshold=self._threshold_detect,
+                min_distance=int(max(1, round(self._last_md)))
+            )
+            delete_tracks_by_names(context, [t.name for t in self._clip.tracking.tracks])
+            print("[DeepTest][CycleInit] Dummy Detect-Run ausgeführt (ShortTest DummyPass).")
+        except Exception as ex:
+            print(f"[DeepTest][CycleInit] ⚠ Dummy Detect-Run fehlgeschlagen: {ex!r}")
+
+        # 4. Marker vollständig löschen, um sauberen Ausgangszustand sicherzustellen
+        if self._clip and getattr(self._clip, 'tracking', None):
+            names = [t.name for t in self._clip.tracking.tracks]
+            if names:
+                delete_tracks_by_names(context, names)
+                print(f"[DeepTest][CycleInit] {len(names)} alte Marker gelöscht (ShortTest-Parität).")
+        # --- Patch Ende ---
 
     # ------------------------ DetectAdapt (1 Iteration pro TIMER) ------------------------
 
@@ -592,6 +632,17 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
                 self._processing_names = []
             return True
 
+        # --- Patch Start: Laufzeit-Parität zu ShortTest ---
+        # Synchronisiere ViewLayer bei jedem Frame, um inkonsistente Markerzählung zu vermeiden
+        try:
+            bpy.context.view_layer.update()
+        except Exception as ex:
+            print(f"[DeepTest][Track] ⚠ View-Layer-Update-Fehler: {ex!r}")
+
+        # Sicherstellen, dass der Playhead im MovieClip synchron bleibt
+        if self._space and hasattr(self._space, "clip_user"):
+            self._space.clip_user.frame_curre
+
         self._scene.frame_current = self._current_frame
         self._space.clip_user.frame_current = self._current_frame
 
@@ -639,6 +690,9 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
                 self._processing_names = []
             return True
 
+        # --- Patch Start: Logging & Synchronisierung ---
+        # Explizite Ausgabe zur Debug-Konsistenzprüfung
+        print(f"[DeepTest][Track] Frame {self._current_frame} → aktive Tracks: {len(self._processing_names)}")
         return False
 
     # ------------------------ Cycle Finalisierung & Stufen-/Kategorie-Steuerung ------------------------
@@ -807,6 +861,19 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         print("[DeepTest][Modal] ✅ Deep Test abgeschlossen.")
         self.report({'INFO'}, "Deep Test abgeschlossen.")
         return {'FINISHED'}
+
+    # --- Patch Start: Debug-Abgleich & Parität zu ShortTest ---
+    def debug_compare_to_shorttest(self, context: Context):
+        """Optional: vergleicht aktuelle Scene-Keys mit ShortTest-Basiswerten."""
+        scene = context.scene
+        base = int(scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
+        rot = int(scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 0))
+        scale = int(scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 0))
+        print(f"[DeepTest][DebugCompare] Base={base} | RotXY={rot} | Scale={scale}")
+        if rot != base:
+            print("[DeepTest][DebugCompare] ⚠ Abweichung zwischen DeepTest und ShortTest erkannt.")
+        else:
+            print("[DeepTest][DebugCompare] ✅ Parität bestätigt.")
 
     def _cleanup_timer(self, context: Context):
         wm = context.window_manager
