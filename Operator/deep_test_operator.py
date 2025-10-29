@@ -526,10 +526,33 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
     # ------------------------ Modal Tracking pro Cycle ------------------------
 
     def _track_step_modal(self, context: Context) -> bool:
+        # --- 1) Keine aktiven Tracks mehr → letzten Frame mitzählen (ShortTest-Parität)
         if not self._processing_names:
-            total_len = int(get_total_track_length(context, start_frame=self._start_frame))
+            try:
+                # Ein Frame weiter, um den finalen Zustand zu erfassen
+                self._current_frame += 1
+                self._scene.frame_current = self._current_frame
+                self._space.clip_user.frame_current = self._current_frame
+                bpy.context.view_layer.update()
+                print(f"[DeepTest][Track] Letzter Frame ({self._current_frame}) für Track-Längen-Auswertung übernommen.")
+            except Exception as ex:
+                print(f"[DeepTest][Track] ⚠️ Letzter Frame konnte nicht gesetzt werden: {ex!r}")
+
+            # Nur die noch bekannten Processing-Tracks berücksichtigen
+            total_len = int(get_total_track_length(
+                context,
+                start_frame=self._start_frame
+            ))
+
             self._scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
-            print("[DeepTest][Track] ✅ Keine aktiven Tracks – Cycle beendet.")
+            print(f"[DeepTest][Track] ✅ Keine aktiven Tracks mehr – Tracking beendet. Total Track Length = {total_len}")
+
+            # Cleanup erst NACH der Messung
+            if self._final_new_tracks:
+                delete_tracks_by_names(context, self._final_new_tracks)
+                print(f"[DeepTest][Cleanup] {len(self._final_new_tracks)} Tracks gelöscht (nach Messung).")
+                self._final_new_tracks = []
+                self._processing_names = []
             return True
 
         self._scene.frame_current = self._current_frame
@@ -558,9 +581,25 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         )
 
         if self._current_frame >= self._end_frame or not self._processing_names:
+            # --- 2) Szenenende oder keine aktiven Marker mehr ---
+            try:
+                self._current_frame += 1
+                self._scene.frame_current = self._current_frame
+                self._space.clip_user.frame_current = self._current_frame
+                bpy.context.view_layer.update()
+            except Exception as ex:
+                print(f"[DeepTest][Track] ⚠️ Frame-Finalisierung fehlgeschlagen: {ex!r}")
+
             total_len = int(get_total_track_length(context, start_frame=self._start_frame))
             self._scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
             print(f"[DeepTest][Track] ✅ Cycle beendet. Total Track Length = {total_len}")
+
+            # Cleanup verschoben NACH Messung
+            if self._final_new_tracks:
+                delete_tracks_by_names(context, self._final_new_tracks)
+                print(f"[DeepTest][Cleanup] {len(self._final_new_tracks)} Tracks gelöscht (nach Messung).")
+                self._final_new_tracks = []
+                self._processing_names = []
             return True
 
         return False
