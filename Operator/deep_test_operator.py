@@ -2,6 +2,7 @@
 import bpy
 import time
 import math
+from dataclasses import dataclass
 from typing import Optional, List, Dict, Any, Tuple, Set
 from bpy.types import Operator, Context
 
@@ -31,6 +32,15 @@ SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_0"
 # ---- Reduktions-Stufen ------------------------------------------------------
 REDUCTION_STEPS = [0.05, 0.5, 0.8, 0.9, 0.95, 0.98, 0.99]
 MIN_THRESHOLD_VAL = 0.00001
+
+# ---- Interner Tracking-State (nicht-blockierend) ---------------------------
+@dataclass
+class _TrackState:
+    active: bool = False
+    current: int = 0
+    end: int = 0
+    active_names: List[str] = None
+    total_len: int = -1  # -1 = noch nicht gemessen
 
 
 class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
@@ -78,6 +88,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
 
     _goal_map: Dict[str, int] = {}
     _best_thresholds: Dict[str, float] = {}
+    _track_state: _TrackState = _TrackState()
 
     # Detect-Parameter (paritätisch zum Shorttest)
     _margin: int = 100
@@ -142,6 +153,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
+        self._track_state = _TrackState(active=False, current=0, end=0, active_names=[], total_len=-1)
         self._phase = "category_select"
         return {'RUNNING_MODAL'}
 
@@ -157,6 +169,26 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
                 return self._finish(context)
             self._current_category = self._categories_queue.pop(0)
             self._prepare_category(context)
+            self._phase = "threshold_cycle"
+            return {'RUNNING_MODAL'}
+        # Nicht-blockierendes Tracking: wenn Tracking aktiv, pro TIMER-Tick genau einen Schritt
+        if self._phase == "tracking_tick":
+            running = self._track_tick(context)
+            if running:
+                return {'RUNNING_MODAL'}
+            # Tracking fertig → Ergebnis liegt in self._track_state.total_len
+            self._phase = "threshold_cycle_evaluate"
+            return {'RUNNING_MODAL'}
+
+        # Auswertung nach beendetem Tracking innerhalb derselben Threshold-Stufe
+        if self._phase == "threshold_cycle_evaluate":
+            finished = self._evaluate_after_tracking(context)
+            if finished:
+                if self._categories_queue:
+                    self._phase = "category_select"
+                    return {'RUNNING_MODAL'}
+                return self._finish(context)
+            # sonst nächste Stufe derselben Kategorie
             self._phase = "threshold_cycle"
             return {'RUNNING_MODAL'}
 
@@ -239,7 +271,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         print(f"[DeepTest][{self._current_category}] Test Step {self._current_step_index + 1}/{len(REDUCTION_STEPS)}: "
               f"{next_val:.6f} (×{step_factor})")
     
-        # ---- Detect & Tracking -------------------------------------------------
+        # ---- Detect (UI-non-blocking bleibt gewahrt) ---------------------------
         # Parität zum Shorttest: placement='FRAME', margin, threshold, min_distance (framebasiert)
         try:
             md_int = int(max(1, round(self._last_md)))
@@ -262,25 +294,9 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         cleanup_new_markers(context, alte, neue, pz=50, hz=self._hz, vc=self._vc)
         self._final_new_tracks = [m['track'] for m in neue]
     
-        # ---- Tracking durchführen ---------------------------------------------
-        total_len = self._track_and_measure(context)
-        baseline_len = int(self._scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
-        print(f"[DeepTest][{self._current_category}] Track-Länge = {total_len}, Baseline = {baseline_len}")
-    
-        # ---- Bewertung ---------------------------------------------------------
-        if total_len > self._current_goal:
-            print(f"[DeepTest][{self._current_category}] ✅ Ziel verbessert: {total_len} > {self._current_goal}")
-            self._best_thresholds[self._current_category] = self._current_value
-            self._current_goal = total_len
-        else:
-            print(f"[DeepTest][{self._current_category}] Kein Zugewinn (aktuell {total_len} ≤ {self._current_goal}).")
-    
-        # ---- Vorbereitung nächste Stufe ---------------------------------------
-        self._base_value = self._current_value
-        self._current_step_index += 1
-        reset_to_frame(context, self._start_frame)
-        time.sleep(0.05)  # kleine Pause für Stabilität
-    
+        # ---- Tracking (nicht-blockierend) -------------------------------------
+        self._track_start(context)          # Initialisierung des tick-basierten Trackings
+        self._phase = "tracking_tick"       # Modal-Loop übernimmt jetzt per TIMER jeweils 1 Frame
         return False
 
 
@@ -295,21 +311,21 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         for trk in getattr(self._clip.tracking, "tracks", []):
             trk.select = (trk.name in self._final_new_tracks)
 
-    # ------------------------------------------------------------------------
-    # Nicht-blockierendes Tracking (Modal-Parität zum Shorttest)
-    # ------------------------------------------------------------------------
-    def _track_and_measure(self, context) -> int:
-        """Tracking-Loop analog zum Shorttest, aber im bestehenden Modal-Operator."""
+    # -------------------------------------------------------------------------
+    # Nicht-blockierendes Tracking (Start + Tick + Abschluss)
+    # -------------------------------------------------------------------------
+    def _track_start(self, context) -> None:
+        """Initialisiert das tick-basierte Tracking ohne UI-Blockade."""
         scene = self._scene
         clip = self._clip
-        window, area, region, space = self._window, self._area, self._region, self._space
+        space = self._space
 
         start_frame = self._start_frame
         end_frame = self._end_frame
         if end_frame < start_frame:
             end_frame = start_frame
 
-        active_names = list(self._final_new_tracks)
+        active_names = list(self._final_new_tracks or [])
         if not active_names:
             print("[DeepTest][Track] ⚠️ Keine aktiven Tracks.")
             return 0
@@ -318,42 +334,95 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             for trk in clip.tracking.tracks:
                 trk.select = (trk.name in active_names)
 
-        current = start_frame
-        scene.frame_current = current
-        space.clip_user.frame_current = current
+        scene.frame_current = start_frame
+        space.clip_user.frame_current = start_frame
 
+        self._track_state = _TrackState(
+            active=True,
+            current=start_frame,
+            end=end_frame,
+            active_names=active_names,
+            total_len=-1
+        )
         print(f"[DeepTest][Track] ▶️ Start {start_frame} → {end_frame} | {len(active_names)} Tracks aktiv")
 
-        while current <= end_frame:
-            # 1️⃣ Inaktive Tracks filtern
-            active_names, dropped = filter_active_tracks_at_frame(context, active_names, current)
-            if dropped > 0:
-                print(f"[DeepTest][Track] {dropped} inaktive entfernt → {len(active_names)} aktiv")
+    def _track_tick(self, context) -> bool:
+        """Führt genau einen Tracking-Schritt aus. True = läuft weiter; False = abgeschlossen."""
+        ts = self._track_state
+        if not ts.active:
+            return False
 
-            if not active_names:
-                print(f"[DeepTest][Track] ✅ Keine aktiven Tracks mehr bei Frame {current}")
-                break
+        scene = self._scene
+        space = self._space
+        window, area, region = self._window, self._area, self._region
 
-            # 2️⃣ Einen Frame tracken
-            ok = track_markers_with_override(window, area, region, space, backwards=False, sequence=False)
-            if not ok:
-                print("[DeepTest][Track] ⚠️ Tracking-Fehler – Abbruch.")
-                break
+        # 1) Inaktive Tracks filtern
+        ts.active_names, dropped = filter_active_tracks_at_frame(context, ts.active_names, ts.current)
+        if dropped > 0:
+            print(f"[DeepTest][Track] {dropped} inaktive entfernt → {len(ts.active_names)} aktiv")
+        if not ts.active_names:
+            print(f"[DeepTest][Track] ✅ Keine aktiven Tracks mehr bei Frame {ts.current}")
+            return self._track_finish(context)
 
-            current += 1
-            scene.frame_current = current
-            space.clip_user.frame_current = current
+        # 2) Einen Frame tracken
+        ok = track_markers_with_override(window, area, region, space, backwards=False, sequence=False)
+        if not ok:
+            print("[DeepTest][Track] ⚠️ Tracking-Fehler – Abbruch.")
+            return self._track_finish(context)
 
-        # 3️⃣ Messung & Cleanup
-        total_len = int(get_total_track_length(context, start_frame=start_frame))
-        print(f"[DeepTest][Track] ✅ Tracking abgeschlossen – Gesamtlänge = {total_len}")
+        # 3) Nächster Frame / Ende prüfen
+        ts.current += 1
+        if ts.current > ts.end:
+            print("[DeepTest][Track] ✅ Szenenende erreicht.")
+            return self._track_finish(context)
 
+        scene.frame_current = ts.current
+        space.clip_user.frame_current = ts.current
+        return True
+
+    def _track_finish(self, context) -> bool:
+        """Beendet das Tracking, misst Länge und löscht die temporären Tracks."""
+        ts = self._track_state
+        ts.active = False
+        try:
+            ts.total_len = int(get_total_track_length(context, start_frame=self._start_frame))
+        except Exception as e:
+            print(f"[DeepTest][Track] ⚠️ Messfehler: {e!r}")
+            ts.total_len = 0
+        print(f"[DeepTest][Track] ✅ Tracking abgeschlossen – Gesamtlänge = {ts.total_len}")
         try:
             delete_tracks_by_names(context, self._final_new_tracks)
         except Exception as e:
             print(f"[DeepTest][Track] ⚠️ Fehler beim Löschen: {e!r}")
+        return False
 
-        return total_len
+    # -------------------------------------------------------------------------
+    # Auswertung nach beendetem Tracking in derselben Threshold-Stufe
+    # -------------------------------------------------------------------------
+    def _evaluate_after_tracking(self, context) -> bool:
+        """Bewertet die Ergebnisse der aktuellen Stufe und bereitet die nächste vor.
+        Rückgabe: True = Kategorie fertig, False = nächste Stufe derselben Kategorie.
+        """
+        total_len = int(self._track_state.total_len if self._track_state.total_len >= 0 else 0)
+        baseline_len = int(self._scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
+        print(f"[DeepTest][{self._current_category}] Track-Länge = {total_len}, Baseline = {baseline_len}")
+
+        # ---- Bewertung -----------------------------------------------------
+        if total_len > self._current_goal:
+            print(f"[DeepTest][{self._current_category}] ✅ Ziel verbessert: {total_len} > {self._current_goal}")
+            self._best_thresholds[self._current_category] = self._current_value
+            self._current_goal = total_len
+        else:
+            print(f"[DeepTest][{self._current_category}] Kein Zugewinn (aktuell {total_len} ≤ {self._current_goal}).")
+
+        # ---- Vorbereitung nächste Stufe -----------------------------------
+        self._base_value = self._current_value
+        self._current_step_index += 1
+        reset_to_frame(context, self._start_frame)
+        # KEIN time.sleep – Modal-Tick hält UI frei
+
+        # Kategorie fertig, wenn alle Reduktionsstufen durch sind
+        return self._current_step_index >= len(REDUCTION_STEPS)
 
     # ------------------------------------------------------------------------
     def _finish(self, context):
