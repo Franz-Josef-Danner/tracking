@@ -290,11 +290,27 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         step_factor = REDUCTION_STEPS[self._current_step_index]
 
         if self._current_category == "rot_xy":
+            import math
             next_val = max(MIN_THRESHOLD_VAL, self._base_value * step_factor)
+
+            hz = float(self._hz)
+            vc = float(self._vc)
+            ratio_vh = (vc / hz) if hz else 1.0
+
+            # Neue Formel für rot_thresh_y
+            try:
+                delta = (math.log10(1 * 1_000_000) - math.log10(next_val * 1_000_000))
+                adj = pow((delta * ratio_vh), 10) / 1_000_000
+            except ValueError:
+                adj = 0.0
+
+            rot_x = next_val
+            rot_y = rot_x + adj
+
             set_scene_props(self._scene,
-                            kaiserlich_rot_thresh_x=next_val,
-                            kaiserlich_rot_thresh_y=next_val * self._ratio_xy)
-            self._current_value = next_val
+                            kaiserlich_rot_thresh_x=rot_x,
+                            kaiserlich_rot_thresh_y=rot_y)
+            self._current_value = rot_x
 
         elif self._current_category == "scale_min":
             next_val = max(MIN_THRESHOLD_VAL, self._base_value * step_factor)
@@ -526,12 +542,27 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
 
     def _apply_best_value_for_category(self, current_val: float):
         if self._current_category == "rot_xy":
+            import math
             self._best_rot_x = current_val
-            self._best_rot_y = current_val * self._ratio_xy
+
+            hz = float(self._hz)
+            vc = float(self._vc)
+            ratio_vh = (vc / hz) if hz else 1.0
+
+            try:
+                delta = (math.log10(1 * 1_000_000) - math.log10(self._best_rot_x * 1_000_000))
+                adj = pow((delta * ratio_vh), 10) / 1_000_000
+            except ValueError:
+                adj = 0.0
+
+            self._best_rot_y = self._best_rot_x + adj
+
             set_scene_props(self._scene,
                             kaiserlich_rot_thresh_x=self._best_rot_x,
                             kaiserlich_rot_thresh_y=self._best_rot_y)
-            print(f"[DeepTest][Write] rot_xy → x={self._best_rot_x:.6f}, y={self._best_rot_y:.6f}")
+
+            print(f"[DeepTest][Write] rot_xy → x={self._best_rot_x:.6f}, "
+                  f"y={self._best_rot_y:.6f} (Formel mit Log/Pow basierend auf Auflösung)")
 
         elif self._current_category == "scale_min":
             self._best_scale_min = current_val
