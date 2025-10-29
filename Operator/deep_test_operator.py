@@ -296,17 +296,67 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             trk.select = (trk.name in self._final_new_tracks)
 
     def _track_and_measure(self, context) -> int:
-        """Trackt einmal komplett vorwärts und misst Gesamtlänge."""
-        window, area, region, space = self._window, self._area, self._region, self._space
+        """Trackt frameweise wie im Shorttest und misst die Gesamtlänge aller aktiven Tracks."""
         scene = self._scene
-        scene.frame_current = self._start_frame
-        space.clip_user.frame_current = self._start_frame
-        while scene.frame_current < self._end_frame:
-            track_markers_with_override(window, area, region, space, backwards=False, sequence=False)
-            scene.frame_current += 1
-            space.clip_user.frame_current = scene.frame_current
-        total_len = int(get_total_track_length(context, start_frame=self._start_frame))
-        delete_tracks_by_names(context, self._final_new_tracks)
+        clip = self._clip
+        window, area, region, space = self._window, self._area, self._region, self._space
+
+        # --- Initialisierung (identisch zur Shorttest-Struktur) ---
+        start_frame = self._start_frame
+        end_frame = self._end_frame
+        if end_frame < start_frame:
+            end_frame = start_frame
+
+        # Selektion initialisieren (alle neuen Tracks aktivieren)
+        if clip and getattr(clip, "tracking", None):
+            for trk in clip.tracking.tracks:
+                trk.select = (trk.name in self._final_new_tracks)
+
+        # Tracking-Loop (nicht-blockierend innerhalb dieses Aufrufs)
+        current = start_frame
+        scene.frame_current = current
+        space.clip_user.frame_current = current
+
+        active_names = list(self._final_new_tracks)
+        if not active_names:
+            print("[DeepTest][Track] ⚠️ Keine aktiven Tracks zum Start gefunden.")
+            return 0
+
+        print(f"[DeepTest][Track] ▶️ Start {start_frame} → {end_frame} | {len(active_names)} aktive Tracks")
+
+        # --- Frameweise Tracking ---
+        while current <= end_frame:
+            # 1) Aktive Tracks prüfen
+            active_names, dropped = filter_active_tracks_at_frame(context, active_names, current)
+            if not active_names:
+                print(f"[DeepTest][Track] ✅ Keine aktiven Tracks mehr bei Frame {current}")
+                break
+            if dropped > 0:
+                print(f"[DeepTest][Track] {dropped} inaktive Tracks entfernt → {len(active_names)} verbleibend")
+
+            # 2) Einen Frame weiter tracken
+            success = track_markers_with_override(window, area, region, space, backwards=False, sequence=False)
+            if not success:
+                print("[DeepTest][Track] ⚠️ Tracking-Fehler – Abbruch.")
+                break
+
+            # 3) Einen Frame fortsetzen
+            current += 1
+            if current > end_frame:
+                break
+            scene.frame_current = current
+            space.clip_user.frame_current = current
+
+        # --- Nachlauf: Track-Länge messen (identisch zum Shorttest) ---
+        total_len = int(get_total_track_length(context, start_frame=start_frame))
+        print(f"[DeepTest][Track] ✅ Tracking abgeschlossen – Total Length = {total_len}")
+
+        # --- Cleanup wie im Shorttest ---
+        try:
+            delete_tracks_by_names(context, self._final_new_tracks)
+        except Exception as e:
+            print(f"[DeepTest][Track] ⚠️ Fehler beim Löschen der Tracks: {e!r}")
+
         return total_len
 
     # ------------------------------------------------------------------------
