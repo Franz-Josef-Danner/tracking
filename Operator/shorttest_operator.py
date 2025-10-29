@@ -65,6 +65,8 @@ class _AutoCalibState:
     # wird nach dem ersten Lauf angestoßen, um die Rot-Schwellenwerte auf 0 zu testen.
     track_cycles_done: int = 0
 
+    # Flag für initialen Dummy-/Warmup-Durchlauf (ohne Messung)
+    pre_cycle_done: bool = False
     # Flags für zusätzliche Zyklen. second_cycle wird gesetzt, sobald der erste
     # Durchlauf abgeschlossen wurde und ein zweiter Detect‑/Track‑Zyklus gestartet
     # wird (Rot-Schwellenwerte = 0). third_cycle wird gesetzt, sobald der
@@ -187,6 +189,22 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
 
         # 5) Abschluss oder Vorbereitung auf weitere Zyklen
         if not self._state.done and self._state.did_track_cycle:
+            # ===============================================================
+            # 5a) PRE-CYCLE: erster Dummy-Durchlauf (ohne Messung)
+            # ===============================================================
+            if not self._state.pre_cycle_done:
+                print("[Kaiserlich Tracker][AutoCalibrate] 🟡 Dummy-Durchlauf (Warm-Up) abgeschlossen – starte offiziellen Testlauf …")
+                self._state.pre_cycle_done = True
+
+                # Reset der Statusflags für offiziellen Cycle-Start
+                self._state.did_detect_adapt = False
+                self._state.detect_adapt_done_confirmed = False
+                self._state.did_track_cycle = False
+                return {'RUNNING_MODAL'}
+
+            # ===============================================================
+            # 5b) OFFIZIELLE TESTZÜGE
+            # ===============================================================
             # Wenn noch kein zweiter Durchlauf durchgeführt wurde, starte diesen:
             if not self._state.second_cycle:
                 try:
