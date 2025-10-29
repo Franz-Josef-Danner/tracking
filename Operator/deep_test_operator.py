@@ -641,7 +641,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
 
         # Sicherstellen, dass der Playhead im MovieClip synchron bleibt
         if self._space and hasattr(self._space, "clip_user"):
-            self._space.clip_user.frame_curre
+            self._space.clip_user.frame_current
 
         self._scene.frame_current = self._current_frame
         self._space.clip_user.frame_current = self._current_frame
