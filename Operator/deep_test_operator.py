@@ -213,7 +213,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             return {'RUNNING_MODAL'}
 
         if self._phase == "track_step":
-            tracking_done = self._track_step_modal(context)
+            tracking_done = self._track_cycle_tick(context)
             if tracking_done:
                 self._phase = "cycle_finalize"
             return {'RUNNING_MODAL'}
