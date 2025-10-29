@@ -383,17 +383,18 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         print(f"\n[Kaiserlich Tracker][DetectAdapt] --- LOOP {loop} ---")
         print(f"[Kaiserlich Tracker][DetectAdapt] Aktuelles min_distance = {self._last_md:.2f}")
 
-        # Snapshot-Reset beim ersten Detect-Loop (ShortTest-kompatibel)
         clip = getattr(context.space_data, "clip", None)
         tracking = getattr(clip, "tracking", None) if clip else None
 
+        # --- Einheitliches Verhalten wie ShortTest ---
         if loop == 1:
-            # Vor erstem Detect: alle evtl. verbliebenen Marker löschen und Snapshot leeren
             if tracking and tracking.tracks:
                 delete_tracks_by_names(context, [t.name for t in tracking.tracks])
-                print(f"[DeepTest][DetectInit] Vor Loop-1: Alte Marker vollständig gelöscht.")
+                print("[DeepTest][DetectInit] Alte Marker vor erstem Detect gelöscht.")
             pre_snapshot = []
             baseline_start_tracknames = set()
+            self._pre_snapshot = []
+            self._baseline_start_tracknames = set()
         else:
             pre_snapshot = snapshot_active_markers(context)
             baseline_start_tracknames = {t.name for t in tracking.tracks} if tracking else set()
@@ -423,8 +424,16 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         )
         remaining = len(cleaned_new)
 
+        # Zielprüfung identisch zu ShortTest
         if abs(remaining - ef_target) <= tolerance:
             print(f"[Kaiserlich Tracker][DetectAdapt] Ziel erreicht: {remaining}/{ef_target} (±{tolerance:.1f})")
+            self._last_new_names = [m['track'] for m in cleaned_new]
+            self._store_md_with_interpolation(scene, self._current_frame, self._last_md)
+            return True
+
+        # Kein Fortschritt nach mehreren Loops → abbrechen
+        if loop >= self._detect_loop_max:
+            print(f"[Kaiserlich Tracker][DetectAdapt] ⚠️ Max Loops ({self._detect_loop_max}) erreicht – Zustand übernehmen.")
             self._last_new_names = [m['track'] for m in cleaned_new]
             self._store_md_with_interpolation(scene, self._current_frame, self._last_md)
             return True
@@ -448,6 +457,50 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         self._last_new_names = [m['track'] for m in cleaned_new]
         self._store_md_with_interpolation(scene, self._current_frame, self._last_md)
         return True
+
+    # ------------------- Prevent endless repeat -------------------
+    _repeat_counter: int = 0
+
+    def _finalize_cycle_and_decide_next(self, context: Context) -> str:
+        measured = int(self._scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 0))
+        goal_before = self._current_goal
+
+        delete_tracks_by_names(context, self._final_new_tracks)
+        self._final_new_tracks = []
+        self._processing_names = []
+        self._scene.frame_current = self._start_frame
+        self._space.clip_user.frame_current = self._start_frame
+        self._current_frame = self._start_frame
+
+        # --- Ziel erreicht ---
+        if measured >= self._current_goal:
+            self._repeat_counter = 0
+            self._current_goal = measured
+            self._apply_best_value_for_category(current_val=self._current_value)
+            self._reset_thresholds_after_cycle()
+            self._current_step_index += 1
+            if self._current_step_index < len(REDUCTION_STEPS):
+                print(f"[DeepTest][Eval] ✓ Ziel erreicht | measured={measured} >= goal={goal_before} | next step")
+                return "next_step"
+            print(f"[DeepTest][Eval] ✓ Ziel erreicht | Kategorie abgeschlossen")
+            return "next_category"
+
+        # --- Ziel verfehlt ---
+        if self._current_value <= MIN_THRESHOLD_VAL + 1e-12 or self._repeat_counter >= 3:
+            print(f"[DeepTest][Eval] ✗ Kein Fortschritt oder MIN erreicht → nächste Stufe")
+            self._repeat_counter = 0
+            self._reset_thresholds_after_cycle()
+            self._current_step_index += 1
+            if self._current_step_index < len(REDUCTION_STEPS):
+                return "next_step"
+            return "next_category"
+
+        # --- Wiederhole gleiche Stufe mit weiter reduziertem Wert ---
+        self._repeat_counter += 1
+        self._base_value = self._current_value
+        self._reset_thresholds_after_cycle()
+        print(f"[DeepTest][Eval] ↻ Wiederholung {self._repeat_counter}/3 | measured={measured} < goal={goal_before}")
+        return "repeat_step"
 
     def _finalize_detection_select_new(self, context: Context):
         clip = getattr(context.space_data, 'clip', None)
