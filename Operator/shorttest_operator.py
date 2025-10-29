@@ -575,18 +575,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         # --- 1) Aktive Tracks prüfen ---------------------------------------
         active_tracks, dropped = filter_active_tracks_at_frame(context, s.track_names, current)
         if not active_tracks:
-            print("[TrackCycle] ✅ Keine aktiven Tracks mehr – Tracking beendet (inkl. finalem Frame-Count-Angleich).")
-            # DeepTest-Kompatibilität: Letzten Frame mitzählen
-            s.track_frame_current += 1
-            # Sicherstellen, dass dieser Frame noch in den Scene-Kontext geschrieben wird
-            try:
-                scene.frame_current = s.track_frame_current
-                s.track_space.clip_user.frame_current = s.track_frame_current
-                bpy.context.view_layer.update()
-                print(f"[TrackCycle] Letzter Frame ({s.track_frame_current}) für Track-Längen-Auswertung übernommen.")
-            except Exception as ex:
-                print(f"[TrackCycle] ⚠️ Letzter Frame konnte nicht gesetzt werden: {ex!r}")
-
+            print("[TrackCycle] ✅ Keine aktiven Tracks mehr – Tracking beendet.")
             s.track_active = False
             return False
 
@@ -647,7 +636,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         tracking = getattr(clip, "tracking", None) if clip else None
 
         try:
-            # 1) Letzten aktiven Frame sichern (DeepTest-kompatibel)
+            # 1) Letzten aktiven Frame sichern (ohne Off-by-One-Kompensation)
             end_f = int(self._state.track_frame_current or context.scene.frame_current)
             scene = context.scene
             scene.frame_current = end_f
