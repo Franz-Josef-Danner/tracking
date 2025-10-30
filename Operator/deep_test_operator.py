@@ -473,16 +473,22 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             print(f"[DeepTest][Track] ✅ Keine aktiven Tracks mehr bei Frame {ts.current}")
             return self._track_finish(context)
 
-        # --- Abbruchbedingungen: gewünschte Markerzahl oder Szenenende ---
-        ef_target = int(self._scene.kaiserlich_markers_per_frame)
-        active_now = len(ts.active_names)
+        # --- Neue Abbruchbedingungen basierend auf UI-Property "Frames per Track" ---
+        frames_per_track = int(scene.kaiserlich_frames_per_track)
+        current_frame_index = ts.current - getattr(ts, "start_frame", scene.frame_start)
 
-        # Wenn die gewünschte Anzahl aktiver Marker erreicht ist
-        if active_now >= ef_target:
-            print(f"[DeepTest][Track] ⏹️ Zielanzahl erreicht ({active_now} ≥ {ef_target}) – Tracking beendet.")
+        # 1. Wenn die gewünschte Frameanzahl pro Track erreicht ist
+        if current_frame_index >= frames_per_track:
+            print(f"[DeepTest][Track] ⏹️ Zielanzahl an Frames pro Track erreicht "
+                  f"({current_frame_index} ≥ {frames_per_track}) – Tracking beendet.")
             return self._track_finish(context)
 
-        # Wenn das Szenenende erreicht oder überschritten wurde
+        # 2. Wenn keine aktiven Tracks mehr vorhanden sind
+        if len(ts.active_names) == 0:
+            print(f"[DeepTest][Track] ✅ Keine aktiven Tracks mehr bei Frame {ts.current} – Tracking beendet.")
+            return self._track_finish(context)
+
+        # 3. Wenn das Szenenende erreicht oder überschritten wurde
         if ts.current >= ts.end:
             print(f"[DeepTest][Track] ✅ Szenenende erreicht bei Frame {ts.current}.")
             return self._track_finish(context)
@@ -499,8 +505,11 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             print("[DeepTest][Track] ⚠️ Tracking-Fehler – Abbruch.")
             return self._track_finish(context)
 
-        # 4) Nächster Frame
+        # 4) Nächster Frame / Ende prüfen
         ts.current += 1
+        if ts.current > ts.end:
+            print("[DeepTest][Track] ✅ Szenenende erreicht.")
+            return self._track_finish(context)
 
         scene.frame_current = ts.current
         space.clip_user.frame_current = ts.current
