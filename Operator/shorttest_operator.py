@@ -569,30 +569,23 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         # Wichtig: Ausgangsbasis ist eine leere Selektion (invoke hat bereits geleert).
         # Falls dennoch Selektionen vorhanden sind (z. B. durch externe Eingriffe),
         # ignorieren wir das nicht, sondern werten sie wie bisher aus.
-        # ------------------------------------------------------------------------
-        # Nur neue Tracks für Tracking aktivieren
-        # ------------------------------------------------------------------------
-        new_tracks = getattr(self._state, "created_track_names", [])
-        tracking = getattr(clip, "tracking", None)
+        original_selected = collect_selected_track_names(context)
+        if not original_selected:
+            tracking = getattr(clip, "tracking", None)
+            new_tracks = getattr(self._state, "created_track_names", [])
         
-        if tracking and new_tracks:
-            # Nur neue Tracks aktivieren
-            for tr in tracking.tracks:
-                tr.select = (tr.name in new_tracks)
-                tr.mute = not tr.select
-            original_selected = list(new_tracks)
-            print(f"[TrackCycle] 🎯 Nur neue Tracks aktiviert ({len(new_tracks)}).")
-        
-        elif tracking and tracking.tracks:
-            # Fallback: Wenn keine neuen Tracks bekannt, nutze vorhandene Selektion
-            original_selected = collect_selected_track_names(context)
-            if not original_selected:
-                original_selected = [t.name for t in tracking.tracks]
-                for tr in tracking.tracks:
+            # Nur die neu erzeugten Tracks für das Tracking aktivieren
+            if tracking and new_tracks:
+                valid_tracks = [t for t in tracking.tracks if t.name in new_tracks]
+                for tr in valid_tracks:
                     tr.select = True
-                print(f"[TrackCycle] ⚠️ Keine neuen Tracks bekannt – alle {len(original_selected)} Tracks aktiviert.")
-        else:
-            raise RuntimeError("Keine Tracks verfügbar für Tracking.")
+                original_selected = [t.name for t in valid_tracks]
+                print(f"[TrackCycle] 🎯 Nur neue Tracks aktiviert ({len(original_selected)}).")
+        
+            else:
+                print("[TrackCycle] ❌ Keine neuen Tracks gefunden – Tracking übersprungen.")
+                self._state.track_active = False
+                return
 
 
         window, area, region, space = find_clip_editor_area(clip)
