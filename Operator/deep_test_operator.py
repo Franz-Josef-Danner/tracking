@@ -24,6 +24,7 @@ from ..Helper.init_detect_state import init_detect_state
 from ..Helper.reset_helper import reset_all_thresholds
 from ..Helper.selection_helper import collect_selected_track_names
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
+from ..Helper.filter_and_delete_tracks import filter_and_delete_tracks
 
 # ---- Szenen-Keys ------------------------------------------------------------
 SCENE_TOTAL_TRACK_LEN_BASE  = "kaiserlich_len_baseline_00"
@@ -478,11 +479,30 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         ts = self._track_state
         ts.active = False
         try:
+            # ----------------------------------------------------------------
+            # 0) Vorab-Filterung neuer Tracks mit Threshold 30
+            # ----------------------------------------------------------------
+            new_tracks = getattr(self, "_final_new_tracks", [])
+            clip = getattr(self, "_clip", None)
+            if new_tracks:
+                print(f"[DeepTest][FilterDelete] Vor Tracklängen-Messung: {len(new_tracks)} neue Tracks erkannt.")
+                try:
+                    filter_and_delete_tracks(
+                        include_names=new_tracks,
+                        threshold=30,
+                        clip=clip
+                    )
+                    print(f"[DeepTest][FilterDelete] ✅ Filter/Delete auf neue Tracks angewendet ({len(new_tracks)} Stück).")
+                except Exception as e:
+                    print(f"[DeepTest][FilterDelete] ⚠️ Fehler bei Filter/Delete: {e}")
+            else:
+                print("[DeepTest][FilterDelete] ⚠️ Keine neuen Tracks zum Filtern gefunden.")
+
             # View-Layer-Sync wie ShortTest
             bpy.context.view_layer.update()
             # Formel anwenden (ShortTest-Parität)
             apply_formula_on_selected_tracks(context, max_frames=5)
-            # Länge messen
+            # Länge messen (nach Filterung)
             ts.total_len = int(get_total_track_length(context, start_frame=self._start_frame))
         except Exception as e:
             print(f"[DeepTest][Track] ⚠️ Messfehler: {e!r}")
