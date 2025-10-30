@@ -449,6 +449,8 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             active_names=active_names,
             total_len=-1
         )
+        # Startframe im State speichern für späteren Reset
+        self._track_state.start_frame = start_frame
         # Gesamtanzahl speichern für Abbruchbedingung (75%-Regel)
         self._track_state.start_count = len(active_names)
         print(f"[DeepTest][Track] ▶️ Start {start_frame} → {end_frame} | {len(active_names)} Tracks aktiv")
@@ -531,20 +533,20 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             # Formel anwenden (ShortTest-Parität)
             apply_formula_on_selected_tracks(context, max_frames=5)
             # Länge messen (nach Filterung)
-            ts.total_len = int(get_total_track_length(context, start_frame=self._track_state.current))
+            ts.total_len = int(get_total_track_length(context, start_frame=self._start_frame))
         except Exception as e:
             print(f"[DeepTest][Track] ⚠️ Messfehler: {e!r}")
             ts.total_len = 0
 
         print(f"[DeepTest][Track] ✅ Tracking abgeschlossen – Gesamtlänge = {ts.total_len}")
 
-        # Playhead bleibt am letzten Startframe (kein Rücksprung auf Szenenanfang)
+        # Nach jedem Track-Durchgang soll der Playhead auf den ursprünglichen Startframe zurückspringen
         try:
-            start_f = int(self._track_state.current or self._scene.frame_current)
+            start_f = int(getattr(self._track_state, "start_frame", self._start_frame))
             reset_to_frame(context, start_f)
-            print(f"[DeepTest][Track] ▶️ Playhead bleibt auf Frame {start_f} nach Abschluss.")
+            print(f"[DeepTest][Track] 🔁 Playhead auf Startframe {start_f} zurückgesetzt (nach Abschluss).")
         except Exception as ex:
-            print(f"[DeepTest][Track] ⚠️ Fehler beim Playhead-Reset: {ex!r}")
+            print(f"[DeepTest][Track] ⚠️ Fehler beim Playhead-Reset (Startframe): {ex!r}")
 
         # Temporäre Tracks löschen
         try:
@@ -606,11 +608,11 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         # Dieser Frame wird als Startpunkt für den nächsten Detect-Cycle verwendet.
         # --------------------------------------------------------------------
         try:
-            start_f = int(self._track_state.current or self._scene.frame_current)
+            start_f = int(getattr(self._track_state, "start_frame", self._start_frame))
             reset_to_frame(context, start_f)
-            print(f"[DeepTest][Eval] ▶️ Playhead bleibt auf Frame {start_f} für nächsten Detect-Cycle.")
+            print(f"[DeepTest][Eval] 🔁 Playhead zurück auf Startframe {start_f} für nächsten Detect-Cycle.")
         except Exception as ex:
-            print(f"[DeepTest][Eval] ⚠️ Fehler beim Playhead-Reset: {ex!r}")
+            print(f"[DeepTest][Eval] ⚠️ Fehler beim Playhead-Reset (Eval): {ex!r}")
 
         # Kategorie fertig, wenn alle Reduktionsstufen durch oder MIN erreicht
         if self._current_step_index >= len(REDUCTION_STEPS):
