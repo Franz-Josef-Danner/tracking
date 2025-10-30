@@ -727,10 +727,12 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 self._state.track_space.clip_user.frame_current = start_f
             print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead zurück auf Frame {start_f} (nach Messung).")
 
-            # Start-Frame-Konsistenz erzwingen (DeepTest-Parität)
-            scene.frame_current = scene.frame_start
+            # Playhead bleibt auf dem letzten Tracking-Start-Frame
+            start_f = int(self._state.track_start_frame or scene.frame_current)
+            scene.frame_current = start_f
             if self._state.track_space:
-                self._state.track_space.clip_user.frame_current = scene.frame_start
+                self._state.track_space.clip_user.frame_current = start_f
+            print(f"[TrackCycle] ▶️ Playhead bleibt auf Frame {start_f} für nächsten Zyklus.")
             # --- Persistente Sammelstruktur für spätere Analyse ---
             # Speichert alle gemessenen Längen in einer Liste unter 'kaiserlich_len_results'
             results = scene.get("kaiserlich_len_results", [])
