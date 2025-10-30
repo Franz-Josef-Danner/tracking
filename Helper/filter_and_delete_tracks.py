@@ -1,88 +1,136 @@
+# Helper/filter_and_delete_tracks.py
+# Kaiserlich Tracker – selektives Filter/Delete nur für neue Tracks
+
 import bpy
+from typing import Iterable, List, Tuple, Optional, Dict
+
+from .find_clip_editor_area import find_clip_editor_area
+from .delete import delete_tracks_by_names
+
+
+# ---------------------------------------------------------------------------
+# Interne Hilfsfunktionen
+# ---------------------------------------------------------------------------
+
+def _get_tracking(clip: Optional[bpy.types.MovieClip]):
+    """Gibt das Tracking-Objekt eines Clips zurück, falls vorhanden."""
+    if clip and getattr(clip, "tracking", None):
+        return clip.tracking
+    space_clip = getattr(getattr(bpy.context, "space_data", None), "clip", None)
+    if space_clip and getattr(space_clip, "tracking", None):
+        return space_clip.tracking
+    return None
+
+
+def _snapshot_selection(tracking: bpy.types.MovieTracking) -> Dict[str, bool]:
+    """Speichert den Auswahlzustand aller Tracks."""
+    return {t.name: bool(getattr(t, "select", False)) for t in tracking.tracks}
+
+
+def _restore_selection(tracking: bpy.types.MovieTracking, sel_map: Dict[str, bool]) -> None:
+    """Stellt eine vorherige Track-Selektion wieder her."""
+    for t in tracking.tracks:
+        try:
+            t.select = bool(sel_map.get(t.name, False))
+        except Exception:
+            pass
+
+
+def _select_only(tracking: bpy.types.MovieTracking, names: Iterable[str]) -> None:
+    """Selektiert ausschließlich die angegebenen Track-Namen."""
+    name_set = set(names or [])
+    for t in tracking.tracks:
+        t.select = (t.name in name_set)
+
+
+# ---------------------------------------------------------------------------
+# Hauptfunktion
+# ---------------------------------------------------------------------------
 
 def filter_and_delete_tracks(
-    include_names=None,
-    exclude_names=None,
-    track_threshold: float = None,
-    threshold: float = None,
-    clip=None
-):
+    include_names: Iterable[str],
+    *,
+    threshold: float = 30.0,
+    clip: Optional[bpy.types.MovieClip] = None,
+) -> Tuple[List[str], int]:
     """
-    Führt `bpy.ops.clip.filter_tracks()` mit angegebenem Threshold aus
-    und löscht anschließend **nur die tatsächlich vom Filter betroffenen Tracks**.
+    Führt das Blender-Filtering **nur** für die angegebenen Track-Namen aus
+    und löscht ausschließlich die dabei als 'problematisch' markierten Tracks
+    innerhalb dieser Whitelist.
 
-    Unterstützt sowohl `track_threshold` (aktuell, Blender 4.x)
-    als auch das alte `threshold`-Argument für rückwärtskompatible Aufrufe.
+    Parameter:
+        include_names: Iterable[str] – Liste der neuen Track-Namen
+        threshold: float – Filter-Threshold für bpy.ops.clip.filter_tracks
+        clip: Optional[MovieClip] – Clip, auf dem gearbeitet wird
+
+    Rückgabe:
+        (deleted_names, deleted_count)
     """
+    include_set = set([n for n in (include_names or []) if isinstance(n, str) and n.strip()])
+    if not include_set:
+        print("[Helper][FilterDelete] ⚠️ include_names ist leer – kein Filtering.")
+        return ([], 0)
 
-    # --- Parameter-Alias ---
-    if track_threshold is None and threshold is not None:
-        track_threshold = threshold
-    if track_threshold is None:
-        track_threshold = 30.0  # Defaultwert
+    tracking = _get_tracking(clip)
+    if tracking is None or not getattr(tracking, "tracks", None):
+        print("[Helper][FilterDelete] ⚠️ Kein Tracking-Objekt oder keine Tracks vorhanden.")
+        return ([], 0)
 
-    # --- Clip-Kontext absichern ---
-    if clip is None:
-        clip = bpy.context.edit_movieclip
-    if clip is None:
-        print("[Helper][FilterDelete] ❌ Kein aktiver Clip gefunden.")
-        return
+    # Nur Tracks, die tatsächlich existieren
+    existing_names = {t.name for t in tracking.tracks}
+    include_set &= existing_names
+    if not include_set:
+        print("[Helper][FilterDelete] ⚠️ Keine der angegebenen include_names existiert.")
+        return ([], 0)
 
-    tracking = clip.tracking
-    tracks = tracking.tracks
+    # CLIP_EDITOR-Context für Operator-Execution
+    window, area, region, space = find_clip_editor_area(clip)
+    if not window:
+        raise RuntimeError("Keine CLIP_EDITOR Area gefunden – filter_tracks benötigt gültigen Kontext.")
 
-    # --- Auswahl vorbereiten ---
-    for t in tracks:
-        t.select = False
+    override = {
+        "window": window,
+        "screen": window.screen,
+        "area": area,
+        "region": region,
+        "space_data": space,
+    }
 
-    # --- Selektionslogik anwenden ---
-    selected_for_filter = []
-    for track in tracks:
-        name = track.name
-        if include_names and name not in include_names:
-            continue
-        if exclude_names and name in exclude_names:
-            continue
-        track.select = True
-        selected_for_filter.append(name)
+    # Ursprüngliche Selektion sichern
+    sel_snapshot = _snapshot_selection(tracking)
 
-    if not selected_for_filter:
-        print("[Helper][FilterDelete] ⚠️ Keine Tracks zur Filterung ausgewählt.")
-        return
+    try:
+        # Nur neue Tracks selektieren
+        _select_only(tracking, include_set)
+        print(f"[Helper][FilterDelete] ▶️ {len(include_set)} Tracks für Filter ausgewählt.")
 
-    print(f"[Helper][FilterDelete] ▶️ {len(selected_for_filter)} Tracks für Filter ausgewählt.")
-
-    # --- Movie-Clip-Editor Kontext ---
-    area = None
-    for a in bpy.context.screen.areas:
-        if a.type == "CLIP_EDITOR":
-            area = a
-            break
-
-    if area is None:
-        print("[Helper][FilterDelete] ❌ Kein Movie Clip Editor aktiv.")
-        return
-
-    # --- Filter anwenden ---
-    with bpy.context.temp_override(area=area, edit_movieclip=clip):
+        # Filter ausführen – korrektes Keyword ist 'track_threshold'
         try:
-            bpy.ops.clip.filter_tracks(track_threshold=track_threshold)
-            print(f"[Helper][FilterDelete] ✅ Filter ausgeführt (track_threshold={track_threshold})")
-        except Exception as e:
-            print(f"[Helper][FilterDelete] ❌ Fehler bei filter_tracks(): {e}")
-            return
+            result = bpy.ops.clip.filter_tracks(override, track_threshold=float(threshold))
+            if result != {'FINISHED'}:
+                print(f"[Helper][FilterDelete] ⚠️ bpy.ops.clip.filter_tracks result={result}")
+        except TypeError as te:
+            raise RuntimeError(f"clip.filter_tracks Parameterfehler: {te!r}")
 
-        # --- Nach dem Filter: erfassen, welche Tracks tatsächlich selektiert blieben ---
-        filtered_names = [t.name for t in tracks if t.select]
-        if not filtered_names:
-            print("[Helper][FilterDelete] ⚠️ Kein Track vom Filter betroffen — kein Delete.")
-            return
+        # Nach Filter: Blender markiert problematische Tracks mit select=True
+        flagged_names = [t.name for t in tracking.tracks if t.select]
 
-        print(f"[Helper][FilterDelete] 🔸 {len(filtered_names)} Tracks werden gelöscht: {filtered_names[:5]}{' …' if len(filtered_names) > 5 else ''}")
+        # Nur problematische Tracks, die auch in include_set sind
+        names_to_delete = [n for n in flagged_names if n in include_set]
 
-        # --- Nur die selektierten (gefilterten) löschen ---
-        try:
-            bpy.ops.clip.delete_track()
-            print(f"[Helper][FilterDelete] 🗑️ {len(filtered_names)} Tracks gelöscht.")
-        except Exception as e:
-            print(f"[Helper][FilterDelete] ❌ Fehler bei delete_track(): {e}")
+        if not names_to_delete:
+            print("[Helper][FilterDelete] Keine problematischen Tracks innerhalb der neuen Tracks gefunden.")
+            return ([], 0)
+
+        # Löschen der problematischen Tracks
+        print(f"[Helper][FilterDelete] 🔸 {len(names_to_delete)} Tracks werden gelöscht: "
+              f"{names_to_delete[:5]}{' …' if len(names_to_delete) > 5 else ''}")
+        deleted_count = delete_tracks_by_names(bpy.context, names_to_delete)
+        print(f"[Helper][FilterDelete] 🗑️ {deleted_count} Tracks gelöscht.")
+
+        return (names_to_delete, int(deleted_count))
+
+    finally:
+        # Ursprüngliche Selektion wiederherstellen
+        _restore_selection(tracking, sel_snapshot)
+        print("[Helper][FilterDelete] ✅ Selektion wiederhergestellt.")
