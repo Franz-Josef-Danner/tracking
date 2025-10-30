@@ -625,9 +625,24 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         s = self._state
         if not s.track_active:
             return False
-
+    
+        # --- Sicherung: Nur neue Tracks weiterverfolgen ------------------------
+        valid_new = set(getattr(self._state, "created_track_names", []))
+        if valid_new:
+            s.track_names = [n for n in s.track_names if n in valid_new]
+            if not s.track_names:
+                print("[TrackCycle] ⚠️ Keine gültigen neuen Tracks mehr – Tracking beendet.")
+                s.track_active = False
+                return False
+        else:
+            print("[TrackCycle] ⚠️ Keine 'created_track_names' im State – Tracking beendet.")
+            s.track_active = False
+            return False
+        # ----------------------------------------------------------------------
+    
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
+
         tracking = getattr(clip, "tracking", None) if clip else None
         if not tracking:
             print("[TrackCycle] Kein Tracking verfügbar – Abbruch.")
