@@ -509,8 +509,33 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
             raise RuntimeError("Kein aktiver Clip verfügbar.")
-
-        start_frame = scene.frame_start
+        
+        # --------------------------------------------------------------------
+        #  Startframe bestimmen:
+        #  - Primär: Erster Marker-Frame der neu erzeugten Tracks (DetectAdapt)
+        #  - Sekundär: aktueller Playhead
+        #  - Fallback: Szenenstart
+        # --------------------------------------------------------------------
+        start_frame = int(scene.frame_start)
+        try:
+            tracking = getattr(clip, "tracking", None)
+            new_tracks = getattr(self._state, "created_track_names", [])
+            if tracking and new_tracks:
+                marker_frames = []
+                for name in new_tracks:
+                    tr = tracking.tracks.get(name)
+                    if tr and tr.markers:
+                        marker_frames.append(tr.markers[0].frame)
+                if marker_frames:
+                    start_frame = min(marker_frames)
+                    print(f"[TrackCycle] ▶️ Startframe automatisch auf {start_frame} gesetzt (aus neuen Tracks).")
+            else:
+                # Kein expliziter neuer Track bekannt → aktuellen Frame verwenden
+                start_frame = int(scene.frame_current)
+                print(f"[TrackCycle] ▶️ Startframe auf aktuellen Frame gesetzt: {start_frame}")
+        except Exception as ex:
+            print(f"[TrackCycle] ⚠️ Konnte Startframe nicht aus Tracks bestimmen: {ex!r}")
+            start_frame = int(scene.frame_current or scene.frame_start)
         end_frame = get_end_frame(context)
         if end_frame < start_frame:
             end_frame = start_frame
