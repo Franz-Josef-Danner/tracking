@@ -1,4 +1,6 @@
 import bpy
+import bpy
+import math
 from typing import Optional
 
 def detect_features(
@@ -13,12 +15,14 @@ def detect_features(
     clip = context.space_data.clip if getattr(context, "space_data", None) else None
     if clip is None:
         return None
+    # +10% Margin (immer größer, via ceil)
+    eff_margin = int(math.ceil(margin * 1.1))
 
     prev_count = len(clip.tracking.tracks)
     try:
         bpy.ops.clip.detect_features(
             placement=placement,
-            margin=margin,
+            margin=eff_margin,
             threshold=threshold,
             min_distance=min_distance
         )
