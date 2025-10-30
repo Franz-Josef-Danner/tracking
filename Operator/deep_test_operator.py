@@ -600,8 +600,17 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
                 self._base_value = self._current_value
                 print(f"[DeepTest][Eval] ↻ Ziel verfehlt | Wiederhole Stufe {self._current_step_index+1} mit niedrigerem Threshold")
 
-        # Reset Playhead
-        reset_to_frame(context, self._start_frame)
+        # --------------------------------------------------------------------
+        # Kein Rücksprung auf Szenenanfang mehr:
+        # Nach jeder Auswertung bleibt der Playhead am letzten Tracking-Start.
+        # Dieser Frame wird als Startpunkt für den nächsten Detect-Cycle verwendet.
+        # --------------------------------------------------------------------
+        try:
+            start_f = int(self._track_state.current or self._scene.frame_current)
+            reset_to_frame(context, start_f)
+            print(f"[DeepTest][Eval] ▶️ Playhead bleibt auf Frame {start_f} für nächsten Detect-Cycle.")
+        except Exception as ex:
+            print(f"[DeepTest][Eval] ⚠️ Fehler beim Playhead-Reset: {ex!r}")
 
         # Kategorie fertig, wenn alle Reduktionsstufen durch oder MIN erreicht
         if self._current_step_index >= len(REDUCTION_STEPS):
