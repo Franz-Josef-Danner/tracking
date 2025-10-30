@@ -111,7 +111,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
             return {'CANCELLED'}
 
-        self._vc, self._hz = self._clip.size
+        self._hz, self._vc = self._clip.size
         self._ratio_xy = (self._hz / self._vc) if self._vc else 1.0
         self._ef_target = int(self._scene.kaiserlich_markers_per_frame)
         self._tolerance = max(1.0, self._ef_target * 0.10)
@@ -280,7 +280,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         # ---- Threshold setzen (Szene aktualisieren) ----------------------------
         if self._current_category == "rot_xy":
             # Neue Formel: kaiserlich_rot_thresh_y = min(1, kaiserlich_rot_thresh_x * (Vertikale / Horizontale Auflösung))
-            y_val = min(1.0, next_val * (self._vc / self._hz))
+            y_val = min(1.0, next_val * (self._hz / self._vc))
             set_scene_props(
                 self._scene,
                 kaiserlich_rot_thresh_x=next_val,
