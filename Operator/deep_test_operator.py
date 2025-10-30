@@ -111,7 +111,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
             return {'CANCELLED'}
 
-        self._hz, self._vc = self._clip.size
+        self._vc, self._hz = self._clip.size
         self._ratio_xy = (self._hz / self._vc) if self._vc else 1.0
         self._ef_target = int(self._scene.kaiserlich_markers_per_frame)
         self._tolerance = max(1.0, self._ef_target * 0.10)
