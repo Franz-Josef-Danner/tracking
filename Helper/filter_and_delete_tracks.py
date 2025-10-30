@@ -3,7 +3,7 @@ import bpy
 def filter_and_delete_tracks(
     include_names=None,
     exclude_names=None,
-    threshold=30.0,
+    track_threshold=30.0,
     clip=None
 ):
     """
@@ -13,7 +13,7 @@ def filter_and_delete_tracks(
     Args:
         include_names (list[str]): Nur diese Tracknamen verarbeiten (Whitelist).
         exclude_names (list[str]): Diese Tracknamen ausschließen (Blacklist).
-        threshold (float): Threshold für Filteroperation.
+        track_threshold (float): Threshold für Filteroperation (Blender: track_threshold).
         clip (MovieClip): Optional ein bestimmter Clip (Standard = aktiver Clip).
     """
 
@@ -62,8 +62,8 @@ def filter_and_delete_tracks(
     # --- Filter anwenden ---
     with bpy.context.temp_override(area=area, edit_movieclip=clip):
         try:
-            bpy.ops.clip.filter_tracks(threshold=threshold)
-            print(f"[Helper][FilterDelete] ✅ Filter ausgeführt (threshold={threshold})")
+            bpy.ops.clip.filter_tracks(track_threshold=track_threshold)
+            print(f"[Helper][FilterDelete] ✅ Filter ausgeführt (track_threshold={track_threshold})")
         except Exception as e:
             print(f"[Helper][FilterDelete] ❌ Fehler bei filter_tracks(): {e}")
             return
