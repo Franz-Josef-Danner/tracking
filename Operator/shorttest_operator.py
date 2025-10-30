@@ -107,6 +107,13 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             self.report({'WARNING'}, "Kein aktiver MovieClip gefunden.")
             return {'CANCELLED'}
 
+        # --- NEU: harte Deselektion aller Tracks zu Beginn -----------------
+        try:
+            deselected = self._deselect_all_tracks(context)
+            print(f"[Kaiserlich Tracker][Selection] {deselected} Tracks deselektiert (Start).")
+        except Exception as ex:
+            print(f"[Kaiserlich Tracker][Selection] ⚠️ Deselektion fehlgeschlagen: {ex!r}")
+
         self._state.notes.append("Init OK (modal).")
         return {'RUNNING_MODAL'}
 
@@ -340,7 +347,25 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             return self._teardown(context, cancelled=False)
 
         return {'RUNNING_MODAL'}
-
+    
+    # ------------------------------------------------------------------------
+    # Helper: Alle Tracks im aktiven Clip deselektieren
+    # ------------------------------------------------------------------------
+    def _deselect_all_tracks(self, context: bpy.types.Context) -> int:
+        """Setzt track.select = False für alle Tracks im aktiven Clip.
+        Returns: Anzahl zuvor selektierter Tracks, die deselektiert wurden.
+        """
+        clip = getattr(context.space_data, "clip", None)
+        tracking = getattr(clip, "tracking", None) if clip else None
+        if not tracking or not getattr(tracking, "tracks", None):
+            return 0
+        changed = 0
+        for tr in tracking.tracks:
+            if getattr(tr, "select", False):
+                tr.select = False
+                changed += 1
+        return changed
+        
     # ------------------------------------------------------------------------
     # Detect-Adapt Inline (komplett, mit Flag-Setzung)
     # ------------------------------------------------------------------------
@@ -541,6 +566,9 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             end_frame = start_frame
 
         # Selektion erfassen oder fallback auf alle Tracks
+        # Wichtig: Ausgangsbasis ist eine leere Selektion (invoke hat bereits geleert).
+        # Falls dennoch Selektionen vorhanden sind (z. B. durch externe Eingriffe),
+        # ignorieren wir das nicht, sondern werten sie wie bisher aus.
         original_selected = collect_selected_track_names(context)
         if not original_selected:
             tracking = getattr(clip, "tracking", None)
