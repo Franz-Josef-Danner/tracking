@@ -531,7 +531,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             # Formel anwenden (ShortTest-Parität)
             apply_formula_on_selected_tracks(context, max_frames=5)
             # Länge messen (nach Filterung)
-            ts.total_len = int(get_total_track_length(context, start_frame=self._start_frame))
+            ts.total_len = int(get_total_track_length(context, start_frame=self._track_state.current))
         except Exception as e:
             print(f"[DeepTest][Track] ⚠️ Messfehler: {e!r}")
             ts.total_len = 0
