@@ -24,6 +24,8 @@ from ..Helper.track_markers_helper import track_markers_with_override
 from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ..Helper.util_scene import set_scene_props
 from ..Helper.init_detect_state import init_detect_state
+from ..Helper.filter_and_delete_tracks import filter_and_delete_tracks
+
 
 # ----------------------------------------------------------------------------
 #  Modal-Operator mit deterministischer State-Steuerung
@@ -647,6 +649,24 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         tracking = getattr(clip, "tracking", None) if clip else None
 
         try:
+            # ----------------------------------------------------------------
+            # 0) Vorab-Filterung neuer Tracks mit Threshold 30
+            # ----------------------------------------------------------------
+            new_tracks = getattr(self._state, "created_track_names", [])
+            if new_tracks:
+                print(f"[Kaiserlich Tracker][FilterDelete] Vor Tracklängen-Messung: {len(new_tracks)} neue Tracks erkannt.")
+                try:
+                    filter_and_delete_tracks(
+                        include_names=new_tracks,
+                        threshold=30,
+                        clip=clip
+                    )
+                    print(f"[Kaiserlich Tracker][FilterDelete] ✅ Filter/Delete auf neue Tracks angewendet ({len(new_tracks)} Stück).")
+                except Exception as e:
+                    print(f"[Kaiserlich Tracker][FilterDelete] ⚠️ Fehler bei Filter/Delete: {e}")
+            else:
+                print("[Kaiserlich Tracker][FilterDelete] ⚠️ Keine neuen Tracks zum Filtern gefunden.")
+
             # 1) Letzten aktiven Frame sichern (ohne Off-by-One-Kompensation)
             end_f = int(self._state.track_frame_current or context.scene.frame_current)
             scene = context.scene
