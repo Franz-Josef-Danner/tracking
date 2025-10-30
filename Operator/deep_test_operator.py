@@ -474,7 +474,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             return self._track_finish(context)
 
         # --- Neue Abbruchbedingungen basierend auf UI-Property "Frames per Track" ---
-        frames_per_track = int(scene.kaiserlich_frames_per_track)
+        frames_per_track = int(scene.kaiserlich_frames_per_track) * 2
         current_frame_index = ts.current - getattr(ts, "start_frame", scene.frame_start)
 
         # 1. Wenn die gewünschte Frameanzahl pro Track erreicht ist
