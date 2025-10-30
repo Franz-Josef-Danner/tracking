@@ -378,7 +378,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         clip = getattr(context.space_data, "clip", None)
         tracking = getattr(clip, "tracking", None) if clip else None
         baseline_start_tracknames: Set[str] = {t.name for t in tracking.tracks} if tracking else set()
-        self._state.baseline_track_names = list(baseline_start)
+        self._state.baseline_track_names = list(baseline_start_tracknames)
 
         print(f"[Kaiserlich Tracker][DetectAdapt] Ausgangsmarker: {len(pre_snapshot)} | BaselineTracks: {len(baseline_start_tracknames)}")
         # Baseline im State merken, damit wir später exakt die neu entstandenen Tracks identifizieren können.
