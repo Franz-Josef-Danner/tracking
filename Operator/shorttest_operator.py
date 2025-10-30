@@ -1,4 +1,4 @@
-# shorttest_operator.py
+# Operator/shorttest_operator.py – bereinigte Version
 import bpy
 import time
 import math
@@ -28,18 +28,20 @@ from ..Helper.filter_and_delete_tracks import filter_and_delete_tracks
 
 
 # ----------------------------------------------------------------------------
-#  Modal-Operator mit deterministischer State-Steuerung
+# Scene Keys
 # ----------------------------------------------------------------------------
-# Scene Keys for logging and persistence
 SCENE_TOTAL_TRACK_LEN_BASE = "kaiserlich_len_baseline_00"
 SCENE_TOTAL_TRACK_LEN_STEP1 = "kaiserlich_len_rot_xy_00"
 SCENE_TOTAL_TRACK_LEN_STEP2 = "kaiserlich_len_scale_00"
 SCENE_TOTAL_TRACK_LEN_STEP3 = "kaiserlich_len_rot_scale_00"
 SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_0"
 
+
+# ----------------------------------------------------------------------------
+# State Class
+# ----------------------------------------------------------------------------
 @dataclass
 class _AutoCalibState:
-    # Pipeline-Flags
     initialized: bool = False
     done: bool = False
     step: int = 0
@@ -50,7 +52,6 @@ class _AutoCalibState:
     detect_adapt_done_confirmed: bool = False
     did_track_cycle: bool = False
 
-    # Laufzeitstatus für Track-Cycle (nicht-blockierend)
     track_active: bool = False
     track_window: Optional[bpy.types.Window] = None
     track_area: Optional[bpy.types.Area] = None
@@ -61,31 +62,22 @@ class _AutoCalibState:
     track_frame_current: int = 0
     track_frame_end: int = 0
     track_start_frame: int = 0
-    # Namen-Listen zur sauberen Identifikation neuer Tracks (Fix für "nur 1 Track gelöscht")
-    baseline_track_names: List[str] = field(default_factory=list)
-    created_track_names: List[str]  = field(default_factory=list)
-    # Anzahl der abgeschlossenen Track-Cycle-Iterationen. Ein zusätzlicher Track-Cycle
-    # wird nach dem ersten Lauf angestoßen, um die Rot-Schwellenwerte auf 0 zu testen.
-    track_cycles_done: int = 0
 
-    # Flags für zusätzliche Zyklen. second_cycle wird gesetzt, sobald der erste
-    # Durchlauf abgeschlossen wurde und ein zweiter Detect‑/Track‑Zyklus gestartet
-    # wird (Rot-Schwellenwerte = 0). third_cycle wird gesetzt, sobald der
-    # zweite Durchlauf abgeschlossen wurde und ein dritter Detect‑/Track‑Zyklus
-    # gestartet wird (Scale-Min/Max = 0). Diese Flags verhindern, dass die
-    # End-Logik zu früh ausgelöst wird.
+    baseline_track_names: List[str] = field(default_factory=list)
+    created_track_names: List[str] = field(default_factory=list)
+
+    track_cycles_done: int = 0
     second_cycle: bool = False
     third_cycle: bool = False
-    # Vierter Zyklus: Rot-Scale-Paar testen (rot_scale_thresh_rot/scale = 0)
     fourth_cycle: bool = False
-    # Fünfter Zyklus: Perspective-Test (perspective_thresh = 0)
     fifth_cycle: bool = False
-    # Speichert pro Zyklus die verwendeten Schwellenwerte, z. B. {2: {"kaiserlich_rot_thresh_x": 0.00001, ...}}
     cycle_thresholds: Dict[int, Dict[str, float]] = field(default_factory=dict)
 
 
+# ----------------------------------------------------------------------------
+# Operator
+# ----------------------------------------------------------------------------
 class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
-    """Kaiserlich Tracker — Auto Calibrate (komplette Pipeline, nicht-blockierend)"""
     bl_idname = "kaiserlich_tracker.shorttest_operator"
     bl_label = "Kaiserlich Tracker — Auto Calibrate"
     bl_options = {'REGISTER', 'UNDO'}
@@ -94,11 +86,11 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
     _state: _AutoCalibState
 
     # ------------------------------------------------------------------------
-    # Invoke / Modal Setup
+    # Invoke
     # ------------------------------------------------------------------------
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.05, window=context.window)  # ~20 Hz
+        self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
         self._state = _AutoCalibState()
 
@@ -107,7 +99,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             self.report({'WARNING'}, "Kein aktiver MovieClip gefunden.")
             return {'CANCELLED'}
 
-        # --- NEU: harte Deselektion aller Tracks zu Beginn -----------------
+        # Deselect all at start
         try:
             deselected = self._deselect_all_tracks(context)
             print(f"[Kaiserlich Tracker][Selection] {deselected} Tracks deselektiert (Start).")
@@ -118,22 +110,21 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     # ------------------------------------------------------------------------
-    # Haupt-State-Machine
+    # Modal Loop
     # ------------------------------------------------------------------------
     def modal(self, context: bpy.types.Context, event: bpy.types.Event):
         if event.type == 'ESC':
             return self._teardown(context, cancelled=True)
-
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
 
-        # 0) Initialisierung
+        # 0) Init
         if not self._state.initialized:
             self._state.initialized = True
             print("[Kaiserlich Tracker][AutoCalibrate] Initialized.")
             return {'RUNNING_MODAL'}
 
-        # 1) Threshold-Reset
+        # 1) Reset Thresholds
         if not self._state.did_reset_thresholds:
             try:
                 reset_all_thresholds(context, active_props=[])
@@ -141,55 +132,42 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 print("[Kaiserlich Tracker][AutoCalibrate] Thresholds reset → 1.0")
             except Exception as ex:
                 print(f"[AutoCalibrate] Threshold reset failed: {ex!r}")
-                # trotzdem fortfahren, um nicht zu blockieren
                 self._state.did_reset_thresholds = True
             return {'RUNNING_MODAL'}
 
-        # 2) Detect-Adapt inline (setzt detect_adapt_done_confirmed intern)
+        # 2) Detect-Adapt
         if not self._state.did_detect_adapt:
             print("[Kaiserlich Tracker][AutoCalibrate] Detect-Adapt gestartet.")
             try:
                 self._detect_adapt_inline(context)
             except Exception as ex:
                 print(f"[AutoCalibrate] Detect-Adapt Fehler: {ex!r}")
-                # Fortfahren, aber Flag setzen, damit die Pipeline nicht hängen bleibt
                 self._state.detect_adapt_done_confirmed = True
             self._state.did_detect_adapt = True
             return {'RUNNING_MODAL'}
 
-        # 3) Warten, bis Detect-Adapt das Abschluss-Flag gesetzt hat
+        # 3) Wait for confirmation
         if self._state.did_detect_adapt and not self._state.detect_adapt_done_confirmed:
-            # Noch keine Bestätigung aus Detect-Adapt → weiter warten
             return {'RUNNING_MODAL'}
 
-        # 4) Track-Cycle nicht-blockierend
+        # 4) Track Cycle
         if self._state.detect_adapt_done_confirmed:
-            # Initialisieren, falls noch nicht aktiv
             if not self._state.track_active and not self._state.did_track_cycle:
                 try:
                     self._track_cycle_start(context)
                     print("[Kaiserlich Tracker][AutoCalibrate] Track-Cycle initialisiert.")
                 except Exception as ex:
                     print(f"[AutoCalibrate] Track-Cycle Init Fehler: {ex!r}")
-                    # Kein Tracking möglich → Pipeline sauber beenden
                     self._state.did_track_cycle = True
                     return {'RUNNING_MODAL'}
                 return {'RUNNING_MODAL'}
 
-            # Tick-basiertes Tracking (ein Frame pro Timer)
             if self._state.track_active:
                 still_running = self._track_cycle_tick(context)
                 if not still_running:
-                    # Tracking abgeschlossen oder abgebrochen
                     self._track_cycle_finish(context)
                     self._state.track_active = False
-                    # erhöhe Zähler für abgeschlossene Zyklen
                     self._state.track_cycles_done += 1
-                    # Markiere, dass ein Track-Cycle vollständig abgeschlossen wurde. Wir
-                    # starten mögliche weitere Detect-/Track‑Zyklen außerhalb dieses
-                    # Abschnitts im Modal-State-Loop. Dadurch wird nach jeder
-                    # Iteration erst wieder ein Detect-Adapt durchgeführt, bevor ein
-                    # neuer Track-Cycle beginnt.
                     self._state.did_track_cycle = True
                     print("[Kaiserlich Tracker][AutoCalibrate] Track-Cycle abgeschlossen.")
                     return {'RUNNING_MODAL'}
@@ -400,6 +378,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         clip = getattr(context.space_data, "clip", None)
         tracking = getattr(clip, "tracking", None) if clip else None
         baseline_start_tracknames: Set[str] = {t.name for t in tracking.tracks} if tracking else set()
+        self._state.baseline_track_names = list(baseline_start)
 
         print(f"[Kaiserlich Tracker][DetectAdapt] Ausgangsmarker: {len(pre_snapshot)} | BaselineTracks: {len(baseline_start_tracknames)}")
         # Baseline im State merken, damit wir später exakt die neu entstandenen Tracks identifizieren können.
@@ -479,12 +458,6 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             print("[⚠️ Kaiserlich Tracker][DetectAdapt] Keine stabile Markeranzahl – fahre dennoch fort.")
             self._state.detect_adapt_done_confirmed = True
 
-        # Alle Marker nach Abschluss selektieren (Startpunkt für Tracking)
-        if clip and getattr(clip, 'tracking', None):
-            for trk in clip.tracking.tracks:
-                trk.select = True
-            print("[DetectAdapt] Alle Marker nach Abschluss selektiert.")
-
         # Frame-spezifische min_distance speichern & einfache Interpolation
         md_value = float(last_md)
         if "min_distance_values" not in scene:
@@ -535,93 +508,63 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         if clip is None:
             raise RuntimeError("Kein aktiver Clip verfügbar.")
         
+        tracking = getattr(clip, "tracking", None)
+        new_tracks = getattr(self._state, "created_track_names", [])
+        if not (tracking and new_tracks):
+            raise RuntimeError("Keine neuen Tracks verfügbar für Tracking.")
+
         # --------------------------------------------------------------------
-        #  Startframe bestimmen:
-        #  - Primär: Erster Marker-Frame der neu erzeugten Tracks (DetectAdapt)
-        #  - Sekundär: aktueller Playhead
-        #  - Fallback: Szenenstart
+        # Startframe bestimmen:
+        # - Primär: erster Marker-Frame der neuen Tracks
+        # - Fallback: aktueller Frame oder Szenenstart
         # --------------------------------------------------------------------
-        start_frame = int(scene.frame_start)
-        try:
-            tracking = getattr(clip, "tracking", None)
-            new_tracks = getattr(self._state, "created_track_names", [])
-            if tracking and new_tracks:
-                marker_frames = []
-                for name in new_tracks:
-                    tr = tracking.tracks.get(name)
-                    if tr and tr.markers:
-                        marker_frames.append(tr.markers[0].frame)
-                if marker_frames:
-                    start_frame = min(marker_frames)
-                    print(f"[TrackCycle] ▶️ Startframe automatisch auf {start_frame} gesetzt (aus neuen Tracks).")
-            else:
-                # Kein expliziter neuer Track bekannt → aktuellen Frame verwenden
-                start_frame = int(scene.frame_current)
-                print(f"[TrackCycle] ▶️ Startframe auf aktuellen Frame gesetzt: {start_frame}")
-        except Exception as ex:
-            print(f"[TrackCycle] ⚠️ Konnte Startframe nicht aus Tracks bestimmen: {ex!r}")
+        marker_frames = [
+            tr.markers[0].frame
+            for name in new_tracks
+            if (tr := tracking.tracks.get(name)) and tr.markers
+        ]
+        if marker_frames:
+            start_frame = min(marker_frames)
+            print(f"[TrackCycle] ▶️ Startframe automatisch auf {start_frame} gesetzt (aus neuen Tracks).")
+        else:
             start_frame = int(scene.frame_current or scene.frame_start)
+            print(f"[TrackCycle] ▶️ Kein Marker-Frame gefunden – Fallback auf {start_frame}.")
+
         end_frame = get_end_frame(context)
         if end_frame < start_frame:
             end_frame = start_frame
 
-        # Selektion erfassen oder fallback auf alle Tracks
-        # Wichtig: Ausgangsbasis ist eine leere Selektion (invoke hat bereits geleert).
-        # Falls dennoch Selektionen vorhanden sind (z. B. durch externe Eingriffe),
-        # ignorieren wir das nicht, sondern werten sie wie bisher aus.
-        original_selected = collect_selected_track_names(context)
-        if not original_selected:
-            tracking = getattr(clip, "tracking", None)
-            if tracking and tracking.tracks:
-                original_selected = [t.name for t in tracking.tracks]
-                for tr in tracking.tracks:
-                    tr.select = True
-                    # --- Sicherung: Nur neue Tracks selektieren -------------------------------
-                    valid_new = set(getattr(self._state, "created_track_names", []))
-                    if valid_new:
-                        for tr in tracking.tracks:
-                            tr.select = (tr.name in valid_new)
-                        s = self._state
-                        s.track_names = [t.name for t in tracking.tracks if t.name in valid_new]
-                        print(f"[TrackCycle] 🔒 Nur neue Tracks aktiv ({len(s.track_names)}) → {s.track_names[:5]}{' …' if len(s.track_names) > 5 else ''}")
-                    else:
-                        print("[TrackCycle] ⚠️ Keine 'created_track_names' bekannt – alle Tracks aktiv.")
-                    # -------------------------------------------------------------------------
-
-                print(f"[TrackCycle] ⚠️ Keine Selektion – alle {len(original_selected)} Tracks aktiviert.")
-            else:
-                raise RuntimeError("Keine Tracks verfügbar für Tracking.")
-
+        # --------------------------------------------------------------------
+        # Editor-Bereich und State setzen
+        # --------------------------------------------------------------------
         window, area, region, space = find_clip_editor_area(clip)
         if not window:
             raise RuntimeError("Keine CLIP_EDITOR Area gefunden.")
 
-        # State setzen
         self._state.track_active = True
         self._state.track_window = window
         self._state.track_area = area
         self._state.track_region = region
         self._state.track_space = space
-        self._state.track_names = list(original_selected)
-        self._state.track_original_selected = list(original_selected)
+        self._state.track_names = list(new_tracks)
+        self._state.track_original_selected = list(new_tracks)
         self._state.track_start_frame = start_frame
         self._state.track_frame_end = end_frame
-        self._state.track_frame_current = max(start_frame, int(scene.frame_current))
+        self._state.track_frame_current = start_frame
 
-        # Gesamtanzahl speichern für 75%-Abbruchbedingung
-        self._state.track_total_count = len(original_selected)
-        # Frame sync
-        space.clip_user.frame_current = self._state.track_frame_current
-        scene.frame_current = self._state.track_frame_current
+        # Gesamtanzahl speichern für 75 %-Abbruchbedingung
+        self._state.track_total_count = len(new_tracks)
+
+        # Frame synchronisieren
+        space.clip_user.frame_current = start_frame
+        scene.frame_current = start_frame
 
         print(f"[Kaiserlich Tracker][TrackCycle] Start {start_frame} → {end_frame} (nicht-blockierend)")
 
     # ------------------------------------------------------------------------
     # Track-Cycle: Tick (ein Frame pro Timer, nicht-blockierend)
     # ------------------------------------------------------------------------
-    # ------------------------------------------------------------------------
-    # Track-Cycle: Tick (ein Frame pro Timer, nicht-blockierend)
-    # ------------------------------------------------------------------------
+
     def _track_cycle_tick(self, context: bpy.types.Context) -> bool:
         """Führt genau einen Tracking-Schritt aus.
         Gibt True zurück, solange weitergetrackt werden soll; False bei Abschluss/Abbruch.
@@ -852,9 +795,8 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         return {'CANCELLED' if cancelled else 'FINISHED'}
 
 # ----------------------------------------------------------------------------
-#  Registration
+# Registration
 # ----------------------------------------------------------------------------
-
 _classes = (KAISERLICHTRACKER_OT_shorttest_operator,)
 
 def register():
