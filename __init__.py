@@ -9,6 +9,7 @@ bl_info = {
 }
 
 import bpy
+# ---- Operator & UI Imports -------------------------------------------------
 from .UI.ui import KAISERLICHTRACKER_PT_panel
 from .Operator.track_operator import KAISERLICHTRACKER_OT_track_cycle
 from .Operator.shorttest_operator import KAISERLICHTRACKER_OT_shorttest_operator
@@ -17,9 +18,22 @@ from .Operator.detect_adapt_operator import KAISERLICHTRACKER_OT_detect_adapt
 from .Operator.track_operator_backwards import KAISERLICHTRACKER_OT_track_cycle_backwards
 from .Operator.master_operator import KAISERLICHTRACKER_OT_master_operator
 
+# ---- Klassenliste ----------------------------------------------------------
+classes = (
+    KAISERLICHTRACKER_PT_panel,
+    KAISERLICHTRACKER_OT_track_cycle,
+    KAISERLICHTRACKER_OT_shorttest_operator,
+    KAISERLICHTRACKER_OT_deep_test_operator,
+    KAISERLICHTRACKER_OT_detect_adapt,
+    KAISERLICHTRACKER_OT_track_cycle_backwards,
+    KAISERLICHTRACKER_OT_master_operator,
+)
+
+# ---- Register / Unregister -------------------------------------------------
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+
     # Property für Eingabefeld
     bpy.types.Scene.kaiserlich_markers_per_frame = bpy.props.IntProperty(
         name="Marker per Frame",
@@ -35,16 +49,20 @@ def register():
         ui.register()
     except Exception as e:
         print(f"[Kaiserlich Tracker] Warnung: UI-Properties konnten nicht registriert werden: {e}")
-        
+
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.kaiserlich_markers_per_frame
+
+    # Property entfernen
+    if hasattr(bpy.types.Scene, "kaiserlich_markers_per_frame"):
+        del bpy.types.Scene.kaiserlich_markers_per_frame
 
     try:
         from .UI import ui
         ui.unregister()
     except Exception:
         pass
+
 if __name__ == "__main__":
     register()
