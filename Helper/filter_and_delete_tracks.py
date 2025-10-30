@@ -3,7 +3,7 @@ import bpy
 def filter_and_delete_tracks(
     include_names=None,
     exclude_names=None,
-    threshold=30.0,
+    threshold=50.0,
     clip=None
 ):
     """
