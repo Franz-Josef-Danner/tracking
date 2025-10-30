@@ -397,7 +397,35 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         clip = self._clip
         space = self._space
 
-        start_frame = self._start_frame
+        # --------------------------------------------------------------------
+        #  Startframe bestimmen:
+        #  - Primär: erster Marker-Frame der neu erzeugten Tracks
+        #  - Sekundär: aktueller Playhead
+        #  - Fallback: Szenenstart
+        # --------------------------------------------------------------------
+        start_frame = int(scene.frame_start)
+        try:
+            tracking = getattr(clip, "tracking", None)
+            new_tracks = getattr(self, "_final_new_tracks", [])
+            if tracking and new_tracks:
+                marker_frames = []
+                for name in new_tracks:
+                    tr = tracking.tracks.get(name)
+                    if tr and tr.markers:
+                        marker_frames.append(tr.markers[0].frame)
+                if marker_frames:
+                    start_frame = min(marker_frames)
+                    print(f"[DeepTest][Track] ▶️ Startframe automatisch auf {start_frame} gesetzt (aus neuen Tracks).")
+            else:
+                # Kein expliziter neuer Track bekannt → aktuellen Frame verwenden
+                start_frame = int(scene.frame_current)
+                print(f"[DeepTest][Track] ▶️ Startframe auf aktuellen Frame gesetzt: {start_frame}")
+        except Exception as ex:
+            print(f"[DeepTest][Track] ⚠️ Konnte Startframe nicht aus Tracks bestimmen: {ex!r}")
+            start_frame = int(scene.frame_current or scene.frame_start)
+
+        # Playhead auf den Startframe setzen (visuell synchronisieren)
+        reset_to_frame(context, start_frame)
         end_frame = self._end_frame
         if end_frame < start_frame:
             end_frame = start_frame
