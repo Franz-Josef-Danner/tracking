@@ -551,6 +551,28 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         self._state.track_start_frame = start_frame
         self._state.track_frame_end = end_frame
         self._state.track_frame_current = start_frame
+
+        # --- Fix: Neu erzeugte Tracks selektieren (Pflicht für Tracking) ---
+        try:
+            for tr in tracking.tracks:
+                tr.select = False  # erst alles abwählen
+            for name in new_tracks:
+                tr = tracking.tracks.get(name)
+                if tr:
+                    tr.select = True
+            print(f"[Kaiserlich Tracker][TrackCycle] 🔹 {len(new_tracks)} neue Tracks selektiert.")
+        except Exception as ex:
+            print(f"[Kaiserlich Tracker][TrackCycle] ⚠️ Fehler beim Selektieren neuer Tracks: {ex!r}")
+
+        # --- Diagnose: Track-Status zum Start ---
+        selected_count = sum(1 for t in tracking.tracks if t.select)
+        marker_summary = [
+            (t.name, len(t.markers), getattr(t, 'select', False))
+            for t in tracking.tracks if t.name in new_tracks
+        ]
+        print(f"[Debug][TrackStart] Neue Tracks: {len(new_tracks)} | Selektiert: {selected_count}")
+        for n, m, s in marker_summary[:10]:
+            print(f"   ▶ {n}: {m} Marker, {'SELECTED' if s else 'unselected'}")
         # --- Diagnose: Track-Status zum Start ---
         selected_count = sum(1 for t in tracking.tracks if t.select)
         marker_summary = [
