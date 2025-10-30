@@ -473,14 +473,19 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             print(f"[DeepTest][Track] ✅ Keine aktiven Tracks mehr bei Frame {ts.current}")
             return self._track_finish(context)
 
-        # --- Abbruchbedingung: 75% der Tracks inaktiv ---
-        total_initial = getattr(ts, "start_count", len(ts.active_names))
+        # --- Abbruchbedingungen: gewünschte Markerzahl oder Szenenende ---
+        ef_target = int(self._scene.kaiserlich_markers_per_frame)
         active_now = len(ts.active_names)
-        if total_initial > 0:
-            inactive_ratio = 1.0 - (active_now / total_initial)
-            if inactive_ratio >= 0.90:
-                print(f"[DeepTest][Track] ⏹️ 75% der Tracks inaktiv ({inactive_ratio*100:.1f}%) – Tracking beendet.")
-                return self._track_finish(context)
+
+        # Wenn die gewünschte Anzahl aktiver Marker erreicht ist
+        if active_now >= ef_target:
+            print(f"[DeepTest][Track] ⏹️ Zielanzahl erreicht ({active_now} ≥ {ef_target}) – Tracking beendet.")
+            return self._track_finish(context)
+
+        # Wenn das Szenenende erreicht oder überschritten wurde
+        if ts.current >= ts.end:
+            print(f"[DeepTest][Track] ✅ Szenenende erreicht bei Frame {ts.current}.")
+            return self._track_finish(context)
 
         # 2) Formel anwenden (ShortTest-Parität)
         try:
@@ -494,11 +499,8 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             print("[DeepTest][Track] ⚠️ Tracking-Fehler – Abbruch.")
             return self._track_finish(context)
 
-        # 4) Nächster Frame / Ende prüfen
+        # 4) Nächster Frame
         ts.current += 1
-        if ts.current > ts.end:
-            print("[DeepTest][Track] ✅ Szenenende erreicht.")
-            return self._track_finish(context)
 
         scene.frame_current = ts.current
         space.clip_user.frame_current = ts.current
