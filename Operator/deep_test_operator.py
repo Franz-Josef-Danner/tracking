@@ -478,7 +478,7 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         active_now = len(ts.active_names)
         if total_initial > 0:
             inactive_ratio = 1.0 - (active_now / total_initial)
-            if inactive_ratio >= 0.75:
+            if inactive_ratio >= 0.90:
                 print(f"[DeepTest][Track] ⏹️ 75% der Tracks inaktiv ({inactive_ratio*100:.1f}%) – Tracking beendet.")
                 return self._track_finish(context)
 
