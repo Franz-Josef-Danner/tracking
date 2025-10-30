@@ -677,21 +677,10 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             if new_tracks:
                 print(f"[Kaiserlich Tracker][FilterDelete] Vor Tracklängen-Messung: {len(new_tracks)} neue Tracks erkannt.")
                 try:
-                    # Kontext-Override für sicheren Operator-Aufruf erzeugen
-                    window, area, region, space = find_clip_editor_area(clip)
-                    override = {
-                        "window": window,
-                        "screen": window.screen if window else None,
-                        "area": area,
-                        "region": region,
-                        "space_data": space,
-                    } if window and area and region and space else None
-
                     filter_and_delete_tracks(
                         include_names=new_tracks,
                         threshold=30,
-                        clip=clip,
-                        context_override=override
+                        clip=clip
                     )
                     print(f"[Kaiserlich Tracker][FilterDelete] ✅ Filter/Delete auf neue Tracks angewendet ({len(new_tracks)} Stück).")
                 except Exception as e:
