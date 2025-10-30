@@ -3,19 +3,23 @@ import bpy
 def filter_and_delete_tracks(
     include_names=None,
     exclude_names=None,
-    track_threshold=30.0,
+    track_threshold: float = None,
+    threshold: float = None,
     clip=None
 ):
     """
     Führt `bpy.ops.clip.filter_tracks()` mit angegebenem Threshold aus
     und löscht anschließend **nur die tatsächlich vom Filter betroffenen Tracks**.
 
-    Args:
-        include_names (list[str]): Nur diese Tracknamen verarbeiten (Whitelist).
-        exclude_names (list[str]): Diese Tracknamen ausschließen (Blacklist).
-        track_threshold (float): Threshold für Filteroperation (Blender: track_threshold).
-        clip (MovieClip): Optional ein bestimmter Clip (Standard = aktiver Clip).
+    Unterstützt sowohl `track_threshold` (aktuell, Blender 4.x)
+    als auch das alte `threshold`-Argument für rückwärtskompatible Aufrufe.
     """
+
+    # --- Parameter-Alias ---
+    if track_threshold is None and threshold is not None:
+        track_threshold = threshold
+    if track_threshold is None:
+        track_threshold = 30.0  # Defaultwert
 
     # --- Clip-Kontext absichern ---
     if clip is None:
