@@ -112,13 +112,6 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
             return {'CANCELLED'}
 
-        # --- NEU: harte Deselektion aller Tracks zu Beginn -----------------
-        try:
-            deselected = self._deselect_all_tracks(context)
-            print(f"[Kaiserlich Tracker][DeepTest][Selection] {deselected} Tracks deselektiert (Start).")
-        except Exception as ex:
-            print(f"[Kaiserlich Tracker][DeepTest][Selection] ⚠️ Deselektion fehlgeschlagen: {ex!r}")
-
         self._hz, self._vc = self._clip.size
         self._ratio_xy = (self._hz / self._vc) if self._vc else 1.0
         self._ef_target = int(self._scene.kaiserlich_markers_per_frame)
@@ -180,24 +173,6 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         self._track_state = _TrackState(active=False, current=0, end=0, active_names=[], total_len=-1)
         self._phase = "category_select"
         return {'RUNNING_MODAL'}
-
-    # ------------------------------------------------------------------------
-    # Helper: Alle Tracks im aktiven Clip deselektieren
-    # ------------------------------------------------------------------------
-    def _deselect_all_tracks(self, context: bpy.types.Context) -> int:
-        """Setzt track.select = False für alle Tracks im aktiven Clip.
-        Returns: Anzahl zuvor selektierter Tracks, die deselektiert wurden.
-        """
-        clip = getattr(context.space_data, "clip", None)
-        tracking = getattr(clip, "tracking", None) if clip else None
-        if not tracking or not getattr(tracking, "tracks", None):
-            return 0
-        changed = 0
-        for tr in tracking.tracks:
-            if getattr(tr, "select", False):
-                tr.select = False
-                changed += 1
-        return changed
 
     # ------------------------------------------------------------------------
     def modal(self, context, event):
