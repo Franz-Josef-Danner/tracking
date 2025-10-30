@@ -85,18 +85,16 @@ def filter_and_delete_tracks(
 
     # CLIP_EDITOR-Context für Operator-Execution
     window, area, region, space = find_clip_editor_area(clip)
-    override = None
-    if window and area and region and space:
-        override = {
-            "window": window,
-            "screen": window.screen,
-            "area": area,
-            "region": region,
-            "space_data": space,
-        }
-    else:
-        print("[Helper][FilterDelete] ⚠️ Kein gültiger Clip-Editor-Kontext – fallback auf direkten API-Modus.")
+    if not window:
+        raise RuntimeError("Keine CLIP_EDITOR Area gefunden – filter_tracks benötigt gültigen Kontext.")
 
+    override = {
+        "window": window,
+        "screen": window.screen,
+        "area": area,
+        "region": region,
+        "space_data": space,
+    }
 
     # Ursprüngliche Selektion sichern
     sel_snapshot = _snapshot_selection(tracking)
@@ -108,31 +106,11 @@ def filter_and_delete_tracks(
 
         # Filter ausführen – korrektes Keyword ist 'track_threshold'
         try:
-            if override:
-                result = bpy.ops.clip.filter_tracks(override, track_threshold=float(threshold))
-                if result != {'FINISHED'}:
-                    print(f"[Helper][FilterDelete] ⚠️ bpy.ops.clip.filter_tracks result={result}")
-            else:
-                # Fallback: Kein gültiger Context → direkte API-Prüfung auf average_error
-                flagged_names = []
-                for t in tracking.tracks:
-                    try:
-                        if t.name in include_set and getattr(t, "average_error", 0.0) > threshold:
-                            flagged_names.append(t.name)
-                    except Exception:
-                        pass
-                if not flagged_names:
-                    print("[Helper][FilterDelete] Keine problematischen Tracks per Fallback identifiziert.")
-                    _restore_selection(tracking, sel_snapshot)
-                    return ([], 0)
-                names_to_delete = flagged_names
-                print(f"[Helper][FilterDelete] 🔸 (Fallback) {len(names_to_delete)} Tracks markiert.")
-                deleted_count = delete_tracks_by_names(bpy.context, names_to_delete)
-                print(f"[Helper][FilterDelete] 🗑️ (Fallback) {deleted_count} Tracks gelöscht.")
-                _restore_selection(tracking, sel_snapshot)
-                return (names_to_delete, int(deleted_count))
+            result = bpy.ops.clip.filter_tracks(override, track_threshold=float(threshold))
+            if result != {'FINISHED'}:
+                print(f"[Helper][FilterDelete] ⚠️ bpy.ops.clip.filter_tracks result={result}")
         except TypeError as te:
-            raise RuntimeError(f"[Helper][FilterDelete] Operatoraufruffehler: {te!r}")
+            raise RuntimeError(f"clip.filter_tracks Parameterfehler: {te!r}")
 
         # Nach Filter: Blender markiert problematische Tracks mit select=True
         flagged_names = [t.name for t in tracking.tracks if t.select]
