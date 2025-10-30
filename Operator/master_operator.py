@@ -6,7 +6,7 @@ from ..Helper.low_marker_frame import find_first_weak_frame
 
 class KAISERLICHTRACKER_OT_master_operator(Operator):
     """Master Operator – setzt Playhead auf Frame mit den wenigsten aktiven Markern"""
-    bl_idname = "kaiserlich.master_operator"
+    bl_idname = "kaiserlich_tracker.master_operator"
     bl_label = "Master Operator"
     bl_description = "Setzt den Playhead auf den ersten Frame mit der geringsten Markeranzahl"
     bl_options = {'REGISTER', 'UNDO'}
