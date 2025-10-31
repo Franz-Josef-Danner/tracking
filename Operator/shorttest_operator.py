@@ -753,7 +753,17 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 print(f"[TrackCycle] ⚠️ View-Layer-Update fehlgeschlagen: {ex!r}")
 
             # 2) Gesamt-Track-Länge der verbleibenden Tracks messen, bevor irgendetwas gelöscht wird
-            total_len = int(get_total_track_length(context, start_frame=int(self._state.track_start_frame or 1)))
+            total_len = int(
+                get_total_track_length(
+                    context,
+                    start_frame=int(self._state.track_start_frame or 1),
+                    include_names=getattr(self._state, "created_track_names", []),
+                )
+            )
+            print(
+                f"[Kaiserlich Tracker][TrackLen] Nur neue Tracks berücksichtigt "
+                f"({len(getattr(self._state, 'created_track_names', []))} Namen gefiltert)."
+            )
             cycle_idx = int(getattr(self._state, "track_cycles_done", 0)) + 1
             key_cycle = f"kaiserlich_len_cycle_{cycle_idx}"
             scene[key_cycle] = total_len
