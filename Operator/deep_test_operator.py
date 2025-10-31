@@ -568,8 +568,18 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             bpy.context.view_layer.update()
             # Formel anwenden (ShortTest-Parität)
             apply_formula_on_selected_tracks(context, max_frames=5)
-            # Länge messen (nach Filterung)
-            ts.total_len = int(get_total_track_length(context, start_frame=self._start_frame))
+            # Länge messen (nach Filterung, nur neue Tracks berücksichtigen)
+            ts.total_len = int(
+                get_total_track_length(
+                    context,
+                    start_frame=self._start_frame,
+                    include_names=getattr(self, "_final_new_tracks", []),
+                )
+            )
+            print(
+                f"[DeepTest][TrackLen] Nur neue Tracks berücksichtigt "
+                f"({len(getattr(self, '_final_new_tracks', []))} Namen gefiltert)."
+            )
         except Exception as e:
             print(f"[DeepTest][Track] ⚠️ Messfehler: {e!r}")
             ts.total_len = 0
