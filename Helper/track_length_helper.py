@@ -6,6 +6,7 @@ def get_total_track_length(
     context: bpy.types.Context,
     start_frame: int = 1,
     *,
+    include_names: list[str] | None = None,
     log: bool = True,
     log_prefix: str = "[Kaiserlich Tracker][TrackLen]"
 ) -> int:
@@ -44,6 +45,9 @@ def get_total_track_length(
 
     # === Hauptlogik: Nur aktive Marker zählen ===
     for tr in tracks:
+        # Falls Filter aktiv ist → nur gewünschte Tracks berücksichtigen
+        if include_names is not None and tr.name not in include_names:
+            continue
         # aktive Marker nach Startframe
         active_frames = [
             mk.frame
