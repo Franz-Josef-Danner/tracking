@@ -25,7 +25,13 @@ from ..Helper.reset_helper import reset_all_thresholds
 from ..Helper.selection_helper import collect_selected_track_names
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.filter_and_delete_tracks import filter_and_delete_tracks
-
++
++# ---- Frame-Cache-Import ----------------------------------------------------
+from ..Helper.frame_value_cache import (
+    get_frame_values,
+    save_frame_values,
+    apply_cached_values
+)
 # ---- Szenen-Keys ------------------------------------------------------------
 SCENE_TOTAL_TRACK_LEN_BASE  = "kaiserlich_len_baseline_00"
 SCENE_TOTAL_TRACK_LEN_STEP1 = "kaiserlich_len_rot_xy_00"
@@ -266,6 +272,12 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         except Exception:
             pass
 
+        # ---- Frame-Cache prüfen --------------------------------------------
+        cached = apply_cached_values(self._scene, self._scene.frame_current)
+        if cached:
+            print(f"[DeepTest][Cache] Werte für Frame {self._scene.frame_current} gefunden – Kategorie {self._current_category} übersprungen.")
+            self._current_step_index = len(REDUCTION_STEPS)
+            return
         # Reset Thresholds auf 1.0 für die Kategorie
         if self._current_category == "rot_xy":
             set_scene_props(self._scene, kaiserlich_rot_thresh_x=1.0, kaiserlich_rot_thresh_y=1.0)
@@ -618,6 +630,10 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             print(f"[DeepTest][{self._current_category}] ✅ Verbesserte oder gleiche Länge ({total_len} >= {compare_len})")
             self._goal_map[self._current_category] = total_len
             self._best_thresholds[self._current_category] = self._current_value
+
+            # ---- Frame-Werte im Cache speichern ----------------------------
+            frame_values = {self._current_category: self._current_value}
+            save_frame_values(self._scene, self._scene.frame_current, frame_values)
             if self._current_category == "rot_xy":
 
                 set_scene_props(self._scene,
@@ -721,3 +737,4 @@ def register():
 
 def unregister():
     bpy.utils.unregister_class(KAISERLICHTRACKER_OT_deep_test_operator)
+
