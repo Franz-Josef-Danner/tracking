@@ -678,9 +678,12 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
 
         # ---- Thresholds in Szene anwenden ----
         if "rot_xy" in self._best_thresholds:
+            best_x = self._best_thresholds["rot_xy"]
+            best_y = min(1.0, best_x * (self._hz / self._vc))
             set_scene_props(scene,
-                kaiserlich_rot_thresh_x=self._best_thresholds["rot_xy"],
-                kaiserlich_rot_thresh_y=self._best_thresholds["rot_xy"])
+                kaiserlich_rot_thresh_x=best_x,
+                kaiserlich_rot_thresh_y=best_y)
+
         if "scale" in self._best_thresholds:
             set_scene_props(scene,
                 kaiserlich_scale_thresh_min=self._best_thresholds["scale"],
