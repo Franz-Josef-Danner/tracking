@@ -344,66 +344,78 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 changed += 1
         return changed
         
-    # ------------------------------------------------------------------------
-    # Detect-Adapt Inline (komplett, mit Flag-Setzung)
-    # ------------------------------------------------------------------------
+    # ----------------------------------------------------------------------------
+    # Detect-Adapt Inline (nach Vorbild detect_adapt_operator.py)
+    # ----------------------------------------------------------------------------
     def _detect_adapt_inline(self, context: bpy.types.Context):
         scene = context.scene
         ef_target = int(scene.kaiserlich_markers_per_frame)
-
-        # Bootstrap-Parameter laden oder Fallback berechnen
+    
+        import math
         params = scene.get("bootstrap_params", None)
+    
         if params:
             md = float(params.get('md', 100))
-            ma = int(params.get('ma', 30))
+            ma = int(round(params.get('ma', 100) * 1.1))  # korrigiert: ma * 1.1
             tr = float(params.get('tr', 0.5))
             pz = int(params.get('pz', 50))
-            sz = int(params.get('sz', 0))
+            sz = int(params.get('sz', 100))
             hz = params.get('hz', 1)
             vc = params.get('vc', False)
         else:
-            # Einheitliche Initialisierung über Helper
-            state = init_detect_state(context)
-            hz = state["hz"]
-            vc = state["vc"]
-            ma = state["margin"]
-            pz = state["pattern_size"]
-            sz = state["search_size"]
-            tr = state["threshold"]
-            md = state["min_distance"]
-            print(f"[Kaiserlich Tracker][DetectAdapt][InitState] hz={hz}, vc={vc}, margin={ma}, md={md:.2f}, pattern={pz}, search={sz}, tr={tr}")
-
-        # Baseline erfassen
+            # Fallback-Bootstrap
+            clip = getattr(context.space_data, "clip", None)
+            if clip is None:
+                raise RuntimeError("Kein aktiver Clip verfügbar (Fallback fehlgeschlagen).")
+            hz, vc = clip.size
+            tracking_settings = getattr(clip.tracking, "settings", None)
+            ma = getattr(tracking_settings, "margin", 100)
+            pz = getattr(tracking_settings, "pattern_size", 50)
+            sz = getattr(tracking_settings, "search_size", 100)
+            md = hz * 0.025
+            tr = 0.0001
+    
+        # Baseline-Snapshot und Tracknamen sichern
         pre_snapshot = snapshot_active_markers(context)
         clip = getattr(context.space_data, "clip", None)
-        tracking = getattr(clip, "tracking", None) if clip else None
-        baseline_start_tracknames: Set[str] = {t.name for t in tracking.tracks} if tracking else set()
-        self._state.baseline_track_names = list(baseline_start_tracknames)
-
+        tracking = getattr(clip, "tracking", None)
+        baseline_start_tracknames = set(t.name for t in tracking.tracks) if tracking else set()
         print(f"[Kaiserlich Tracker][DetectAdapt] Ausgangsmarker: {len(pre_snapshot)} | BaselineTracks: {len(baseline_start_tracknames)}")
-        # Baseline im State merken, damit wir später exakt die neu entstandenen Tracks identifizieren können.
-        self._state.baseline_track_names = list(baseline_start_tracknames)
-
+    
+        # Setup Loop
         max_loops = 8
         loop = 0
         frame_num = scene.frame_current
-        deleted_old = 0
-
-        # Startwert für last_md ggf. aus Szene übernehmen
-        last_md = md
+    
+        # min_distance ggf. aus gespeicherten Werten interpolieren
         if "min_distance_values" in scene:
             md_dict = scene["min_distance_values"]
             if str(frame_num) in md_dict:
                 last_md = float(md_dict[str(frame_num)])
-
-        # Adaptive Schleife
-        reached = False
+            else:
+                known = sorted(md_dict.get("known_frames", []))
+                if len(known) >= 2:
+                    prev_frames = [f for f in known if f < frame_num]
+                    next_frames = [f for f in known if f > frame_num]
+                    if prev_frames and next_frames:
+                        f1, f2 = max(prev_frames), min(next_frames)
+                        v1, v2 = float(md_dict[str(f1)]), float(md_dict[str(f2)])
+                        t = (frame_num - f1) / (f2 - f1)
+                        last_md = v1 + (v2 - v1) * t
+                    else:
+                        last_md = md
+                else:
+                    last_md = md
+        else:
+            last_md = md
+    
+        deleted_old = 0
+    
         while loop < max_loops:
             loop += 1
             print(f"\n[Kaiserlich Tracker][DetectAdapt] --- LOOP {loop} ---")
             print(f"[Kaiserlich Tracker][DetectAdapt] Aktuelles min_distance = {last_md:.2f}")
-
-            # Detect
+    
             detect_features(
                 context,
                 placement='FRAME',
@@ -411,13 +423,17 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 threshold=tr,
                 min_distance=int(max(1, round(last_md)))
             )
-
-            # Snapshot nach Detect
+    
+            # Alle Tracks kurz deselektieren (verhindert ungewolltes Auto-Select)
+            if clip and getattr(clip, "tracking", None):
+                for trk in clip.tracking.tracks:
+                    trk.select = False
+    
+            # Klassifikation alter/neuer Marker
             post_snapshot = snapshot_active_markers(context)
             alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
             print(f"[Kaiserlich Tracker][DetectAdapt] Alte Marker: {len(alte_marker)}, Neue Marker: {len(neue_marker)}")
-
-            # Cleanup
+    
             cleaned_new, deleted_old = cleanup_new_markers(
                 context,
                 alte_marker,
@@ -426,39 +442,42 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 hz=hz,
                 vc=vc
             )
-
+    
             remaining = len(cleaned_new)
             diff = remaining - ef_target
-            tolerance = ef_target * 0.10  # ±10 %
-
+            tolerance = ef_target * 0.10
+    
+            print(f"[Kaiserlich Tracker][DetectAdapt] Nach Cleanup: {remaining} neue Marker übrig, {deleted_old} alte gelöscht")
+    
             if abs(diff) <= tolerance:
                 print(f"[Kaiserlich Tracker][DetectAdapt] Ziel erreicht: {remaining}/{ef_target} (±{tolerance:.1f})")
-                reached = True
                 break
-
-            # Dynamische Anpassung von min_distance
-            am = len(neue_marker)
-            if am > 0:
-                ratio = ef_target / am
+    
+            if len(neue_marker) > 0:
+                ratio = ef_target / len(neue_marker)
                 factor = max(0.5, min(2.0, ratio))
                 last_md = max(1.0, last_md / factor)
             else:
                 last_md *= 1.5
-                print("[DetectAdapt] Keine neuen Marker → erhöhe min_distance stark")
-
-            # Für nächsten Loop aufräumen
+                print("[Kaiserlich Tracker][DetectAdapt] Keine neuen Marker, erhöhe min_distance stark")
+    
             if loop < max_loops:
                 delete_tracks_by_names(context, [m['track'] for m in neue_marker])
+                print(f"[Kaiserlich Tracker][DetectAdapt] {len(neue_marker)} neue Marker gelöscht für nächsten Zyklus")
                 time.sleep(0.1)
-
-        # Abschlussstatus setzen
-        if reached:
-            self._state.detect_adapt_done_confirmed = True
-        else:
-            print("[⚠️ Kaiserlich Tracker][DetectAdapt] Keine stabile Markeranzahl – fahre dennoch fort.")
-            self._state.detect_adapt_done_confirmed = True
-
-        # Frame-spezifische min_distance speichern & einfache Interpolation
+    
+        # Final Selektion (nur wirklich neue Tracks)
+        if clip and getattr(clip, "tracking", None):
+            tracking = clip.tracking
+            new_tracks = [trk for trk in tracking.tracks if trk.name not in baseline_start_tracknames]
+            for trk in tracking.tracks:
+                trk.select = False
+            for trk in new_tracks:
+                trk.select = True
+            print(f"[Kaiserlich Tracker][DetectAdapt] Final selektierte Marker: {len(new_tracks)}")
+    
+        # Persistenz min_distance (Interpolation beibehalten)
+        frame_num = scene.frame_current
         md_value = float(last_md)
         if "min_distance_values" not in scene:
             scene["min_distance_values"] = {}
@@ -469,7 +488,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             known_list.sort()
         md_dict["known_frames"] = known_list
         md_dict[str(frame_num)] = md_value
-
+    
         if len(known_list) > 1:
             for i in range(len(known_list) - 1):
                 f_start = known_list[i]
@@ -482,22 +501,13 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                     t = (f - f_start) / float(f_end - f_start)
                     interp_val = v_start + (v_end - v_start) * t
                     md_dict[str(f)] = interp_val
-
+    
         print(f"[Kaiserlich Tracker][DetectAdapt] Frame {frame_num}: final min_distance = {md_value:.2f}")
-        # Liste der neu angelegten Tracks bestimmen und persistieren
-        try:
-            if tracking and getattr(tracking, "tracks", None):
-                current_names = [t.name for t in tracking.tracks]
-                base_set = set(self._state.baseline_track_names or [])
-                created = [n for n in current_names if n not in base_set]
-                self._state.created_track_names = created
-                print(f"[Kaiserlich Tracker][DetectAdapt] Neu erzeugte Tracks: {len(created)} → {created[:5]}{' …' if len(created) > 5 else ''}")
-            else:
-                self._state.created_track_names = []
-                print("[Kaiserlich Tracker][DetectAdapt] ⚠️ Konnte neue Tracks nicht bestimmen (keine Tracking-Daten).")
-        except Exception as _e:
-            self._state.created_track_names = []
-            print(f"[Kaiserlich Tracker][DetectAdapt] ⚠️ Fehler beim Ermitteln neuer Tracks: {_e!r}")
+    
+        # Abschlussflag für AutoCalibrate
+        self._state.created_track_names = [t.name for t in new_tracks] if new_tracks else []
+        self._state.detect_adapt_done_confirmed = True
+
 
     # ------------------------------------------------------------------------
     # Track-Cycle: Start (Initialisierung, nicht-blockierend)
