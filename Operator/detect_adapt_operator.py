@@ -179,9 +179,15 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
             remaining = len(cleaned_new)
             diff = remaining - ef_target
             tolerance = ef_target * 0.10  # 10 % Toleranz
-            if abs(diff) <= tolerance:
-                print(f"[Kaiserlich Tracker][DetectAdapt] Ziel erreicht: {remaining}/{ef_target} Marker (Toleranz ±{tolerance:.1f})")
-                break
+
+            # --- Sicherstellen, dass nur tatsächliche neue Marker berücksichtigt werden ---
+            if remaining == 0:
+                print("[Kaiserlich Tracker][DetectAdapt] ⚠️ Keine gültigen neuen Marker nach Cleanup – weiterer Versuch nötig.")
+            elif abs(diff) <= tolerance:
+                print(f"[Kaiserlich Tracker][DetectAdapt] ✅ Ziel erreicht: {remaining}/{ef_target} Marker (±{tolerance:.1f})")
+                # Nur dann abbrechen, wenn auch wirklich neue Marker im Frame übrig sind
+                if remaining > 0:
+                    break
 
             # --- Adaptive Anpassung NACH Cleanup auf Basis 'remaining' ---
             if remaining == 0:
@@ -205,6 +211,12 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
                 delete_tracks_by_names(context, [m['track'] for m in neue_marker])
                 print(f"[Kaiserlich Tracker][DetectAdapt] {len(neue_marker)} neue Marker gelöscht für nächsten Zyklus")
                 time.sleep(0.1)
+
+            # --- Logging, falls max_loops noch nicht erreicht ---
+            if loop < max_loops:
+                print(f"[Kaiserlich Tracker][DetectAdapt] ➜ Nächster Loop ({loop+1}/{max_loops}) mit min_distance = {last_md:.2f}")
+            else:
+                print("[Kaiserlich Tracker][DetectAdapt] ⚠️ MaxLoops erreicht – kein weiteres Iterieren möglich.")
 
         # Selektion der finalen Marker
         clip = getattr(context.space_data, 'clip', None)
