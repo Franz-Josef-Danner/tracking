@@ -175,19 +175,37 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
             
             print(f"[Kaiserlich Tracker][DetectAdapt] Nach Cleanup: {len(cleaned_new)} neue Marker übrig, {deleted_old} alte gelöscht")
 
-
+            # --- Analyse: sind die neuen Marker wirklich neu oder nur Duplikate? ---
             remaining = len(cleaned_new)
             diff = remaining - ef_target
             tolerance = ef_target * 0.10  # 10 % Toleranz
 
-            # --- Sicherstellen, dass nur tatsächliche neue Marker berücksichtigt werden ---
+            # Vergleiche mit Baseline – welche "neuen" Tracks existierten schon vorher?
+            cleaned_tracknames = [m["track"] for m in cleaned_new]
+            intersect_existing = [t for t in cleaned_tracknames if t in baseline_start_tracknames]
+            truly_new_tracks = [t for t in cleaned_tracknames if t not in baseline_start_tracknames]
+
+            print(f"[Analyse][DetectAdapt] 🔍 Nach Cleanup:")
+            print(f"   • Gesamt neue Marker (vorher): {len(neue_marker)}")
+            print(f"   • Nach Cleanup übrig: {remaining}")
+            print(f"   • Davon bereits bekannte (in Baseline): {len(intersect_existing)} → {intersect_existing[:5]}")
+            print(f"   • Tatsächlich neue Tracks: {len(truly_new_tracks)} → {truly_new_tracks[:5]}")
+
+            # Verhältnis und Bewertung
             if remaining == 0:
-                print("[Kaiserlich Tracker][DetectAdapt] ⚠️ Keine gültigen neuen Marker nach Cleanup – weiterer Versuch nötig.")
-            elif abs(diff) <= tolerance:
-                print(f"[Kaiserlich Tracker][DetectAdapt] ✅ Ziel erreicht: {remaining}/{ef_target} Marker (±{tolerance:.1f})")
-                # Nur dann abbrechen, wenn auch wirklich neue Marker im Frame übrig sind
-                if remaining > 0:
-                    break
+                print("[Analyse][DetectAdapt] ❌ Kein einziger Marker nach Cleanup übrig – offensichtlich zu restriktiv.")
+            elif len(truly_new_tracks) == 0:
+                print("[Analyse][DetectAdapt] ⚠️ Alle gefundenen Marker entsprechen existierenden Tracks (Duplikate).")
+            elif len(truly_new_tracks) < ef_target * 0.5:
+                print(f"[Analyse][DetectAdapt] ⚠️ Nur {len(truly_new_tracks)}/{ef_target} gültige neue Marker (zu wenige).")
+            elif abs(diff) <= tolerance and len(truly_new_tracks) >= ef_target * 0.9:
+                print(f"[Analyse][DetectAdapt] ✅ Gültige neue Marker liegen im Zielband: {len(truly_new_tracks)}/{ef_target}")
+            else:
+                print(f"[Analyse][DetectAdapt] ℹ️ Zwischenstatus – Iteration nötig. Ziel={ef_target}, Aktuell={len(truly_new_tracks)}.")
+
+            # Debug-Marker-Vergleich pro Name (optional)
+            for name in truly_new_tracks[:10]:
+                print(f"      → Neuer Track bestätigt: {name}")
 
             # --- Adaptive Anpassung NACH Cleanup auf Basis 'remaining' ---
             if remaining == 0:
