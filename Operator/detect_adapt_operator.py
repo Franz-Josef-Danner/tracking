@@ -32,12 +32,12 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
         if params:
             # ✅ Normale Initialisierung aus Master-Operator
             md = float(params.get('md', 100))
-            ma = int(round(ma * 1.1))
+            ma = int(round(float(params.get('ma', 100)) * 1.1))  # ⚙️ Margin +10% wie gefordert
             tr = float(params.get('tr', 0.5))
             pz = int(params.get('pz', 50))
             sz = int(params.get('sz', 0))
-            hz = params.get('hz', 1)
-            vc = params.get('vc', False)
+            hz = int(params.get('hz', 1))
+            vc = int(params.get('vc', 1))
         else:
             # ⚠️ Fallback-Bootstrap falls kein Master-Bootstrap existiert
             import math
@@ -155,10 +155,11 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
             if len(alte_marker) > 0:
                 print("   ➤ Beispiel alte Marker:", [m['track'] for m in alte_marker[:5]])
 
-            am = len(neue_marker)
+            # --- Cleanup VOR Bewertung: Entscheidungen basieren auf verbleibenden (gültigen) Neumarkern ---
+            am = len(neue_marker)  # rohe neue Marker (nur Log/Transparenz)
             final_new_marker_count = am
 
-            # Nach Cleanup
+            # Nach Cleanup (löscht zu nahe Marker, schützt alte)
             cleaned_new, deleted_old = cleanup_new_markers(
                 context,
                 alte_marker,
@@ -182,17 +183,24 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
                 print(f"[Kaiserlich Tracker][DetectAdapt] Ziel erreicht: {remaining}/{ef_target} Marker (Toleranz ±{tolerance:.1f})")
                 break
 
-            # Dynamische Anpassung des Mindestabstands
-            if am > 0:
-                ratio = ef_target / am
-                factor = max(0.5, min(2.0, ratio))
-                new_md = last_md / factor
-                last_md = max(1.0, new_md)
+            # --- Adaptive Anpassung NACH Cleanup auf Basis 'remaining' ---
+            if remaining == 0:
+                # alles weggecleant → dichter platzieren
+                last_md = max(2.0, last_md * 0.8)
+                print("[Kaiserlich Tracker][DetectAdapt] Alle neuen Marker nach Cleanup entfernt → min_distance reduzieren (×0.8).")
+            elif remaining < ef_target * 0.5:
+                last_md = max(2.0, last_md * 0.9)
+                print("[Kaiserlich Tracker][DetectAdapt] Deutlich zu wenige Marker → min_distance moderat reduzieren (×0.9).")
+            elif remaining > ef_target * 1.5:
+                last_md = min(hz * 0.25, last_md * 1.1)
+                print("[Kaiserlich Tracker][DetectAdapt] Deutlich zu viele Marker → min_distance leicht erhöhen (×1.1).")
             else:
-                last_md = last_md * 1.5
-                print("[Kaiserlich Tracker][DetectAdapt] Keine neuen Marker, erhöhe min_distance stark")
+                ratio = ef_target / max(1, remaining)
+                last_md *= max(0.75, min(1.25, ratio))
+                last_md = min(max(last_md, 2.0), hz * 0.25)
+                print(f"[Kaiserlich Tracker][DetectAdapt] Feinjustierung via Ratio → min_distance = {last_md:.2f}")
 
-            # Nur löschen, wenn weiterer Durchlauf folgt
+            # Nur löschen, wenn weiterer Durchlauf folgt (rohe Neumarker dieses Loops entfernen)
             if loop < max_loops:
                 delete_tracks_by_names(context, [m['track'] for m in neue_marker])
                 print(f"[Kaiserlich Tracker][DetectAdapt] {len(neue_marker)} neue Marker gelöscht für nächsten Zyklus")
