@@ -25,8 +25,8 @@ from ..Helper.reset_helper import reset_all_thresholds
 from ..Helper.selection_helper import collect_selected_track_names
 from ..Helper.formula_helper import apply_formula_on_selected_tracks
 from ..Helper.filter_and_delete_tracks import filter_and_delete_tracks
-+
-+# ---- Frame-Cache-Import ----------------------------------------------------
+
+# ---- Frame-Cache-Import ----------------------------------------------------
 from ..Helper.frame_value_cache import (
     get_frame_values,
     save_frame_values,
