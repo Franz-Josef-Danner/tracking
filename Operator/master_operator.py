@@ -40,7 +40,7 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
 
         # Operator-Aufruf (vollständiger ShortTest)
         try:
-            bpy.ops.kaiserlich_tracker.shorttest_operator('INVOKE_DEFAULT')
+            bpy.ops.kaiserlich_tracker.Master.shorttest_operator('INVOKE_DEFAULT')
             print("[Kaiserlich Tracker][Master] ShortTest erfolgreich gestartet.")
         except Exception as ex:
             print(f"[Kaiserlich Tracker][Master] ⚠️ Fehler beim Starten des ShortTest: {ex!r}")
