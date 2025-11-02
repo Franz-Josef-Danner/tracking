@@ -193,17 +193,20 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
             print(f"[Kaiserlich Tracker][DetectAdapt][Result] Gültige neue Marker (Clip-synchron): {remaining}")
 
             remaining = len(cleaned_new)
+            # ----------------------------------------------------------------------
+            # Nach Cleanup-Sync: Jetzt erst reale Werte prüfen
+            # ----------------------------------------------------------------------
             diff = remaining - ef_target
             tolerance = ef_target * 0.10  # 10 % Toleranz
 
-            # --- Sicherstellen, dass nur tatsächliche neue Marker berücksichtigt werden ---
             if remaining == 0:
                 print("[Kaiserlich Tracker][DetectAdapt] ⚠️ Keine gültigen neuen Marker nach Cleanup – weiterer Versuch nötig.")
-            elif abs(diff) <= tolerance:
+            elif abs(diff) <= tolerance and remaining > 0:
                 print(f"[Kaiserlich Tracker][DetectAdapt] ✅ Ziel erreicht: {remaining}/{ef_target} Marker (±{tolerance:.1f})")
-                # Nur dann abbrechen, wenn auch wirklich neue Marker im Frame übrig sind
-                if remaining > 0:
-                    break
+                break
+            else:
+                print(f"[Kaiserlich Tracker][DetectAdapt] Abweichung vom Ziel: Δ={diff:+.0f}, "
+                      f"Ziel={ef_target}, Toleranz={tolerance:.1f}")
 
             # --- Adaptive Anpassung NACH Cleanup auf Basis 'remaining' ---
             if remaining == 0:
