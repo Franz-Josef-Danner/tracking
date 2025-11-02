@@ -344,9 +344,6 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 changed += 1
         return changed
         
-    # ----------------------------------------------------------------------------
-    # Detect-Adapt Inline (vollständige adaptive Logik wie detect_adapt_operator)
-    # ----------------------------------------------------------------------------
     def _detect_adapt_inline(self, context: bpy.types.Context):
         scene = context.scene
         ef_target = int(scene.kaiserlich_markers_per_frame)
@@ -456,6 +453,16 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             neue_marker = cleaned_new
             remaining = len(neue_marker)
 
+            # --- NEU: Dublettenprüfung wie im Vorbild --------------------------
+            if clip and getattr(clip, "tracking", None):
+                clip_tracks = {t.name for t in clip.tracking.tracks}
+                real_new = [m for m in neue_marker if m['track'] not in baseline_start_tracknames and m['track'] in clip_tracks]
+                if len(real_new) == 0:
+                    print("[Kaiserlich Tracker][DetectAdapt] ❌ Keine echten neuen Marker erkannt – "
+                          "Iteration wird fortgesetzt, min_distance wird reduziert.")
+                    remaining = 0  # erzwingt erneute Iteration
+            # -------------------------------------------------------------------
+
             print(f"[Kaiserlich Tracker][DetectAdapt] Nach Cleanup: {remaining} neue Marker übrig, {deleted_old} alte gelöscht")
 
             diff = remaining - ef_target
@@ -527,7 +534,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 v_start = float(md_dict[str(f_start)])
                 v_end = float(md_dict[str(f_end)])
                 for f in range(f_start + 1, f_end):
-                    t = (f - f_start) / float(f_end - f_start)
+                    t = (f - f_start) / (f_end - f_start)
                     interp_val = v_start + (v_end - v_start) * t
                     md_dict[str(f)] = interp_val
 
