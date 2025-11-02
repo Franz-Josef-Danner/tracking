@@ -381,14 +381,18 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
                 reached = True
                 break
 
-            # Adaptive Anpassung min_distance (wie ShortTest)
-            am = len(cleaned_new)
-            if am > 0:
-                ratio = ef_target / am
-                factor = max(0.5, min(2.0, ratio))
-                last_md = max(1.0, last_md / factor)
+            # --- Neue dynamische md-Anpassung nach Verhältnisformel ---
+            if remaining == 0:
+                # Sicherheitsfallback, falls alle Marker entfernt
+                last_md = max(2.0, last_md * 0.8)
+                print("[DeepTest][DetectAdapt] ⚠️ Keine Marker erkannt – Standardreduktion ×0.8 angewendet.")
             else:
-                last_md *= 1.5
+                ratio = remaining / max(1, ef_target)
+                factor = (((ratio - 1.0) / 2.0) + 1.0)
+                new_md = last_md * factor
+                new_md = min(max(new_md, 2.0), self._hz * 0.25)
+                print(f"[DeepTest][DetectAdapt] Dynamische Anpassung: ratio={ratio:.3f}, factor={factor:.3f} → md {last_md:.2f} → {new_md:.2f}")
+                last_md = new_md
 
             if loop < self._detect_loop_max - 1:
                 delete_tracks_by_names(context, [m['track'] for m in neue])
