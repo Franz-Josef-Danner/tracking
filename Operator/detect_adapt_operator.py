@@ -87,72 +87,136 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
 
         print(f"[Kaiserlich Tracker][DetectAdapt] Ausgangsmarker: {len(pre_snapshot)} | BaselineTracks: {len(baseline_start_tracknames)}")
 
-        # ------------------------------------------------------------------
-        # Adaptive Hauptschleife (Snapshot → Detect → Classify → Cleanup → Validate)
-        # ------------------------------------------------------------------
+
+        # Adaptive Schleife
         max_loops = 8
         loop = 0
-        last_md = md
+        final_new_marker_count = 0
+        frame_num = scene.frame_current
+
+        # Versuch gespeicherten Wert zu laden
+        if "min_distance_values" in scene:
+            md_dict = scene["min_distance_values"]
+            if str(frame_num) in md_dict:
+                last_md = float(md_dict[str(frame_num)])
+            else:
+                if "known_frames" in md_dict and len(md_dict["known_frames"]) >= 2:
+                    known = sorted(md_dict["known_frames"])
+                    prev_frames = [f for f in known if f < frame_num]
+                    next_frames = [f for f in known if f > frame_num]
+                    if prev_frames and next_frames:
+                        f1 = max(prev_frames)
+                        f2 = min(next_frames)
+                        v1 = float(md_dict[str(f1)])
+                        v2 = float(md_dict[str(f2)])
+                        t = (frame_num - f1) / (f2 - f1)
+                        last_md = v1 + (v2 - v1) * t
+                    else:
+                        last_md = md
+                else:
+                    last_md = md
+        else:
+            last_md = md
+
+        deleted_old = 0
 
         while loop < max_loops:
             loop += 1
-            print(f"\n[Kaiserlich Tracker][DetectAdapt] --- LOOP {loop}/{max_loops} ---")
+            print(f"\n[Kaiserlich Tracker][DetectAdapt] --- LOOP {loop} ---")
             print(f"[Kaiserlich Tracker][DetectAdapt] Aktuelles min_distance = {last_md:.2f}")
 
-            # 1️⃣ Detect Features
-            detect_features(context,
-                            placement='FRAME',
-                            margin=ma,
-                            threshold=tr,
-                            min_distance=int(round(last_md)))
+            # Detect ausführen
+            detect_features(
+                context,
+                placement='FRAME',
+                margin=ma,
+                threshold=tr,
+                min_distance=int(max(1, round(last_md)))
+            )
+            
+            # Nach Detect: Blender selektiert automatisch alle neuen Tracks → wir setzen zurück
+            clip = getattr(context.space_data, 'clip', None)
+            if clip and getattr(clip, 'tracking', None):
+                for trk in clip.tracking.tracks:
+                    try:
+                        trk.select = False
+                    except Exception:
+                        pass
 
-            # 2️⃣ Deselect automatisch selektierte Tracks
-            clip = context.space_data.clip
-            tracking = clip.tracking
-            for trk in tracking.tracks:
-                trk.select = False
-
-            # 3️⃣ Snapshot & Klassifizierung
+            # Snapshot nach Detect
             post_snapshot = snapshot_active_markers(context)
             alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
-            print(f"[DetectAdapt] Neue Marker erkannt: {len(neue_marker)} (vorher {len(alte_marker)} alte)")
 
-            # 4️⃣ Cleanup vor Bewertung
-            cleaned_new, deleted_old = cleanup_new_markers(context, alte_marker, neue_marker, pz=pz, hz=hz, vc=vc)
-            print(f"[DetectAdapt] Nach Cleanup: {len(cleaned_new)} neue Marker übrig, {deleted_old} alte gelöscht")
+            print(f"[Kaiserlich Tracker][DetectAdapt] Alte Marker erkannt: {len(alte_marker)}")
+            print(f"[Kaiserlich Tracker][DetectAdapt] Neue Marker erkannt: {len(neue_marker)}")
 
-            # 5️⃣ Validierung
+            if len(neue_marker) > 0:
+                print("   ➤ Beispiel neue Marker:", [m['track'] for m in neue_marker[:5]])
+            if len(alte_marker) > 0:
+                print("   ➤ Beispiel alte Marker:", [m['track'] for m in alte_marker[:5]])
+
+            # --- Cleanup VOR Bewertung: Entscheidungen basieren auf verbleibenden (gültigen) Neumarkern ---
+            am = len(neue_marker)  # rohe neue Marker (nur Log/Transparenz)
+            final_new_marker_count = am
+
+            # Nach Cleanup (löscht zu nahe Marker, schützt alte)
+            cleaned_new, deleted_old = cleanup_new_markers(
+                context,
+                alte_marker,
+                neue_marker,
+                pz=pz,
+                hz=hz,
+                vc=vc
+            )
+            
+            deleted_old_names = [m['track'] for m in alte_marker if m['track'] not in [n['track'] for n in post_snapshot]]
+            if deleted_old_names:
+                print(f"[⚠️ Kaiserlich Tracker][DetectAdapt] WARNUNG: Alte Marker gelöscht: {deleted_old_names}")
+            
+            print(f"[Kaiserlich Tracker][DetectAdapt] Nach Cleanup: {len(cleaned_new)} neue Marker übrig, {deleted_old} alte gelöscht")
+
+
             remaining = len(cleaned_new)
             diff = remaining - ef_target
-            tolerance = ef_target * 0.10
+            tolerance = ef_target * 0.10  # 10 % Toleranz
 
+            # --- Sicherstellen, dass nur tatsächliche neue Marker berücksichtigt werden ---
             if remaining == 0:
-                print("[DetectAdapt] ❌ Keine Marker übrig → min_distance ×0.8")
-                last_md = max(2.0, last_md * 0.8)
+                print("[Kaiserlich Tracker][DetectAdapt] ⚠️ Keine gültigen neuen Marker nach Cleanup – weiterer Versuch nötig.")
             elif abs(diff) <= tolerance:
-                print(f"[DetectAdapt] ✅ Ziel erreicht: {remaining}/{ef_target} (±{tolerance:.1f})")
-                break
-            elif remaining < ef_target:
-                print(f"[DetectAdapt] Zu wenige Marker ({remaining}/{ef_target}) → min_distance ×0.9")
+                print(f"[Kaiserlich Tracker][DetectAdapt] ✅ Ziel erreicht: {remaining}/{ef_target} Marker (±{tolerance:.1f})")
+                # Nur dann abbrechen, wenn auch wirklich neue Marker im Frame übrig sind
+                if remaining > 0:
+                    break
+
+            # --- Adaptive Anpassung NACH Cleanup auf Basis 'remaining' ---
+            if remaining == 0:
+                # alles weggecleant → dichter platzieren
+                last_md = max(2.0, last_md * 0.8)
+                print("[Kaiserlich Tracker][DetectAdapt] Alle neuen Marker nach Cleanup entfernt → min_distance reduzieren (×0.8).")
+            elif remaining < ef_target * 0.5:
                 last_md = max(2.0, last_md * 0.9)
-            else:
-                print(f"[DetectAdapt] Zu viele Marker ({remaining}/{ef_target}) → min_distance ×1.1")
+                print("[Kaiserlich Tracker][DetectAdapt] Deutlich zu wenige Marker → min_distance moderat reduzieren (×0.9).")
+            elif remaining > ef_target * 1.5:
                 last_md = min(hz * 0.25, last_md * 1.1)
+                print("[Kaiserlich Tracker][DetectAdapt] Deutlich zu viele Marker → min_distance leicht erhöhen (×1.1).")
+            else:
+                ratio = ef_target / max(1, remaining)
+                last_md *= max(0.75, min(1.25, ratio))
+                last_md = min(max(last_md, 2.0), hz * 0.25)
+                print(f"[Kaiserlich Tracker][DetectAdapt] Feinjustierung via Ratio → min_distance = {last_md:.2f}")
 
-            # 6️⃣ Cleanup temporärer Marker (Vorbereitung auf nächsten Loop)
-            delete_tracks_by_names(context, [m['track'] for m in neue_marker])
-            print(f"[DetectAdapt] {len(neue_marker)} temporäre Marker gelöscht (Reset).")
-            time.sleep(0.1)
+            # Nur löschen, wenn weiterer Durchlauf folgt (rohe Neumarker dieses Loops entfernen)
+            if loop < max_loops:
+                delete_tracks_by_names(context, [m['track'] for m in neue_marker])
+                print(f"[Kaiserlich Tracker][DetectAdapt] {len(neue_marker)} neue Marker gelöscht für nächsten Zyklus")
+                time.sleep(0.1)
 
-        # ------------------------------------------------------------------
-        # Endauswertung
-        # ------------------------------------------------------------------
-        final_tracks = [trk for trk in tracking.tracks if trk.name not in baseline_start_tracknames]
-        for trk in tracking.tracks:
-            trk.select = False
-        for trk in final_tracks:
-            trk.select = True
-        print(f"[Kaiserlich Tracker][DetectAdapt] Fertig – {len(final_tracks)} finale Marker.")
+            # --- Logging, falls max_loops noch nicht erreicht ---
+            if loop < max_loops:
+                print(f"[Kaiserlich Tracker][DetectAdapt] ➜ Nächster Loop ({loop+1}/{max_loops}) mit min_distance = {last_md:.2f}")
+            else:
+                print("[Kaiserlich Tracker][DetectAdapt] ⚠️ MaxLoops erreicht – kein weiteres Iterieren möglich.")
 
         # Selektion der finalen Marker
         clip = getattr(context.space_data, 'clip', None)
