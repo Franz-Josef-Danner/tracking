@@ -1,4 +1,4 @@
-# Operator/Master/detect_adapt_operator.py
+# Operator/Master/master_detect_adapt_operator.py
 import bpy
 import time
 
@@ -8,8 +8,8 @@ from ..Helper.newmarker import classify_markers
 from ..Helper.cleaneup import cleanup_new_markers
 from ..Helper.delete import delete_tracks_by_names
 
-class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
-    bl_idname = "kaiserlich_tracker.detect_adapt"
+class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
+    bl_idname = "kaiserlich_tracker.master_detect_adapt"
     bl_label = "Detect Adapt (einmalig)"
     bl_description = (
         "Führt eine Marker-Detektion aus, bis die Zielanzahl aus "
