@@ -93,7 +93,12 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
         self._state = _AutoCalibState()
-
+        # NEU: ursprüngliche Playhead-Position des Users sichern (global für gesamten ShortTest)
+        try:
+            self._state.user_original_frame = int(context.scene.frame_current)
+        except Exception:
+            self._state.user_original_frame = None
+            
         clip = get_active_clip(context)
         if clip is None:
             self.report({'WARNING'}, "Kein aktiver MovieClip gefunden.")
@@ -362,8 +367,8 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 self._state.shorttest_original_frame = _orig_frame
                 _new_start = max(int(scene.frame_start), _end_frame - 50)
                 scene.frame_current = int(_new_start)
-                if hasattr(context, "space_data") and hasattr(context.space_data, "clip_user") and context.space_data.clip_user:
-                    context.space_data.clip_user.frame_current = int(_new_start)
+                if getattr(context, "space_data", None) and getattr(context.space_data, "clip_user", None):
+                    context.space_data.clip_user.frame_current = _restore
                 print(f"[ShortTest] ⏪ Zu wenige Rest-Frames ({_remaining}) – Playhead {_orig_frame} → {_new_start}")
             else:
                 self._state.shorttest_original_frame = None
@@ -533,8 +538,8 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             try:
                 _restore = int(self._state.shorttest_original_frame)
                 scene.frame_current = _restore
-                if hasattr(context, "space_data") and hasattr(context.space_data, "clip_user") and context.space_data.clip_user:
-                    context.space_data.clip_user.frame_current = _restore
+                if getattr(context, "space_data", None) and getattr(context.space_data, "clip_user", None):
+                    context.space_data.clip_user.frame_current = int(_new_start)
                 print(f"[ShortTest] ⏩ Playhead wiederhergestellt: {_restore}")
             except Exception as _e:
                 print(f"[ShortTest] ⚠️ Wiederherstellung fehlgeschlagen: {_e!r}")
@@ -847,7 +852,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             else:
                 print(f"[Kaiserlich Tracker][Baseline] Total Track Length (Frame {end_f}) = {total_len} (gespeichert unter '{key_cycle}')")
 
-            # 3) Danach Playhead optional zurücksetzen (nicht mehr vor der Messung)
+            # 3) Danach Playhead auf Tracking-Start-Frame zurücksetzen (für internen Folgezyklus)
             start_f = int(self._state.track_start_frame or 1)
             reset_to_frame(context, start_f)
             context.scene.frame_current = start_f
@@ -855,12 +860,8 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 self._state.track_space.clip_user.frame_current = start_f
             print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead zurück auf Frame {start_f} (nach Messung).")
 
-            # Playhead bleibt auf dem letzten Tracking-Start-Frame
-            start_f = int(self._state.track_start_frame or scene.frame_current)
-            scene.frame_current = start_f
-            if self._state.track_space:
-                self._state.track_space.clip_user.frame_current = start_f
-            print(f"[TrackCycle] ▶️ Playhead bleibt auf Frame {start_f} für nächsten Zyklus.")
+            # HINWEIS: Nicht dauerhaft auf Startframe "stehen bleiben".
+            # Die finale Rücksetzung auf die ursprüngliche User-Position erfolgt zentral in _teardown().
             # --- Persistente Sammelstruktur für spätere Analyse ---
             # Speichert alle gemessenen Längen in einer Liste unter 'kaiserlich_len_results'
             results = scene.get("kaiserlich_len_results", [])
@@ -919,6 +920,18 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             except Exception:
                 pass
             self._timer = None
+
+        # NEU: globale Wiederherstellung der ursprünglichen User-Playhead-Position
+        try:
+            if getattr(self._state, "user_original_frame", None) is not None:
+                restore = int(self._state.user_original_frame)
+                context.scene.frame_current = restore
+                if getattr(context, "space_data", None) and getattr(context.space_data, "clip_user", None):
+                    context.space_data.clip_user.frame_current = restore
+                print(f"[ShortTest] ⏩ Playhead global wiederhergestellt: {restore}")
+        except Exception as _e:
+            print(f"[ShortTest] ⚠️ Globale Wiederherstellung fehlgeschlagen: {_e!r}")
+
         msg = "Auto Calibrate abgebrochen." if cancelled else "Auto Calibrate abgeschlossen."
         try:
             self.report({'INFO'}, msg)
