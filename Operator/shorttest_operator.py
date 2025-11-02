@@ -348,36 +348,28 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         scene = context.scene
         ef_target = int(scene.kaiserlich_markers_per_frame)
 
-        # --- NEU: Framefenster an Szenenende anpassen -----------------------
-        current_frame = scene.frame_current
-        end_frame = get_end_frame(context)
-        remaining_frames = end_frame - current_frame
-
-        if remaining_frames < 50:
-            # Merke ursprüngliche Frameposition
-            self._state.original_frame_position = current_frame
-
-            # Berechne neuen Start so, dass bis Szenenende exakt 50 Frames bleiben
-            new_start = max(scene.frame_start, end_frame - 50)
-            scene.frame_current = new_start
-
-            # Auch Clip-User (Movie Clip Editor) synchronisieren
-            clip_tmp = getattr(context.space_data, "clip", None)
-            if clip_tmp and getattr(clip_tmp, "tracking", None):
-                try:
-                    clip_user = getattr(clip_tmp, "user", None)
-                    if clip_user:
-                        clip_user.frame_current = new_start
-                except Exception:
-                    pass
-
-            print(f"[ShortTest] ⏪ Zu wenige Frames ({remaining_frames}) bis Szenenende – "
-                  f"Playhead verschoben: {current_frame} → {new_start}")
-        else:
-            self._state.original_frame_position = None
-        # --------------------------------------------------------------------
         import math
         params = scene.get("bootstrap_params", None)
+
+        # --- NEU: ShortTest-Fenster sicherstellen (≥50 Frames bis Szenenende) ---
+        try:
+            _orig_frame = int(scene.frame_current)
+            _end_frame = int(get_end_frame(context))
+            _remaining = _end_frame - _orig_frame
+            if _remaining < 50:
+                # ursprüngliche Frameposition merken und Playhead so setzen,
+                # dass bis zum Szenenende 50 Frames verfügbar sind (sofern möglich)
+                self._state.shorttest_original_frame = _orig_frame
+                _new_start = max(int(scene.frame_start), _end_frame - 50)
+                scene.frame_current = int(_new_start)
+                if hasattr(context, "space_data") and hasattr(context.space_data, "clip_user") and context.space_data.clip_user:
+                    context.space_data.clip_user.frame_current = int(_new_start)
+                print(f"[ShortTest] ⏪ Zu wenige Rest-Frames ({_remaining}) – Playhead {_orig_frame} → {_new_start}")
+            else:
+                self._state.shorttest_original_frame = None
+        except Exception as _e:
+            print(f"[ShortTest] ⚠️ Fensterprüfung fehlgeschlagen: {_e!r}")
+        # -------------------------------------------------------------------------
 
         # Bootstrap-Parameter
         if params:
@@ -536,6 +528,17 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             for trk in new_tracks:
                 trk.select = True
             print(f"[Kaiserlich Tracker][DetectAdapt] Final selektierte Marker: {len(new_tracks)}")
+        # --- NEU: Playhead vor Persistenz auf ursprüngliche Position zurücksetzen ---
+        if getattr(self._state, "shorttest_original_frame", None) is not None:
+            try:
+                _restore = int(self._state.shorttest_original_frame)
+                scene.frame_current = _restore
+                if hasattr(context, "space_data") and hasattr(context.space_data, "clip_user") and context.space_data.clip_user:
+                    context.space_data.clip_user.frame_current = _restore
+                print(f"[ShortTest] ⏩ Playhead wiederhergestellt: {_restore}")
+            except Exception as _e:
+                print(f"[ShortTest] ⚠️ Wiederherstellung fehlgeschlagen: {_e!r}")
+        # ---------------------------------------------------------------------------
 
         # Persistenz md-Wert
         frame_num = scene.frame_current
@@ -564,20 +567,6 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                     md_dict[str(f)] = interp_val
 
         print(f"[Kaiserlich Tracker][DetectAdapt] Frame {frame_num}: final min_distance = {md_value:.2f}")
-        # --- NEU: Playhead nach Test zurücksetzen ---------------------------
-        if getattr(self._state, "original_frame_position", None) is not None:
-            restore_frame = int(self._state.original_frame_position)
-            scene.frame_current = restore_frame
-            clip_tmp = getattr(context.space_data, "clip", None)
-            if clip_tmp and getattr(clip_tmp, "tracking", None):
-                try:
-                    clip_user = getattr(clip_tmp, "user", None)
-                    if clip_user:
-                        clip_user.frame_current = restore_frame
-                except Exception:
-                    pass
-            print(f"[ShortTest] ⏩ Playhead nach Test wiederhergestellt: {restore_frame}")
-        # --------------------------------------------------------------------
 
         self._state.created_track_names = [t.name for t in new_tracks] if new_tracks else []
         self._state.detect_adapt_done_confirmed = True
