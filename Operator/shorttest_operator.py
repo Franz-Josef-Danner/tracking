@@ -348,6 +348,34 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         scene = context.scene
         ef_target = int(scene.kaiserlich_markers_per_frame)
 
+        # --- NEU: Framefenster an Szenenende anpassen -----------------------
+        current_frame = scene.frame_current
+        end_frame = get_end_frame(context)
+        remaining_frames = end_frame - current_frame
+
+        if remaining_frames < 50:
+            # Merke ursprüngliche Frameposition
+            self._state.original_frame_position = current_frame
+
+            # Berechne neuen Start so, dass bis Szenenende exakt 50 Frames bleiben
+            new_start = max(scene.frame_start, end_frame - 50)
+            scene.frame_current = new_start
+
+            # Auch Clip-User (Movie Clip Editor) synchronisieren
+            clip_tmp = getattr(context.space_data, "clip", None)
+            if clip_tmp and getattr(clip_tmp, "tracking", None):
+                try:
+                    clip_user = getattr(clip_tmp, "user", None)
+                    if clip_user:
+                        clip_user.frame_current = new_start
+                except Exception:
+                    pass
+
+            print(f"[ShortTest] ⏪ Zu wenige Frames ({remaining_frames}) bis Szenenende – "
+                  f"Playhead verschoben: {current_frame} → {new_start}")
+        else:
+            self._state.original_frame_position = None
+        # --------------------------------------------------------------------
         import math
         params = scene.get("bootstrap_params", None)
 
@@ -536,6 +564,20 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                     md_dict[str(f)] = interp_val
 
         print(f"[Kaiserlich Tracker][DetectAdapt] Frame {frame_num}: final min_distance = {md_value:.2f}")
+        # --- NEU: Playhead nach Test zurücksetzen ---------------------------
+        if getattr(self._state, "original_frame_position", None) is not None:
+            restore_frame = int(self._state.original_frame_position)
+            scene.frame_current = restore_frame
+            clip_tmp = getattr(context.space_data, "clip", None)
+            if clip_tmp and getattr(clip_tmp, "tracking", None):
+                try:
+                    clip_user = getattr(clip_tmp, "user", None)
+                    if clip_user:
+                        clip_user.frame_current = restore_frame
+                except Exception:
+                    pass
+            print(f"[ShortTest] ⏩ Playhead nach Test wiederhergestellt: {restore_frame}")
+        # --------------------------------------------------------------------
 
         self._state.created_track_names = [t.name for t in new_tracks] if new_tracks else []
         self._state.detect_adapt_done_confirmed = True
@@ -575,36 +617,6 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         if end_frame < start_frame:
             end_frame = start_frame
 
-        # --------------------------------------------------------------------
-        # NEU: Prüfen, ob bis zum Szenenende < 50 Frames verbleiben
-        # → Wenn ja, rückwärts tracken
-        # --------------------------------------------------------------------
-        remaining_frames = end_frame - start_frame
-        backwards_mode = remaining_frames < 50
-
-        # --- Sicherheitslogik --------------------------------------------
-        # Wenn Szenenende und Startframe identisch sind → minimaler Abstand
-        if remaining_frames <= 0:
-            print(f"[TrackCycle] ⚠️ Startframe ({start_frame}) liegt am Szenenende ({end_frame}). "
-                  f"Passe Bereich für Rückwärts-Tracking an.")
-            backwards_mode = True
-            # 50 Frames Rückwärts-Fenster oder bis Frame 1, je nach Länge
-            adjusted_start = max(1, end_frame - 50)
-            self._state.track_start_frame = adjusted_start
-            self._state.track_frame_end = end_frame
-            start_frame = adjusted_start
-            print(f"[TrackCycle] Bereich neu definiert: {start_frame} → {end_frame} (Rückwärts-Fenster ≈ 50 Frames).")
-
-        if backwards_mode:
-            print(f"[TrackCycle] 🔁 Weniger als 50 Frames bis Szenenende "
-                  f"({remaining_frames}) – Rückwärts-Tracking aktiviert.")
-            # Start am Ende der Szene, Ziel ist der Startframe
-            s = self._state
-            s.track_frame_end = start_frame
-            s.track_start_frame = end_frame
-        else:
-            # Standard: Vorwärts-Tracking
-            backwards_mode = False
         # --------------------------------------------------------------------
         # Editor-Bereich und State setzen
         # --------------------------------------------------------------------
@@ -664,13 +676,6 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
 
         print(f"[Kaiserlich Tracker][TrackCycle] Start {start_frame} → {end_frame} (nicht-blockierend)")
 
-        # Modus im State speichern
-        self._state.backwards_mode = backwards_mode
-
-        if backwards_mode:
-            # Frameposition umkehren
-            scene.frame_current = end_frame
-            space.clip_user.frame_current = end_frame
     # ------------------------------------------------------------------------
     # Track-Cycle: Tick (ein Frame pro Timer, nicht-blockierend)
     # ------------------------------------------------------------------------
@@ -744,17 +749,11 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         print(f"[Debug][Tick] Aktive Marker-Frames pro Track:")
         for n, frames in active_frames[:10]:
             print(f"   ▶ {n}: {len(frames)} Marker ({frames[:5]}...)")
-        
-        # --- Richtung abhängig vom Modus -------------------------------
-        backwards_flag = getattr(s, "backwards_mode", False)
+
         success = track_markers_with_override(
             s.track_window, s.track_area, s.track_region, s.track_space,
-            backwards=backwards_flag,
-            sequence=False
+            backwards=False, sequence=False
         )
-
-        direction_txt = "rückwärts" if backwards_flag else "vorwärts"
-        print(f"[TrackCycle] ▶ Tracking-Schritt ({direction_txt}) erfolgreich.")
 
         if success:
             post_marker_summary = {
@@ -768,19 +767,11 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             return False
 
         # --- 4) Frame fortsetzen -------------------------------------------
-        # Frame-Iteration abhängig von Richtung
-        if getattr(s, "backwards_mode", False):
-            current -= 1
-            if current < s.track_frame_end:
-                print("[TrackCycle] ✅ Szenenanfang erreicht (Rückwärts-Modus).")
-                s.track_active = False
-                return False
-        else:
-            current += 1
-            if current > end:
-                print("[TrackCycle] ✅ Szenenende erreicht.")
-                s.track_active = False
-                return False
+        current += 1
+        if current > end:
+            print("[TrackCycle] ✅ Szenenende erreicht.")
+            s.track_active = False
+            return False
 
         scene.frame_current = current
         s.track_space.clip_user.frame_current = current
