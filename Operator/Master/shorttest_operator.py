@@ -1,4 +1,4 @@
-# Operator/shorttest_operator.py – bereinigte Version
+# Operator/Master/shorttest_operator.py
 import bpy
 import time
 import math
