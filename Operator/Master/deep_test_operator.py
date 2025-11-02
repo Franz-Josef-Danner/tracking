@@ -1,4 +1,4 @@
-# Operator/deep_test_operator.py
+# Operator/Master/deep_test_operator.py
 import bpy
 import time
 import math
