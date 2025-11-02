@@ -349,72 +349,146 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         print(f"[DeepTest][{self._current_category}] Test Step {self._current_step_index + 1}/{len(REDUCTION_STEPS)}: "
               f"{next_val:.6f} (×{step_factor})")
     
-        # ---- Detect (UI-non-blocking bleibt gewahrt) ---------------------------
-        # ---- DetectAdapt-Parität (komplette Schleife aus ShortTest) ----------
+        # ---- Detect (vollständig nach DetectAdapt-Struktur) --------------------
         ef_target = int(self._scene.kaiserlich_markers_per_frame)
         tolerance = ef_target * 0.10
-        last_md = float(self._last_md)
+        hz = self._hz
+        vc = self._vc
+        ma = self._margin
+        tr = self._threshold
+        pz = self._pattern_size
+        scene = self._scene
 
         pre_snapshot = snapshot_active_markers(context)
-        baseline_names = {t.name for t in self._clip.tracking.tracks}
+        baseline_start_tracknames = {t.name for t in self._clip.tracking.tracks}
 
-        reached = False
-        for loop in range(self._detect_loop_max):
+        print(f"[DeepTest][DetectAdapt] Bootstrap md={self._last_md:.2f}, hz={hz}, vc={vc}, margin={ma}, pattern={pz}, threshold={tr}")
+
+        max_loops = self._detect_loop_max
+        last_md = float(self._last_md)
+        cleaned_new = []
+
+        for loop in range(max_loops):
             print(f"\n[DeepTest][DetectAdapt] --- LOOP {loop+1} ---")
             print(f"[DeepTest][DetectAdapt] Aktuelles min_distance = {last_md:.2f}")
-            detect_features(
-                context,
-                placement='FRAME',
-                margin=self._margin,
-                threshold=self._threshold,
-                min_distance=int(max(1, round(last_md)))
-            )
+
+            detect_features(context, placement='FRAME', margin=ma, threshold=tr,
+                            min_distance=int(max(1, round(last_md))))
+
+            # Blender selektiert automatisch neue Marker → zurücksetzen
+            clip = getattr(context.space_data, 'clip', None)
+            if clip and getattr(clip, 'tracking', None):
+                for trk in clip.tracking.tracks:
+                    trk.select = False
+
             post_snapshot = snapshot_active_markers(context)
-            alte, neue = classify_markers(pre_snapshot, post_snapshot)
-            cleaned_new, _ = cleanup_new_markers(context, alte, neue, pz=self._pattern_size, hz=self._hz, vc=self._vc)
+            alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
+
+            print(f"[DeepTest][DetectAdapt] Alte Marker erkannt: {len(alte_marker)}")
+            print(f"[DeepTest][DetectAdapt] Neue Marker erkannt: {len(neue_marker)}")
+            if len(neue_marker) > 0:
+                print("   ➤ Beispiel neue Marker:", [m['track'] for m in neue_marker[:5]])
+            if len(alte_marker) > 0:
+                print("   ➤ Beispiel alte Marker:", [m['track'] for m in alte_marker[:5]])           
+
+            # Cleanup schützt alte Marker
+            cleaned_new, deleted_old = cleanup_new_markers(
+                context, alte_marker, neue_marker, pz=pz, hz=hz, vc=vc)
             remaining = len(cleaned_new)
+
+            # --- Desync prüfen ---
+            if clip and getattr(clip, "tracking", None):
+                clip_names = {t.name for t in clip.tracking.tracks}
+                synced_cleaned = [m for m in cleaned_new if m['track'] in clip_names]
+                if len(synced_cleaned) != len(cleaned_new):
+                    removed = [m['track'] for m in cleaned_new if m['track'] not in clip_names]
+                    print(f"[Fix][DetectAdapt] Entferne {len(removed)} aus Speicher (nicht im Clip): {removed[:5]}...")
+                cleaned_new = synced_cleaned
+                remaining = len(cleaned_new)
+
+            print(f"[DeepTest][DetectAdapt][Result] Gültige neue Marker (bereinigt): {remaining}")
+
             diff = remaining - ef_target
-
-            print(f"[DeepTest][DetectAdapt] {remaining} Marker → Ziel {ef_target} (±{tolerance:.0f})")
-            if abs(diff) <= tolerance:
-                print("[DeepTest][DetectAdapt] ✅ Ziel erreicht")
-                reached = True
-                break
-
-            # --- Neue dynamische md-Anpassung nach Verhältnisformel ---
             if remaining == 0:
-                # Sicherheitsfallback, falls alle Marker entfernt
+                print("[DeepTest][DetectAdapt] ⚠️ Keine gültigen neuen Marker – neuer Versuch.")
+            elif abs(diff) <= tolerance and remaining > 0:
+                print(f"[DeepTest][DetectAdapt] ✅ Ziel erreicht: {remaining}/{ef_target} Marker (±{tolerance:.1f})")
+                break
+            else:
+                print(f"[DeepTest][DetectAdapt] Δ={diff:+.0f}, Ziel={ef_target}, Toleranz={tolerance:.1f}")
+
+            # Adaptive min_distance-Anpassung
+            if remaining == 0:
                 last_md = max(2.0, last_md * 0.8)
-                print("[DeepTest][DetectAdapt] ⚠️ Keine Marker erkannt – Standardreduktion ×0.8 angewendet.")
+                print("[DeepTest][DetectAdapt] ⚠️ Keine Marker erkannt – Reduktion ×0.8.")
             else:
                 ratio = remaining / max(1, ef_target)
                 factor = (((ratio - 1.0) / 2.0) + 1.0)
                 new_md = last_md * factor
-                new_md = min(max(new_md, 2.0), self._hz * 0.25)
-                print(f"[DeepTest][DetectAdapt] Dynamische Anpassung: ratio={ratio:.3f}, factor={factor:.3f} → md {last_md:.2f} → {new_md:.2f}")
+                new_md = min(max(new_md, 2.0), hz * 0.25)
+                print(f"[DeepTest][DetectAdapt] ratio={ratio:.3f}, factor={factor:.3f} → md {last_md:.2f} → {new_md:.2f}")
                 last_md = new_md
 
-            if loop < self._detect_loop_max - 1:
-                delete_tracks_by_names(context, [m['track'] for m in neue])
+            # Cleanup für nächste Runde
+            if loop < max_loops - 1:
+                del_names = [m['track'] for m in cleaned_new]
+                if del_names:
+                    delete_tracks_by_names(context, del_names)
+                    print(f"[DeepTest][DetectAdapt] {len(del_names)} Marker gelöscht für nächsten Zyklus")
                 time.sleep(0.05)
 
         self._last_md = last_md
         print(f"[DeepTest][DetectAdapt] Final min_distance = {self._last_md:.2f}")
 
-        # Finale Marker selektieren
-        self._final_new_tracks = [m['track'] for m in cleaned_new]
-        for trk in getattr(self._clip.tracking, "tracks", []):
-            trk.select = (trk.name in self._final_new_tracks)
+        # Speicherung pro Frame (inkl. Interpolation)
+        frame_num = scene.frame_current
+        md_val = float(last_md)
+        if "min_distance_values" not in scene:
+            scene["min_distance_values"] = {}
+        md_dict = scene["min_distance_values"]
+        known_list = list(md_dict.get("known_frames", []))
+        if frame_num not in known_list:
+            known_list.append(frame_num)
+            known_list.sort()
+        md_dict["known_frames"] = known_list
+        md_dict[str(frame_num)] = md_val
 
-        # View-Layer synchronisieren (ShortTest-Parität)
+        if len(known_list) > 1:
+            for i in range(len(known_list) - 1):
+                f_start = known_list[i]
+                f_end = known_list[i + 1]
+                if f_end - f_start < 2:
+                    continue
+                v_start = float(md_dict[str(f_start)])
+                v_end = float(md_dict[str(f_end)])
+                for f in range(f_start + 1, f_end):
+                    t = (f - f_start) / float(f_end - f_start)
+                    interp = v_start + (v_end - v_start) * t
+                    md_dict[str(f)] = interp
+
+        # Nur wirklich neue Marker selektieren
+        clip = getattr(context.space_data, 'clip', None)
+        final_tracks = []
+        if clip and getattr(clip, 'tracking', None):
+            trk_list = clip.tracking.tracks
+            new_tracks = [t for t in trk_list if t.name not in baseline_start_tracknames]
+            for t in trk_list:
+                t.select = False
+            for nt in new_tracks:
+                nt.select = True
+                final_tracks.append(nt.name)
+            print(f"[DeepTest][DetectAdapt] Final selektierte Marker: {len(final_tracks)}")
+
+        self._final_new_tracks = final_tracks
+
         try:
             bpy.context.view_layer.update()
         except:
             pass
-    
-        # ---- Tracking (nicht-blockierend) -------------------------------------
-        self._track_start(context)          # Initialisierung des tick-basierten Trackings
-        self._phase = "tracking_tick"       # Modal-Loop übernimmt jetzt per TIMER jeweils 1 Frame
+
+        # ---- Tracking starten (non-blocking) ----
+        self._track_start(context)
+        self._phase = "tracking_tick"
         return False
 
 
