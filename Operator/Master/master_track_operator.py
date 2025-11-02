@@ -1,4 +1,4 @@
-# Operator/Master/track_operator.py
+# Operator/Master/master_track_operator.py
 import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
@@ -19,9 +19,9 @@ from ..Helper.track_markers_helper import track_markers_with_override
 # Operator
 # ------------------------------------------------------------
 
-class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
+class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     """Frame-by-Frame Tracking mit sichtbarem Fortschritt (nicht blockierend)."""
-    bl_idname = "kaiserlich_tracker.track_cycle"
+    bl_idname = "kaiserlich_tracker.master_track_cycle"
     bl_label = "Track Zyklus (Modal)"
     bl_description = (
         "Trackt selektierte Marker frameweise mit Timer – UI bleibt responsiv, "
@@ -220,8 +220,8 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
 # ------------------------------------------------------------
 
 def register():
-    bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle)
+    bpy.utils.register_class(KAISERLICHTRACKER_OT_master_track_cycle)
 
 
 def unregister():
-    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_track_cycle)
+    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_master_track_cycle)
