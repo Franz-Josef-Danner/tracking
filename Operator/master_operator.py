@@ -1,3 +1,4 @@
+# Operator/master_operator.py
 import bpy
 from bpy.types import Operator, Context
 
