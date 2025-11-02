@@ -1,4 +1,4 @@
-# Operator/Master/track_operator_backwards.py
+# Operator/Master/master_track_operator_backwards.py
 import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
@@ -19,9 +19,9 @@ from ..Helper.track_markers_helper import track_markers_with_override
 # Operator
 # ------------------------------------------------------------
 
-class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
+class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
     """Frame-by-Frame Tracking rückwärts mit sichtbarem Fortschritt (nicht blockierend)."""
-    bl_idname = "kaiserlich_tracker.track_cycle_backwards"
+    bl_idname = "kaiserlich_tracker.master_track_cycle_backwards"
     bl_label = "Track Zyklus Rückwärts (Modal)"
     bl_description = (
         "Trackt selektierte Marker frameweise rückwärts mit Timer – UI bleibt responsiv, "
@@ -250,8 +250,8 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
 # ------------------------------------------------------------
 
 def register():
-    bpy.utils.register_class(KAISERLICHTRACKER_OT_track_cycle_backwards)
+    bpy.utils.register_class(KAISERLICHTRACKER_OT_master_track_cycle_backwards)
 
 
 def unregister():
-    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_track_cycle_backwards)
+    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_master_track_cycle_backwards)
