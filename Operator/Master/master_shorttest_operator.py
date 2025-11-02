@@ -77,7 +77,7 @@ class _AutoCalibState:
 # ----------------------------------------------------------------------------
 # Operator
 # ----------------------------------------------------------------------------
-class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
+class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
     bl_idname = "kaiserlich_tracker.shorttest_operator"
     bl_label = "Kaiserlich Tracker — Auto Calibrate"
     bl_options = {'REGISTER', 'UNDO'}
