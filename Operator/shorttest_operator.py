@@ -582,6 +582,19 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         remaining_frames = end_frame - start_frame
         backwards_mode = remaining_frames < 50
 
+        # --- Sicherheitslogik --------------------------------------------
+        # Wenn Szenenende und Startframe identisch sind → minimaler Abstand
+        if remaining_frames <= 0:
+            print(f"[TrackCycle] ⚠️ Startframe ({start_frame}) liegt am Szenenende ({end_frame}). "
+                  f"Passe Bereich für Rückwärts-Tracking an.")
+            backwards_mode = True
+            # 50 Frames Rückwärts-Fenster oder bis Frame 1, je nach Länge
+            adjusted_start = max(1, end_frame - 50)
+            self._state.track_start_frame = adjusted_start
+            self._state.track_frame_end = end_frame
+            start_frame = adjusted_start
+            print(f"[TrackCycle] Bereich neu definiert: {start_frame} → {end_frame} (Rückwärts-Fenster ≈ 50 Frames).")
+
         if backwards_mode:
             print(f"[TrackCycle] 🔁 Weniger als 50 Frames bis Szenenende "
                   f"({remaining_frames}) – Rückwärts-Tracking aktiviert.")
