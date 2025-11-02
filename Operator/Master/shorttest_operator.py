@@ -949,11 +949,26 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         # ------------------------------------------------------------
         if not cancelled:
             try:
-                print("[Kaiserlich Tracker][ShortTest] ➜ Übergabe an DeepTest-Operator gestartet...")
-                bpy.ops.kaiserlich_tracker.deep_test_operator('INVOKE_DEFAULT')
-                print("[Kaiserlich Tracker][ShortTest] DeepTest-Operator erfolgreich gestartet.")
+                print("[Kaiserlich Tracker][ShortTest] ➜ Übergabe an DeepTest-Operator geplant (asynchron)...")
+                clip = get_active_clip(context)
+                window, area, region, space = find_clip_editor_area(clip)
+
+                if not window:
+                    print("[Kaiserlich Tracker][ShortTest] ⚠️ Kein gültiger CLIP_EDITOR-Kontext für Übergabe gefunden.")
+                else:
+                    def _launch_deeptest():
+                        try:
+                            with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+                                bpy.ops.kaiserlich_tracker.deep_test_operator('INVOKE_DEFAULT')
+                                print("[Kaiserlich Tracker][ShortTest] DeepTest-Operator erfolgreich (asynchron) gestartet.")
+                        except Exception as ex:
+                            print(f"[Kaiserlich Tracker][ShortTest] ⚠️ Fehler beim Start des DeepTest-Operators: {ex!r}")
+                        return None
+
+                    bpy.app.timers.register(_launch_deeptest, first_interval=0.1)
+
             except Exception as ex:
-                print(f"[Kaiserlich Tracker][ShortTest] ⚠️ Übergabe an DeepTest-Operator fehlgeschlagen: {ex!r}")
+                print(f"[Kaiserlich Tracker][ShortTest] ⚠️ Planung der Übergabe an DeepTest-Operator fehlgeschlagen: {ex!r}")
 
         return {'CANCELLED' if cancelled else 'FINISHED'}
 
