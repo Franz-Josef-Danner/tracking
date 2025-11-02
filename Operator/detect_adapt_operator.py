@@ -181,8 +181,22 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
             if deleted_old_names:
                 print(f"[⚠️ Kaiserlich Tracker][DetectAdapt] WARNUNG: Alte Marker nach Cleanup verschwunden: {deleted_old_names}")
             
-            print(f"[Kaiserlich Tracker][DetectAdapt] Nach Cleanup: {remaining} neue Marker übrig, {deleted_old} alte gelöscht")
-            print(f"[Kaiserlich Tracker][DetectAdapt][Result] Gültige neue Marker (bereinigt): {remaining}")
+
+            # --- DEBUG-TESTBLOCK: Prüfe tatsächliche Existenz der bereinigten Marker im Clip ---
+            if clip and getattr(clip, "tracking", None):
+                track_names_in_clip = {t.name for t in clip.tracking.tracks}
+                still_existing = [m['track'] for m in neue_marker if m['track'] in track_names_in_clip]
+                missing_after_cleanup = [m['track'] for m in neue_marker if m['track'] not in track_names_in_clip]
+
+                print(f"[TEST][DetectAdapt] Tracks im Clip insgesamt: {len(track_names_in_clip)}")
+                print(f"[TEST][DetectAdapt] Bereinigte neue Marker laut Liste: {len(neue_marker)}")
+                print(f"[TEST][DetectAdapt] Davon noch real im Clip vorhanden: {len(still_existing)}")
+                if missing_after_cleanup:
+                    print(f"[TEST][DetectAdapt] Fehlende Marker (bereits gelöscht): {missing_after_cleanup[:5]}{' ...' if len(missing_after_cleanup) > 5 else ''}")
+                else:
+                    print("[TEST][DetectAdapt] Alle bereinigten Marker existieren im Clip (kein Desync).")
+
+            print("--------------------------------------------------------------")
 
             diff = remaining - ef_target
             tolerance = ef_target * 0.10  # 10 % Toleranz
