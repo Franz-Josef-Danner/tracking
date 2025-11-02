@@ -850,6 +850,23 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             print(f"[DeepTest] ⚠️ Fehler bei globaler Wiederherstellung: {ex!r}")
         # ---------------------------------------------------------------------------
 
+        # --------------------------------------------------------------
+        # Nach Abschluss: Weitergabe an Master Detect Adapt Operator
+        # --------------------------------------------------------------
+        if not cancelled:
+            try:
+                print("[DeepTest] 🔁 Starte Folge-Operator: master_detect_adapt_operator ...")
+                # Sicherstellen, dass Kontext synchron ist
+                bpy.context.view_layer.update()
+
+                # Aufruf des nachgelagerten Operators
+                result = bpy.ops.kaiserlich_tracker.master_detect_adapt_operator('INVOKE_DEFAULT')
+                print(f"[DeepTest] → Übergabe an master_detect_adapt_operator gestartet: {result}")
+            except Exception as ex:
+                print(f"[DeepTest] ⚠️ Übergabe an master_detect_adapt_operator fehlgeschlagen: {ex!r}")
+        else:
+            print("[DeepTest] ⏹️ Test wurde abgebrochen – keine Weitergabe.")
+
         return {'CANCELLED' if cancelled else 'FINISHED'}
 
 
