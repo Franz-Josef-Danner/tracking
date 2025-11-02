@@ -1,4 +1,4 @@
-# detect_adapt_operator.py
+# Operator/Master/detect_adapt_operator.py
 import bpy
 import time
 
