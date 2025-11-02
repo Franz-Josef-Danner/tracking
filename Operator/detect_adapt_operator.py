@@ -217,22 +217,18 @@ class KAISERLICHTRACKER_OT_detect_adapt(bpy.types.Operator):
             else:
                 print(f"[Kaiserlich Tracker][DetectAdapt] Abweichung vom Ziel: Δ={diff:+.0f}, Ziel={ef_target}, Toleranz={tolerance:.1f}")
 
-            # --- Adaptive Anpassung NACH Cleanup auf Basis 'remaining' ---
+            # --- Neue dynamische md-Anpassung nach Verhältnisformel ---
             if remaining == 0:
-                # alles weggecleant → dichter platzieren
+                # Sicherheitsfallback, falls alle Marker entfernt
                 last_md = max(2.0, last_md * 0.8)
-                print("[Kaiserlich Tracker][DetectAdapt] Alle neuen Marker nach Cleanup entfernt → min_distance reduzieren (×0.8).")
-            elif remaining < ef_target * 0.5:
-                last_md = max(2.0, last_md * 0.9)
-                print("[Kaiserlich Tracker][DetectAdapt] Deutlich zu wenige Marker → min_distance moderat reduzieren (×0.9).")
-            elif remaining > ef_target * 1.5:
-                last_md = min(hz * 0.25, last_md * 1.1)
-                print("[Kaiserlich Tracker][DetectAdapt] Deutlich zu viele Marker → min_distance leicht erhöhen (×1.1).")
+                print("[Kaiserlich Tracker][DetectAdapt] ⚠️ Keine Marker erkannt – Standardreduktion ×0.8 angewendet.")
             else:
-                ratio = ef_target / max(1, remaining)
-                last_md *= max(0.75, min(1.25, ratio))
-                last_md = min(max(last_md, 2.0), hz * 0.25)
-                print(f"[Kaiserlich Tracker][DetectAdapt] Feinjustierung via Ratio → min_distance = {last_md:.2f}")
+                ratio = remaining / max(1, ef_target)
+                factor = (((ratio - 1.0) / 2.0) + 1.0)
+                new_md = last_md * factor
+                new_md = min(max(new_md, 2.0), hz * 0.25)
+                print(f"[Kaiserlich Tracker][DetectAdapt] Dynamische Anpassung: ratio={ratio:.3f}, factor={factor:.3f} → md {last_md:.2f} → {new_md:.2f}")
+                last_md = new_md
 
             # Nur löschen, wenn weiterer Durchlauf folgt (bereinigte Neumarker dieses Loops entfernen)
             if loop < max_loops:
