@@ -1,4 +1,4 @@
-# Operator/Master/deep_test_operator.py
+# Operator/Master/master_deep_test_operator.py.py
 import bpy
 import time
 import math
@@ -53,9 +53,9 @@ class _TrackState:
     total_len: int = -1  # -1 = noch nicht gemessen
 
 
-class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
+class KAISERLICHTRACKER_OT_master_deep_test_operator.py(Operator):
     """Deep Threshold Test (Modal): führt pro Kategorie stufenweise Reduktion der Thresholds durch und testet jeweils."""
-    bl_idname = "kaiserlich_tracker.deep_test_operator"
+    bl_idname = "kaiserlich_tracker.master_deep_test_operator.py"
     bl_label = "Kaiserlich Tracker — Deep Test"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -854,9 +854,9 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
 
 
 def register():
-    bpy.utils.register_class(KAISERLICHTRACKER_OT_deep_test_operator)
+    bpy.utils.register_class(KAISERLICHTRACKER_OT_master_deep_test_operator.py)
 
 
 def unregister():
-    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_deep_test_operator)
+    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_master_deep_test_operator.py)
 
