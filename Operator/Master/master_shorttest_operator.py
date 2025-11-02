@@ -1,4 +1,4 @@
-# Operator/Master/shorttest_operator.py
+# Operator/Master/master_shorttest_operator.py
 import bpy
 import time
 import math
@@ -78,7 +78,7 @@ class _AutoCalibState:
 # Operator
 # ----------------------------------------------------------------------------
 class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
-    bl_idname = "kaiserlich_tracker.shorttest_operator"
+    bl_idname = "kaiserlich_tracker.master_shorttest_operator"
     bl_label = "Kaiserlich Tracker — Auto Calibrate"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -975,7 +975,7 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
 # ----------------------------------------------------------------------------
 # Registration
 # ----------------------------------------------------------------------------
-_classes = (KAISERLICHTRACKER_OT_shorttest_operator,)
+_classes = (KAISERLICHTRACKER_OT_master_shorttest_operator,)
 
 def register():
     for cls in _classes:
