@@ -37,7 +37,7 @@ SCENE_TOTAL_TRACK_LEN_BASE  = "kaiserlich_len_baseline_00"
 SCENE_TOTAL_TRACK_LEN_STEP1 = "kaiserlich_len_rot_xy_00"
 SCENE_TOTAL_TRACK_LEN_STEP2 = "kaiserlich_len_scale_00"
 SCENE_TOTAL_TRACK_LEN_STEP3 = "kaiserlich_len_rot_scale_00"
-SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_0"
+SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_00"
 
 # ---- Reduktions-Stufen ------------------------------------------------------
 REDUCTION_STEPS = [0.05, 0.5, 0.8, 0.9, 0.95, 0.98, 0.99]
@@ -135,6 +135,26 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
         self._space.clip_user.frame_current = self._current_frame
         self._scene.frame_current = self._current_frame
 
+        # --- NEU: Sicherstellen, dass mindestens 50 Frames bis Szenenende verbleiben ---
+        current_frame = int(self._scene.frame_current)
+        end_frame = int(get_end_frame(context))
+        remaining = end_frame - current_frame
+
+        # Ursprungsposition global sichern
+        self._user_original_frame = current_frame
+
+        if remaining < 50:
+            new_start = max(self._scene.frame_start, end_frame - 50)
+            self._scene.frame_current = new_start
+            try:
+                if self._space and getattr(self._space, "clip_user", None):
+                    self._space.clip_user.frame_current = new_start
+            except Exception:
+                pass
+            print(f"[DeepTest] ⏪ Nur {remaining} Frames bis Szenenende – Playhead verschoben: {current_frame} → {new_start}")
+        else:
+            print(f"[DeepTest] ✅ Ausreichend Frames ({remaining}) – keine Verschiebung erforderlich.")
+        # -------------------------------------------------------------------------------
         # Thresholds global auf 1.0 zurücksetzen (ShortTest-Parität)
         try:
             reset_all_thresholds(context, active_props=[])
@@ -794,6 +814,18 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
                 kaiserlich_perspective_thresh=self._best_thresholds["perspective"])
 
         print("[DeepTest] 💾 Alle finalen Threshold-Werte in Szene eingetragen.")
+        # --- NEU: Playhead nach Test wiederherstellen -----------------------
+        try:
+            restore_frame = getattr(self, "_user_original_frame", None)
+            if restore_frame is not None:
+                self._scene.frame_current = int(restore_frame)
+                if self._space and getattr(self._space, "clip_user", None):
+                    self._space.clip_user.frame_current = int(restore_frame)
+                print(f"[DeepTest] ⏩ Playhead nach Test wiederhergestellt: Frame {restore_frame}")
+        except Exception as ex:
+            print(f"[DeepTest] ⚠️ Fehler beim Wiederherstellen des Playheads: {ex!r}")
+        # -------------------------------------------------------------------
+
         return self._teardown(context, cancelled=False)
 
     def _teardown(self, context, cancelled=False):
@@ -806,6 +838,18 @@ class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
             self.report({'INFO'}, msg)
         except:
             print(msg)
+        # --- NEU: Globale Wiederherstellung der ursprünglichen Playhead-Position ---
+        try:
+            restore_frame = getattr(self, "_user_original_frame", None)
+            if restore_frame is not None:
+                self._scene.frame_current = int(restore_frame)
+                if self._space and getattr(self._space, "clip_user", None):
+                    self._space.clip_user.frame_current = int(restore_frame)
+                print(f"[DeepTest] ⏩ Playhead global wiederhergestellt: Frame {restore_frame}")
+        except Exception as ex:
+            print(f"[DeepTest] ⚠️ Fehler bei globaler Wiederherstellung: {ex!r}")
+        # ---------------------------------------------------------------------------
+
         return {'CANCELLED' if cancelled else 'FINISHED'}
 
 
