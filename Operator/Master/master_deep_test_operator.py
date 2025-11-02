@@ -53,7 +53,7 @@ class _TrackState:
     total_len: int = -1  # -1 = noch nicht gemessen
 
 
-class KAISERLICHTRACKER_OT_master_deep_test_operator.py(Operator):
+class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     """Deep Threshold Test (Modal): führt pro Kategorie stufenweise Reduktion der Thresholds durch und testet jeweils."""
     bl_idname = "kaiserlich_tracker.master_deep_test_operator.py"
     bl_label = "Kaiserlich Tracker — Deep Test"
