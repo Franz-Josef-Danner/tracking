@@ -944,6 +944,17 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             self.report({'INFO'}, msg)
         except Exception:
             print(f"[Kaiserlich Tracker][AutoCalibrate] {msg}")
+        # ------------------------------------------------------------
+        # NEU: Automatischer Übergang zu DeepTest nach erfolgreichem Abschluss
+        # ------------------------------------------------------------
+        if not cancelled:
+            try:
+                print("[Kaiserlich Tracker][ShortTest] ➜ Übergabe an DeepTest-Operator gestartet...")
+                bpy.ops.kaiserlich_tracker.deep_test_operator('INVOKE_DEFAULT')
+                print("[Kaiserlich Tracker][ShortTest] DeepTest-Operator erfolgreich gestartet.")
+            except Exception as ex:
+                print(f"[Kaiserlich Tracker][ShortTest] ⚠️ Übergabe an DeepTest-Operator fehlgeschlagen: {ex!r}")
+
         return {'CANCELLED' if cancelled else 'FINISHED'}
 
 # ----------------------------------------------------------------------------
