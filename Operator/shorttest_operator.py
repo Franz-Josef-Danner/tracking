@@ -345,7 +345,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         return changed
         
     # ----------------------------------------------------------------------------
-    # Detect-Adapt Inline (nach erweitertem Vorbild detect_adapt_operator.py)
+    # Detect-Adapt Inline (vollständige adaptive Logik wie detect_adapt_operator)
     # ----------------------------------------------------------------------------
     def _detect_adapt_inline(self, context: bpy.types.Context):
         scene = context.scene
@@ -354,12 +354,10 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
         import math
         params = scene.get("bootstrap_params", None)
 
-        # ----------------------------------------------------------------------
-        # Bootstrap laden oder fallback
-        # ----------------------------------------------------------------------
+        # Bootstrap-Parameter
         if params:
             md = float(params.get('md', 100))
-            ma = int(round(float(params.get('ma', 100)) * 1.1))  # +10% Margin
+            ma = int(round(float(params.get('ma', 100)) * 1.1))
             tr = float(params.get('tr', 0.5))
             pz = int(params.get('pz', 50))
             sz = int(params.get('sz', 100))
@@ -377,25 +375,20 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             md = hz * 0.025
             tr = 0.0001
 
-        # ----------------------------------------------------------------------
-        # Baseline-Snapshot und Tracknamen
-        # ----------------------------------------------------------------------
+        # --- Baseline-Fix -------------------------------------------------------
         pre_snapshot = snapshot_active_markers(context)
         clip = getattr(context.space_data, "clip", None)
         tracking = getattr(clip, "tracking", None)
         baseline_start_tracknames = set(t.name for t in tracking.tracks) if tracking else set()
-
         print(f"[Kaiserlich Tracker][DetectAdapt] Ausgangsmarker: {len(pre_snapshot)} | "
               f"BaselineTracks: {len(baseline_start_tracknames)}")
 
-        # ----------------------------------------------------------------------
-        # Adaptive Schleife
-        # ----------------------------------------------------------------------
+        # --- Adaptive Schleife --------------------------------------------------
         max_loops = 8
         loop = 0
         frame_num = scene.frame_current
 
-        # Versuch gespeicherten Wert zu laden
+        # gespeicherten md-Wert laden
         if "min_distance_values" in scene:
             md_dict = scene["min_distance_values"]
             if str(frame_num) in md_dict:
@@ -420,7 +413,6 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             last_md = md
 
         deleted_old = 0
-        final_new_marker_count = 0
 
         while loop < max_loops:
             loop += 1
@@ -435,12 +427,12 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 min_distance=int(max(1, round(last_md)))
             )
 
-            # --- Blender auto-select fix ---
+            # Auto-Select fix
             if clip and getattr(clip, "tracking", None):
                 for trk in clip.tracking.tracks:
                     trk.select = False
 
-            # --- Klassifikation ---
+            # Klassifikation
             post_snapshot = snapshot_active_markers(context)
             alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
 
@@ -451,7 +443,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             if alte_marker:
                 print("   ➤ Beispiel alte Marker:", [m['track'] for m in alte_marker[:5]])
 
-            # --- Cleanup ---
+            # Cleanup
             cleaned_new, deleted_old = cleanup_new_markers(
                 context,
                 alte_marker,
@@ -463,34 +455,8 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
 
             neue_marker = cleaned_new
             remaining = len(neue_marker)
-            final_new_marker_count = remaining
 
-            # --- Nach-Cleanup Validierung ---
-            post_cleanup_snapshot = snapshot_active_markers(context)
-            post_cleanup_names = {m['track'] for m in post_cleanup_snapshot}
-            deleted_old_names = [m['track'] for m in alte_marker if m['track'] not in post_cleanup_names]
-            if deleted_old_names:
-                print(f"[⚠️ Kaiserlich Tracker][DetectAdapt] WARNUNG: Alte Marker nach Cleanup verschwunden: {deleted_old_names}")
-
-            # --- Clip/Memory Sync ---
-            if clip and getattr(clip, "tracking", None):
-                clip_track_names = {t.name for t in clip.tracking.tracks}
-                synced_cleaned = [m for m in neue_marker if m['track'] in clip_track_names]
-                if len(synced_cleaned) != len(neue_marker):
-                    removed = [m['track'] for m in neue_marker if m['track'] not in clip_track_names]
-                    print(f"[Fix][DetectAdapt] Entferne {len(removed)} Marker aus Speicher (nicht mehr im Clip): "
-                          f"{removed[:5]}{' ...' if len(removed) > 5 else ''}")
-                else:
-                    print("[Fix][DetectAdapt] Kein Desync erkannt – alle Marker existieren noch im Clip.")
-                neue_marker = synced_cleaned
-                remaining = len(neue_marker)
-            else:
-                print("[Fix][DetectAdapt] Kein aktiver Clip – Sync-Check übersprungen.")
-
-            # --- Logging ---
-            print("--------------------------------------------------------------")
             print(f"[Kaiserlich Tracker][DetectAdapt] Nach Cleanup: {remaining} neue Marker übrig, {deleted_old} alte gelöscht")
-            print(f"[Kaiserlich Tracker][DetectAdapt][Result] Gültige neue Marker (bereinigt): {remaining}")
 
             diff = remaining - ef_target
             tolerance = ef_target * 0.10
@@ -503,7 +469,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
             else:
                 print(f"[Kaiserlich Tracker][DetectAdapt] Abweichung vom Ziel: Δ={diff:+.0f}, Ziel={ef_target}, Toleranz={tolerance:.1f}")
 
-            # --- Adaptive Anpassung ---
+            # adaptive md-Anpassung
             if remaining == 0:
                 last_md = max(2.0, last_md * 0.8)
                 print("[Kaiserlich Tracker][DetectAdapt] Alle Marker entfernt → min_distance reduzieren (×0.8).")
@@ -519,7 +485,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 last_md = min(max(last_md, 2.0), hz * 0.25)
                 print(f"[Kaiserlich Tracker][DetectAdapt] Feinjustierung via Ratio → min_distance = {last_md:.2f}")
 
-            # --- Marker löschen, wenn weiterer Loop folgt ---
+            # Löschung, wenn weiterer Loop folgt
             if loop < max_loops:
                 cleaned_names = [m['track'] for m in neue_marker]
                 if cleaned_names:
@@ -527,12 +493,9 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                     print(f"[Kaiserlich Tracker][DetectAdapt] {len(cleaned_names)} Marker gelöscht für nächsten Zyklus")
                 else:
                     print("[Kaiserlich Tracker][DetectAdapt] Keine Marker zum Löschen gefunden – übersprungen.")
-
                 time.sleep(0.1)
 
-        # ----------------------------------------------------------------------
-        # Final: neue Marker selektieren
-        # ----------------------------------------------------------------------
+        # Final selektieren
         if clip and getattr(clip, "tracking", None):
             tracking = clip.tracking
             new_tracks = [trk for trk in tracking.tracks if trk.name not in baseline_start_tracknames]
@@ -542,9 +505,7 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
                 trk.select = True
             print(f"[Kaiserlich Tracker][DetectAdapt] Final selektierte Marker: {len(new_tracks)}")
 
-        # ----------------------------------------------------------------------
-        # Persistenz min_distance mit Interpolation
-        # ----------------------------------------------------------------------
+        # Persistenz md-Wert
         frame_num = scene.frame_current
         md_value = float(last_md)
         if "min_distance_values" not in scene:
@@ -572,7 +533,6 @@ class KAISERLICHTRACKER_OT_shorttest_operator(bpy.types.Operator):
 
         print(f"[Kaiserlich Tracker][DetectAdapt] Frame {frame_num}: final min_distance = {md_value:.2f}")
 
-        # Abschlussflag setzen
         self._state.created_track_names = [t.name for t in new_tracks] if new_tracks else []
         self._state.detect_adapt_done_confirmed = True
 
