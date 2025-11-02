@@ -15,13 +15,37 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
     def execute(self, context: Context):
         frame = find_first_weak_frame(context)
 
+        # ------------------------------------------------------------------
+        # Wenn kein Frame gefunden wurde → regulär beenden
+        # ------------------------------------------------------------------
         if frame is None:
             self.report({'INFO'}, "[Master] Kein schwacher Frame gefunden oder Marker-Ziel nicht unterschritten.")
-            print("[Kaiserlich Tracker][Master] Kein schwacher Frame gefunden oder Marker-Ziel nicht unterschritten.")
-            return {'CANCELLED'}
+            print("[Kaiserlich Tracker][Master] Kein schwacher Frame gefunden – ShortTest wird NICHT gestartet.")
+            return {'FINISHED'}
 
-        print(f"[Kaiserlich Tracker][Master] Playhead gesetzt auf Frame {frame} (geringste Markeranzahl).")
-        self.report({'INFO'}, f"[Master] Playhead auf Frame {frame} gesetzt.")
+        # ------------------------------------------------------------------
+        # Wenn ein Frame gefunden wurde → Playhead setzen und ShortTest starten
+        # ------------------------------------------------------------------
+        scene = context.scene
+        scene.frame_current = frame
+        try:
+            space = getattr(context, "space_data", None)
+            if space and getattr(space, "clip_user", None):
+                space.clip_user.frame_current = frame
+        except Exception:
+            pass
+
+        print(f"[Kaiserlich Tracker][Master] Playhead gesetzt auf Frame {frame} – Starte ShortTest.")
+        self.report({'INFO'}, f"[Master] Playhead auf Frame {frame} gesetzt – ShortTest wird gestartet.")
+
+        # Operator-Aufruf (vollständiger ShortTest)
+        try:
+            bpy.ops.kaiserlich_tracker.shorttest_operator('INVOKE_DEFAULT')
+            print("[Kaiserlich Tracker][Master] ShortTest erfolgreich gestartet.")
+        except Exception as ex:
+            print(f"[Kaiserlich Tracker][Master] ⚠️ Fehler beim Starten des ShortTest: {ex!r}")
+            self.report({'WARNING'}, f"Fehler beim Start des ShortTest: {ex}")
+
         return {'FINISHED'}
 
 # ---- Registrierung ----------------------------------------------------------
