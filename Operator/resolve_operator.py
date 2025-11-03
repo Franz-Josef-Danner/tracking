@@ -169,7 +169,7 @@ def _phase_execute(context: bpy.types.Context, phase_fn) -> bool:
     # 2) Solve
     print("[resolve_operator][DEBUG] -> Starte Solve-Phase (modal blockierend) …")
     try:
-        bpy.ops.kaiserlichtracker.solve_modal('INVOKE_DEFAULT')
+        bpy.ops.kaiserlich_tracker.solve_modal('INVOKE_DEFAULT')
     except Exception as e:
         print(f"[resolve_operator][ERROR] Modal Solve fehlgeschlagen: {e}")
         raise
@@ -210,7 +210,7 @@ def _phase_execute(context: bpy.types.Context, phase_fn) -> bool:
 
 class KAISERLICHTRACKER_OT_solve_modal(bpy.types.Operator):
     """Startet den Camera Solve und wartet modal, bis er abgeschlossen ist."""
-    bl_idname = "kaiserlichtracker.solve_modal"
+    bl_idname = "kaiserlich_tracker.solve_modal"
     bl_label = "Solve Camera (modal blockierend)"
     bl_options = {'REGISTER', 'INTERNAL'}
 
