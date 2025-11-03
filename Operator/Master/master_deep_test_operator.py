@@ -107,111 +107,106 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     _search_size: int = 0
     # ------------------------------------------------------------------------
     def execute(self, context: Context):
-        self._scene = context.scene
-        self._clip = get_active_clip(context)
-        if not self._clip:
-            self.report({'ERROR'}, "Kein aktiver Clip gefunden.")
-            return {'CANCELLED'}
-
-        self._window, self._area, self._region, self._space = find_clip_editor_area(self._clip)
-        if not self._window:
-            self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
-            return {'CANCELLED'}
-
-        # --- NEU: harte Deselektion aller Tracks zu Beginn -----------------
         try:
-            deselected = self._deselect_all_tracks(context)
-            print(f"[Kaiserlich Tracker][DeepTest][Selection] {deselected} Tracks deselektiert (Start).")
-        except Exception as ex:
-            print(f"[Kaiserlich Tracker][DeepTest][Selection] ⚠️ Deselektion fehlgeschlagen: {ex!r}")
+            self._scene = context.scene
+            self._clip = get_active_clip(context)
+            if not self._clip:
+                self.report({'ERROR'}, "Kein aktiver Clip gefunden.")
+                return {'CANCELLED'}
 
-        self._hz, self._vc = self._clip.size
-        self._ratio_xy = (self._hz / self._vc) if self._vc else 1.0
-        self._ef_target = int(self._scene.kaiserlich_markers_per_frame)
-        self._tolerance = max(1.0, self._ef_target * 0.10)
-        self._start_frame = int(self._scene.frame_start)
-        self._end_frame = int(get_end_frame(context))
-        self._current_frame = max(self._start_frame, int(self._scene.frame_current))
-        self._space.clip_user.frame_current = self._current_frame
-        self._scene.frame_current = self._current_frame
+            self._window, self._area, self._region, self._space = find_clip_editor_area(self._clip)
+            if not self._window:
+                self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
+                return {'CANCELLED'}
 
-        # --- NEU: Sicherstellen, dass mindestens 50 Frames bis Szenenende verbleiben ---
-        current_frame = int(self._scene.frame_current)
-        end_frame = int(get_end_frame(context))
-        remaining = end_frame - current_frame
-
-        # Ursprungsposition global sichern
-        self._user_original_frame = current_frame
-
-        if remaining < 50:
-            new_start = max(self._scene.frame_start, end_frame - 50)
-            self._scene.frame_current = new_start
+            # --- NEU: harte Deselektion aller Tracks zu Beginn -----------------
             try:
-                if self._space and getattr(self._space, "clip_user", None):
-                    self._space.clip_user.frame_current = new_start
-            except Exception:
-                pass
-            print(f"[DeepTest] ⏪ Nur {remaining} Frames bis Szenenende – Playhead verschoben: {current_frame} → {new_start}")
-        else:
-            print(f"[DeepTest] ✅ Ausreichend Frames ({remaining}) – keine Verschiebung erforderlich.")
+                deselected = self._deselect_all_tracks(context)
+                print(f"[Kaiserlich Tracker][DeepTest][Selection] {deselected} Tracks deselektiert (Start).")
+            except Exception as ex:
+                print(f"[Kaiserlich Tracker][DeepTest][Selection] ⚠️ Deselektion fehlgeschlagen: {ex!r}")
 
-        # -------------------------------------------------------------------------------
-        # Thresholds global auf 1.0 zurücksetzen (ShortTest-Parität)
-        try:
-            reset_all_thresholds(context, active_props=[])
-            print("[DeepTest][Init] Alle Thresholds auf 1.0 zurückgesetzt.")
-        except Exception as e:
-            print(f"[DeepTest][Init] ⚠️ Threshold-Reset fehlgeschlagen: {e!r}")
+            self._hz, self._vc = self._clip.size
+            self._ratio_xy = (self._hz / self._vc) if self._vc else 1.0
+            self._ef_target = int(self._scene.kaiserlich_markers_per_frame)
+            self._tolerance = max(1.0, self._ef_target * 0.10)
+            self._start_frame = int(self._scene.frame_start)
+            self._end_frame = int(get_end_frame(context))
+            self._current_frame = max(self._start_frame, int(self._scene.frame_current))
+            self._space.clip_user.frame_current = self._current_frame
+            self._scene.frame_current = self._current_frame
 
-        # Detect-Parameter initialisieren (wie im Shorttest)
-        try:
-            _state = init_detect_state(context)
-            self._hz = _state.get("hz", self._hz)
-            self._vc = _state.get("vc", self._vc)
-            self._margin = _state.get("margin", 100)
-            self._pattern_size = _state.get("pattern_size", 50)
-            self._search_size = _state.get("search_size", 0)
-            self._threshold = _state.get("threshold", 0.0001)
-            self._last_md = float(_state.get("min_distance", 100.0))
-            # Frame-spezifisches md ggf. überschreiben
-            _md_cache = self._scene.get("min_distance_values", {})
-            if _md_cache:
-                fn = str(self._scene.frame_current)
-                if fn in _md_cache:
-                    self._last_md = float(_md_cache[fn])
-        except Exception as _e:
-            print(f"[DeepTest][InitDetect] ⚠️ Fallback – init_detect_state fehlgeschlagen: {_e!r}")
+            current_frame = int(self._scene.frame_current)
+            end_frame = int(get_end_frame(context))
+            remaining = end_frame - current_frame
 
-        # Zielwerte laden
-        self._goal_map = {
-            "rot_xy": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 0)),
-            "scale": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 0)),
-            "rot_scale_rot": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 0)),
-            "rot_scale_scale": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 0)),
-            "perspective": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP4, 0)),
-        }
+            self._user_original_frame = current_frame
 
-        # Nur Kategorien mit gesetztem Wert in die Queue aufnehmen
-        self._categories_queue = [cat for cat, val in self._goal_map.items() if val > 0]
+            if remaining < 50:
+                new_start = max(self._scene.frame_start, end_frame - 50)
+                self._scene.frame_current = new_start
+                try:
+                    if self._space and getattr(self._space, "clip_user", None):
+                        self._space.clip_user.frame_current = new_start
+                except Exception:
+                    pass
+                print(f"[DeepTest] ⏪ Nur {remaining} Frames bis Szenenende – Playhead verschoben: {current_frame} → {new_start}")
+            else:
+                print(f"[DeepTest] ✅ Ausreichend Frames ({remaining}) – keine Verschiebung erforderlich.")
 
-        if not self._categories_queue:
-            print("[DeepTest] ❌ Keine Zielwerte gefunden – Abbruch.")
-            self.report({'INFO'}, "Keine aktiven Szenenwerte – DeepTest übersprungen.")
-            return {'CANCELLED'}
+            # Thresholds global auf 1.0 zurücksetzen
+            try:
+                reset_all_thresholds(context, active_props=[])
+                print("[DeepTest][Init] Alle Thresholds auf 1.0 zurückgesetzt.")
+            except Exception as e:
+                print(f"[DeepTest][Init] ⚠️ Threshold-Reset fehlgeschlagen: {e!r}")
 
-        print(f"[Kaiserlich Tracker][DeepTest] Starte Test für Kategorien mit gesetzten Szenenwerten: {self._categories_queue}")
+            # Detect-Parameter initialisieren
+            try:
+                _state = init_detect_state(context)
+                self._hz = _state.get("hz", self._hz)
+                self._vc = _state.get("vc", self._vc)
+                self._margin = _state.get("margin", 100)
+                self._pattern_size = _state.get("pattern_size", 50)
+                self._search_size = _state.get("search_size", 0)
+                self._threshold = _state.get("threshold", 0.0001)
+                self._last_md = float(_state.get("min_distance", 100.0))
+                _md_cache = self._scene.get("min_distance_values", {})
+                if _md_cache:
+                    fn = str(self._scene.frame_current)
+                    if fn in _md_cache:
+                        self._last_md = float(_md_cache[fn])
+            except Exception as _e:
+                print(f"[DeepTest][InitDetect] ⚠️ Fallback – init_detect_state fehlgeschlagen: {_e!r}")
 
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.05, window=context.window)
-        wm.modal_handler_add(self)
-        self._track_state = _TrackState(active=False, current=0, end=0, active_names=[], total_len=-1)
-        self._phase = "category_select"
-        return {'RUNNING_MODAL'}
+            # Zielwerte laden
+            self._goal_map = {
+                "rot_xy": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 0)),
+                "scale": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 0)),
+                "rot_scale_rot": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 0)),
+                "rot_scale_scale": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 0)),
+                "perspective": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP4, 0)),
+            }
 
-    # Hier korrekt auf gleicher Ebene wie def execute:
-    except Exception as ex:
-        print(f"[DeepTest] ⚠️ Fehler in execute: {ex!r}")
-        return self._teardown(context, cancelled=True)
+            self._categories_queue = [cat for cat, val in self._goal_map.items() if val > 0]
+
+            if not self._categories_queue:
+                print("[DeepTest] ❌ Keine Zielwerte gefunden – Abbruch.")
+                self.report({'INFO'}, "Keine aktiven Szenenwerte – DeepTest übersprungen.")
+                return {'CANCELLED'}
+
+            print(f"[Kaiserlich Tracker][DeepTest] Starte Test für Kategorien mit gesetzten Szenenwerten: {self._categories_queue}")
+
+            wm = context.window_manager
+            self._timer = wm.event_timer_add(0.05, window=context.window)
+            wm.modal_handler_add(self)
+            self._track_state = _TrackState(active=False, current=0, end=0, active_names=[], total_len=-1)
+            self._phase = "category_select"
+            return {'RUNNING_MODAL'}
+
+        except Exception as ex:
+            print(f"[DeepTest] ⚠️ Fehler in execute: {ex!r}")
+            return self._teardown(context, cancelled=True)
 
     # ------------------------------------------------------------------------
     # Helper: Alle Tracks im aktiven Clip deselektieren
