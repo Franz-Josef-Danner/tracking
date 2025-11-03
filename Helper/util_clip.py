@@ -1,3 +1,6 @@
+import bpy
+from typing import Optional, List, Set
+
 def get_active_clip(context: Optional[bpy.types.Context],
                     require_clip_editor: bool = False,
                     allow_global_fallback: bool = True) -> Optional[bpy.types.MovieClip]:
