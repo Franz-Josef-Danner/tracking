@@ -851,53 +851,27 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # Finale, funktionierende Variante: verzögerter Aufruf via Timer
         # --------------------------------------------------------------
         if not cancelled:
-            # 0) Existiert der Folge-Operator überhaupt?
-            _op_attr = getattr(bpy.ops, "kaiserlich_tracker", None)
-            _has_follow = hasattr(_op_attr, "master_detect_adapt")
-            if not _has_follow:
-                print("[DeepTest] ❌ Folge-Operator 'kaiserlich_tracker.master_detect_adapt' ist NICHT registriert.")
-                print("[DeepTest]    → Prüfe: Klasse vorhanden? register() ausgeführt? bl_idname exakt 'kaiserlich_tracker.master_detect_adapt'?")
-                return {'FINISHED'}
-
-            # 1) Schutz gegen fehlerhafte bl_idname mit '.py'
-            #    (falls woanders noch ein falscher bl_idname existiert, wird hier frühzeitig gewarnt)
-            try:
-                # Zugriff auf RNA-Struct (wirft bei ungültigem Idname nicht unbedingt Exception,
-                # daher nur Info-Log bereitstellen)
-                pass
-            except Exception as _ex:
-                print(f"[DeepTest] ⚠️ Hinweis: mögliche bl_idname-Unstimmigkeit: {_ex!r}")
-
             def _invoke_next():
-                print("[DeepTest] 🕒 Timer-Callback → Starte master_detect_adapt …")
-                # Iteriere über alle Windows/Areas/Regions, bis ein valider CLIP_EDITOR gefunden ist
-                wm = bpy.context.window_manager
-                for win in wm.windows:
-                    scr = win.screen
-                    if not scr:
-                        continue
-                    for area in scr.areas:
-                        if area.type != 'CLIP_EDITOR':
-                            continue
-                        # bevorzuge WINDOW-Region
-                        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-                        if region is None and area.regions:
-                            region = area.regions[-1]
-                        if region is None:
-                            continue
-                        try:
-                            with bpy.context.temp_override(window=win, area=area, region=region):
-                                res = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                                print(f"[DeepTest] → Folge-Operator gestartet in Window '{win}', Area #{area.as_pointer()} | Rückgabe: {res}")
-                                return None
-                        except Exception as ex:
-                            print(f"[DeepTest] ⚠️ Start in einem UI-Kontext fehlgeschlagen: {ex!r}")
-                print("[DeepTest] ⚠️ Kein gültiger CLIP_EDITOR-Kontext gefunden – Folge-Operator wird nicht gestartet.")
+                try:
+                    print("[DeepTest] 🕒 Timer-Callback → Starte master_detect_adapt …")
+                    area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+                    if not area:
+                        print("[DeepTest] ⚠️ Kein CLIP_EDITOR gefunden – Folgeoperator übersprungen.")
+                        return None
+
+                    # Robuste Regionswahl: bevorzugt WINDOW, sonst erste Region
+                    region = next((r for r in area.regions if r.type == 'WINDOW'), None) or (area.regions[-1] if area.regions else None)
+                    with bpy.context.temp_override(window=bpy.context.window, area=area, region=region):
+                        result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                        print(f"[DeepTest] → Folge-Operator gestartet, Rückgabe: {result}")
+
+                except Exception as ex:
+                    print(f"[DeepTest] ⚠️ Fehler beim Start von master_detect_adapt: {ex!r}")
                 return None
 
             try:
                 bpy.app.timers.register(_invoke_next, first_interval=0.2)
-                print("[DeepTest] ⏳ Folge-Operator (master_detect_adapt) ist geplant (0.2 s).")
+                print("[DeepTest] ⏳ Folge-Operator (master_detect_adapt) wird in 0.2 s gestartet.")
             except Exception as ex:
                 print(f"[DeepTest] ⚠️ Timer konnte nicht registriert werden: {ex!r}")
 
@@ -907,11 +881,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         return {'CANCELLED' if cancelled else 'FINISHED'}
 
 def register():
-    # Guard: Falls irgendwo versehentlich ein Operator mit '.py' im bl_idname existiert, früh warnen
-    if ".py" in KAISERLICHTRACKER_OT_master_deep_test_operator.bl_idname:
-        raise RuntimeError(f"Ungültiger bl_idname: {KAISERLICHTRACKER_OT_master_deep_test_operator.bl_idname} ('.py' entfernen)")
     bpy.utils.register_class(KAISERLICHTRACKER_OT_master_deep_test_operator)
+
 
 def unregister():
     bpy.utils.unregister_class(KAISERLICHTRACKER_OT_master_deep_test_operator)
-
