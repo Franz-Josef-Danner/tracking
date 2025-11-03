@@ -868,14 +868,35 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
             def _invoke_next(win, area, region, space):
                 try:
-                    print("[DeepTest] 🕒 Timer-Callback → Starte master_detect_adapt …")
-                    override = dict(window=win, area=area, region=region, space_data=space)
-                    if area and region and space:
-                        with bpy.context.temp_override(**override):
-                            result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                            print(f"[DeepTest] → master_detect_adapt gestartet, Rückgabe: {result}")
-                    else:
-                        print("[DeepTest] ⚠️ Kein valider CLIP_EDITOR-Kontext verfügbar – Übersprungen.")
+                    print("[DeepTest] 🕒 Timer-Callback → Übergabe an master_detect_adapt …")
+
+                    # Kontext zur Laufzeit erneut prüfen – Timer läuft evtl. außerhalb des ursprünglichen Fensters
+                    active_win = bpy.context.window or win
+                    active_area = None
+                    active_region = None
+                    active_space = None
+
+                    # Suche aktiv sichtbaren CLIP_EDITOR, falls alter verloren
+                    for a in active_win.screen.areas:
+                        if a.type == 'CLIP_EDITOR':
+                            active_area = a
+                            active_region = next((r for r in a.regions if r.type == 'WINDOW'), None) or a.regions[-1]
+                            active_space = next((s for s in a.spaces if s.type == 'CLIP_EDITOR'), None)
+                            break
+
+                    if not active_area or not active_region or not active_space:
+                        print("[DeepTest] ⚠️ Kein aktiver CLIP_EDITOR in aktuellem Fenster gefunden – Abbruch.")
+                        return None
+
+                    override = dict(window=active_win, area=active_area, region=active_region, space_data=active_space)
+                    print(f"[DeepTest] Kontext aktiv: {active_area}, {active_region}, {active_space}")
+
+                    with bpy.context.temp_override(**override):
+                        result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                        print(f"[DeepTest] → master_detect_adapt gestartet, Rückgabe: {result}")
+
+                    # Erfolg wird nur geloggt, kein Rückgabewert nötig
+                    print("[DeepTest] ✅ Übergabe erfolgreich ausgeführt.")
                 except Exception as ex:
                     print(f"[DeepTest] ⚠️ Fehler beim Start von master_detect_adapt: {ex!r}")
                 return None
