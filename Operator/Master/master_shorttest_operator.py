@@ -639,24 +639,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         except Exception as ex:
             print(f"[Kaiserlich Tracker][TrackCycle] ⚠️ Fehler beim Selektieren neuer Tracks: {ex!r}")
 
-        # --- Diagnose: Track-Status zum Start ---
-        selected_count = sum(1 for t in tracking.tracks if t.select)
-        marker_summary = [
-            (t.name, len(t.markers), getattr(t, 'select', False))
-            for t in tracking.tracks if t.name in new_tracks
-        ]
-        for n, m, s in marker_summary[:10]:
-            print(f"   ▶ {n}: {m} Marker, {'SELECTED' if s else 'unselected'}")
-        # --- Diagnose: Track-Status zum Start ---
-        selected_count = sum(1 for t in tracking.tracks if t.select)
-        marker_summary = [
-            (t.name, len(t.markers), getattr(t, "select", False))
-            for t in tracking.tracks if t.name in new_tracks
-        ]
-        for n, m, s in marker_summary[:10]:
-            print(f"   ▶ {n}: {m} Marker, {'SELECTED' if s else 'unselected'}")
-
-
         # Gesamtanzahl speichern für 75 %-Abbruchbedingung
         self._state.track_total_count = len(new_tracks)
 
