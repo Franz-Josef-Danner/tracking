@@ -103,14 +103,19 @@ def filter_and_delete_tracks(
         # Nur neue Tracks selektieren
         _select_only(tracking, include_set)
         print(f"[Helper][FilterDelete] ▶️ {len(include_set)} Tracks für Filter ausgewählt.")
-
-        # Filter ausführen – korrektes Keyword ist 'track_threshold'
+        # Filter ausführen – Nutzung des neuen Context-Override-API (Blender ≥ 3.x)
         try:
-            result = bpy.ops.clip.filter_tracks(override, track_threshold=float(threshold))
-            if result != {'FINISHED'}:
-                print(f"[Helper][FilterDelete] ⚠️ bpy.ops.clip.filter_tracks result={result}")
-        except TypeError as te:
-            raise RuntimeError(f"clip.filter_tracks Parameterfehler: {te!r}")
+            with bpy.context.temp_override(
+                window=window,
+                area=area,
+                region=region,
+                space_data=space,
+            ):
+                result = bpy.ops.clip.filter_tracks(track_threshold=float(threshold))
+                if result != {'FINISHED'}:
+                    print(f"[Helper][FilterDelete] ⚠️ bpy.ops.clip.filter_tracks result={result}")
+        except Exception as ex:
+            raise RuntimeError(f"clip.filter_tracks Context-Fehler: {ex!r}")
 
         # Nach Filter: Blender markiert problematische Tracks mit select=True
         flagged_names = [t.name for t in tracking.tracks if t.select]
