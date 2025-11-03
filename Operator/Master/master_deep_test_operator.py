@@ -1,4 +1,4 @@
-# Operator/Master/master_deep_test_operator.py 
+# Operator/Master/master_deep_test_operator.py
 import bpy
 import time
 import math
@@ -227,24 +227,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
     # ------------------------------------------------------------------------
     def modal(self, context, event):
-        # ---------------------------------------------------------------
-        # 🧩 Diagnose-Logging für Kontrollfluss
-        # ---------------------------------------------------------------
-        try:
-            phase = getattr(self, "_phase", "undef")
-            cat = getattr(self, "_current_category", None)
-            queue_len = len(getattr(self, "_categories_queue", []))
-            print(f"[DeepTest][Diag] modal() tick | event={event.type} | phase={phase} | category={cat} | queue={queue_len}")
-        except Exception as ex:
-            print(f"[DeepTest][Diag] ⚠️ Fehler beim Status-Log: {ex!r}")
-
-        # Wenn modal() hier überhaupt nicht mehr erscheint,
-        # dann wurde der Operator bereits von Blender beendet.
-        # Wenn sie erscheint, aber kein _finish() folgt,
-        # dann endet der Kontrollfluss vorzeitig.
-
-        # ---------------------------------------------------------------
-
         if event.type == 'ESC':
             return self._teardown(context, cancelled=True)
         if event.type != 'TIMER':
@@ -267,12 +249,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return {'RUNNING_MODAL'}
 
         # Auswertung nach beendetem Tracking innerhalb derselben Threshold-Stufe
+        if self._phase == "threshold_cycle_evaluate":
+            finished = self._evaluate_after_tracking(context)
             if finished:
-                print("[DeepTest][Modal] Kategorie fertig – Queue-Länge:", len(self._categories_queue))
                 if self._categories_queue:
                     self._phase = "category_select"
                     return {'RUNNING_MODAL'}
-                print("[DeepTest][Modal] Alle Kategorien abgeschlossen → _finish() wird aufgerufen.")
                 return self._finish(context)
             # sonst nächste Stufe derselben Kategorie
             self._phase = "threshold_cycle"
@@ -280,22 +262,14 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         if self._phase == "threshold_cycle":
             finished = self._process_threshold_cycle(context)
-            print(f"[DeepTest][Diag] Nach _process_threshold_cycle: finished={finished}, queue_len={len(self._categories_queue)}")
             if finished:
-                print(f"[DeepTest][Diag] Phase={self._phase}, Category={self._current_category}, Queue={self._categories_queue}")
-            if finished:
-                print("[DeepTest][Modal] Kategorie fertig (threshold_cycle) – Queue-Länge:", len(self._categories_queue))
                 if self._categories_queue:
                     self._phase = "category_select"
                     return {'RUNNING_MODAL'}
-                print("[DeepTest][Modal] Alle Kategorien abgeschlossen → _finish() wird aufgerufen.")
-                return self._finish(context)
+                else:
+                    return self._finish(context)
             return {'RUNNING_MODAL'}
 
-        # ---------------------------------------------------------------
-        # Wenn keine der Phasen mehr greift → Kontrolle verloren
-        # ---------------------------------------------------------------
-        print(f"[DeepTest][Diag] WARNUNG: Keine Phase matcht! Aktuelle Phase={self._phase}")
         return {'RUNNING_MODAL'}
 
     # ------------------------------------------------------------------------
@@ -809,26 +783,9 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
     # ------------------------------------------------------------------------
     def _finish(self, context):
-        print("\n[DeepTest][FINISH] === Eintritt in _finish() ===")
-        print(f"[DeepTest][FINISH] Context valid: {context is not None}")
-        try:
-            win = getattr(context, 'window', None)
-            scr = getattr(win, 'screen', None)
-            print(f"[DeepTest][FINISH] Window: {win}, Screen: {scr}")
-        except Exception as ex:
-            print(f"[DeepTest][FINISH] ⚠️ Context-Fehler: {ex!r}")
-
-        print("[DeepTest][FINISH] --- Start Threshold-Report ---")
+        print("\n[DeepTest] ✅ Abschluss – beste Thresholds:")
         for k, v in self._best_thresholds.items():
             print(f"  {k}: {v:.6f}")
-        print("[DeepTest][FINISH] --- Ende Threshold-Report ---")
-
-        # Sicherstellen, dass Scene-Objekt existiert
-        if not hasattr(context, "scene"):
-            print("[DeepTest][FINISH] ❌ context.scene fehlt – Abbruch vor Übergabe.")
-            return {'CANCELLED'}
-
-        print("[DeepTest][FINISH] Szene vorhanden, schreibe Thresholds …")
         # Ergebnisse global in die Szene schreiben
         scene = context.scene
         scene["kaiserlich_best_thresholds"] = self._best_thresholds
@@ -857,16 +814,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 kaiserlich_perspective_thresh=self._best_thresholds["perspective"])
 
         print("[DeepTest] 💾 Alle finalen Threshold-Werte in Szene eingetragen.")
-
-        print("[DeepTest][FINISH] Frame restore vorbereiten …")
-        print(f"[DeepTest][FINISH] _user_original_frame: {getattr(self, '_user_original_frame', None)}")
-
-        print("[DeepTest][FINISH] → versuche Übergabe an master_detect_adapt …")
-
-        # Diagnose vor Area-Suche
-        all_areas = [a.type for a in bpy.context.screen.areas]
-        print(f"[DeepTest][FINISH][Diag] Areas im aktuellen Screen: {all_areas}")
-
         # --- NEU: Playhead nach Test wiederherstellen -----------------------
         try:
             restore_frame = getattr(self, "_user_original_frame", None)
@@ -878,50 +825,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         except Exception as ex:
             print(f"[DeepTest] ⚠️ Fehler beim Wiederherstellen des Playheads: {ex!r}")
         # -------------------------------------------------------------------
-        # --- FINAL: Direkt an master_detect_adapt übergeben und DeepTest beenden ---
-        try:
-            area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-            if not area:
-                print("[DeepTest] ❌ Kein CLIP_EDITOR – Übergabe abgebrochen.")
-                return {'CANCELLED'}
 
-            print(f"[DeepTest][FINISH] ✅ CLIP_EDITOR gefunden: {area}")
-
-
-            region = next((r for r in area.regions if r.type == 'WINDOW'), None) or area.regions[-1]
-            space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
-
-            print(f"[DeepTest][FINISH] Region: {region}, Space: {space}")
-
-            if not region or not space:
-                print("[DeepTest][FINISH] ❌ Region oder Space fehlt – kein valider Override möglich.")
-                return {'CANCELLED'}
-            override = dict(window=bpy.context.window, area=area, region=region, space_data=space)
-
-            print("[DeepTest] 🚀 Übergabe an master_detect_adapt …")
-            with bpy.context.temp_override(**override):
-                result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                print(f"[DeepTest][FINISH] → master_detect_adapt gestartet, Rückgabe: {result}")
-
-                if result is None:
-                    print("[DeepTest][FINISH][Diag] ⚠️ Rückgabe = None")
-                elif isinstance(result, set):
-                    if 'CANCELLED' in result:
-                        print("[DeepTest][FINISH][Diag] ⚠️ Operator CANCELLED")
-                    elif 'RUNNING_MODAL' in result:
-                        print("[DeepTest][FINISH][Diag] 🟢 Operator läuft modal")
-                    elif 'FINISHED' in result:
-                        print("[DeepTest][FINISH][Diag] ✅ Operator FINISHED")
-
-        except Exception as ex:
-            import traceback; traceback.print_exc()
-            print(f"[DeepTest][FINISH] ❌ Exception während Übergabe: {ex!r}")
-
-            return result or {'FINISHED'}
-
-        except Exception as ex:
-            print(f"[DeepTest] ⚠️ Fehler bei direkter Übergabe an master_detect_adapt: {ex!r}")
-            return {'CANCELLED'}
+        return self._teardown(context, cancelled=False)
 
     def _teardown(self, context, cancelled=False):
         wm = context.window_manager
@@ -946,111 +851,29 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # Finale, funktionierende Variante: verzögerter Aufruf via Timer
         # --------------------------------------------------------------
         if not cancelled:
-            import functools
-
-            # Gesicherten Kontext aus self holen, aber als unabhängige Referenzen speichern
-            win = getattr(self, "_window", bpy.context.window)
-            area = getattr(self, "_area", None)
-            region = getattr(self, "_region", None)
-            space = getattr(self, "_space", None)
-
-            # Fallback falls Area/Region verloren
-            if not area or not region or not space:
-                area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-                if area:
-                    region = next((r for r in area.regions if r.type == 'WINDOW'), None) or area.regions[-1]
-                    space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
-
-            def _invoke_next(win, area, region, space):
+            def _invoke_next():
                 try:
-                    print("\n[DeepTest][FollowUp] 🕒 Timer-Callback → Versuch, master_detect_adapt zu starten …")
-
-                    # --- 1. Diagnose: Kontext-Objekte prüfen ---
-                    print("[DeepTest][FollowUp][Diag] Eingehende Referenzen:")
-                    print(f"   Window: {win}")
-                    print(f"   Area:   {area}")
-                    print(f"   Region: {region}")
-                    print(f"   Space:  {space}")
-
-                    # --- 2. Blender-Kontext prüfen ---
-                    if bpy.context is None:
-                        print("[DeepTest][FollowUp][Diag] ❌ bpy.context ist None – Timer läuft evtl. im Offscreen-Thread.")
+                    print("[DeepTest] 🕒 Timer-Callback → Starte master_detect_adapt …")
+                    area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+                    if not area:
+                        print("[DeepTest] ⚠️ Kein CLIP_EDITOR gefunden – Folgeoperator übersprungen.")
                         return None
 
-                    ctx_win = bpy.context.window
-                    ctx_scr = getattr(ctx_win, 'screen', None)
-                    print(f"[DeepTest][FollowUp][Diag] Aktuelles Window: {ctx_win}, Screen: {ctx_scr}")
+                    # Robuste Regionswahl: bevorzugt WINDOW, sonst erste Region
+                    region = next((r for r in area.regions if r.type == 'WINDOW'), None) or (area.regions[-1] if area.regions else None)
+                    with bpy.context.temp_override(window=bpy.context.window, area=area, region=region):
+                        result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                        print(f"[DeepTest] → Folge-Operator gestartet, Rückgabe: {result}")
 
-                    # --- 3. Sicherstellen, dass Screen vorhanden ist ---
-                    if not ctx_scr:
-                        print("[DeepTest][FollowUp][Diag] ❌ Kein aktiver Screen gefunden – keine Areas verfügbar.")
-                        return None
-
-                    # --- 4. Suche CLIP_EDITOR ---
-                    active_win = ctx_win or win
-                    active_area = None
-                    active_region = None
-                    active_space = None
-                    for a in active_win.screen.areas:
-                        print(f"[DeepTest][FollowUp][Scan] Area: {a.type}")
-                        if a.type == 'CLIP_EDITOR':
-                            active_area = a
-                            active_region = next((r for r in a.regions if r.type == 'WINDOW'), None) or a.regions[-1]
-                            active_space = next((s for s in a.spaces if s.type == 'CLIP_EDITOR'), None)
-                            break
-
-                    if not active_area:
-                        print("[DeepTest][FollowUp][Diag] ❌ Kein CLIP_EDITOR in aktuellem Screen gefunden.")
-                        return None
-
-                    print(f"[DeepTest][FollowUp][Diag] ✅ CLIP_EDITOR gefunden: Area={active_area}, Region={active_region}, Space={active_space}")
-
-                    # --- 5. Operator-Verfügbarkeit prüfen ---
-                    has_op = hasattr(bpy.ops.kaiserlich_tracker, "master_detect_adapt")
-                    print(f"[DeepTest][FollowUp][Diag] Operator verfügbar: {has_op}")
-
-                    # Kontext zur Laufzeit erneut prüfen – Timer läuft evtl. außerhalb des ursprünglichen Fensters
-                    active_win = bpy.context.window or win
-                    active_area = None
-                    active_region = None
-                    active_space = None
-
-                    # Suche aktiv sichtbaren CLIP_EDITOR, falls alter verloren
-                    for a in active_win.screen.areas:
-                        if a.type == 'CLIP_EDITOR':
-                            active_area = a
-                            active_region = next((r for r in a.regions if r.type == 'WINDOW'), None) or a.regions[-1]
-                            active_space = next((s for s in a.spaces if s.type == 'CLIP_EDITOR'), None)
-                            break
-
-                    if not active_area or not active_region or not active_space:
-                        print("[DeepTest] ⚠️ Kein aktiver CLIP_EDITOR in aktuellem Fenster gefunden – Abbruch.")
-                        return None
-
-                    override = dict(window=active_win, area=active_area, region=active_region, space_data=active_space)
-                    print(f"[DeepTest][FollowUp] Kontext aktiv: Area={active_area}, Region={active_region}, Space={active_space}")
-
-                    try:
-                        with bpy.context.temp_override(**override):
-                            result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                            print(f"[DeepTest][FollowUp] → master_detect_adapt gestartet, Rückgabe: {result}")
-                            if result is None:
-                                print("[DeepTest][FollowUp][Diag] ⚠️ Operator-Aufruf gab None zurück.")
-                            elif isinstance(result, set) and 'CANCELLED' in result:
-                                print("[DeepTest][FollowUp][Diag] ⚠️ Operator meldete CANCELLED.")
-                            else:
-                                print("[DeepTest][FollowUp][Diag] ✅ Operator erfolgreich ausgeführt.")
-                    except Exception as inner_ex:
-                        print(f"[DeepTest][FollowUp][Diag] ❌ Fehler während temp_override-Aufruf: {inner_ex!r}")
-
-                    print("[DeepTest][FollowUp] ✅ Timer-Callback abgeschlossen.")
                 except Exception as ex:
                     print(f"[DeepTest] ⚠️ Fehler beim Start von master_detect_adapt: {ex!r}")
                 return None
 
-            timer_func = functools.partial(_invoke_next, win, area, region, space)
-            bpy.app.timers.register(timer_func, first_interval=0.1)
-            print("[DeepTest] ⏳ Folge-Operator (master_detect_adapt) wird in 0.1 s gestartet.")
+            try:
+                bpy.app.timers.register(_invoke_next, first_interval=0.2)
+                print("[DeepTest] ⏳ Folge-Operator (master_detect_adapt) wird in 0.2 s gestartet.")
+            except Exception as ex:
+                print(f"[DeepTest] ⚠️ Timer konnte nicht registriert werden: {ex!r}")
 
         else:
             print("[DeepTest] ⏹️ Test wurde abgebrochen – keine Weitergabe.")
