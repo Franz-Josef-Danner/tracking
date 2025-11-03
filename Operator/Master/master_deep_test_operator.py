@@ -787,10 +787,28 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         else:
             # Kein Zugewinn → prüfen, ob MIN erreicht
             if self._current_value <= MIN_THRESHOLD_VAL + 1e-12:
-                print(f"[MasterDeepTest][Eval] ✗ Kein Zugewinn, MIN erreicht → nächste Stufe")
+                # --- NEU: Zähler für aufeinanderfolgende MIN-Erreichungen ---
+                if not hasattr(self, "_min_reach_count"):
+                    self._min_reach_count = 0
+
+                self._min_reach_count += 1
+                print(f"[MasterDeepTest][Eval] ✗ Kein Zugewinn, MIN erreicht → Zähler = {self._min_reach_count}/3")
+
+                # Wenn dreimal hintereinander erreicht, Kategorie beenden
+                if self._min_reach_count >= 3:
+                    print(f"[MasterDeepTest][Eval] 🚫 MIN dreimal erreicht – Kategorie '{self._current_category}' abgeschlossen.")
+                    self._current_step_index = len(REDUCTION_STEPS)
+                    self._min_reach_count = 0
+                    return True
+
+                # ansonsten normale Stufen-Iteration
                 self._current_step_index += 1
                 # Basiswert unverändert lassen – nächste Stufe startet vom aktuellen Startpunkt.
+
             else:
+                # bei erfolgreicher Iteration Zähler zurücksetzen
+                if hasattr(self, "_min_reach_count"):
+                    self._min_reach_count = 0
                 # gleiche Stufe wiederholen mit weiter abgesenktem Basiswert
                 self._base_value = self._current_value
                 print(f"[MasterDeepTest][Eval] ↻ Ziel verfehlt | Wiederhole Stufe {self._current_step_index+1} mit niedrigerem Threshold")
