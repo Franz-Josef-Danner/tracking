@@ -174,29 +174,6 @@ def _phase_execute(context: bpy.types.Context, phase_fn) -> bool:
         print(f"[resolve_operator][ERROR] Modal Solve fehlgeschlagen: {e}")
         raise
 
-    # --- NEU: Warten bis Solve wirklich abgeschlossen ist ---
-    import time
-    def _wait_for_solve(context, timeout=15.0):
-        """Wartet, bis clip.tracking.reconstruction.is_valid True ist, ohne UI zu blockieren."""
-        clip = getattr(getattr(context, "space_data", None), "clip", None)
-        if clip is None and bpy.data.movieclips:
-            clip = bpy.data.movieclips[0]
-        if clip is None:
-            raise RuntimeError("Kein MovieClip im aktuellen Kontext gefunden.")
-
-        start = time.time()
-        while time.time() - start < timeout:
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-            bpy.context.window_manager.event_timer_add(0.1, window=context.window)
-            if clip.tracking.reconstruction.is_valid:
-                print("[resolve_operator][DEBUG] Reconstruction valid – Solve abgeschlossen.")
-                return True
-            time.sleep(0.1)
-
-        print("[resolve_operator][ERROR] Timeout – Solve nicht abgeschlossen (keine gültige Reconstruction).")
-        return False
-
-    _wait_for_solve(context)
     # 3) Fehler messen
     print("[resolve_operator][DEBUG] -> Ermittle durchschnittlichen Fehler …")
     try:
@@ -237,39 +214,27 @@ class KAISERLICHTRACKER_OT_solve_modal(bpy.types.Operator):
     bl_label = "Solve Camera (modal blockierend)"
     bl_options = {'REGISTER', 'INTERNAL'}
 
-    _timer = None
-
     def execute(self, context):
-        print("[solve_modal] Starte Solve …")
+        print("[solve_modal] Starte Solve (synchron, Version B) …")
         try:
-            bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+            # Solve direkt im aktuellen Kontext ausführen
+            bpy.ops.clip.solve_camera('EXEC_DEFAULT')
         except Exception as e:
             self.report({'ERROR'}, f"Solve-Start fehlgeschlagen: {e}")
             return {'CANCELLED'}
 
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)
-        wm.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+        # Nach Abschluss: prüfen, ob gültige Rekonstruktion vorhanden ist
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None and bpy.data.movieclips:
+            clip = bpy.data.movieclips[0]
 
-    def modal(self, context, event):
-        if event.type == 'TIMER':
-            clip = getattr(context.space_data, "clip", None)
-            if clip is None and bpy.data.movieclips:
-                clip = bpy.data.movieclips[0]
-
-            if clip and clip.tracking.reconstruction.is_valid:
-                print("[solve_modal] Solve abgeschlossen.")
-                self.cancel(context)
-                return {'FINISHED'}
-
-        return {'RUNNING_MODAL'}
-
-    def cancel(self, context):
-        if self._timer:
-            wm = context.window_manager
-            wm.event_timer_remove(self._timer)
-        print("[solve_modal] Timer gestoppt.")
+        if clip and getattr(clip.tracking, "reconstruction", None) and clip.tracking.reconstruction.is_valid:
+            print("[solve_modal] Solve abgeschlossen (Reconstruction valid).")
+            return {'FINISHED'}
+        else:
+            print("[solve_modal][WARNUNG] Solve unvollständig oder fehlgeschlagen.")
+            self.report({'WARNING'}, "Solve unvollständig oder fehlgeschlagen.")
+            return {'CANCELLED'}
 
 class KAISERLICHTRACKER_OT_resolve_operator(Operator):
     """Führt die Master-Resolve-Sequenz aus (Reset -> Focal -> Principal -> Radial) mit Fehlerprüfung und bedingtem Cycle-Dispatch."""
