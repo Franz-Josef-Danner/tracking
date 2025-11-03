@@ -41,11 +41,15 @@ def get_average_error(clip: bpy.types.MovieClip | None = None,
 
     return 0.0  # nichts valide
 
-# --- Beispiele ---
-# Kamera-Solve:
-err_cam = get_average_error()
-print("Camera average error:", err_cam)
+#
+# --- Beispiele (nur bei direktem Ausführen) ---
+# Achtung: Dieser Block läuft NICHT beim Import im Blender-Add-on und ist damit import-sicher.
+#
+if __name__ == "__main__":
+    # Kamera-Solve:
+    err_cam = get_average_error()
+    print("Camera average error:", err_cam)
 
-# Object-Solve (Name aus dem Tracking-Panel, z.B. 'Object'):
-err_obj = get_average_error(object_name="Object")
-print("Object average error:", err_obj)
+    # Object-Solve (Name aus dem Tracking-Panel, z.B. 'Object'):
+    err_obj = get_average_error(object_name="Object")
+    print("Object average error:", err_obj)
