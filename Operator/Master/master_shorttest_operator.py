@@ -107,8 +107,10 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         # Deselect all at start
         try:
             deselected = self._deselect_all_tracks(context)
+            print(f"[Kaiserlich Tracker][Selection] {deselected} Tracks deselektiert (Start).")
         except Exception as ex:
-            pass
+            print(f"[Kaiserlich Tracker][Selection] ⚠️ Deselektion fehlgeschlagen: {ex!r}")
+
         self._state.notes.append("Init OK (modal).")
         return {'RUNNING_MODAL'}
 
@@ -124,6 +126,7 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         # 0) Init
         if not self._state.initialized:
             self._state.initialized = True
+            print("[Kaiserlich Tracker][AutoCalibrate] Initialized.")
             return {'RUNNING_MODAL'}
 
         # 1) Reset Thresholds
@@ -131,15 +134,19 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             try:
                 reset_all_thresholds(context, active_props=[])
                 self._state.did_reset_thresholds = True
+                print("[Kaiserlich Tracker][AutoCalibrate] Thresholds reset → 1.0")
             except Exception as ex:
+                print(f"[AutoCalibrate] Threshold reset failed: {ex!r}")
                 self._state.did_reset_thresholds = True
             return {'RUNNING_MODAL'}
 
         # 2) Detect-Adapt
         if not self._state.did_detect_adapt:
+            print("[Kaiserlich Tracker][AutoCalibrate] Detect-Adapt gestartet.")
             try:
                 self._detect_adapt_inline(context)
             except Exception as ex:
+                print(f"[AutoCalibrate] Detect-Adapt Fehler: {ex!r}")
                 self._state.detect_adapt_done_confirmed = True
             self._state.did_detect_adapt = True
             return {'RUNNING_MODAL'}
@@ -153,7 +160,9 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             if not self._state.track_active and not self._state.did_track_cycle:
                 try:
                     self._track_cycle_start(context)
+                    print("[Kaiserlich Tracker][AutoCalibrate] Track-Cycle initialisiert.")
                 except Exception as ex:
+                    print(f"[AutoCalibrate] Track-Cycle Init Fehler: {ex!r}")
                     self._state.did_track_cycle = True
                     return {'RUNNING_MODAL'}
                 return {'RUNNING_MODAL'}
@@ -165,6 +174,7 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                     self._state.track_active = False
                     self._state.track_cycles_done += 1
                     self._state.did_track_cycle = True
+                    print("[Kaiserlich Tracker][AutoCalibrate] Track-Cycle abgeschlossen.")
                     return {'RUNNING_MODAL'}
                 return {'RUNNING_MODAL'}
 
@@ -174,11 +184,12 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             if not self._state.second_cycle:
                 try:
                     # Setze Rot-Schwellenwerte (X/Y) auf 0,0
+                    print("[Kaiserlich Tracker][AutoCalibrate] Rot-Schwellwerte auf 0 gesetzt.")
                     set_scene_props(context.scene,
                                     kaiserlich_rot_thresh_x=0.00001,
                                     kaiserlich_rot_thresh_y=0.00001)
                 except Exception as ex:
-                    pass
+                    print(f"[AutoCalibrate] Fehler beim Setzen der Rot-Schwellenwerte: {ex!r}")
                 # Flags setzen, um zweiten Detect-/Track‑Durchlauf zu initiieren
                 self._state.second_cycle = True
                 # Merke die in diesem Durchlauf verwendeten Schwellenwerte
@@ -196,12 +207,13 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             if self._state.second_cycle and not self._state.third_cycle:
                 try:
                     # Setze alle Thresholds auf 1.0 zurück und Scale-Min/Max auf 0.00001
+                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Scale-Min/Max auf 0.00001.")
                     reset_all_thresholds(context, active_props=[])
                     set_scene_props(context.scene,
                                     kaiserlich_scale_thresh_min=0.00001,
                                     kaiserlich_scale_thresh_max=0.00001)
                 except Exception as ex:
-                    pass
+                    print(f"[AutoCalibrate] Fehler beim Zurücksetzen der Thresholds: {ex!r}")
                 # Flags setzen, um dritten Detect-/Track‑Durchlauf zu initiieren
                 self._state.third_cycle = True
                 # Merke die in diesem Durchlauf verwendeten Schwellenwerte
