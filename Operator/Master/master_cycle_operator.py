@@ -92,43 +92,30 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                       f"space={getattr(space,'type',None)}, clip.valid={bool(getattr(space,'clip',None))}, "
                       f"tracking.valid={bool(getattr(getattr(space,'clip',None),'tracking',None))}")
 
-                with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-                    print("[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ▶ Innerhalb Override vor filter_and_delete_all_tracks:")
-                    print(f"       bpy.context.area={getattr(bpy.context.area,'type',None)}")
-                    print(f"       bpy.context.region={getattr(bpy.context.region,'type',None)}")
-                    print(f"       bpy.context.space_data={getattr(bpy.context.space_data,'type',None)}")
-                    print(f"       clip.valid={bool(getattr(bpy.context.space_data,'clip',None))}")
-                    print(f"       tracking.valid={bool(getattr(getattr(bpy.context.space_data,'clip',None),'tracking',None))}")
-                    # Sicherstellen, dass der aktive Clip im Space korrekt gesetzt ist
-                    clip_obj = getattr(bpy.context.space_data, "clip", None)
-                    if clip_obj is None:
-                        raise RuntimeError("[MasterCycle] Kein aktiver Clip im Override-Kontext vorhanden.")
+                # Kein temp_override hier, weil der Helper selbst eines erzeugt.
+                clip_obj = getattr(space, "clip", None)
+                if clip_obj is None:
+                    raise RuntimeError("[MasterCycle] Kein aktiver Clip im Kontext vorhanden.")
 
-                    print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ▶ Verwende Clip '{clip_obj.name}' für FilterAll ...")
+                print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ▶ Starte FilterAll direkt über Helper (Clip='{clip_obj.name}') ...")
+                print(f"[Kaiserlich Tracker][MasterCycle][CTX-PreCall] window={getattr(window,'as_pointer',lambda:None)()}, "
+                      f"area={getattr(area,'type',None)}, region={getattr(region,'type',None)}, "
+                      f"space={getattr(space,'type',None)}, clip={getattr(clip_obj,'name',None)}")
 
-                    # Backup-Kontext-Infos direkt vor Aufruf
-                    print(f"[Kaiserlich Tracker][MasterCycle][CTX-PreCall] window={getattr(window,'as_pointer',lambda:None)()}, "
-                          f"area={getattr(area,'type',None)}, region={getattr(region,'type',None)}, "
-                          f"space={getattr(space,'type',None)}, clip={getattr(clip_obj,'name',None)}")
-
-                    # FilterAll im gesicherten Kontext starten
-                    try:
-                        # Da wir uns bereits im temp_override befinden,
-                        # darf kein zusätzliches Override in den Helper gelangen.
-                        # Nur threshold + clip übergeben.
-                        deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(
-                            threshold=30.0,
-                            clip=clip_obj
-                        )
-                        print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ▶ Nach filter_and_delete_all_tracks: deleted_count_all={deleted_count_all}")
-                    except Exception as call_err:
-                        print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ❌ Ausnahme während filter_and_delete_all_tracks: {call_err!r}")
-                        print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] Diagnose: "
-                              f"area={getattr(bpy.context.area,'type',None)}, "
-                              f"region={getattr(bpy.context.region,'type',None)}, "
-                              f"space={getattr(bpy.context.space_data,'type',None)}, "
-                              f"clip.valid={bool(getattr(bpy.context.space_data,'clip',None))}")
-                        raise
+                try:
+                    deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(
+                        threshold=30.0,
+                        clip=clip_obj
+                    )
+                    print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ▶ Nach filter_and_delete_all_tracks: deleted_count_all={deleted_count_all}")
+                except Exception as call_err:
+                    print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ❌ Ausnahme während filter_and_delete_all_tracks: {call_err!r}")
+                    print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] Diagnose: "
+                          f"area={getattr(bpy.context.area,'type',None)}, "
+                          f"region={getattr(bpy.context.region,'type',None)}, "
+                          f"space={getattr(bpy.context.space_data,'type',None)}, "
+                          f"clip.valid={bool(getattr(bpy.context.space_data,'clip',None))}")
+                    raise
 
                 print("[Kaiserlich Tracker][MasterCycle][CTX-LIVE] 🔍 Vor FilterTracks:")
                 print(f"    clip.valid={bool(getattr(space,'clip',None))}, tracking.valid={bool(getattr(getattr(space,'clip',None),'tracking',None))}")
