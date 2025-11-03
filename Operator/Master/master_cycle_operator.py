@@ -87,13 +87,33 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
                 print("[Kaiserlich Tracker][MasterCycle][CTX-Check] Context-Diagnose abgeschlossen.")
                 # 1) Globaler Filter für alle Tracks (mit Override)
-                with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-                    deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(threshold=30.0)
-                print(f"[Kaiserlich Tracker][MasterCycle] FilterAll abgeschlossen – {deleted_count_all} Tracks gelöscht.")
+                print("[Kaiserlich Tracker][MasterCycle][CTX-LIVE] 🔍 Vor FilterAll:")
+                print(f"    area={getattr(area,'type',None)}, region={getattr(region,'type',None)}, "
+                      f"space={getattr(space,'type',None)}, clip.valid={bool(getattr(space,'clip',None))}, "
+                      f"tracking.valid={bool(getattr(getattr(space,'clip',None),'tracking',None))}")
 
-                # 2) Lokaler Filter für problematische Tracks (mit Override)
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+                    print("[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ▶ Innerhalb Override vor filter_and_delete_all_tracks:")
+                    print(f"       bpy.context.area={getattr(bpy.context.area,'type',None)}")
+                    print(f"       bpy.context.region={getattr(bpy.context.region,'type',None)}")
+                    print(f"       bpy.context.space_data={getattr(bpy.context.space_data,'type',None)}")
+                    print(f"       clip.valid={bool(getattr(bpy.context.space_data,'clip',None))}")
+                    print(f"       tracking.valid={bool(getattr(getattr(bpy.context.space_data,'clip',None),'tracking',None))}")
+                    deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(threshold=30.0)
+                    print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ▶ Nach filter_and_delete_all_tracks: deleted_count_all={deleted_count_all}")
+
+                print("[Kaiserlich Tracker][MasterCycle][CTX-LIVE] 🔍 Vor FilterTracks:")
+                print(f"    clip.valid={bool(getattr(space,'clip',None))}, tracking.valid={bool(getattr(getattr(space,'clip',None),'tracking',None))}")
+
+                with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+                    print("[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ▶ Innerhalb Override vor filter_problematic_tracks:")
+                    print(f"       bpy.context.area={getattr(bpy.context.area,'type',None)}")
+                    print(f"       bpy.context.region={getattr(bpy.context.region,'type',None)}")
+                    print(f"       bpy.context.space_data={getattr(bpy.context.space_data,'type',None)}")
+                    print(f"       clip.valid={bool(getattr(bpy.context.space_data,'clip',None))}")
+                    print(f"       tracking.valid={bool(getattr(getattr(bpy.context.space_data,'clip',None),'tracking',None))}")
                     filter_problematic_tracks(context, threshold=10.0)
+                    print("[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ▶ filter_problematic_tracks ausgeführt.")
 
                 # Nachprüfung: war das Filtering erfolgreich?
                 if deleted_count_all == 0:
