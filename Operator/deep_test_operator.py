@@ -859,4 +859,3 @@ def register():
 
 def unregister():
     bpy.utils.unregister_class(KAISERLICHTRACKER_OT_deep_test_operator)
-
