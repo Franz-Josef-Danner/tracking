@@ -7,6 +7,7 @@ from ...Helper.low_marker_frame import find_first_weak_frame
 from ...Helper.filter_all_tracks import filter_and_delete_all_tracks
 from ...Helper.filter_tracks import filter_problematic_tracks
 from ...Helper.update_default_sizes import update_default_sizes
+from ...Helper.util_clip import get_active_clip
 
 class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
     """Master Operator – setzt Playhead auf Frame mit den wenigsten aktiven Markern"""
@@ -25,24 +26,36 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             print("[Kaiserlich Tracker][MasterCycle] ⚠️ Kein schwacher Frame gefunden – führe globales Filter-Cleanup durch ...")
 
             try:
-                # 1) Gültigen CLIP_EDITOR-Bereich finden
+                # ------------------------------------------------------------------
+                # 1) Gültigen Clip & Clip-Editor-Kontext bestimmen
+                # ------------------------------------------------------------------
+                clip = get_active_clip(context, allow_global_fallback=True)
+                if clip is None:
+                    raise RuntimeError("Kein aktiver MovieClip verfügbar.")
+
                 area = next((a for a in context.screen.areas if a.type == "CLIP_EDITOR"), None)
-                if area is None:
-                    raise RuntimeError("Keine CLIP_EDITOR Area gefunden – Filterprozess kann nicht ausgeführt werden.")
+                if not area:
+                    raise RuntimeError("Kein CLIP_EDITOR im aktuellen Screen gefunden.")
+
+                region = next((r for r in area.regions if r.type == "WINDOW"), None)
+                if not region:
+                    raise RuntimeError("Keine gültige Region für CLIP_EDITOR gefunden.")
 
                 override = context.copy()
                 override["area"] = area
-                override["region"] = next((r for r in area.regions if r.type == "WINDOW"), None)
+                override["region"] = region
+                override["space_data"] = area.spaces.active
+                override["edit_movieclip"] = clip
 
-                # 2) Globaler Filter für alle Tracks mit Override
+                # ------------------------------------------------------------------
+                # 2) Globaler Filter mit gültigem Override
+                # ------------------------------------------------------------------
                 with bpy.context.temp_override(**override):
                     deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(threshold=30.0)
-                print(f"[Kaiserlich Tracker][MasterCycle] FilterAll abgeschlossen – {deleted_count_all} Tracks gelöscht.")
+                    print(f"[Kaiserlich Tracker][MasterCycle] FilterAll abgeschlossen – {deleted_count_all} Tracks gelöscht.")
 
-                # 3) Lokaler Filter für problematische Tracks mit Override
-                with bpy.context.temp_override(**override):
                     filter_problematic_tracks(context, threshold=10.0)
-                print("[Kaiserlich Tracker][MasterCycle] FilterTracks abgeschlossen.")
+                    print("[Kaiserlich Tracker][MasterCycle] FilterTracks abgeschlossen.")
 
                 # 3) Erneuter Versuch, einen schwachen Frame zu finden
                 frame = find_first_weak_frame(context)
