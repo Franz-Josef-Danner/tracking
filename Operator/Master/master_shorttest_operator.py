@@ -815,7 +815,7 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                     try:
                         deleted_total += delete_tracks_by_names(context, [name])
                     except Exception as _e:
-                    pass
+                        pass
             else:
                 pass
 
