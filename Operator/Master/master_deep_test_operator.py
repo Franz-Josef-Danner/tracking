@@ -440,21 +440,9 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     removed = [m['track'] for m in cleaned_new if m['track'] not in clip_names]
                 cleaned_new = synced_cleaned
                 remaining = len(cleaned_new)
-
-
-            diff = remaining - ef_target
-            # --- Entfernt: Zählungs- und Löschlogik ---
-            # Der Deep-Test übernimmt nun exakt die DetectAdapt-Struktur des Shorttests,
-            # ohne auf Markeranzahl oder Toleranz zu reagieren.
-            # Nur adaptive min_distance wird noch berechnet.
-            ratio = remaining / max(1, ef_target)
-            factor = (((ratio - 1.0) / 2.0) + 1.0)
-            new_md = last_md * factor
-            new_md = min(max(new_md, 2.0), hz * 0.25)
-            last_md = new_md
-
-            # Entfernt: delete_tracks_by_names() in Loop, keine Löschung mehr erforderlich
-            time.sleep(0.05)
+            
+            # Zähl- und Löschlogik entfernt: nur ein einziger Detect/Cleanup-Durchlauf pro Threshold-Stufe
+            break
 
         self._last_md = last_md
 
@@ -701,12 +689,61 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         total_len = int(self._track_state.total_len if self._track_state.total_len >= 0 else 0)
         compare_len = int(self._goal_map.get(self._current_category, 0))
 
-        # ---- Bereinigt: keine Zählungs- oder Zielvergleiche mehr ----
-        # Deep-Test läuft unabhängig von Track-Längen oder Zielwerten.
-        self._best_thresholds[self._current_category] = self._current_value
-        frame_values = {self._current_category: self._current_value}
-        save_frame_values(self._scene, self._scene.frame_current, frame_values)
-        self._current_step_index += 1
+        # ---- Bewertung (adaptive Stufenlogik) -------------------------------
+        if total_len >= compare_len:
+            self._goal_map[self._current_category] = total_len
+            self._best_thresholds[self._current_category] = self._current_value
+
+            # ---- Frame-Werte im Cache speichern ----------------------------
+            frame_values = {self._current_category: self._current_value}
+            save_frame_values(self._scene, self._scene.frame_current, frame_values)
+            if self._current_category == "rot_xy":
+
+                set_scene_props(self._scene,
+                    kaiserlich_rot_thresh_x=1.0,
+                    kaiserlich_rot_thresh_y=1.0)
+            elif self._current_category == "scale":
+                set_scene_props(self._scene,
+                    kaiserlich_scale_thresh_min=1.0,
+                    kaiserlich_scale_thresh_max=1.0)
+            elif self._current_category in ("rot_scale_rot", "rot_scale_scale"):
+                set_scene_props(self._scene,
+                    kaiserlich_rot_scale_thresh_rot=1.0,
+                    kaiserlich_rot_scale_thresh_scale=1.0)
+            elif self._current_category == "perspective":
+                set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
+
+            self._current_step_index += 1
+
+        else:
+            # Kein Zugewinn → prüfen, ob MIN erreicht
+            if self._current_value <= MIN_THRESHOLD_VAL + 1e-12:
+                # --- NEU: Zähler für aufeinanderfolgende MIN-Erreichungen ---
+                if not hasattr(self, "_min_reach_count"):
+                    self._min_reach_count = 0
+
+                self._min_reach_count += 1
+
+                # Wenn dreimal hintereinander erreicht, Kategorie beenden
+                if self._min_reach_count >= 3:
+                    self._current_step_index = len(REDUCTION_STEPS)
+                    self._min_reach_count = 0
+                    return True
+
+                # ansonsten zur nächsten Stufe springen
+                self._current_step_index += 1
+                # Wichtig: Basis auf 1.0 zurücksetzen, damit die nächste Stufe
+                # exakt dem definierten REDUCTION_STEPS-Faktor entspricht.
+                self._base_value = 1.0
+
+            else:
+                # Bei Zielverfehlung ohne MIN: nicht in derselben Stufe „heruntermultiplizieren“,
+                # sondern zur nächsten REDUCTION_STEPS-Stufe wechseln.
+                if hasattr(self, "_min_reach_count"):
+                    self._min_reach_count = 0
+                self._current_step_index += 1
+                # Basiswert zurücksetzen, damit next_val = 1.0 * REDUCTION_STEPS[idx]
+                self._base_value = 1.0   
 
         # --------------------------------------------------------------------
         # Kein Rücksprung auf Szenenanfang mehr:
