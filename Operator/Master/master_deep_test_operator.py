@@ -775,6 +775,23 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             print(f"[MasterDeepTest][Eval] ⚠️ Fehler beim Playhead-Reset (Eval): {ex!r}")
 
         # Kategorie fertig, wenn alle Reduktionsstufen durch oder MIN erreicht
+        # ---------------------------------------------------------------
+        # 🔁 Thresholds für nächste Kategorie immer auf 1.0 zurücksetzen
+        if self._current_category == "rot_xy":
+            set_scene_props(self._scene,
+                kaiserlich_rot_thresh_x=1.0,
+                kaiserlich_rot_thresh_y=1.0)
+        elif self._current_category == "scale":
+            set_scene_props(self._scene,
+                kaiserlich_scale_thresh_min=1.0,
+                kaiserlich_scale_thresh_max=1.0)
+        elif self._current_category in ("rot_scale_rot", "rot_scale_scale"):
+            set_scene_props(self._scene,
+                kaiserlich_rot_scale_thresh_rot=1.0,
+                kaiserlich_rot_scale_thresh_scale=1.0)
+        elif self._current_category == "perspective":
+            set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
+
         if self._current_step_index >= len(REDUCTION_STEPS):
             print(f"[MasterDeepTest][{self._current_category}] Kategorie abgeschlossen (alle Stufen durchlaufen).")
             return True
