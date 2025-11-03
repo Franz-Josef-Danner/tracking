@@ -1,3 +1,4 @@
+# Helper/get_average_error.py
 import bpy
 
 def get_average_error(clip: bpy.types.MovieClip | None = None,
