@@ -653,6 +653,18 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     include_names=getattr(self, "_final_new_tracks", []),
                 )
             )
+
+            # --- LOG: Szenenwerte nach aktuellem Testdurchlauf ---
+            scene = context.scene
+            print("\n[KAISERLICHTRACKER][LOG][DeepTest][Zwischenergebnis]")
+            print(f"  Aktuelle Kategorie: {self._current_category}")
+            print(f"  Gemessene Track-Länge: {ts.total_len}")
+            print(f"  {SCENE_TOTAL_TRACK_LEN_BASE}  = {scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 'n/a')}")
+            print(f"  {SCENE_TOTAL_TRACK_LEN_STEP1} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 'n/a')}")
+            print(f"  {SCENE_TOTAL_TRACK_LEN_STEP2} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 'n/a')}")
+            print(f"  {SCENE_TOTAL_TRACK_LEN_STEP3} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 'n/a')}")
+            print(f"  {SCENE_TOTAL_TRACK_LEN_STEP4} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP4, 'n/a')}")
+            print("------------------------------------------------------\n")
         except Exception as e:
             ts.total_len = 0
 
