@@ -215,9 +215,20 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self._categories_queue = [cat for cat, val in self._goal_map.items() if val > 0]
 
         if not self._categories_queue:
-            print("[MasterDeepTest] ❌ Keine Zielwerte gefunden – Abbruch.")
-            self.report({'INFO'}, "Keine aktiven Szenenwerte – MasterDeepTest übersprungen.")
-            return {'CANCELLED'}
+            print("[MasterDeepTest] ⚠️ Keine Zielwerte gefunden – Überspringe DeepTest und leite weiter an DetectAdapt.")
+            self.report({'INFO'}, "Keine aktiven Szenenwerte – MasterDeepTest übersprungen, starte DetectAdapt...")
+        
+            try:
+                if hasattr(bpy.ops, "kaiserlich_tracker"):
+                    print("[MasterDeepTest] 🔁 Starte Übergabe an 'master_detect_adapt' Operator ...")
+                    bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                else:
+                    print("[MasterDeepTest] ⚠️ Operatorstruktur unvollständig – Übergabe übersprungen.")
+            except Exception as ex:
+                print(f"[MasterDeepTest] ⚠️ Fehler bei Übergabe an master_detect_adapt: {ex!r}")
+        
+            return {'FINISHED'}
+
 
         print(f"[Kaiserlich Tracker][MasterDeepTest] Starte Test für Kategorien mit gesetzten Szenenwerten: {self._categories_queue}")
 
