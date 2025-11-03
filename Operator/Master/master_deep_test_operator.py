@@ -787,6 +787,18 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         scene = context.scene
         scene["kaiserlich_best_thresholds"] = self._best_thresholds
 
+        # --- LOG: Übersicht der Ziel- und Vergleichswerte ---
+        print("[KAISERLICHTRACKER][LOG][DeepTest] --- Szenenwerte (Ziele) ---")
+        print(f"  {SCENE_TOTAL_TRACK_LEN_BASE}  = {scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 'n/a')}")
+        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP1} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 'n/a')}")
+        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP2} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 'n/a')}")
+        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP3} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 'n/a')}")
+        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP4} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP4, 'n/a')}")
+        print("[KAISERLICHTRACKER][LOG][DeepTest] --- Beste Thresholds ---")
+        for cat, val in self._best_thresholds.items():
+            print(f"   {cat}: {val:.6f}")
+        print("[KAISERLICHTRACKER][LOG][DeepTest] ----------------------------")
+
         # ---- Thresholds in Szene anwenden ----
         if "rot_xy" in self._best_thresholds:
             best_x = self._best_thresholds["rot_xy"]
@@ -821,6 +833,15 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             print(f"[MasterDeepTest] ⚠️ Fehler beim Wiederherstellen des Playheads: {ex!r}")
         # -------------------------------------------------------------------
 
+        # --- LOG: Abschlussübersicht ---
+        print("[KAISERLICHTRACKER][LOG][DeepTest] Deep Test abgeschlossen — Endwerte:")
+        print(f"  {SCENE_TOTAL_TRACK_LEN_BASE}  = {scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 'n/a')}")
+        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP1} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 'n/a')}")
+        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP2} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 'n/a')}")
+        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP3} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 'n/a')}")
+        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP4} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP4, 'n/a')}")
+        print("[KAISERLICHTRACKER][LOG][DeepTest] -----------------------------------")
+    
         return self._teardown(context, cancelled=False)
 
     def _teardown(self, context, cancelled=False):
