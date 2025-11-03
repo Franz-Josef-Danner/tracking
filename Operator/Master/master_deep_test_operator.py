@@ -89,7 +89,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     _current_goal: int = 0
 
     _detect_loop: int = 0
-    _detect_loop_max: int = 8
+    _detect_loop_max: int = 4
     _pre_snapshot: List[Dict[str, Any]] = []
     _baseline_start_tracknames: Set[str] = set()
     _last_md: float = 100.0
