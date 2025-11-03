@@ -24,6 +24,8 @@ from .Operator.Master.master_detect_adapt_operator import KAISERLICHTRACKER_OT_m
 from .Operator.Master.master_track_operator_backwards import KAISERLICHTRACKER_OT_master_track_cycle_backwards
 from .Operator.Master.master_cycle_operator import KAISERLICHTRACKER_OT_master_cycle_operator
 from .Operator.master_operator import KAISERLICHTRACKER_OT_master_operator
+from .Operator.master_resolve_operator import KAISERLICHTRACKER_OT_master_resolve_operator
+
 
 # ---- Klassenliste ----------------------------------------------------------
 classes = (
@@ -41,6 +43,7 @@ classes = (
     KAISERLICHTRACKER_OT_master_track_cycle_backwards,
     KAISERLICHTRACKER_OT_master_cycle_operator,
     KAISERLICHTRACKER_OT_master_operator,
+    KAISERLICHTRACKER_OT_master_resolve_operator,
 )
 
 # ---- Register / Unregister -------------------------------------------------
