@@ -38,12 +38,36 @@ def _solve_camera_invoke_default(context: bpy.types.Context) -> None:
     Standardisierte Ausführung von Blender Solve-Operator mit INVOKE_DEFAULT.
     Wir laufen bewusst synchron; falls UI-Kontext fehlt, fallback auf EXEC_DEFAULT.
     """
+    def _get_clip_context(ctx: bpy.types.Context):
+        """Sucht oder konstruiert einen gültigen Clip-Editor-Kontext für bpy.ops.clip.*"""
+        # Prüfen, ob aktueller Context bereits Clip enthält
+        if hasattr(ctx, "space_data") and getattr(ctx.space_data, "clip", None):
+            return ctx
+
+        # Andernfalls passenden Bereich suchen
+        for area in bpy.context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        override = bpy.context.copy()
+                        override["area"] = area
+                        override["region"] = region
+                        override["space_data"] = area.spaces.active
+                        return override
+        # Fallback: direkter Kontext
+        return ctx
+
+    # Sicheren Kontext beschaffen
+    override = _get_clip_context(context)
+
+    # Solve-Versuch mit Override
     try:
-        # Primär: INVOKE_DEFAULT (respektiert UI-Operator-Flow)
-        bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+        bpy.ops.clip.solve_camera(override, 'INVOKE_DEFAULT')
     except RuntimeError:
-        # Fallback: EXEC_DEFAULT (headless/ohne aktiven UI-Kontext)
-        bpy.ops.clip.solve_camera('EXEC_DEFAULT')
+        try:
+            bpy.ops.clip.solve_camera(override, 'EXEC_DEFAULT')
+        except Exception as e:
+            print(f"[resolve_operator] Solve-Aufruf fehlgeschlagen: {e}")
 
 
 def _check_and_filter(context: bpy.types.Context, avg_err: float) -> float:
