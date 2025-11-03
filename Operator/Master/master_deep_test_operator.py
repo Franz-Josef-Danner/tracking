@@ -7,27 +7,27 @@ from typing import Optional, List, Dict, Any, Tuple, Set
 from bpy.types import Operator, Context
 
 # ---- Helper-Importe ---------------------------------------------------------
-from ..Helper.util_clip import get_active_clip
-from ..Helper.scene import get_end_frame
-from ..Helper.playhead_helper import reset_to_frame
-from ..Helper.newmarker import classify_markers
-from ..Helper.find_clip_editor_area import find_clip_editor_area
-from ..Helper.snapshot import snapshot_active_markers
-from ..Helper.detect import detect_features
-from ..Helper.cleaneup import cleanup_new_markers
-from ..Helper.delete import delete_tracks_by_names
-from ..Helper.track_length_helper import get_total_track_length
-from ..Helper.track_markers_helper import track_markers_with_override
-from ..Helper.filter_active_tracks import filter_active_tracks_at_frame
-from ..Helper.util_scene import set_scene_props
-from ..Helper.init_detect_state import init_detect_state
-from ..Helper.reset_helper import reset_all_thresholds
-from ..Helper.selection_helper import collect_selected_track_names
-from ..Helper.formula_helper import apply_formula_on_selected_tracks
-from ..Helper.filter_and_delete_tracks import filter_and_delete_tracks
+from ...Helper.util_clip import get_active_clip
+from ...Helper.scene import get_end_frame
+from ...Helper.playhead_helper import reset_to_frame
+from ...Helper.newmarker import classify_markers
+from ...Helper.find_clip_editor_area import find_clip_editor_area
+from ...Helper.snapshot import snapshot_active_markers
+from ...Helper.detect import detect_features
+from ...Helper.cleaneup import cleanup_new_markers
+from ...Helper.delete import delete_tracks_by_names
+from ...Helper.track_length_helper import get_total_track_length
+from ...Helper.track_markers_helper import track_markers_with_override
+from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
+from ...Helper.util_scene import set_scene_props
+from ...Helper.init_detect_state import init_detect_state
+from ...Helper.reset_helper import reset_all_thresholds
+from ...Helper.selection_helper import collect_selected_track_names
+from ...Helper.formula_helper import apply_formula_on_selected_tracks
+from ...Helper.filter_and_delete_tracks import filter_and_delete_tracks
 
 # ---- Frame-Cache-Import ----------------------------------------------------
-from ..Helper.frame_value_cache import (
+from ...Helper.frame_value_cache import (
     get_frame_values,
     save_frame_values,
     apply_cached_values
