@@ -786,6 +786,32 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         print("\n[DeepTest] ✅ Abschluss – beste Thresholds:")
         for k, v in self._best_thresholds.items():
             print(f"  {k}: {v:.6f}")
+
+        # --- NEU: Prüfen, ob noch eine Kategorie mit gesetztem Szenenwert vorhanden ist ---
+        try:
+            remaining_categories = []
+            for cat, scene_key in [
+                ("rot_xy", SCENE_TOTAL_TRACK_LEN_STEP1),
+                ("scale", SCENE_TOTAL_TRACK_LEN_STEP2),
+                ("rot_scale_rot", SCENE_TOTAL_TRACK_LEN_STEP3),
+                ("rot_scale_scale", SCENE_TOTAL_TRACK_LEN_STEP3),
+                ("perspective", SCENE_TOTAL_TRACK_LEN_STEP4)
+            ]:
+                val = int(self._scene.get(scene_key, 0))
+                if val > 0:
+                    remaining_categories.append(cat)
+
+            print(f"[DeepTest][FinishCheck] Noch gesetzte Kategorien: {remaining_categories}")
+
+            # Wenn keine weiteren Kategorien mehr Werte haben → direkt an master_detect_adapt übergeben
+            if not remaining_categories:
+                print("[DeepTest][FinishCheck] Keine weiteren Kategorien aktiv → Übergabe an master_detect_adapt.")
+                # Übergabe-Logik wird im Teardown ausgelöst
+            else:
+                print("[DeepTest][FinishCheck] Weitere Kategorien aktiv – DeepTest bleibt regulär aktiv.")
+
+        except Exception as ex:
+            print(f"[DeepTest][FinishCheck] ⚠️ Fehler bei Restkategorie-Prüfung: {ex!r}")
         # Ergebnisse global in die Szene schreiben
         scene = context.scene
         scene["kaiserlich_best_thresholds"] = self._best_thresholds
