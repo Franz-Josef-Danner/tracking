@@ -2,11 +2,11 @@
 # Copyright (...)
 # Zweck: Löst die Kamera iterativ und verfeinert Intrinsics gemäß vordefiniertem Eskalationspfad.
 # Erwartete Abhängigkeiten (in Ihrem Add-on vorhanden):
-#   Helper/refine_intrinsics.py    -> refine_intrinsics_reset, refine_intrinsics_focal_length_on,
+#   ...Helper/refine_intrinsics.py    -> refine_intrinsics_reset, refine_intrinsics_focal_length_on,
 #                                     refine_intrinsics_principal_point_on, refine_intrinsics_radial_distortion_on
-#   Helper/get_average_error.py    -> get_average_error
-#   Helper/filter_tracks.py        -> filter_problematic_tracks
-#   Helper/low_marker_frame.py     -> find_first_weak_frame
+#   ...Helper/get_average_error.py    -> get_average_error
+#   ...Helper/filter_tracks.py        -> filter_problematic_tracks
+#   ...Helper/low_marker_frame.py     -> find_first_weak_frame
 #   Operator/Master/master_cycle_operator.py -> KAISERLICHTRACKER_OT_master_cycle_operator
 #
 # Nutzung: F3 -> "Kaiserlich: Resolve Master" ausführen
@@ -18,17 +18,17 @@ from bpy.types import Operator
 from bpy.props import BoolProperty
 
 # --- Imports aus Ihrem Add-on ---
-# Passen Sie die Paketpfade ggf. an Ihr Add-on-Package an (z. B. from .Helper...)!
+# Passen Sie die Paketpfade ggf. an Ihr Add-on-Package an (z. B. from ....Helper...)!
 try:
-    from Helper.refine_intrinsics import (
+    from ...Helper.refine_intrinsics import (
         refine_intrinsics_reset,
         refine_intrinsics_focal_length_on,
         refine_intrinsics_principal_point_on,
         refine_intrinsics_radial_distortion_on,
     )
-    from Helper.get_average_error import get_average_error
-    from Helper.filter_tracks import filter_problematic_tracks
-    from Helper.low_marker_frame import find_first_weak_frame
+    from ...Helper.get_average_error import get_average_error
+    from ...Helper.filter_tracks import filter_problematic_tracks
+    from ...Helper.low_marker_frame import find_first_weak_frame
     from Operator.Master.master_cycle_operator import KAISERLICHTRACKER_OT_master_cycle_operator  # noqa: F401 (nur für Operator-Aufruf)
 except Exception as e:
     # Harte, frühe Fehlermeldung zwecks Diagnose fehlender Module
