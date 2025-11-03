@@ -603,10 +603,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         space = self._space
         window, area, region = self._window, self._area, self._region
 
-        # 1) Inaktive Tracks filtern
-        ts.active_names, dropped = filter_active_tracks_at_frame(context, ts.active_names, ts.current)
-        if dropped > 0:
-        if not ts.active_names:
+        # 1. Wenn die gewünschte Frameanzahl pro Track erreicht ist
+        if current_frame_index >= frames_per_track:
+            print(f"[MasterDeepTest][Track] ⏹️ Zielanzahl an Frames pro Track erreicht "
+                  f"({current_frame_index} ≥ {frames_per_track}) – Tracking beendet.")
             return self._track_finish(context)
 
         # --- Neue Abbruchbedingungen basierend auf UI-Property "Frames per Track" ---
