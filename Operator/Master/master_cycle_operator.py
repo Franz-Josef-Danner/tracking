@@ -161,9 +161,29 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 # 3) Erneuter Versuch, einen schwachen Frame zu finden
                 frame = find_first_weak_frame(context)
                 if frame is None:
-                    print("[Kaiserlich Tracker][MasterCycle] ❌ Auch nach Filter kein schwacher Frame gefunden – beende Zyklus.")
-                    self.report({'INFO'}, "[MasterCycle] Kein schwacher Frame nach Filterung – Vorgang abgeschlossen.")
-                    return {'FINISHED'}
+                    print("[Kaiserlich Tracker][MasterCycle] ❌ Auch nach Filter kein schwacher Frame gefunden – starte Resolve-Prozess …")
+                    try:
+                        op_id_resolve = "kaiserlich_tracker.master_resolve_operator"
+
+                        # Prüfen, ob der Operator registriert ist
+                        op_cls = bpy.ops
+                        if not hasattr(op_cls, "kaiserlich_tracker") or not hasattr(op_cls.kaiserlich_tracker, "master_resolve_operator"):
+                            msg = f"Operator '{op_id_resolve}' nicht registriert. Prüfe bl_idname in Operator/Master/master_resolve_operator.py"
+                            print(f"[Kaiserlich Tracker][MasterCycle] ⚠️ {msg}")
+                            self.report({'ERROR'}, msg)
+                            return {'CANCELLED'}
+
+                        # Operator ausführen
+                        print("[Kaiserlich Tracker][MasterCycle] ▶ Übergabe an master_resolve_operator ...")
+                        bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
+                        print("[Kaiserlich Tracker][MasterCycle] ✅ master_resolve_operator erfolgreich gestartet.")
+                        self.report({'INFO'}, "[MasterCycle] Kein schwacher Frame – Resolve-Prozess gestartet.")
+                        return {'FINISHED'}
+
+                    except Exception as resolve_err:
+                        print(f"[Kaiserlich Tracker][MasterCycle] ❌ Fehler beim Starten des master_resolve_operator: {resolve_err!r}")
+                        self.report({'ERROR'}, f"Fehler beim Starten des Resolve-Operators: {resolve_err}")
+                        return {'CANCELLED'}
                 try:
                     op, os, np, ns = update_default_sizes(context)
                     self.report({'INFO'}, f"[Defaults] pattern {op}->{np}, search {os}->{ns}")
