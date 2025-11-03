@@ -299,8 +299,10 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             if area:
                 override = context.copy()
                 override['area'] = area
-                override['region'] = area.regions[-1]
-                bpy.ops.kaiserlich_tracker.master_track_cycle_backwards(override, 'INVOKE_DEFAULT')
+                override['region'] = next((r for r in area.regions if r.type == 'WINDOW'), None)
+
+                result = bpy.ops.kaiserlich_tracker.master_track_cycle_backwards.invoke(override)
+                print(f"[Kaiserlich Tracker][MasterDetectAdapt] Operator-Aufrufresultat: {result}")
                 print("[Kaiserlich Tracker][MasterDetectAdapt] Kontext erfolgreich an Track-Cycle-Backwards übergeben.")
             else:
                 print("[Kaiserlich Tracker][MasterDetectAdapt] ⚠️ Keine CLIP_EDITOR-Area gefunden – Operator-Aufruf übersprungen.")
@@ -308,3 +310,4 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             print(f"[Kaiserlich Tracker][MasterDetectAdapt] ❌ Fehler beim Start von Track-Cycle-Backwards: {e}")
 
         return {'FINISHED'}
+
