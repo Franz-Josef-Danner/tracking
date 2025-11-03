@@ -154,6 +154,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             print(f"[DeepTest] ⏪ Nur {remaining} Frames bis Szenenende – Playhead verschoben: {current_frame} → {new_start}")
         else:
             print(f"[DeepTest] ✅ Ausreichend Frames ({remaining}) – keine Verschiebung erforderlich.")
+
         # -------------------------------------------------------------------------------
         # Thresholds global auf 1.0 zurücksetzen (ShortTest-Parität)
         try:
@@ -161,6 +162,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             print("[DeepTest][Init] Alle Thresholds auf 1.0 zurückgesetzt.")
         except Exception as e:
             print(f"[DeepTest][Init] ⚠️ Threshold-Reset fehlgeschlagen: {e!r}")
+
         # Detect-Parameter initialisieren (wie im Shorttest)
         try:
             _state = init_detect_state(context)
@@ -181,7 +183,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             print(f"[DeepTest][InitDetect] ⚠️ Fallback – init_detect_state fehlgeschlagen: {_e!r}")
 
         # Zielwerte laden
-        # Zielwerte aus den Szenenvariablen ermitteln
         self._goal_map = {
             "rot_xy": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 0)),
             "scale": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 0)),
@@ -207,10 +208,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self._phase = "category_select"
         return {'RUNNING_MODAL'}
 
+    # Hier korrekt auf gleicher Ebene wie def execute:
     except Exception as ex:
         print(f"[DeepTest] ⚠️ Fehler in execute: {ex!r}")
         return self._teardown(context, cancelled=True)
-
 
     # ------------------------------------------------------------------------
     # Helper: Alle Tracks im aktiven Clip deselektieren
