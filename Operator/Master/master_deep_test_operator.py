@@ -783,9 +783,26 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
     # ------------------------------------------------------------------------
     def _finish(self, context):
-        print("\n[DeepTest] ✅ Abschluss – beste Thresholds:")
+        print("\n[DeepTest][FINISH] === Eintritt in _finish() ===")
+        print(f"[DeepTest][FINISH] Context valid: {context is not None}")
+        try:
+            win = getattr(context, 'window', None)
+            scr = getattr(win, 'screen', None)
+            print(f"[DeepTest][FINISH] Window: {win}, Screen: {scr}")
+        except Exception as ex:
+            print(f"[DeepTest][FINISH] ⚠️ Context-Fehler: {ex!r}")
+
+        print("[DeepTest][FINISH] --- Start Threshold-Report ---")
         for k, v in self._best_thresholds.items():
             print(f"  {k}: {v:.6f}")
+        print("[DeepTest][FINISH] --- Ende Threshold-Report ---")
+
+        # Sicherstellen, dass Scene-Objekt existiert
+        if not hasattr(context, "scene"):
+            print("[DeepTest][FINISH] ❌ context.scene fehlt – Abbruch vor Übergabe.")
+            return {'CANCELLED'}
+
+        print("[DeepTest][FINISH] Szene vorhanden, schreibe Thresholds …")
         # Ergebnisse global in die Szene schreiben
         scene = context.scene
         scene["kaiserlich_best_thresholds"] = self._best_thresholds
@@ -814,6 +831,16 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 kaiserlich_perspective_thresh=self._best_thresholds["perspective"])
 
         print("[DeepTest] 💾 Alle finalen Threshold-Werte in Szene eingetragen.")
+
+        print("[DeepTest][FINISH] Frame restore vorbereiten …")
+        print(f"[DeepTest][FINISH] _user_original_frame: {getattr(self, '_user_original_frame', None)}")
+
+        print("[DeepTest][FINISH] → versuche Übergabe an master_detect_adapt …")
+
+        # Diagnose vor Area-Suche
+        all_areas = [a.type for a in bpy.context.screen.areas]
+        print(f"[DeepTest][FINISH][Diag] Areas im aktuellen Screen: {all_areas}")
+
         # --- NEU: Playhead nach Test wiederherstellen -----------------------
         try:
             restore_frame = getattr(self, "_user_original_frame", None)
@@ -832,14 +859,37 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 print("[DeepTest] ❌ Kein CLIP_EDITOR – Übergabe abgebrochen.")
                 return {'CANCELLED'}
 
+            print(f"[DeepTest][FINISH] ✅ CLIP_EDITOR gefunden: {area}")
+
+
             region = next((r for r in area.regions if r.type == 'WINDOW'), None) or area.regions[-1]
             space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+
+            print(f"[DeepTest][FINISH] Region: {region}, Space: {space}")
+
+            if not region or not space:
+                print("[DeepTest][FINISH] ❌ Region oder Space fehlt – kein valider Override möglich.")
+                return {'CANCELLED'}
             override = dict(window=bpy.context.window, area=area, region=region, space_data=space)
 
             print("[DeepTest] 🚀 Übergabe an master_detect_adapt …")
             with bpy.context.temp_override(**override):
                 result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                print(f"[DeepTest] → master_detect_adapt gestartet, Rückgabe: {result}")
+                print(f"[DeepTest][FINISH] → master_detect_adapt gestartet, Rückgabe: {result}")
+
+                if result is None:
+                    print("[DeepTest][FINISH][Diag] ⚠️ Rückgabe = None")
+                elif isinstance(result, set):
+                    if 'CANCELLED' in result:
+                        print("[DeepTest][FINISH][Diag] ⚠️ Operator CANCELLED")
+                    elif 'RUNNING_MODAL' in result:
+                        print("[DeepTest][FINISH][Diag] 🟢 Operator läuft modal")
+                    elif 'FINISHED' in result:
+                        print("[DeepTest][FINISH][Diag] ✅ Operator FINISHED")
+
+        except Exception as ex:
+            import traceback; traceback.print_exc()
+            print(f"[DeepTest][FINISH] ❌ Exception während Übergabe: {ex!r}")
 
             return result or {'FINISHED'}
 
