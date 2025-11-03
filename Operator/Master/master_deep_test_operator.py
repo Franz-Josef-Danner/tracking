@@ -121,7 +121,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # --- NEU: harte Deselektion aller Tracks zu Beginn -----------------
         try:
             deselected = self._deselect_all_tracks(context)
-            print(f"[Kaiserlich Tracker][MasterDeepTest][Selection] {deselected} Tracks deselektiert (Start).")
         except Exception as ex:
             print(f"[Kaiserlich Tracker][MasterDeepTest][Selection] ⚠️ Deselektion fehlgeschlagen: {ex!r}")
 
@@ -151,14 +150,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     self._space.clip_user.frame_current = new_start
             except Exception:
                 pass
-            print(f"[MasterDeepTest] ⏪ Nur {remaining} Frames bis Szenenende – Playhead verschoben: {current_frame} → {new_start}")
         else:
             print(f"[MasterDeepTest] ✅ Ausreichend Frames ({remaining}) – keine Verschiebung erforderlich.")
         # -------------------------------------------------------------------------------
         # Thresholds global auf 1.0 zurücksetzen (ShortTest-Parität)
         try:
             reset_all_thresholds(context, active_props=[])
-            print("[MasterDeepTest][Init] Alle Thresholds auf 1.0 zurückgesetzt.")
         except Exception as e:
             print(f"[MasterDeepTest][Init] ⚠️ Threshold-Reset fehlgeschlagen: {e!r}")
         # Detect-Parameter initialisieren (identisch zum ShortTest)
@@ -174,7 +171,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self._search_size = int(params.get('sz', 100))
                 self._hz = int(params.get('hz', 1))
                 self._vc = int(params.get('vc', 1))
-                print(f"[MasterDeepTest][Init] Bootstrap-Parameter erkannt (md={self._last_md}, ma={self._margin}, tr={self._threshold})")
             else:
                 clip = getattr(context.space_data, "clip", None)
                 if clip is None:
@@ -187,7 +183,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self._search_size = getattr(tracking_settings, "search_size", 100)
                 self._last_md = self._hz * 0.025
                 self._threshold = 0.0001
-                print(f"[MasterDeepTest][Init] Fallback-Parameter übernommen (hz={self._hz}, vc={self._vc}, md={self._last_md})")
 
             # Frame-spezifisches min_distance ggf. überschreiben
             md_cache = scene.get("min_distance_values", {})
@@ -196,10 +191,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 if fn in md_cache:
                     cached_md = float(md_cache[fn])
                     self._last_md = cached_md
-                    print(f"[MasterDeepTest][Init] 💾 Cached min_distance für Frame {fn}: {cached_md:.2f}")
 
         except Exception as ex:
-            print(f"[MasterDeepTest][InitDetect] ⚠️ Parameterinitialisierung fehlgeschlagen: {ex!r}")
 
         # Zielwerte laden
         # Zielwerte aus den Szenenvariablen ermitteln
@@ -215,12 +208,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self._categories_queue = [cat for cat, val in self._goal_map.items() if val > 0]
 
         if not self._categories_queue:
-            print("[MasterDeepTest] ⚠️ Keine Zielwerte gefunden – Überspringe DeepTest und leite weiter an DetectAdapt.")
             self.report({'INFO'}, "Keine aktiven Szenenwerte – MasterDeepTest übersprungen, starte DetectAdapt...")
         
             try:
                 if hasattr(bpy.ops, "kaiserlich_tracker"):
-                    print("[MasterDeepTest] 🔁 Starte Übergabe an 'master_detect_adapt' Operator ...")
                     bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
                 else:
                     print("[MasterDeepTest] ⚠️ Operatorstruktur unvollständig – Übergabe übersprungen.")
@@ -230,7 +221,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return {'FINISHED'}
 
 
-        print(f"[Kaiserlich Tracker][MasterDeepTest] Starte Test für Kategorien mit gesetzten Szenenwerten: {self._categories_queue}")
 
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.05, window=context.window)
@@ -306,7 +296,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
     # ------------------------------------------------------------------------
     def _prepare_category(self, context):
-        print(f"\n[MasterDeepTest][Category] → {self._current_category}")
         self._base_value = 1.0
         self._current_step_index = 0
         # Vergleichslänge direkt aus Szenenwert der Kategorie
@@ -327,7 +316,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # ---- Frame-Cache prüfen --------------------------------------------
         cached = apply_cached_values(self._scene, self._scene.frame_current)
         if cached:
-            print(f"[MasterDeepTest][Cache] Werte für Frame {self._scene.frame_current} gefunden – Kategorie {self._current_category} übersprungen.")
             self._current_step_index = len(REDUCTION_STEPS)
             return
         # Reset Thresholds auf 1.0 für die Kategorie
@@ -342,7 +330,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 kaiserlich_rot_scale_thresh_rot=1.0,
                 kaiserlich_rot_scale_thresh_scale=0.0
             )
-            print("[MasterDeepTest][rot_scale_rot] Init ROT-Threshold-Test")
 
         elif self._current_category == "rot_scale_scale":
             set_scene_props(
@@ -350,7 +337,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 kaiserlich_rot_scale_thresh_rot=0.0,
                 kaiserlich_rot_scale_thresh_scale=1.0
             )
-            print("[MasterDeepTest][rot_scale_scale] Init SCALE-Threshold-Test")
         elif self._current_category == "perspective":
             set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
 
@@ -358,7 +344,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     def _process_threshold_cycle(self, context) -> bool:
         """Durchläuft die Threshold-Stufen sequentiell und prüft je Durchgang."""
         if self._current_step_index >= len(REDUCTION_STEPS):
-            print(f"[MasterDeepTest][{self._current_category}] Alle Reduktionsstufen abgeschlossen.")
             return True
     
         step_factor = REDUCTION_STEPS[self._current_step_index]
@@ -385,7 +370,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 kaiserlich_rot_scale_thresh_rot=next_val,
                 kaiserlich_rot_scale_thresh_scale=0.0
             )
-            print(f"[MasterDeepTest][rot_scale_rot] ▶ Step {self._current_step_index+1}/{len(REDUCTION_STEPS)} | val={next_val:.6f}")
 
         elif self._current_category == "rot_scale_scale":
             set_scene_props(
@@ -393,14 +377,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 kaiserlich_rot_scale_thresh_rot=0.0,
                 kaiserlich_rot_scale_thresh_scale=next_val
             )
-            print(f"[MasterDeepTest][rot_scale_scale] ▶ Step {self._current_step_index+1}/{len(REDUCTION_STEPS)} | val={next_val:.6f}")
     
         elif self._current_category == "perspective":
             set_scene_props(self._scene, kaiserlich_perspective_thresh=next_val)
-    
-        print(f"[MasterDeepTest][{self._current_category}] Test Step {self._current_step_index + 1}/{len(REDUCTION_STEPS)}: "
-              f"{next_val:.6f} (×{step_factor})")
-    
+        
         # ---- Detect (vollständig nach DetectAdapt-Struktur) --------------------
         ef_target = int(self._scene.kaiserlich_markers_per_frame)
         tolerance = ef_target * 0.10
@@ -414,8 +394,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         pre_snapshot = snapshot_active_markers(context)
         baseline_start_tracknames = {t.name for t in self._clip.tracking.tracks}
 
-        print(f"[MasterDeepTest][DetectAdapt] Bootstrap md={self._last_md:.2f}, hz={hz}, vc={vc}, margin={ma}, pattern={pz}, threshold={tr}")
-
         max_loops = self._detect_loop_max
         last_md = float(self._last_md)
         cleaned_new = []
@@ -427,15 +405,11 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             cached_md = float(_md_cache[fn])
             self._last_md = cached_md
             last_md = cached_md
-            print(f"[MasterDeepTest][DetectAdapt] 💾 Cached min_distance verwendet: {cached_md:.2f}")
             # Nur einmalige Detection durchführen, keine iterative Anpassung
             max_loops = 1
 
 
         for loop in range(max_loops):
-            print(f"\n[MasterDeepTest][DetectAdapt] --- LOOP {loop+1} ---")
-            print(f"[MasterDeepTest][DetectAdapt] Aktuelles min_distance = {last_md:.2f}")
-
             detect_features(context, placement='FRAME', margin=ma, threshold=tr,
                             min_distance=int(max(1, round(last_md))))
 
@@ -447,9 +421,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
             post_snapshot = snapshot_active_markers(context)
             alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
-
-            print(f"[MasterDeepTest][DetectAdapt] Alte Marker erkannt: {len(alte_marker)}")
-            print(f"[MasterDeepTest][DetectAdapt] Neue Marker erkannt: {len(neue_marker)}")
             if len(neue_marker) > 0:
                 print("   ➤ Beispiel neue Marker:", [m['track'] for m in neue_marker[:5]])
             if len(alte_marker) > 0:
@@ -466,17 +437,14 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 synced_cleaned = [m for m in cleaned_new if m['track'] in clip_names]
                 if len(synced_cleaned) != len(cleaned_new):
                     removed = [m['track'] for m in cleaned_new if m['track'] not in clip_names]
-                    print(f"[Fix][DetectAdapt] Entferne {len(removed)} aus Speicher (nicht im Clip): {removed[:5]}...")
                 cleaned_new = synced_cleaned
                 remaining = len(cleaned_new)
 
-            print(f"[MasterDeepTest][DetectAdapt][Result] Gültige neue Marker (bereinigt): {remaining}")
 
             diff = remaining - ef_target
             if remaining == 0:
                 print("[MasterDeepTest][DetectAdapt] ⚠️ Keine gültigen neuen Marker – neuer Versuch.")
             elif abs(diff) <= tolerance and remaining > 0:
-                print(f"[MasterDeepTest][DetectAdapt] ✅ Ziel erreicht: {remaining}/{ef_target} Marker (±{tolerance:.1f})")
                 break
             else:
                 print(f"[MasterDeepTest][DetectAdapt] Δ={diff:+.0f}, Ziel={ef_target}, Toleranz={tolerance:.1f}")
@@ -484,13 +452,11 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             # Adaptive min_distance-Anpassung
             if remaining == 0:
                 last_md = max(2.0, last_md * 0.8)
-                print("[MasterDeepTest][DetectAdapt] ⚠️ Keine Marker erkannt – Reduktion ×0.8.")
             else:
                 ratio = remaining / max(1, ef_target)
                 factor = (((ratio - 1.0) / 2.0) + 1.0)
                 new_md = last_md * factor
                 new_md = min(max(new_md, 2.0), hz * 0.25)
-                print(f"[MasterDeepTest][DetectAdapt] ratio={ratio:.3f}, factor={factor:.3f} → md {last_md:.2f} → {new_md:.2f}")
                 last_md = new_md
 
             # Cleanup für nächste Runde
@@ -498,11 +464,9 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 del_names = [m['track'] for m in cleaned_new]
                 if del_names:
                     delete_tracks_by_names(context, del_names)
-                    print(f"[MasterDeepTest][DetectAdapt] {len(del_names)} Marker gelöscht für nächsten Zyklus")
                 time.sleep(0.05)
 
         self._last_md = last_md
-        print(f"[MasterDeepTest][DetectAdapt] Final min_distance = {self._last_md:.2f}")
 
         # Speicherung pro Frame (inkl. Interpolation)
         frame_num = scene.frame_current
@@ -541,7 +505,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             for nt in new_tracks:
                 nt.select = True
                 final_tracks.append(nt.name)
-            print(f"[MasterDeepTest][DetectAdapt] Final selektierte Marker: {len(final_tracks)}")
 
         self._final_new_tracks = final_tracks
 
@@ -594,13 +557,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                         marker_frames.append(tr.markers[0].frame)
                 if marker_frames:
                     start_frame = min(marker_frames)
-                    print(f"[MasterDeepTest][Track] ▶️ Startframe automatisch auf {start_frame} gesetzt (aus neuen Tracks).")
             else:
                 # Kein expliziter neuer Track bekannt → aktuellen Frame verwenden
                 start_frame = int(scene.frame_current)
-                print(f"[MasterDeepTest][Track] ▶️ Startframe auf aktuellen Frame gesetzt: {start_frame}")
         except Exception as ex:
-            print(f"[MasterDeepTest][Track] ⚠️ Konnte Startframe nicht aus Tracks bestimmen: {ex!r}")
             start_frame = int(scene.frame_current or scene.frame_start)
 
         # Playhead auf den Startframe setzen (visuell synchronisieren)
@@ -611,7 +571,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         active_names = list(self._final_new_tracks or [])
         if not active_names:
-            print("[MasterDeepTest][Track] ⚠️ Keine aktiven Tracks.")
             return 0
 
         if clip and getattr(clip, "tracking", None):
@@ -632,7 +591,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self._track_state.start_frame = start_frame
         # Gesamtanzahl speichern für Abbruchbedingung (75%-Regel)
         self._track_state.start_count = len(active_names)
-        print(f"[MasterDeepTest][Track] ▶️ Start {start_frame} → {end_frame} | {len(active_names)} Tracks aktiv")
 
     def _track_tick(self, context) -> bool:
         """Führt genau einen Tracking-Schritt aus. True = läuft weiter; False = abgeschlossen."""
@@ -647,9 +605,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # 1) Inaktive Tracks filtern
         ts.active_names, dropped = filter_active_tracks_at_frame(context, ts.active_names, ts.current)
         if dropped > 0:
-            print(f"[MasterDeepTest][Track] {dropped} inaktive entfernt → {len(ts.active_names)} aktiv")
         if not ts.active_names:
-            print(f"[MasterDeepTest][Track] ✅ Keine aktiven Tracks mehr bei Frame {ts.current}")
             return self._track_finish(context)
 
         # --- Neue Abbruchbedingungen basierend auf UI-Property "Frames per Track" ---
@@ -658,18 +614,14 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         # 1. Wenn die gewünschte Frameanzahl pro Track erreicht ist
         if current_frame_index >= frames_per_track:
-            print(f"[MasterDeepTest][Track] ⏹️ Zielanzahl an Frames pro Track erreicht "
-                  f"({current_frame_index} ≥ {frames_per_track}) – Tracking beendet.")
             return self._track_finish(context)
 
         # 2. Wenn keine aktiven Tracks mehr vorhanden sind
         if len(ts.active_names) == 0:
-            print(f"[MasterDeepTest][Track] ✅ Keine aktiven Tracks mehr bei Frame {ts.current} – Tracking beendet.")
             return self._track_finish(context)
 
         # 3. Wenn das Szenenende erreicht oder überschritten wurde
         if ts.current >= ts.end:
-            print(f"[MasterDeepTest][Track] ✅ Szenenende erreicht bei Frame {ts.current}.")
             return self._track_finish(context)
 
         # 2) Formel anwenden (ShortTest-Parität)
@@ -681,13 +633,11 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # 3) Einen Frame tracken
         ok = track_markers_with_override(window, area, region, space, backwards=False, sequence=False)
         if not ok:
-            print("[MasterDeepTest][Track] ⚠️ Tracking-Fehler – Abbruch.")
             return self._track_finish(context)
 
         # 4) Nächster Frame / Ende prüfen
         ts.current += 1
         if ts.current > ts.end:
-            print("[MasterDeepTest][Track] ✅ Szenenende erreicht.")
             return self._track_finish(context)
 
         scene.frame_current = ts.current
@@ -705,14 +655,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             new_tracks = getattr(self, "_final_new_tracks", [])
             clip = getattr(self, "_clip", None)
             if new_tracks:
-                print(f"[MasterDeepTest][FilterDelete] Vor Tracklängen-Messung: {len(new_tracks)} neue Tracks erkannt.")
                 try:
                     filter_and_delete_tracks(
                         include_names=new_tracks,
                         threshold=30,
                         clip=clip
                     )
-                    print(f"[MasterDeepTest][FilterDelete] ✅ Filter/Delete auf neue Tracks angewendet ({len(new_tracks)} Stück).")
                 except Exception as e:
                     print(f"[MasterDeepTest][FilterDelete] ⚠️ Fehler bei Filter/Delete: {e}")
             else:
@@ -730,21 +678,14 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     include_names=getattr(self, "_final_new_tracks", []),
                 )
             )
-            print(
-                f"[MasterDeepTest][TrackLen] Nur neue Tracks berücksichtigt "
-                f"({len(getattr(self, '_final_new_tracks', []))} Namen gefiltert)."
-            )
         except Exception as e:
-            print(f"[MasterDeepTest][Track] ⚠️ Messfehler: {e!r}")
             ts.total_len = 0
 
-        print(f"[MasterDeepTest][Track] ✅ Tracking abgeschlossen – Gesamtlänge = {ts.total_len}")
 
         # Nach jedem Track-Durchgang soll der Playhead auf den ursprünglichen Startframe zurückspringen
         try:
             start_f = int(getattr(self._track_state, "start_frame", self._start_frame))
             reset_to_frame(context, start_f)
-            print(f"[MasterDeepTest][Track] 🔁 Playhead auf Startframe {start_f} zurückgesetzt (nach Abschluss).")
         except Exception as ex:
             print(f"[MasterDeepTest][Track] ⚠️ Fehler beim Playhead-Reset (Startframe): {ex!r}")
 
@@ -765,11 +706,9 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         """
         total_len = int(self._track_state.total_len if self._track_state.total_len >= 0 else 0)
         compare_len = int(self._goal_map.get(self._current_category, 0))
-        print(f"[MasterDeepTest][{self._current_category}] Track-Länge = {total_len}, Vergleich = {compare_len}")
 
         # ---- Bewertung (adaptive Stufenlogik) -------------------------------
         if total_len >= compare_len:
-            print(f"[MasterDeepTest][{self._current_category}] ✅ Verbesserte oder gleiche Länge ({total_len} >= {compare_len})")
             self._goal_map[self._current_category] = total_len
             self._best_thresholds[self._current_category] = self._current_value
 
@@ -793,7 +732,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
 
             self._current_step_index += 1
-            print(f"[MasterDeepTest][Eval] ✓ Ziel erreicht | next step ({self._current_step_index})")
 
         else:
             # Kein Zugewinn → prüfen, ob MIN erreicht
@@ -803,11 +741,9 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     self._min_reach_count = 0
 
                 self._min_reach_count += 1
-                print(f"[MasterDeepTest][Eval] ✗ Kein Zugewinn, MIN erreicht → Zähler = {self._min_reach_count}/3")
 
                 # Wenn dreimal hintereinander erreicht, Kategorie beenden
                 if self._min_reach_count >= 3:
-                    print(f"[MasterDeepTest][Eval] 🚫 MIN dreimal erreicht – Kategorie '{self._current_category}' abgeschlossen.")
                     self._current_step_index = len(REDUCTION_STEPS)
                     self._min_reach_count = 0
                     return True
@@ -825,11 +761,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     self._min_reach_count = 0
                 self._current_step_index += 1
                 # Basiswert zurücksetzen, damit next_val = 1.0 * REDUCTION_STEPS[idx]
-                self._base_value = 1.0
-                print(
-                    f"[MasterDeepTest][Eval] → Ziel verfehlt | wechsle zu Stufe "
-                    f"{self._current_step_index}/{len(REDUCTION_STEPS)}"
-                )
+                self._base_value = 1.0   
 
         # --------------------------------------------------------------------
         # Kein Rücksprung auf Szenenanfang mehr:
@@ -839,7 +771,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         try:
             start_f = int(getattr(self._track_state, "start_frame", self._start_frame))
             reset_to_frame(context, start_f)
-            print(f"[MasterDeepTest][Eval] 🔁 Playhead zurück auf Startframe {start_f} für nächsten Detect-Cycle.")
         except Exception as ex:
             print(f"[MasterDeepTest][Eval] ⚠️ Fehler beim Playhead-Reset (Eval): {ex!r}")
 
@@ -862,14 +793,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
 
         if self._current_step_index >= len(REDUCTION_STEPS):
-            print(f"[MasterDeepTest][{self._current_category}] Kategorie abgeschlossen (alle Stufen durchlaufen).")
             return True
 
         return False
 
     # ------------------------------------------------------------------------
     def _finish(self, context):
-        print("\n[MasterDeepTest] ✅ Abschluss – beste Thresholds:")
         for k, v in self._best_thresholds.items():
             print(f"  {k}: {v:.6f}")
         # Ergebnisse global in die Szene schreiben
@@ -899,7 +828,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             set_scene_props(scene,
                 kaiserlich_perspective_thresh=self._best_thresholds["perspective"])
 
-        print("[MasterDeepTest] 💾 Alle finalen Threshold-Werte in Szene eingetragen.")
         # --- NEU: Playhead nach Test wiederherstellen -----------------------
         try:
             restore_frame = getattr(self, "_user_original_frame", None)
@@ -907,7 +835,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self._scene.frame_current = int(restore_frame)
                 if self._space and getattr(self._space, "clip_user", None):
                     self._space.clip_user.frame_current = int(restore_frame)
-                print(f"[MasterDeepTest] ⏩ Playhead nach Test wiederhergestellt: Frame {restore_frame}")
         except Exception as ex:
             print(f"[MasterDeepTest] ⚠️ Fehler beim Wiederherstellen des Playheads: {ex!r}")
         # -------------------------------------------------------------------
@@ -931,7 +858,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self._scene.frame_current = int(restore_frame)
                 if self._space and getattr(self._space, "clip_user", None):
                     self._space.clip_user.frame_current = int(restore_frame)
-                print(f"[MasterDeepTest] ⏩ Playhead global wiederhergestellt: Frame {restore_frame}")
         except Exception as ex:
             print(f"[MasterDeepTest] ⚠️ Fehler bei globaler Wiederherstellung: {ex!r}")
         # ---------------------------------------------------------------------------
@@ -942,9 +868,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             try:
                 # Sicherstellen, dass aktuelle Kontextdaten vollständig sind
                 if context and hasattr(bpy.ops, "kaiserlich_tracker"):
-                    print("[MasterDeepTest] 🔁 Starte Übergabe an 'master_detect_adapt' Operator ...")
                     result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                    print(f"[MasterDeepTest] Übergabe an DetectAdapt ausgelöst: {result}")
                 else:
                     print("[MasterDeepTest] ⚠️ Kontext oder Operatorstruktur unvollständig – Übergabe übersprungen.")
             except Exception as ex:
