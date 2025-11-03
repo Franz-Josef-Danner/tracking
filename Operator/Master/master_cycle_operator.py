@@ -42,6 +42,33 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 try:
                     op, os, np, ns = update_default_sizes(context)
                     self.report({'INFO'}, f"[Defaults] pattern {op}->{np}, search {os}->{ns}")
+
+                    # --------------------------------------------------------------
+                    # Reset aller Frame-basierten Threshold-Werte (DeepTest/ShortTest Cache)
+                    # --------------------------------------------------------------
+                    scene = context.scene
+                    reset_keys = ["frame_value_cache", "min_distance_values", "kaiserlich_best_thresholds"]
+                    for k in reset_keys:
+                        if k in scene:
+                            del scene[k]
+                            print(f"[Kaiserlich Tracker][MasterCycle] 🔄 '{k}' gelöscht (Threshold-Cache zurückgesetzt).")
+
+                    # Zusätzlich: alle relevanten Threshold-Props auf 1.0 setzen
+                    from ...Helper.util_scene import set_scene_props
+                    try:
+                        set_scene_props(
+                            scene,
+                            kaiserlich_rot_thresh_x=1.0,
+                            kaiserlich_rot_thresh_y=1.0,
+                            kaiserlich_scale_thresh_min=1.0,
+                            kaiserlich_scale_thresh_max=1.1,
+                            kaiserlich_rot_scale_thresh_rot=1.0,
+                            kaiserlich_rot_scale_thresh_scale=1.0,
+                            kaiserlich_perspective_thresh=1.0
+                        )
+                        print("[Kaiserlich Tracker][MasterCycle] ✅ Threshold-Properties global auf 1.0 zurückgesetzt.")
+                    except Exception as e:
+                        print(f"[Kaiserlich Tracker][MasterCycle] ⚠️ Fehler beim Reset der Scene-Props: {e}")
                 except ValueError as e:
                     self.report({'WARNING'}, str(e))
                     
