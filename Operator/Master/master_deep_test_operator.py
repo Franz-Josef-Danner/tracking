@@ -232,48 +232,51 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return self._teardown(context, cancelled=True)
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
+
         try:
-        if self._phase == "category_select":
-            if not self._categories_queue:
-                return self._finish(context)
-            self._current_category = self._categories_queue.pop(0)
-            self._prepare_category(context)
-            self._phase = "threshold_cycle"
-            return {'RUNNING_MODAL'}
-        # Nicht-blockierendes Tracking: wenn Tracking aktiv, pro TIMER-Tick genau einen Schritt
-        if self._phase == "tracking_tick":
-            running = self._track_tick(context)
-            if running:
-                return {'RUNNING_MODAL'}
-            # Tracking fertig → Ergebnis liegt in self._track_state.total_len
-            self._phase = "threshold_cycle_evaluate"
-            return {'RUNNING_MODAL'}
-
-        # Auswertung nach beendetem Tracking innerhalb derselben Threshold-Stufe
-        if self._phase == "threshold_cycle_evaluate":
-            finished = self._evaluate_after_tracking(context)
-            if finished:
-                if self._categories_queue:
-                    self._phase = "category_select"
-                    return {'RUNNING_MODAL'}
-                return self._finish(context)
-            # sonst nächste Stufe derselben Kategorie
-            self._phase = "threshold_cycle"
-            return {'RUNNING_MODAL'}
-
-        if self._phase == "threshold_cycle":
-            finished = self._process_threshold_cycle(context)
-            if finished:
-                if self._categories_queue:
-                    self._phase = "category_select"
-                    return {'RUNNING_MODAL'}
-                else:
+            if self._phase == "category_select":
+                if not self._categories_queue:
                     return self._finish(context)
+                self._current_category = self._categories_queue.pop(0)
+                self._prepare_category(context)
+                self._phase = "threshold_cycle"
+                return {'RUNNING_MODAL'}
+
+            # Nicht-blockierendes Tracking: wenn Tracking aktiv, pro TIMER-Tick genau einen Schritt
+            if self._phase == "tracking_tick":
+                running = self._track_tick(context)
+                if running:
+                    return {'RUNNING_MODAL'}
+                self._phase = "threshold_cycle_evaluate"
+                return {'RUNNING_MODAL'}
+
+            # Auswertung nach beendetem Tracking innerhalb derselben Threshold-Stufe
+            if self._phase == "threshold_cycle_evaluate":
+                finished = self._evaluate_after_tracking(context)
+                if finished:
+                    if self._categories_queue:
+                        self._phase = "category_select"
+                        return {'RUNNING_MODAL'}
+                    return self._finish(context)
+                self._phase = "threshold_cycle"
+                return {'RUNNING_MODAL'}
+
+            if self._phase == "threshold_cycle":
+                finished = self._process_threshold_cycle(context)
+                if finished:
+                    if self._categories_queue:
+                        self._phase = "category_select"
+                        return {'RUNNING_MODAL'}
+                    else:
+                        return self._finish(context)
+                return {'RUNNING_MODAL'}
+
             return {'RUNNING_MODAL'}
-        return {'RUNNING_MODAL'}
+
         except Exception as ex:
             print(f"[DeepTest] ⚠️ Unerwarteter Fehler: {ex!r}")
             return self._teardown(context, cancelled=True)
+
 
     # ------------------------------------------------------------------------
     def _prepare_category(self, context):
