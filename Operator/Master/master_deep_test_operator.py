@@ -884,37 +884,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             bpy.app.timers.register(timer_func, first_interval=0.1)
             print("[DeepTest] ⏳ Folge-Operator (master_detect_adapt) wird in 0.1 s gestartet.")
 
-                # Fallback, falls etwas davon None ist
-                if area is None or region is None or space is None:
-                    area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-                    if not area:
-                        print("[DeepTest] ⚠️ Kein CLIP_EDITOR gefunden – Folgeoperator übersprungen.")
-                        return None
-                    region = next((r for r in area.regions if r.type == 'WINDOW'), None) or area.regions[-1]
-                    space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+        else:
+            print("[DeepTest] ⏹️ Test wurde abgebrochen – keine Weitergabe.")
 
-                # Gesicherten Override verwenden
-                override = dict(window=win, area=area, region=region, space_data=space)
-                print(f"[DeepTest] Kontext gesichert → {area}, {region}, {space}")
-
-                with bpy.context.temp_override(**override):
-                    result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                    print(f"[DeepTest] → Folge-Operator gestartet, Rückgabe: {result}")
-
-            except Exception as ex:
-                print(f"[DeepTest] ⚠️ Fehler beim Start von master_detect_adapt: {ex!r}")
-            return None
-
-        try:
-            bpy.app.timers.register(_invoke_next, first_interval=0.2)
-            print("[DeepTest] ⏳ Folge-Operator (master_detect_adapt) wird in 0.2 s gestartet.")
-        except Exception as ex:
-            print(f"[DeepTest] ⚠️ Timer konnte nicht registriert werden: {ex!r}")
-
-    else:
-        print("[DeepTest] ⏹️ Test wurde abgebrochen – keine Weitergabe.")
-
-    return {'CANCELLED' if cancelled else 'FINISHED'}
+        return {'CANCELLED' if cancelled else 'FINISHED'}
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_master_deep_test_operator)
