@@ -173,10 +173,21 @@ def _phase_execute(context: bpy.types.Context, phase_fn) -> bool:
     # 3) Fehler messen
     print("[resolve_operator][DEBUG] -> Ermittle durchschnittlichen Fehler …")
     try:
-        avg_err = get_average_error(context)
-        print(f"[resolve_operator][DEBUG] Durchschnittlicher Fehler: {avg_err}")
+        # Clip direkt aus Context ziehen, statt Context zu übergeben
+        clip = getattr(getattr(context, "space_data", None), "clip", None)
+        if clip is None:
+            clip = getattr(bpy.context, "edit_movieclip", None)
+        if clip is None and bpy.data.movieclips:
+            clip = bpy.data.movieclips[0]
+
+        if clip is None:
+            raise AttributeError("Kein MovieClip im aktuellen Kontext gefunden.")
+
+        print(f"[resolve_operator][DEBUG] get_average_error() Clip: {clip.name}")
+        avg_err = get_average_error(clip)
+        print(f"[resolve_operator][DEBUG] Durchschnittlicher Fehler (avg_err): {avg_err}")
     except Exception as e:
-        print(f"[resolve_operator][ERROR] Fehler in get_average_error: {e}")
+        print(f"[resolve_operator][ERROR] Fehler in get_average_error(): {e}")
         raise
 
     # 4) Prüfen/Filtern
