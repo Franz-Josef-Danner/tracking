@@ -14,7 +14,6 @@ def track_markers_with_override(
     Gibt True bei Erfolg, False bei Fehler zurück.
     """
     if not (window and area and region and space):
-        print("[Helper][TrackMarkers] ❌ Ungültiger Kontext – Tracking übersprungen.")
         return False
 
     try:
@@ -22,8 +21,6 @@ def track_markers_with_override(
             window=window, area=area, region=region, space_data=space
         ):
             bpy.ops.clip.track_markers(backwards=backwards, sequence=sequence)
-        print(f"[Helper][TrackMarkers] ✅ Tracking durchgeführt (backwards={backwards})")
         return True
     except Exception as e:
-        print(f"[Helper][TrackMarkers] ⚠️ Fehler beim Tracking: {e}")
         return False
