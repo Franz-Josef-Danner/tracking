@@ -107,9 +107,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     _search_size: int = 0
     # ------------------------------------------------------------------------
     def execute(self, context: Context):
-        try:
-            self._scene = context.scene
-            self._clip = get_active_clip(context)
+        self._scene = context.scene
+        self._clip = get_active_clip(context)
         if not self._clip:
             self.report({'ERROR'}, "Kein aktiver Clip gefunden.")
             return {'CANCELLED'}
