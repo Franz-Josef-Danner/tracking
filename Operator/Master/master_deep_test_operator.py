@@ -825,34 +825,22 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         except Exception as ex:
             print(f"[DeepTest] ⚠️ Fehler beim Wiederherstellen des Playheads: {ex!r}")
         # -------------------------------------------------------------------
-        # ---------------------------------------------------------------
-        # NEU: Direkt nach Übertragung der finalen Thresholds → Folge-Operator
-        # ---------------------------------------------------------------
+
+        # --- NEU: Direkte Übergabe an master_detect_adapt nach Szenen-Update ---
         try:
-            print("[DeepTest][FollowUp] 🚀 Starte Folgeoperator master_detect_adapt direkt nach Szenenübertragung …")
-
-            win = self._window or bpy.context.window
-            area = self._area or next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-            region = self._region or (area.regions[-1] if area and area.regions else None)
-            space = self._space or (next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None) if area else None)
-
-            if not all([win, area, region, space]):
-                print("[DeepTest][FollowUp] ⚠️ Kein gültiger CLIP_EDITOR-Kontext verfügbar – Folgeoperator übersprungen.")
-            else:
-                override = dict(window=win, area=area, region=region, space_data=space)
+            area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+            if area:
+                region = next((r for r in area.regions if r.type == 'WINDOW'), None) or area.regions[-1]
+                space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+                override = dict(window=bpy.context.window, area=area, region=region, space_data=space)
+                print("[DeepTest] 🚀 Starte master_detect_adapt direkt nach DeepTest-Abschluss …")
                 with bpy.context.temp_override(**override):
                     result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                    print(f"[DeepTest][FollowUp] → master_detect_adapt gestartet, Rückgabe: {result}")
-
-                    if result is None:
-                        print("[DeepTest][FollowUp][Diag] ⚠️ Operator-Aufruf gab None zurück.")
-                    elif isinstance(result, set) and 'CANCELLED' in result:
-                        print("[DeepTest][FollowUp][Diag] ⚠️ Operator meldete CANCELLED.")
-                    else:
-                        print("[DeepTest][FollowUp][Diag] ✅ Operator erfolgreich ausgeführt.")
-
+                    print(f"[DeepTest] → master_detect_adapt gestartet, Rückgabe: {result}")
+            else:
+                print("[DeepTest] ⚠️ Kein CLIP_EDITOR-Kontext – master_detect_adapt übersprungen.")
         except Exception as ex:
-            print(f"[DeepTest][FollowUp] ❌ Fehler beim Starten des Folgeoperators: {ex!r}")
+            print(f"[DeepTest] ⚠️ Fehler beim Start von master_detect_adapt: {ex!r}")
 
         return self._teardown(context, cancelled=False)
 
