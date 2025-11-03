@@ -378,7 +378,7 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             print(f"[ShortTest] ⏪ Nur {remaining} Frames bis Szenenende – "
                   f"Playhead verschoben: {current_frame} → {new_start}")
         else:
-            print(f"[ShortTest] ✅ Ausreichend Frames ({remaining}) – keine Verschiebung erforderlich.")
+            pass
         # -------------------------------------------------------------------------------
 
         # Bootstrap-Parameter
@@ -499,24 +499,22 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             tolerance = ef_target * 0.10
 
             if remaining == 0:
-                print("[Kaiserlich Tracker][DetectAdapt] ⚠️ Keine gültigen neuen Marker nach Cleanup – weiterer Versuch nötig.")
+                pass
             elif abs(diff) <= tolerance and remaining > 0:
                 print(f"[Kaiserlich Tracker][DetectAdapt] ✅ Ziel erreicht: {remaining}/{ef_target} Marker (±{tolerance:.1f})")
                 break
             else:
-                print(f"[Kaiserlich Tracker][DetectAdapt] Abweichung vom Ziel: Δ={diff:+.0f}, Ziel={ef_target}, Toleranz={tolerance:.1f}")
+                pass
 
             # --- Neue dynamische md-Anpassung nach Verhältnisformel ---
             if remaining == 0:
                 # Sicherheitsfallback, falls alle Marker entfernt
                 last_md = max(2.0, last_md * 0.8)
-                print("[Kaiserlich Tracker][DetectAdapt] ⚠️ Keine Marker erkannt – Standardreduktion ×0.8 angewendet.")
             else:
                 ratio = remaining / max(1, ef_target)
                 factor = (((ratio - 1.0) / 2.0) + 1.0)
                 new_md = last_md * factor
                 new_md = min(max(new_md, 2.0), hz * 0.25)
-                print(f"[Kaiserlich Tracker][DetectAdapt] Dynamische Anpassung: ratio={ratio:.3f}, factor={factor:.3f} → md {last_md:.2f} → {new_md:.2f}")
                 last_md = new_md
 
             # Löschung, wenn weiterer Loop folgt
@@ -524,7 +522,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                 cleaned_names = [m['track'] for m in neue_marker]
                 if cleaned_names:
                     delete_tracks_by_names(context, cleaned_names)
-                    print(f"[Kaiserlich Tracker][DetectAdapt] {len(cleaned_names)} Marker gelöscht für nächsten Zyklus")
                 else:
                     print("[Kaiserlich Tracker][DetectAdapt] Keine Marker zum Löschen gefunden – übersprungen.")
                 time.sleep(0.1)
@@ -537,7 +534,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                 trk.select = False
             for trk in new_tracks:
                 trk.select = True
-            print(f"[Kaiserlich Tracker][DetectAdapt] Final selektierte Marker: {len(new_tracks)}")
 
         # Persistenz md-Wert
         frame_num = scene.frame_current
@@ -565,7 +561,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                     interp_val = v_start + (v_end - v_start) * t
                     md_dict[str(f)] = interp_val
 
-        print(f"[Kaiserlich Tracker][DetectAdapt] Frame {frame_num}: final min_distance = {md_value:.2f}")
 
         # --- NEU: Playhead wieder auf Ursprungsposition zurücksetzen --------------------
         restore_frame = getattr(self._state, "original_frame_position", None)
@@ -577,7 +572,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                     space.clip_user.frame_current = int(restore_frame)
             except Exception:
                 pass
-            print(f"[ShortTest] ⏩ Playhead nach Test wiederhergestellt: Frame {restore_frame}")
         # -------------------------------------------------------------------------------
 
         self._state.created_track_names = [t.name for t in new_tracks] if new_tracks else []
@@ -609,10 +603,8 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         ]
         if marker_frames:
             start_frame = min(marker_frames)
-            print(f"[TrackCycle] ▶️ Startframe automatisch auf {start_frame} gesetzt (aus neuen Tracks).")
         else:
             start_frame = int(scene.frame_current or scene.frame_start)
-            print(f"[TrackCycle] ▶️ Kein Marker-Frame gefunden – Fallback auf {start_frame}.")
 
         end_frame = get_end_frame(context)
         if end_frame < start_frame:
@@ -644,7 +636,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                 tr = tracking.tracks.get(name)
                 if tr:
                     tr.select = True
-            print(f"[Kaiserlich Tracker][TrackCycle] 🔹 {len(new_tracks)} neue Tracks selektiert.")
         except Exception as ex:
             print(f"[Kaiserlich Tracker][TrackCycle] ⚠️ Fehler beim Selektieren neuer Tracks: {ex!r}")
 
@@ -654,7 +645,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             (t.name, len(t.markers), getattr(t, 'select', False))
             for t in tracking.tracks if t.name in new_tracks
         ]
-        print(f"[Debug][TrackStart] Neue Tracks: {len(new_tracks)} | Selektiert: {selected_count}")
         for n, m, s in marker_summary[:10]:
             print(f"   ▶ {n}: {m} Marker, {'SELECTED' if s else 'unselected'}")
         # --- Diagnose: Track-Status zum Start ---
@@ -663,7 +653,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             (t.name, len(t.markers), getattr(t, "select", False))
             for t in tracking.tracks if t.name in new_tracks
         ]
-        print(f"[Debug][TrackStart] Neue Tracks: {len(new_tracks)} | Selektiert: {selected_count}")
         for n, m, s in marker_summary[:10]:
             print(f"   ▶ {n}: {m} Marker, {'SELECTED' if s else 'unselected'}")
 
@@ -675,7 +664,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         space.clip_user.frame_current = start_frame
         scene.frame_current = start_frame
 
-        print(f"[Kaiserlich Tracker][TrackCycle] Start {start_frame} → {end_frame} (nicht-blockierend)")
 
     # ------------------------------------------------------------------------
     # Track-Cycle: Tick (ein Frame pro Timer, nicht-blockierend)
@@ -693,7 +681,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         clip = getattr(context.space_data, "clip", None)
         tracking = getattr(clip, "tracking", None) if clip else None
         if not tracking:
-            print("[TrackCycle] Kein Tracking verfügbar – Abbruch.")
             s.track_active = False
             return False
 
@@ -703,7 +690,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         # --- 1) Aktive Tracks prüfen ---------------------------------------
         active_tracks, dropped = filter_active_tracks_at_frame(context, s.track_names, current)
         if not active_tracks:
-            print("[TrackCycle] ✅ Keine aktiven Tracks mehr – Tracking beendet.")
             s.track_active = False
             return False
 
@@ -717,20 +703,16 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
 
         # 1. Wenn die gewünschte Frameanzahl pro Track erreicht ist
         if current_frame_index >= frames_per_track:
-            print(f"[TrackCycle] ⏹️ Zielanzahl an Frames pro Track erreicht "
-                  f"({current_frame_index} ≥ {frames_per_track}) – Tracking beendet.")
             s.track_active = False
             return False
 
         # 2. Wenn keine aktiven Tracks mehr vorhanden sind
         if len(active_tracks) == 0:
-            print(f"[TrackCycle] ✅ Keine aktiven Tracks mehr bei Frame {current} – Tracking beendet.")
             s.track_active = False
             return False
 
         # 3. Wenn das Szenenende erreicht oder überschritten wurde
         if current >= end:
-            print(f"[TrackCycle] ✅ Szenenende erreicht bei Frame {current}.")
             s.track_active = False
             return False
         # --- 2) Formel anwenden (optional) ----------------------------------
@@ -746,8 +728,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             (t.name, [mk.frame for mk in t.markers])
             for t in tracking.tracks if t.name in s.track_names
         ]
-        print(f"[Debug][Tick] Selektierte Tracks im Clip: {len(visible_tracks)} → {visible_tracks[:5]}")
-        print(f"[Debug][Tick] Aktive Marker-Frames pro Track:")
         for n, frames in active_frames[:10]:
             print(f"   ▶ {n}: {len(frames)} Marker ({frames[:5]}...)")
 
@@ -761,16 +741,13 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                 t.name: len(t.markers)
                 for t in tracking.tracks if t.name in s.track_names
             }
-            print(f"[Debug][Tick] Nach Tracking: Marker-Anzahlen = {post_marker_summary}")
         if not success:
-            print("[TrackCycle] Tracking-Fehler – Abbruch.")
             s.track_active = False
             return False
 
         # --- 4) Frame fortsetzen -------------------------------------------
         current += 1
         if current > end:
-            print("[TrackCycle] ✅ Szenenende erreicht.")
             s.track_active = False
             return False
 
@@ -791,7 +768,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         try:
             # Verwende set_scene_props, um die Attribute zu setzen, falls verfügbar.
             set_scene_props(scene, kaiserlich_rot_thresh_x=0.00001, kaiserlich_rot_thresh_y=0.00001)
-            print("[Kaiserlich Tracker][AutoCalibrate] Rot-Schwellwerte auf 0 gesetzt.")
         except Exception as ex:
             print(f"[AutoCalibrate] Fehler beim Setzen der Rot-Schwellwerte auf 0: {ex!r}")
 
@@ -809,14 +785,12 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             # ----------------------------------------------------------------
             new_tracks = getattr(self._state, "created_track_names", [])
             if new_tracks:
-                print(f"[Kaiserlich Tracker][FilterDelete] Vor Tracklängen-Messung: {len(new_tracks)} neue Tracks erkannt.")
                 try:
                     filter_and_delete_tracks(
                         include_names=new_tracks,
                         threshold=30,
                         clip=clip
                     )
-                    print(f"[Kaiserlich Tracker][FilterDelete] ✅ Filter/Delete auf neue Tracks angewendet ({len(new_tracks)} Stück).")
                 except Exception as e:
                     print(f"[Kaiserlich Tracker][FilterDelete] ⚠️ Fehler bei Filter/Delete: {e}")
             else:
@@ -832,7 +806,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             # Sicherstellen, dass View-Layer den letzten Tracking-Status widerspiegelt
             try:
                 bpy.context.view_layer.update()
-                print(f"[TrackCycle] View-Layer synchronisiert (Frame {end_f}).")
             except Exception as ex:
                 print(f"[TrackCycle] ⚠️ View-Layer-Update fehlgeschlagen: {ex!r}")
 
@@ -844,10 +817,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                     include_names=getattr(self._state, "created_track_names", []),
                 )
             )
-            print(
-                f"[Kaiserlich Tracker][TrackLen] Nur neue Tracks berücksichtigt "
-                f"({len(getattr(self._state, 'created_track_names', []))} Namen gefiltert)."
-            )
             cycle_idx = int(getattr(self._state, "track_cycles_done", 0)) + 1
             key_cycle = f"kaiserlich_len_cycle_{cycle_idx}"
             scene[key_cycle] = total_len
@@ -855,7 +824,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             # Baseline im ersten Zyklus zusätzlich speichern (wie bisher)
             if cycle_idx == 1:
                 scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
-                print(f"[Kaiserlich Tracker][Baseline] Total Track Length (Frame {end_f}) = {total_len} (gespeichert unter '{SCENE_TOTAL_TRACK_LEN_BASE}' und '{key_cycle}')")
             else:
                 print(f"[Kaiserlich Tracker][Baseline] Total Track Length (Frame {end_f}) = {total_len} (gespeichert unter '{key_cycle}')")
 
@@ -865,7 +833,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             context.scene.frame_current = start_f
             if self._state.track_space:
                 self._state.track_space.clip_user.frame_current = start_f
-            print(f"[Kaiserlich Tracker][TrackCycle] ▶️ Playhead zurück auf Frame {start_f} (nach Messung).")
 
             # HINWEIS: Nicht dauerhaft auf Startframe "stehen bleiben".
             # Die finale Rücksetzung auf die ursprüngliche User-Position erfolgt zentral in _teardown().
@@ -880,16 +847,12 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             })
             scene["kaiserlich_len_results"] = results
 
-            # Optional: Fortschritt loggen
-            print(f"[Kaiserlich Tracker][Persistenz] Zyklus {cycle_idx}: Länge={total_len}, Thresholds={self._state.cycle_thresholds.get(cycle_idx, {})}")
-
             # --- Best-Value Tracking (fortlaufend) ---
             best_len = scene.get("kaiserlich_len_best", 0)
             if total_len > best_len:
                 scene["kaiserlich_len_best"] = total_len
                 scene["kaiserlich_len_best_cycle"] = cycle_idx
                 scene["kaiserlich_len_best_thresholds"] = self._state.cycle_thresholds.get(cycle_idx, {})
-                print(f"[Kaiserlich Tracker][Persistenz] 🔹 Neuer Bestwert in Zyklus {cycle_idx}: {total_len}")
 
             # 3) Alle neu erzeugten Tracks deterministisch per Namen löschen
             deleted_total = 0
@@ -905,7 +868,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                         deleted_total += delete_tracks_by_names(context, [name])
                     except Exception as _e:
                         print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Löschen von '{name}': {_e!r}")
-                print(f"[Kaiserlich Tracker][Cleanup] {deleted_total} Tracks gelöscht (pro Name).")
             else:
                 print("[Kaiserlich Tracker][Cleanup] ⚠️ Keine gültigen Tracks zum Löschen gefunden.")
 
@@ -935,7 +897,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                 context.scene.frame_current = restore
                 if getattr(context, "space_data", None) and getattr(context.space_data, "clip_user", None):
                     context.space_data.clip_user.frame_current = restore
-                print(f"[ShortTest] ⏩ Playhead global wiederhergestellt: {restore}")
         except Exception as _e:
             print(f"[ShortTest] ⚠️ Globale Wiederherstellung fehlgeschlagen: {_e!r}")
 
@@ -949,7 +910,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         # ------------------------------------------------------------
         if not cancelled:
             try:
-                print("[Kaiserlich Tracker][ShortTest] ➜ Übergabe an DeepTest-Operator geplant (asynchron)...")
                 clip = get_active_clip(context)
                 window, area, region, space = find_clip_editor_area(clip)
 
@@ -960,7 +920,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                         try:
                             with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                                 bpy.ops.kaiserlich_tracker.master_deep_test_operator('INVOKE_DEFAULT')
-                                print("[Kaiserlich Tracker][ShortTest] DeepTest-Operator erfolgreich (asynchron) gestartet.")
                         except Exception as ex:
                             print(f"[Kaiserlich Tracker][ShortTest] ⚠️ Fehler beim Start des DeepTest-Operators: {ex!r}")
                         return None
