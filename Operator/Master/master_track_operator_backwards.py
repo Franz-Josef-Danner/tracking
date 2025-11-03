@@ -262,18 +262,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                     print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Keine CLIP_EDITOR Area – Übergabe übersprungen.")
                     return
 
-                # Temporären Kontext erzeugen
-                override = context.copy()
-                override["window"] = window
-                override["area"] = area
-                override["region"] = region
-                override["space_data"] = space
+                # Neuen Kontext mit temp_override nutzen (Blender 4.x+ API)
+                with context.temp_override(window=window, area=area, region=region, space_data=space):
+                    bpy.ops.kaiserlich_tracker.master_track_cycle()
 
-                # Forward-Operator ausführen
-                bpy.ops.kaiserlich_tracker.master_track_cycle(override)
-                print("[Kaiserlich Tracker][ModalBackwards] ✅ Übergabe erfolgreich gestartet.")
+                print("[Kaiserlich Tracker][ModalBackwards] ✅ Übergabe erfolgreich gestartet (temp_override).")
             except Exception as e:
-                print(f"[Kaiserlich Tracker][ModalBackwards] ❌ Fehler bei Übergabe: {e}")
+                print(f"[Kaiserlich Tracker][ModalBackwards] ❌ Fehler bei Übergabe via temp_override: {e}")
 
 # ------------------------------------------------------------
 # Register
