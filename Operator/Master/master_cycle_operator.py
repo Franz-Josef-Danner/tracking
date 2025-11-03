@@ -7,7 +7,7 @@ from ...Helper.low_marker_frame import find_first_weak_frame
 from ...Helper.filter_all_tracks import filter_and_delete_all_tracks
 from ...Helper.filter_tracks import filter_problematic_tracks
 from ...Helper.update_default_sizes import update_default_sizes
-from ...Helper.update_default_sizes import update_default_sizes
+from ...Helper.find_clip_editor_area import find_clip_editor_area
 
 class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
     """Master Operator – setzt Playhead auf Frame mit den wenigsten aktiven Markern"""
