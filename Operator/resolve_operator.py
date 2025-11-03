@@ -38,6 +38,16 @@ def _solve_camera_invoke_default(context: bpy.types.Context) -> None:
     Standardisierte Ausführung von Blender Solve-Operator mit INVOKE_DEFAULT.
     Wir laufen bewusst synchron; falls UI-Kontext fehlt, fallback auf EXEC_DEFAULT.
     """
+    print("\n[resolve_operator][DEBUG] _solve_camera_invoke_default() gestartet")
+    print(f"[resolve_operator][DEBUG] context.area: {getattr(context, 'area', None)}")
+    print(f"[resolve_operator][DEBUG] context.space_data: {getattr(context, 'space_data', None)}")
+    if getattr(context, 'space_data', None):
+        print(f"[resolve_operator][DEBUG] context.space_data.type: {getattr(context.space_data, 'type', None)}")
+        clip_dbg = getattr(context.space_data, 'clip', None)
+        print(f"[resolve_operator][DEBUG] context.space_data.clip: {clip_dbg}")
+        if clip_dbg:
+            print(f"[resolve_operator][DEBUG] clip.name: {getattr(clip_dbg, 'name', None)}")
+            print(f"[resolve_operator][DEBUG] clip.tracking: {getattr(clip_dbg, 'tracking', None)}")
     # 1) Clip-Editor-Area/Region/Speicher suchen
     area = None
     region = None
@@ -72,12 +82,18 @@ def _solve_camera_invoke_default(context: bpy.types.Context) -> None:
 
     # 2) temp_override verwenden und Solve durchführen
     try:
+        print(f"[resolve_operator][DEBUG] Solve-Kontext gefunden -> area={area}, region={region}, space={space}")
         with bpy.context.temp_override(area=area, region=region, space_data=space):
+            print("[resolve_operator][DEBUG] bpy.ops.clip.solve_camera('INVOKE_DEFAULT') wird ausgeführt …")
             bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+            print("[resolve_operator][DEBUG] Solve abgeschlossen (INVOKE_DEFAULT).")
+
     except RuntimeError:
         # Fallback: EXEC_DEFAULT (z. B. in Headless/ohne UI-Flow)
         with bpy.context.temp_override(area=area, region=region, space_data=space):
+            print("[resolve_operator][DEBUG] Fallback: bpy.ops.clip.solve_camera('EXEC_DEFAULT') wird ausgeführt …")
             bpy.ops.clip.solve_camera('EXEC_DEFAULT')
+            print("[resolve_operator][DEBUG] Solve abgeschlossen (EXEC_DEFAULT).")
 
 def _check_and_filter(context: bpy.types.Context, avg_err: float) -> float:
     """
@@ -131,22 +147,48 @@ def _phase_execute(context: bpy.types.Context, phase_fn) -> bool:
     Rückgabe: True -> Prozess wurde an Master-Cycle übergeben (Finished für diese Pipeline)
              False -> Kein schwacher Frame, weiter eskalieren
     """
+    print("\n[resolve_operator][DEBUG] === _phase_execute() gestartet ===")
+
+    # 0) Kontextdiagnose
+    space = getattr(context, "space_data", None)
+    clip = getattr(space, "clip", None) if space else None
+    print(f"[resolve_operator][DEBUG] Aktueller Space: {space}")
+    print(f"[resolve_operator][DEBUG] Aktueller Clip: {clip}")
+    if clip:
+        print(f"[resolve_operator][DEBUG] Clip hat Tracking: {hasattr(clip, 'tracking')}")
+        print(f"[resolve_operator][DEBUG] Tracking-Objekt: {getattr(clip, 'tracking', None)}")
+
     # 1) Phase konfigurieren
-    phase_fn(context)
+    print(f"[resolve_operator][DEBUG] Phase-Funktion: {phase_fn.__name__}")
+    try:
+        phase_fn(context)
+    except Exception as e:
+        print(f"[resolve_operator][ERROR] Fehler in Phase-Funktion {phase_fn.__name__}: {e}")
+        raise
 
     # 2) Solve
+    print("[resolve_operator][DEBUG] -> Starte Solve-Phase …")
     _solve_camera_invoke_default(context)
 
     # 3) Fehler messen
-    avg_err = get_average_error(context)
+    print("[resolve_operator][DEBUG] -> Ermittle durchschnittlichen Fehler …")
+    try:
+        avg_err = get_average_error(context)
+        print(f"[resolve_operator][DEBUG] Durchschnittlicher Fehler: {avg_err}")
+    except Exception as e:
+        print(f"[resolve_operator][ERROR] Fehler in get_average_error: {e}")
+        raise
 
     # 4) Prüfen/Filtern
+    print("[resolve_operator][DEBUG] -> Prüfe/Filtere Tracks …")
     _check_and_filter(context, avg_err)
 
     # 5) Weak Frame prüfen und ggf. Master-Cycle starten
+    print("[resolve_operator][DEBUG] -> Suche schwachen Frame …")
     delegated = _find_and_dispatch_cycle(context)
+    print(f"[resolve_operator][DEBUG] Delegated? {delegated}")
+    print("[resolve_operator][DEBUG] === _phase_execute() beendet ===\n")
     return delegated
-
 
 class KAISERLICHTRACKER_OT_resolve_operator(Operator):
     """Führt die Master-Resolve-Sequenz aus (Reset -> Focal -> Principal -> Radial) mit Fehlerprüfung und bedingtem Cycle-Dispatch."""
