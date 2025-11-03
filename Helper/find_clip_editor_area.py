@@ -1,3 +1,4 @@
+# Helper/find_clip_editor_area.py
 import bpy
 from typing import Tuple, Optional
 
