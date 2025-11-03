@@ -284,13 +284,76 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
             # === Phase 4: RADIAL DISTORTION ===
             self.log("Phase 4: refine_intrinsics_radial_distortion_on")
-            _ = _phase_execute(context, refine_intrinsics_radial_distortion_on)
-            # Nach letzter Phase wird NICHT weiter eskaliert; Prozess endet hier,
-            # unabhängig davon, ob delegiert wurde oder nicht. Falls delegiert,
-            # wäre oben bereits FINISHED zurückgekehrt.
-
+            delegated = _phase_execute(context, refine_intrinsics_radial_distortion_on)
+            
+            if delegated:
+                self.report({'INFO'}, "Master-Cycle gestartet (nach RADIAL DISTORTION).")
+                return {'FINISHED'}
+            
+            # ----------------------------------------------
+            # 🔻 Erweiterte Nachbearbeitung falls kein Delegation passiert ist
+            # ----------------------------------------------
+            self.log("Finale Nachbearbeitung: Fehler erneut prüfen und ggf. eskalieren …")
+            
+            # Clip holen
+            clip = getattr(getattr(context, "space_data", None), "clip", None)
+            if clip is None and bpy.data.movieclips:
+                clip = bpy.data.movieclips[0]
+            
+            if clip is None:
+                self.report({'ERROR'}, "Kein MovieClip im aktuellen Kontext gefunden.")
+                return {'CANCELLED'}
+            
+            # Error messen
+            avg_err = get_average_error(clip)
+            self.log(f"Finaler Fehler nach letzter Phase: {avg_err}")
+            
+            max_err = float(context.scene.max_error_value)
+            
+            # Nur aktiv, wenn Fehler immer noch zu hoch und kein schwacher Frame vorhanden
+            if avg_err > max_err:
+                self.log(f"Fehler ({avg_err}) > Grenzwert ({max_err}) – starte Fallback-Strategie")
+            
+                # 1️⃣ Erster Fallback: Filter ohne Multiplikation
+                self.log("Fallback 1: Direkter Filter mit avg_err")
+                _check_and_filter(context, avg_err)
+                if _find_and_dispatch_cycle(context):
+                    self.report({'INFO'}, "Master-Cycle gestartet (nach Fallback 1).")
+                    return {'FINISHED'}
+            
+                # 2️⃣ Zweiter Fallback: Solve erneut
+                self.log("Fallback 2: Neuer Solve nach direktem Filter")
+                bpy.ops.kaiserlich_tracker.master_solve_modal('INVOKE_DEFAULT')
+                avg_err = get_average_error(clip)
+                self.log(f"Fehler nach Fallback-2-Solve: {avg_err}")
+            
+                if avg_err > max_err:
+                    # 3️⃣ Dritter Fallback: Filter mit max_error_value als Schwelle
+                    self.log("Fallback 3: Filter mit Scene.max_error_value als Schwelle")
+                    threshold = max_err
+                    filter_problematic_tracks(context, threshold)
+            
+                    if _find_and_dispatch_cycle(context):
+                        self.report({'INFO'}, "Master-Cycle gestartet (nach Fallback 3).")
+                        return {'FINISHED'}
+            
+                    # Letzter Solve-Versuch
+                    self.log("Fallback 3b: Letzter Solve nach hartem Filter")
+                    bpy.ops.kaiserlich_tracker.master_solve_modal('INVOKE_DEFAULT')
+                    avg_err = get_average_error(clip)
+                    self.log(f"Fehler nach Fallback-3b-Solve: {avg_err}")
+            
+                    if avg_err > max_err:
+                        self.log(f"❌ Fehler bleibt zu hoch ({avg_err} > {max_err}) – Prozess wird abgebrochen.")
+                        self.report({'WARNING'}, "Master-Resolve: Keine weitere Verbesserung möglich – abgebrochen.")
+                        return {'CANCELLED'}
+            
+            # ----------------------------------------------
+            # Wenn alles erfolgreich oder unter Schwelle:
+            # ----------------------------------------------
             self.report({'INFO'}, "Master-Resolve abgeschlossen.")
             return {'FINISHED'}
+
 
         except AttributeError as e:
             self.report({'ERROR'}, f"Konfigurationsfehler: {e}")
