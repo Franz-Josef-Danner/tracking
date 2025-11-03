@@ -2,17 +2,14 @@
 # ------------------------------------------------------------
 # Führt den Blender-internen Filter zur Track-Bereinigung aus
 # und löscht Tracks unterhalb einer per UI gesetzten Mindestlänge.
+# Jetzt mit detaillierten Logs zu Kandidaten & tatsächlich gelöschten Tracks.
 # ------------------------------------------------------------
 
 import bpy
-from typing import Optional
+from typing import Optional, Dict, List, Tuple
 
 
 def _get_ui_min_frames(context: bpy.types.Context, fallback: int = 25) -> int:
-    """
-    Liest die Mindestanzahl an Frames pro Track aus der Scene-Property
-    'kaiserlich_frames_per_track'. Fällt robust auf 'fallback' zurück.
-    """
     try:
         scene = context.scene
         if scene is None:
@@ -23,7 +20,6 @@ def _get_ui_min_frames(context: bpy.types.Context, fallback: int = 25) -> int:
             print("[Kaiserlich Tracker][Filter] ⚠️ 'kaiserlich_frames_per_track' nicht gefunden – Fallback aktiv.")
             return int(fallback)
 
-        # Defensive cast & Validierung
         ivalue = int(value)
         if ivalue < 0:
             print("[Kaiserlich Tracker][Filter] ⚠️ Negativer Wert erkannt – Fallback aktiv.")
@@ -32,6 +28,38 @@ def _get_ui_min_frames(context: bpy.types.Context, fallback: int = 25) -> int:
     except Exception as e:
         print(f"[Kaiserlich Tracker][Filter] ⚠️ Fehler beim Lesen der UI-Frames-Property: {e} – Fallback {fallback}.")
         return int(fallback)
+
+
+def _track_length_markers(track: "bpy.types.MovieTrackingTrack") -> int:
+    """
+    Heuristik: Anzahl Marker als Proxy für Track-Länge.
+    Robust, unabhängig von Selektion/Visibility.
+    """
+    try:
+        return len(track.markers)
+    except Exception:
+        return 0
+
+
+def _snapshot_tracks(clip: "bpy.types.MovieClip") -> Dict[str, Tuple[int, str]]:
+    """
+    Erstellt eine Momentaufnahme aller Tracks im aktiven Tracking-Layer.
+    Returns: {track_name: (marker_count, layer_name)}
+    """
+    result: Dict[str, Tuple[int, str]] = {}
+    tracking = clip.tracking
+    for layer in tracking.layers:
+        for t in layer.tracks:
+            result[t.name] = (_track_length_markers(t), layer.name)
+    return result
+
+
+def _classify_candidates(tracks_snapshot: Dict[str, Tuple[int, str]], min_frames: int) -> List[Tuple[str, int, str]]:
+    """
+    Ermittelt Kandidaten für das Löschen basierend auf Markeranzahl < min_frames.
+    Returns: Liste von (track_name, marker_count, layer_name)
+    """
+    return [(n, cnt, layer) for n, (cnt, layer) in tracks_snapshot.items() if cnt < min_frames]
 
 
 def filter_problematic_tracks(
@@ -70,6 +98,22 @@ def filter_problematic_tracks(
         print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Anwenden des Filters: {e}")
         return
 
+    # --- 1.5) Snapshot & Vorab-Analyse (für Logging/Audit)
+    try:
+        before_snapshot = _snapshot_tracks(clip)
+        total_before = len(before_snapshot)
+        candidates = _classify_candidates(before_snapshot, resolved_min_frames)
+
+        print(f"[Kaiserlich Tracker][Filter] Vorab-Analyse: {len(candidates)}/{total_before} Tracks < {resolved_min_frames} Frames (Markeranzahl-Heuristik).")
+        if candidates:
+            print("[Kaiserlich Tracker][Filter] Kandidaten (Name | Layer | Marker):")
+            for name, cnt, layer in sorted(candidates, key=lambda x: (x[2], x[0])):
+                print(f"  - {name} | {layer} | {cnt}")
+        else:
+            print("[Kaiserlich Tracker][Filter] Keine Kandidaten unterhalb der Mindestlänge identifiziert.")
+    except Exception as e:
+        print(f"[Kaiserlich Tracker][Filter] ⚠️ Vorab-Analyse fehlgeschlagen: {e}")
+
     # --- 2) Cleanup für kurze Tracks
     try:
         tracking_settings = clip.tracking.settings
@@ -78,7 +122,36 @@ def filter_problematic_tracks(
         tracking_settings.clean_frames = resolved_min_frames
 
         bpy.ops.clip.clean_tracks()
-
         print(f"[Kaiserlich Tracker][Filter] Cleanup ✓ – Tracks mit < {resolved_min_frames} Frames gelöscht.")
     except Exception as e:
         print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Cleanup: {e}")
+        return
+
+    # --- 2.5) Nachher-Snapshot & Verifikation
+    try:
+        after_snapshot = _snapshot_tracks(clip)
+        remaining_names = set(after_snapshot.keys())
+        candidate_names = {n for (n, _, _) in candidates}
+        actually_deleted = sorted(list(candidate_names - remaining_names))
+        survived_candidates = sorted(list(candidate_names & remaining_names))
+
+        print(f"[Kaiserlich Tracker][Filter] Verifikation:")
+        print(f"  - Tracks vor Cleanup: {total_before}")
+        print(f"  - Gelöscht (erwartet < {resolved_min_frames}): {len(actually_deleted)}")
+        if actually_deleted:
+            print("  - Gelöschte Tracks:")
+            for n in actually_deleted:
+                cnt, layer = before_snapshot.get(n, (None, "?"))
+                print(f"      • {n} | {layer} | vorher Marker={cnt}")
+
+        if survived_candidates:
+            print(f"  - Nicht gelöscht, obwohl Kandidat: {len(survived_candidates)}")
+            print("    (Blender-Clean kann Segmentlogik nutzen; Marker≈Frames ist eine Näherung.)")
+            for n in survived_candidates:
+                before_cnt, layer = before_snapshot.get(n, (None, "?"))
+                after_cnt = after_snapshot.get(n, (None, "?"))[0] if n in after_snapshot else None
+                print(f"      • {n} | {layer} | vorher Marker={before_cnt} | nachher Marker={after_cnt}")
+
+        print(f"[Kaiserlich Tracker][Filter] Tracks nach Cleanup: {len(after_snapshot)} (Δ={len(after_snapshot)-total_before})")
+    except Exception as e:
+        print(f"[Kaiserlich Tracker][Filter] ⚠️ Verifikations-Logging fehlgeschlagen: {e}")
