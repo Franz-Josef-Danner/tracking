@@ -51,11 +51,11 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 # ------------------------------------------------------------------
                 # 2) Globaler Filter mit gültigem Override
                 # ------------------------------------------------------------------
-                with bpy.context.temp_override(**override):
+                with bpy.context.temp_override(**override) as override_ctx:
                     deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(threshold=30.0)
                     print(f"[Kaiserlich Tracker][MasterCycle] FilterAll abgeschlossen – {deleted_count_all} Tracks gelöscht.")
-
-                    filter_problematic_tracks(context, threshold=10.0)
+                
+                    filter_problematic_tracks(override_ctx, threshold=10.0)
                     print("[Kaiserlich Tracker][MasterCycle] FilterTracks abgeschlossen.")
 
                 # 3) Erneuter Versuch, einen schwachen Frame zu finden
