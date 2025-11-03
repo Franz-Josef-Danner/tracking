@@ -33,10 +33,26 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 if window is None or area is None or region is None or space is None:
                     raise RuntimeError("Keine CLIP_EDITOR Area gefunden – filter_tracks benötigt gültigen Kontext.")
 
+                clip_ref = getattr(getattr(context, "space_data", None), "clip", None)
                 print("[Kaiserlich Tracker][MasterCycle][CTX] ✓ CLIP_EDITOR gefunden "
                       f"(window={getattr(window, 'as_pointer', lambda: None)()}, "
                       f"area.type={getattr(area,'type',None)}, region.type={getattr(region,'type',None)}, "
-                      f"has space.clip={bool(getattr(space,'clip',None))})")
+                      f"space.clip.valid={bool(getattr(space,'clip',None))}, "
+                      f"context.clip.valid={bool(clip_ref)})")
+
+                # Sicherstellen, dass space.clip korrekt gesetzt ist
+                if getattr(space, "clip", None) is None and clip_ref:
+                    try:
+                        space.clip = clip_ref
+                        print("[Kaiserlich Tracker][MasterCycle][CTX] 🔄 space.clip wurde auf aktiven Clip gesetzt.")
+                    except Exception as assign_err:
+                        print(f"[Kaiserlich Tracker][MasterCycle][CTX] ⚠️ Konnte space.clip nicht setzen: {assign_err!r}")
+
+                # Zusätzliche Validierung
+                if getattr(space, "clip", None) is None:
+                    print("[Kaiserlich Tracker][MasterCycle][CTX] ❌ space.clip bleibt None – Filter könnte fehlschlagen.")
+                else:
+                    print(f"[Kaiserlich Tracker][MasterCycle][CTX] ✅ Clip-Zuweisung bestätigt ({space.clip.name}).")
 
                 # 1) Globaler Filter für alle Tracks (mit Override)
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
@@ -46,7 +62,12 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 # 2) Lokaler Filter für problematische Tracks (mit Override)
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                     filter_problematic_tracks(context, threshold=10.0)
-                print("[Kaiserlich Tracker][MasterCycle] FilterTracks abgeschlossen.")
+
+                # Nachprüfung: war das Filtering erfolgreich?
+                if deleted_count_all == 0:
+                    print("[Kaiserlich Tracker][MasterCycle][Diag] Keine Tracks entfernt – evtl. leere Tracking-Collection oder fehlender Context.")
+                else:
+                    print(f"[Kaiserlich Tracker][MasterCycle][Diag] {deleted_count_all} Tracks entfernt – Filterprozess aktiv.")
 
                 # 3) Erneuter Versuch, einen schwachen Frame zu finden
                 frame = find_first_weak_frame(context)
