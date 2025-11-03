@@ -37,7 +37,6 @@ def cleanup_new_markers(
     active_old = [m for m in alte_marker if _track_active(m["track"])]
     active_new = [m for m in neue_marker if _track_active(m["track"])]
 
-
     if not active_new or not active_old:
         return neue_marker, 0
 
@@ -57,21 +56,12 @@ def cleanup_new_markers(
         nm_px_x = float(nm["co"][0]) * hz
         nm_px_y = float(nm["co"][1]) * vc
 
-        too_close = False
         for ama_px_x, ama_px_y, ama_m in old_pixels:
             dx = abs(ama_px_x - nm_px_x)
             dy = abs(ama_px_y - nm_px_y)
             if dx < thresh and dy < thresh:
-                print(
-                    f"[Cleanup][DEL] Neuer Track '{nm['track']}' "
-                    f"entfernt wegen Nähe zu altem '{ama_m['track']}' "
-                    f"(dx={dx:.2f}, dy={dy:.2f})"
-                )
                 if delete_track_by_name(context, nm["track"]):
                     deleted_new += 1
-                too_close = True
                 break
-        if too_close:
-            continue
 
     return neue_marker, 0
