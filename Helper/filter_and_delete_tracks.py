@@ -68,19 +68,16 @@ def filter_and_delete_tracks(
     """
     include_set = set([n for n in (include_names or []) if isinstance(n, str) and n.strip()])
     if not include_set:
-        print("[Helper][FilterDelete] ⚠️ include_names ist leer – kein Filtering.")
         return ([], 0)
 
     tracking = _get_tracking(clip)
     if tracking is None or not getattr(tracking, "tracks", None):
-        print("[Helper][FilterDelete] ⚠️ Kein Tracking-Objekt oder keine Tracks vorhanden.")
         return ([], 0)
 
     # Nur Tracks, die tatsächlich existieren
     existing_names = {t.name for t in tracking.tracks}
     include_set &= existing_names
     if not include_set:
-        print("[Helper][FilterDelete] ⚠️ Keine der angegebenen include_names existiert.")
         return ([], 0)
 
     # CLIP_EDITOR-Context für Operator-Execution
@@ -102,7 +99,6 @@ def filter_and_delete_tracks(
     try:
         # Nur neue Tracks selektieren
         _select_only(tracking, include_set)
-        print(f"[Helper][FilterDelete] ▶️ {len(include_set)} Tracks für Filter ausgewählt.")
         # Filter ausführen – Nutzung des neuen Context-Override-API (Blender ≥ 3.x)
         try:
             with bpy.context.temp_override(
@@ -124,18 +120,14 @@ def filter_and_delete_tracks(
         names_to_delete = [n for n in flagged_names if n in include_set]
 
         if not names_to_delete:
-            print("[Helper][FilterDelete] Keine problematischen Tracks innerhalb der neuen Tracks gefunden.")
             return ([], 0)
 
         # Löschen der problematischen Tracks
-        print(f"[Helper][FilterDelete] 🔸 {len(names_to_delete)} Tracks werden gelöscht: "
-              f"{names_to_delete[:5]}{' …' if len(names_to_delete) > 5 else ''}")
+
         deleted_count = delete_tracks_by_names(bpy.context, names_to_delete)
-        print(f"[Helper][FilterDelete] 🗑️ {deleted_count} Tracks gelöscht.")
 
         return (names_to_delete, int(deleted_count))
 
     finally:
         # Ursprüngliche Selektion wiederherstellen
         _restore_selection(tracking, sel_snapshot)
-        print("[Helper][FilterDelete] ✅ Selektion wiederhergestellt.")
