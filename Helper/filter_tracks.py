@@ -48,9 +48,15 @@ def _snapshot_tracks(clip: "bpy.types.MovieClip") -> Dict[str, Tuple[int, str]]:
     """
     result: Dict[str, Tuple[int, str]] = {}
     tracking = clip.tracking
-    for layer in tracking.layers:
-        for t in layer.tracks:
-            result[t.name] = (_track_length_markers(t), layer.name)
+    # Robust gegen Versionen/Setups ohne layers-API:
+    if hasattr(tracking, "layers") and tracking.layers:
+        for layer in tracking.layers:
+            for t in layer.tracks:
+                result[t.name] = (_track_length_markers(t), layer.name)
+    else:
+        # Fallback: direkte Trackliste
+        for t in getattr(tracking, "tracks", []):
+            result[t.name] = (_track_length_markers(t), "default")
     return result
 
 
@@ -120,9 +126,20 @@ def filter_problematic_tracks(
         tracking_settings.clean_action = 'DELETE_TRACK'  # Alternativen: 'SELECT', 'DELETE_SEGMENTS'
         tracking_settings.clean_error = 0.0              # nur Frames-Kriterium nutzen
         tracking_settings.clean_frames = resolved_min_frames
-
+        # Vorher/Nachher-Snapshot für *tatsächlich* gelöschte Tracks
+        _all_before_names = set(_snapshot_tracks(clip).keys())
         bpy.ops.clip.clean_tracks()
+        _all_after_snapshot = _snapshot_tracks(clip)
+        _all_after_names = set(_all_after_snapshot.keys())
+        _deleted_all = sorted(list(_all_before_names - _all_after_names))
+
         print(f"[Kaiserlich Tracker][Filter] Cleanup ✓ – Tracks mit < {resolved_min_frames} Frames gelöscht.")
+        print(f"[Kaiserlich Tracker][Filter] Deletions: vorher={len(_all_before_names)}, gelöscht={len(_deleted_all)}, übrig={len(_all_after_names)}")
+        if _deleted_all:
+            # Optional: Namen der gelöschten Tracks ausgeben – bei Bedarf einkommentieren oder per Verbose-Flag steuern
+            for n in _deleted_all:
+                cnt, layer = (_track_length_markers, "default")  # Platzhalter falls before_snapshot fehlt
+            # Hinweis: Detailauflistung erfolgt weiter unten in der Verifikationssektion bereits für Kandidaten.
     except Exception as e:
         print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Cleanup: {e}")
         return
