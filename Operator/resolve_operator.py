@@ -127,10 +127,10 @@ def _find_and_dispatch_cycle(context: bpy.types.Context) -> bool:
     if weak_frame is not None:
         # Master Cycle triggern
         try:
-            res = bpy.ops.kaiserlichtracker.master_cycle('INVOKE_DEFAULT')
+            res = bpy.ops.kaiserlich_tracker.master_cycle('INVOKE_DEFAULT')
         except Exception:
             # Fallback EXEC
-            res = bpy.ops.kaiserlichtracker.master_cycle('EXEC_DEFAULT')
+            res = bpy.ops.kaiserlich_tracker.master_cycle('EXEC_DEFAULT')
         print(f"[resolve_operator] Master-Cycle gestartet, Operator-Result: {res}")
         return True
     return False
@@ -297,10 +297,10 @@ class KAISERLICHTRACKER_OT_resolve_operator(Operator):
 
 
 # --- Operator Alias für Aufrufkürzel (optional) ---
-# Damit der Master-Cycle via bpy.ops.kaiserlichtracker.master_cycle existiert,
-# muss der referenzierte Operator die bl_idname "kaiserlichtracker.master_cycle" besitzen.
+# Damit der Master-Cycle via bpy.ops.kaiserlich_tracker.master_cycle existiert,
+# muss der referenzierte Operator die bl_idname "kaiserlich_tracker.master_cycle" besitzen.
 # Wir importieren ihn oben nur, um sicherzustellen, dass das Modul geladen ist.
-# Der eigentliche Aufruf erfolgt über bpy.ops.kaiserlichtracker.master_cycle(...).
+# Der eigentliche Aufruf erfolgt über bpy.ops.kaiserlich_tracker.master_cycle(...).
 
 # --- Registration ---
 classes = (
