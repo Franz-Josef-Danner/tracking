@@ -82,7 +82,9 @@ def unregister():
     # Property entfernen
     if hasattr(bpy.types.Scene, "kaiserlich_markers_per_frame"):
         del bpy.types.Scene.kaiserlich_markers_per_frame
+    if hasattr(bpy.types.Scene, "kaiserlich_frames_per_track"):
         del bpy.types.Scene.kaiserlich_frames_per_track
+    if hasattr(bpy.types.Scene, "max_error_value"):
         del bpy.types.Scene.max_error_value
 
     try:
