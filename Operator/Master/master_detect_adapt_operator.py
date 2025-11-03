@@ -301,7 +301,12 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                 override['area'] = area
                 override['region'] = next((r for r in area.regions if r.type == 'WINDOW'), None)
 
-                result = bpy.ops.kaiserlich_tracker.master_track_cycle_backwards.invoke(override)
+                # Richtiger Aufruf: 'INVOKE_DEFAULT' ist hier ein benannter Parameter
+                result = bpy.ops.kaiserlich_tracker.master_track_cycle_backwards(
+                    override,
+                    'INVOKE_DEFAULT'
+                )
+
                 print(f"[Kaiserlich Tracker][MasterDetectAdapt] Operator-Aufrufresultat: {result}")
                 print("[Kaiserlich Tracker][MasterDetectAdapt] Kontext erfolgreich an Track-Cycle-Backwards übergeben.")
             else:
@@ -310,4 +315,5 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             print(f"[Kaiserlich Tracker][MasterDetectAdapt] ❌ Fehler beim Start von Track-Cycle-Backwards: {e}")
 
         return {'FINISHED'}
+
 
