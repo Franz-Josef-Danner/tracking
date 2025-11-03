@@ -62,10 +62,10 @@ def _solve_camera_invoke_default(context: bpy.types.Context) -> None:
 
     # Solve-Versuch mit Override
     try:
-        bpy.ops.clip.solve_camera(override, 'INVOKE_DEFAULT')
+        bpy.ops.clip.solve_camera('INVOKE_DEFAULT', override=override)
     except RuntimeError:
         try:
-            bpy.ops.clip.solve_camera(override, 'EXEC_DEFAULT')
+            bpy.ops.clip.solve_camera('EXEC_DEFAULT', override=override)
         except Exception as e:
             print(f"[resolve_operator] Solve-Aufruf fehlgeschlagen: {e}")
 
