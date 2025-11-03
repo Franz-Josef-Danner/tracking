@@ -145,20 +145,6 @@ def register():
         precision=6,
         subtype='FACTOR',
     )
-    bpy.types.Scene.kaiserlich_frames_per_track = bpy.props.IntProperty(
-        name="Frames per Track",
-        description="Mindestanzahl an Frames, die ein Track haben muss, um beim Cleanup nicht gelöscht zu werden",
-        default=25,
-        min=0,
-        soft_min=0,
-    )
-    bpy.types.Scene.max_error_value = bpy.props.IntProperty(
-        name="Max error Value",
-        description="Jeder track mit einem solve error über diesem wert wird ausgefiltert",
-        default=2,
-        min=0.5,
-        soft_min=1,
-    )
 
 def unregister():
     for prop in (
