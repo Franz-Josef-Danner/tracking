@@ -301,13 +301,13 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                     scene["kaiserlich_best_thresholds"] = best_thresholds
 
                 except Exception as ex:
-                    print(f"[AutoCalibrate] Fehler beim Vergleich der Track-Längen: {ex!r}")
+                    pass
 
                 # Final: Alle Thresholds auf 1.0 zurücksetzen
                 try:
                     reset_all_thresholds(context, active_props=[])
                 except Exception as ex:
-                    print(f"[AutoCalibrate] Fehler beim finalen Reset: {ex!r}")
+                    pass
 
                 self._state.done = True
                 return self._teardown(context, cancelled=False)
@@ -451,10 +451,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             post_snapshot = snapshot_active_markers(context)
             alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
 
-            if neue_marker:
-                print("   ➤ Beispiel neue Marker:", [m['track'] for m in neue_marker[:5]])
-            if alte_marker:
-                print("   ➤ Beispiel alte Marker:", [m['track'] for m in alte_marker[:5]])
 
             # Cleanup
             cleaned_new, deleted_old = cleanup_new_markers(
@@ -504,7 +500,7 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                 if cleaned_names:
                     delete_tracks_by_names(context, cleaned_names)
                 else:
-                    print("[Kaiserlich Tracker][DetectAdapt] Keine Marker zum Löschen gefunden – übersprungen.")
+                    pass
                 time.sleep(0.1)
 
         # Final selektieren
@@ -679,8 +675,8 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         # --- 2) Formel anwenden (optional) ----------------------------------
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
-        except Exception as e:
-            print(f"[TrackCycle] Formel-Fehler: {e}")
+        except Exception:
+            pass
 
         # --- 3) Einen Frame weiter tracken ----------------------------------
         success = track_markers_with_override(
@@ -743,10 +739,10 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                         threshold=30,
                         clip=clip
                     )
-                except Exception as e:
-                    print(f"[Kaiserlich Tracker][FilterDelete] ⚠️ Fehler bei Filter/Delete: {e}")
+                except Exception:
+                    pass
             else:
-                print("[Kaiserlich Tracker][FilterDelete] ⚠️ Keine neuen Tracks zum Filtern gefunden.")
+                pass
 
             # 1) Letzten aktiven Frame sichern (ohne Off-by-One-Kompensation)
             end_f = int(self._state.track_frame_current or context.scene.frame_current)
@@ -758,8 +754,8 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             # Sicherstellen, dass View-Layer den letzten Tracking-Status widerspiegelt
             try:
                 bpy.context.view_layer.update()
-            except Exception as ex:
-                print(f"[TrackCycle] ⚠️ View-Layer-Update fehlgeschlagen: {ex!r}")
+            except Exception:
+                pass
 
             # 2) Gesamt-Track-Länge der verbleibenden Tracks messen, bevor irgendetwas gelöscht wird
             total_len = int(
@@ -776,10 +772,8 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             # Baseline im ersten Zyklus zusätzlich speichern (wie bisher)
             if cycle_idx == 1:
                 scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
-                print(f"[KAISERLICHTRACKER][LOG] SCENE_TOTAL_TRACK_LEN_BASE gesetzt: {total_len}")
             else:
-                print(f"[Kaiserlich Tracker][Baseline] Total Track Length (Frame {end_f}) = {total_len} (gespeichert unter '{key_cycle}')")
-            print(f"[KAISERLICHTRACKER][LOG] {key_cycle} gespeichert: {total_len}")
+                pass
 
             # 3) Danach Playhead auf Tracking-Start-Frame zurücksetzen (für internen Folgezyklus)
             start_f = int(self._state.track_start_frame or 1)
@@ -821,12 +815,12 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                     try:
                         deleted_total += delete_tracks_by_names(context, [name])
                     except Exception as _e:
-                        print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Löschen von '{name}': {_e!r}")
+                    pass
             else:
-                print("[Kaiserlich Tracker][Cleanup] ⚠️ Keine gültigen Tracks zum Löschen gefunden.")
+                pass
 
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Abschlusslauf: {e}")
+        except Exception:
+            pass
         return None
 
     # ------------------------------------------------------------------------
