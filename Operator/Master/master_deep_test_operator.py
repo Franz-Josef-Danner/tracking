@@ -249,12 +249,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return {'RUNNING_MODAL'}
 
         # Auswertung nach beendetem Tracking innerhalb derselben Threshold-Stufe
-        if self._phase == "threshold_cycle_evaluate":
-            finished = self._evaluate_after_tracking(context)
             if finished:
+                print("[DeepTest][Modal] Kategorie fertig – Queue-Länge:", len(self._categories_queue))
                 if self._categories_queue:
                     self._phase = "category_select"
                     return {'RUNNING_MODAL'}
+                print("[DeepTest][Modal] Alle Kategorien abgeschlossen → _finish() wird aufgerufen.")
                 return self._finish(context)
             # sonst nächste Stufe derselben Kategorie
             self._phase = "threshold_cycle"
@@ -263,11 +263,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if self._phase == "threshold_cycle":
             finished = self._process_threshold_cycle(context)
             if finished:
+                print("[DeepTest][Modal] Kategorie fertig (threshold_cycle) – Queue-Länge:", len(self._categories_queue))
                 if self._categories_queue:
                     self._phase = "category_select"
                     return {'RUNNING_MODAL'}
-                else:
-                    return self._finish(context)
+                print("[DeepTest][Modal] Alle Kategorien abgeschlossen → _finish() wird aufgerufen.")
+                return self._finish(context)
             return {'RUNNING_MODAL'}
 
         return {'RUNNING_MODAL'}
