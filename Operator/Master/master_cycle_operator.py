@@ -102,20 +102,30 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                       f"area={getattr(area,'type',None)}, region={getattr(region,'type',None)}, "
                       f"space={getattr(space,'type',None)}, clip={getattr(clip_obj,'name',None)}")
 
+                # ------------------------------------------------------------------
+                # Bypass: direkter Operator-Call im gültigen Override-Kontext,
+                # da der Helper intern veraltete Argument-Signatur nutzt.
+                # ------------------------------------------------------------------
                 try:
-                    deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(
-                        threshold=30.0,
-                        clip=clip_obj
-                    )
-                    print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ▶ Nach filter_and_delete_all_tracks: deleted_count_all={deleted_count_all}")
+                    with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+                        print("[Kaiserlich Tracker][MasterCycle][Bypass] → Führe bpy.ops.clip.filter_tracks() direkt aus …")
+                        res = bpy.ops.clip.filter_tracks(track_threshold=30.0)
+                        print(f"[Kaiserlich Tracker][MasterCycle][Bypass] Ergebnis filter_tracks: {res}")
+
+                        # Selektierte (= problematische) Tracks löschen
+                        tracking = clip_obj.tracking
+                        flagged_names = [t.name for t in tracking.tracks if t.select]
+                        print(f"[Kaiserlich Tracker][MasterCycle][Bypass] {len(flagged_names)} Tracks markiert.")
+                        if flagged_names:
+                            from ...Helper.delete import delete_tracks_by_names
+                            deleted_count_all = delete_tracks_by_names(bpy.context, flagged_names)
+                            print(f"[Kaiserlich Tracker][MasterCycle][Bypass] 🗑️ {deleted_count_all} Tracks gelöscht.")
+                        else:
+                            deleted_count_all = 0
+                            print("[Kaiserlich Tracker][MasterCycle][Bypass] Keine markierten Tracks – kein Löschvorgang.")
                 except Exception as call_err:
-                    print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ❌ Ausnahme während filter_and_delete_all_tracks: {call_err!r}")
-                    print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] Diagnose: "
-                          f"area={getattr(bpy.context.area,'type',None)}, "
-                          f"region={getattr(bpy.context.region,'type',None)}, "
-                          f"space={getattr(bpy.context.space_data,'type',None)}, "
-                          f"clip.valid={bool(getattr(bpy.context.space_data,'clip',None))}")
-                    raise
+                    print(f"[Kaiserlich Tracker][MasterCycle][Bypass] ❌ Fehler bei direktem Filter/Löschvorgang: {call_err!r}")
+                    deleted_count_all = 0
 
                 print("[Kaiserlich Tracker][MasterCycle][CTX-LIVE] 🔍 Vor FilterTracks:")
                 print(f"    clip.valid={bool(getattr(space,'clip',None))}, tracking.valid={bool(getattr(getattr(space,'clip',None),'tracking',None))}")
