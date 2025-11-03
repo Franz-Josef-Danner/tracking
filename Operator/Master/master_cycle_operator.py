@@ -43,7 +43,17 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     raise RuntimeError("find_clip_editor_area hat kein Tuple/List zurückgegeben.")
 
                 if not area or not space:
-                    raise RuntimeError("Keine CLIP_EDITOR Area gefunden – filter_tracks benötigt gültigen Kontext.")
+                    print("[Kaiserlich Tracker][MasterCycle] ⚠️ Kein CLIP_EDITOR gefunden – Filterung wird übersprungen.")
+                    # Optional: falls du willst, dass der Operator dennoch fortsetzt:
+                    frame = find_first_weak_frame(context)
+                    if frame is None:
+                        self.report({'INFO'}, "[MasterCycle] Kein schwacher Frame – beende ohne Filter.")
+                        return {'FINISHED'}
+                    else:
+                        print(f"[Kaiserlich Tracker][MasterCycle] ✅ Fortsetzung ohne Filter, Frame={frame}")
+                        scene = context.scene
+                        scene.frame_current = frame
+                        return {'FINISHED'}
 
                 # ------------------------------------------------------------------
                 # Filterprozesse im gesicherten Kontext ausführen
