@@ -1,6 +1,7 @@
 # Operator/master_cycle_operator.py
 import bpy
-from bpy.types import Optional, Operator, Context, List, Set
+from bpy.types import Operator, Context
+from typing import Optional, List, Set
 
 # ---- Helper-Importe ---------------------------------------------------------
 from ...Helper.low_marker_frame import find_first_weak_frame
