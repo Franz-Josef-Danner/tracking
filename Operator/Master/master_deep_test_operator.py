@@ -417,7 +417,9 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self._final_new_tracks = final_tracks
 
         self._last_md = last_md
-        md_dict = self._scene.setdefault("min_distance_values", {})
+        if "min_distance_values" not in self._scene:
+            self._scene["min_distance_values"] = {}
+        md_dict = self._scene["min_distance_values"]
         md_dict[str(self._scene.frame_current)] = float(last_md)
 
         try:
