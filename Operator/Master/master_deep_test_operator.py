@@ -870,8 +870,35 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         else:
             print("[DeepTest] ⏹️ Test wurde abgebrochen – keine Weitergabe.")
 
-        return {'CANCELLED' if cancelled else 'FINISHED'}
+        # --------------------------------------------------------------
+        # Verzögerter Folgeaufruf per Timer mit gültigem CLIP_EDITOR-Kontext
+        # --------------------------------------------------------------
+        if not cancelled:
+            def _invoke_next():
+                try:
+                    print("[DeepTest] 🕒 Timer-Callback: starte master_detect_adapt ...")
+                    area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+                    if area:
+                        region = area.regions[-1] if area.regions else None
+                        with bpy.context.temp_override(window=bpy.context.window, area=area, region=region):
+                            result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                            print(f"[DeepTest] → Folge-Operator master_detect_adapt gestartet: {result}")
+                            if result != {'FINISHED'}:
+                                print(f"[DeepTest] ⚠️ master_detect_adapt nicht erfolgreich: {result}")
+                    else:
+                        print("[DeepTest] ⚠️ Kein CLIP_EDITOR Bereich gefunden – Folgeoperator übersprungen.")
+                except Exception as ex:
+                    print(f"[DeepTest] ⚠️ Fehler beim Start von master_detect_adapt: {ex!r}")
+                return None
 
+            # Timer registrieren (0.1s Verzögerung, um Modal-Ende abzuwarten)
+            try:
+                bpy.app.timers.register(_invoke_next, first_interval=0.1)
+                print("[DeepTest] ⏳ Folge-Operator wird in 0.1s gestartet.")
+            except Exception as ex:
+                print(f"[DeepTest] ⚠️ Timer-Registrierung fehlgeschlagen: {ex!r}")
+
+        return {'CANCELLED' if cancelled else 'FINISHED'}
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_master_deep_test_operator)
