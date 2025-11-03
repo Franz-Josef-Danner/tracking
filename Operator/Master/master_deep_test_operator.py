@@ -161,24 +161,45 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             print("[MasterDeepTest][Init] Alle Thresholds auf 1.0 zurückgesetzt.")
         except Exception as e:
             print(f"[MasterDeepTest][Init] ⚠️ Threshold-Reset fehlgeschlagen: {e!r}")
-        # Detect-Parameter initialisieren (wie im Shorttest)
+        # Detect-Parameter initialisieren (identisch zum ShortTest)
         try:
-            _state = init_detect_state(context)
-            self._hz = _state.get("hz", self._hz)
-            self._vc = _state.get("vc", self._vc)
-            self._margin = _state.get("margin", 100)
-            self._pattern_size = _state.get("pattern_size", 50)
-            self._search_size = _state.get("search_size", 0)
-            self._threshold = _state.get("threshold", 0.0001)
-            self._last_md = float(_state.get("min_distance", 100.0))
-            # Frame-spezifisches md ggf. überschreiben
-            _md_cache = self._scene.get("min_distance_values", {})
-            if _md_cache:
-                fn = str(self._scene.frame_current)
-                if fn in _md_cache:
-                    self._last_md = float(_md_cache[fn])
-        except Exception as _e:
-            print(f"[MasterDeepTest][InitDetect] ⚠️ Fallback – init_detect_state fehlgeschlagen: {_e!r}")
+            scene = context.scene
+            params = scene.get("bootstrap_params", None)
+
+            if params:
+                self._last_md = float(params.get('md', 100))
+                self._margin = int(round(float(params.get('ma', 100)) * 1.1))
+                self._threshold = float(params.get('tr', 0.5))
+                self._pattern_size = int(params.get('pz', 50))
+                self._search_size = int(params.get('sz', 100))
+                self._hz = int(params.get('hz', 1))
+                self._vc = int(params.get('vc', 1))
+                print(f"[MasterDeepTest][Init] Bootstrap-Parameter erkannt (md={self._last_md}, ma={self._margin}, tr={self._threshold})")
+            else:
+                clip = getattr(context.space_data, "clip", None)
+                if clip is None:
+                    raise RuntimeError("Kein aktiver Clip verfügbar (Fallback fehlgeschlagen).")
+
+                self._hz, self._vc = clip.size
+                tracking_settings = getattr(clip.tracking, "settings", None)
+                self._margin = getattr(tracking_settings, "margin", 100)
+                self._pattern_size = getattr(tracking_settings, "pattern_size", 50)
+                self._search_size = getattr(tracking_settings, "search_size", 100)
+                self._last_md = self._hz * 0.025
+                self._threshold = 0.0001
+                print(f"[MasterDeepTest][Init] Fallback-Parameter übernommen (hz={self._hz}, vc={self._vc}, md={self._last_md})")
+
+            # Frame-spezifisches min_distance ggf. überschreiben
+            md_cache = scene.get("min_distance_values", {})
+            if md_cache:
+                fn = str(scene.frame_current)
+                if fn in md_cache:
+                    cached_md = float(md_cache[fn])
+                    self._last_md = cached_md
+                    print(f"[MasterDeepTest][Init] 💾 Cached min_distance für Frame {fn}: {cached_md:.2f}")
+
+        except Exception as ex:
+            print(f"[MasterDeepTest][InitDetect] ⚠️ Parameterinitialisierung fehlgeschlagen: {ex!r}")
 
         # Zielwerte laden
         # Zielwerte aus den Szenenvariablen ermitteln
