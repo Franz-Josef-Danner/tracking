@@ -67,9 +67,6 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             og = math.ceil(za * 1.1)
             ug = math.floor(za * 0.9)
 
-            print(f"[Kaiserlich Tracker][DetectAdapt][Fallback] "
-                  f"hz={hz}, vc={vc}, margin={ma}, md={md:.2f}, "
-                  f"pattern={pz}, search={sz}, tr={tr}, og={og}, ug={ug}, frame_end={frame_end}")
 
         # ----------------------------------------------------------------------
         # BASELINE-FIX:
@@ -85,7 +82,6 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
         if tracking:
             baseline_start_tracknames = {t.name for t in tracking.tracks}
 
-        print(f"[Kaiserlich Tracker][DetectAdapt] Ausgangsmarker: {len(pre_snapshot)} | BaselineTracks: {len(baseline_start_tracknames)}")
 
 
         # Adaptive Schleife
@@ -122,8 +118,6 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
 
         while loop < max_loops:
             loop += 1
-            print(f"\n[Kaiserlich Tracker][DetectAdapt] --- LOOP {loop} ---")
-            print(f"[Kaiserlich Tracker][DetectAdapt] Aktuelles min_distance = {last_md:.2f}")
 
             # Detect ausführen
             detect_features(
@@ -146,9 +140,6 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             # Snapshot nach Detect
             post_snapshot = snapshot_active_markers(context)
             alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
-
-            print(f"[Kaiserlich Tracker][DetectAdapt] Alte Marker erkannt: {len(alte_marker)}")
-            print(f"[Kaiserlich Tracker][DetectAdapt] Neue Marker erkannt: {len(neue_marker)}")
 
             if len(neue_marker) > 0:
                 print("   ➤ Beispiel neue Marker:", [m['track'] for m in neue_marker[:5]])
@@ -188,23 +179,15 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
 
                 if len(synced_cleaned) != len(neue_marker):
                     removed = [m['track'] for m in neue_marker if m['track'] not in clip_track_names]
-                    print(f"[Fix][DetectAdapt] Entferne {len(removed)} Marker aus Speicher (nicht mehr im Clip vorhanden): "
-                          f"{removed[:5]}{' ...' if len(removed) > 5 else ''}")
+
                 else:
                     print("[Fix][DetectAdapt] Kein Desync erkannt – alle Marker existieren noch im Clip.")
 
                 neue_marker = synced_cleaned
                 remaining = len(neue_marker)
                 final_new_marker_count = remaining
-                print(f"[Fix][DetectAdapt] Nach Sync: {remaining} gültige neue Marker verbleiben (Clip/Memory synchronisiert)")
             else:
                 print("[Fix][DetectAdapt] Kein aktiver Clip – Sync-Check übersprungen.")
-
-            print("--------------------------------------------------------------")
-
-            # Nachbereinigung fertig – aktueller Status:
-            print(f"[Kaiserlich Tracker][DetectAdapt] Nach Cleanup: {remaining} neue Marker übrig, {deleted_old} alte gelöscht")
-            print(f"[Kaiserlich Tracker][DetectAdapt][Result] Gültige neue Marker (bereinigt): {remaining}")
 
             diff = remaining - ef_target
             tolerance = ef_target * 0.10  # 10 % Toleranz
@@ -212,7 +195,6 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             if remaining == 0:
                 print("[Kaiserlich Tracker][DetectAdapt] ⚠️ Keine gültigen neuen Marker nach Cleanup – weiterer Versuch nötig.")
             elif abs(diff) <= tolerance and remaining > 0:
-                print(f"[Kaiserlich Tracker][DetectAdapt] ✅ Ziel erreicht: {remaining}/{ef_target} Marker (±{tolerance:.1f})")
                 break
             else:
                 print(f"[Kaiserlich Tracker][DetectAdapt] Abweichung vom Ziel: Δ={diff:+.0f}, Ziel={ef_target}, Toleranz={tolerance:.1f}")
@@ -221,13 +203,11 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             if remaining == 0:
                 # Sicherheitsfallback, falls alle Marker entfernt
                 last_md = max(2.0, last_md * 0.8)
-                print("[Kaiserlich Tracker][DetectAdapt] ⚠️ Keine Marker erkannt – Standardreduktion ×0.8 angewendet.")
             else:
                 ratio = remaining / max(1, ef_target)
                 factor = (((ratio - 1.0) / 2.0) + 1.0)
                 new_md = last_md * factor
                 new_md = min(max(new_md, 2.0), hz * 0.25)
-                print(f"[Kaiserlich Tracker][DetectAdapt] Dynamische Anpassung: ratio={ratio:.3f}, factor={factor:.3f} → md {last_md:.2f} → {new_md:.2f}")
                 last_md = new_md
 
             # Nur löschen, wenn weiterer Durchlauf folgt (bereinigte Neumarker dieses Loops entfernen)
@@ -235,17 +215,10 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                 cleaned_names = [m['track'] for m in neue_marker]  # == cleaned_new (bereinigt)
                 if cleaned_names:
                     delete_tracks_by_names(context, cleaned_names)
-                    print(f"[Kaiserlich Tracker][DetectAdapt] {len(cleaned_names)} bereinigte neue Marker gelöscht für nächsten Zyklus")
                 else:
                     print("[Kaiserlich Tracker][DetectAdapt] Keine bereinigten Neumarker zum Löschen gefunden – übersprungen.")
 
                 time.sleep(0.1)
-
-            # --- Logging, falls max_loops noch nicht erreicht ---
-            if loop < max_loops:
-                print(f"[Kaiserlich Tracker][DetectAdapt] ➜ Nächster Loop ({loop+1}/{max_loops}) mit min_distance = {last_md:.2f}")
-            else:
-                print("[Kaiserlich Tracker][DetectAdapt] ⚠️ MaxLoops erreicht – kein weiteres Iterieren möglich.")
 
         # Selektion der finalen Marker
         clip = getattr(context.space_data, 'clip', None)
@@ -258,7 +231,6 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                     trk.select = False
                 for new_trk in new_tracks:
                     new_trk.select = True
-                print(f"[Kaiserlich Tracker][DetectAdapt] Final selektierte Marker: {len(new_tracks)}")
             except Exception:
                 pass
 
@@ -288,11 +260,9 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                     interp_val = v_start + (v_end - v_start) * t
                     md_dict[str(f)] = interp_val
 
-        print(f"[Kaiserlich Tracker][DetectAdapt] Frame {frame_num}: final min_distance = {md_value:.2f}")
         # ----------------------------------------------------------------------
         # Nach Abschluss: Kontext sicher an master_track_cycle_backwards übergeben
         # ----------------------------------------------------------------------
-        print("[Kaiserlich Tracker][MasterDetectAdapt] ➜ Starte automatischen Übergang zu Track-Cycle-Backwards ...")
 
         try:
             area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
@@ -306,15 +276,9 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                     result = bpy.ops.kaiserlich_tracker.master_track_cycle_backwards(
                         'INVOKE_DEFAULT'
                     )
-
-                print(f"[Kaiserlich Tracker][MasterDetectAdapt] Operator-Aufrufresultat: {result}")
-                print("[Kaiserlich Tracker][MasterDetectAdapt] Kontext erfolgreich an Track-Cycle-Backwards übergeben.")
             else:
                 print("[Kaiserlich Tracker][MasterDetectAdapt] ⚠️ Keine CLIP_EDITOR-Area gefunden – Operator-Aufruf übersprungen.")
         except Exception as e:
             print(f"[Kaiserlich Tracker][MasterDetectAdapt] ❌ Fehler beim Start von Track-Cycle-Backwards: {e}")
-
-        # 🧹 Doppelter Block entfernt, korrekter Aufruf integriert
-
 
         return {'FINISHED'}
