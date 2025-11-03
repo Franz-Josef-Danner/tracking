@@ -193,7 +193,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             if not self._categories_queue:
                 print("[DeepTest] ❌ Keine Zielwerte gefunden – Abbruch.")
                 self.report({'INFO'}, "Keine aktiven Szenenwerte – DeepTest übersprungen.")
-                return {'CANCELLED'}
+                return self._teardown(context, cancelled=False)
 
             print(f"[Kaiserlich Tracker][DeepTest] Starte Test für Kategorien mit gesetzten Szenenwerten: {self._categories_queue}")
 
