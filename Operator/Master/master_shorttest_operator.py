@@ -959,7 +959,7 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                     def _launch_deeptest():
                         try:
                             with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-                                bpy.ops.kaiserlich_tracker.deep_test_operator('INVOKE_DEFAULT')
+                                bpy.ops.kaiserlich_tracker.master_deep_test_operator('INVOKE_DEFAULT')
                                 print("[Kaiserlich Tracker][ShortTest] DeepTest-Operator erfolgreich (asynchron) gestartet.")
                         except Exception as ex:
                             print(f"[Kaiserlich Tracker][ShortTest] ⚠️ Fehler beim Start des DeepTest-Operators: {ex!r}")
