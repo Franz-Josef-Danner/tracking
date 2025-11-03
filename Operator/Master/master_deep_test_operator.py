@@ -234,12 +234,13 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         if self._phase == "category_select":
             if not self._categories_queue:
+                print("[DeepTest][Modal] Kategorie-Queue leer → _finish() wird aufgerufen.")
                 return self._finish(context)
             self._current_category = self._categories_queue.pop(0)
             self._prepare_category(context)
             self._phase = "threshold_cycle"
             return {'RUNNING_MODAL'}
-        # Nicht-blockierendes Tracking: wenn Tracking aktiv, pro TIMER-Tick genau einen Schritt
+
         if self._phase == "tracking_tick":
             running = self._track_tick(context)
             if running:
@@ -248,10 +249,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             self._phase = "threshold_cycle_evaluate"
             return {'RUNNING_MODAL'}
 
-        # Auswertung nach beendetem Tracking innerhalb derselben Threshold-Stufe
+        if self._phase == "threshold_cycle_evaluate":
+            finished = self._evaluate_after_tracking(context)
             if finished:
-                print("[DeepTest][Modal] Kategorie fertig – Queue-Länge:", len(self._categories_queue))
+                print(f"[DeepTest][Modal] Kategorie {self._current_category} abgeschlossen.")
                 if self._categories_queue:
+                    print(f"[DeepTest][Modal] Nächste Kategorie → {self._categories_queue[0]}")
                     self._phase = "category_select"
                     return {'RUNNING_MODAL'}
                 print("[DeepTest][Modal] Alle Kategorien abgeschlossen → _finish() wird aufgerufen.")
@@ -263,7 +266,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if self._phase == "threshold_cycle":
             finished = self._process_threshold_cycle(context)
             if finished:
-                print("[DeepTest][Modal] Kategorie fertig (threshold_cycle) – Queue-Länge:", len(self._categories_queue))
+                print(f"[DeepTest][Modal] Kategorie {self._current_category} abgeschlossen (threshold_cycle).")
                 if self._categories_queue:
                     self._phase = "category_select"
                     return {'RUNNING_MODAL'}
