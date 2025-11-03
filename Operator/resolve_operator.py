@@ -117,7 +117,7 @@ def _phase_execute(context: bpy.types.Context, phase_fn) -> bool:
 
 class KAISERLICHTRACKER_OT_resolve_operator(Operator):
     """Führt die Master-Resolve-Sequenz aus (Reset -> Focal -> Principal -> Radial) mit Fehlerprüfung und bedingtem Cycle-Dispatch."""
-    bl_idname = "kaiserlichtracker.master_resolve"
+    bl_idname = "kaiserlich_tracker.master_resolve"
     bl_label = "Kaiserlich: Resolve Master"
     bl_options = {'REGISTER', 'UNDO'}
 
