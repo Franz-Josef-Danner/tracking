@@ -34,7 +34,7 @@ SCENE_TOTAL_TRACK_LEN_BASE = "kaiserlich_len_baseline_00"
 SCENE_TOTAL_TRACK_LEN_STEP1 = "kaiserlich_len_rot_xy_00"
 SCENE_TOTAL_TRACK_LEN_STEP2 = "kaiserlich_len_scale_00"
 SCENE_TOTAL_TRACK_LEN_STEP3 = "kaiserlich_len_rot_scale_00"
-SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_0"
+SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_00"
 
 
 # ----------------------------------------------------------------------------
