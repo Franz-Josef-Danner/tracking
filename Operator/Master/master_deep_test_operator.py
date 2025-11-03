@@ -291,15 +291,17 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self._best_thresholds[self._current_category] = 1.0
         self._pre_snapshot = snapshot_active_markers(context)
         self._baseline_start_tracknames = {t.name for t in self._clip.tracking.tracks}
-        # Für jede Kategorie den frame-spezifischen md-Wert prüfen (wie Shorttest)
+        # --- NEU: KEIN Übertrag alter min_distance-Werte zwischen Kategorien ---
+        # Beim DeepTest sollen Kategorien isoliert starten, daher Cache hier ignorieren.
+        # min_distance wird immer auf Standardwert 100.0 zurückgesetzt (siehe Reset oben)
         try:
-            _md_cache = self._scene.get("min_distance_values", {})
-            if _md_cache:
-                fn = str(self._scene.frame_current)
-                if fn in _md_cache:
-                    self._last_md = float(_md_cache[fn])
-        except Exception:
-            pass
+            if "min_distance_values" in self._scene:
+                print(f"[MasterDeepTest][{self._current_category}] Ignoriere vorhandene min_distance_values (Reset aktiv).")
+                # Optional: alte Werte temporär entfernen, um versehentliches Überschreiben zu vermeiden
+                self._scene["min_distance_values_backup"] = dict(self._scene["min_distance_values"])
+                self._scene["min_distance_values"].clear()
+        except Exception as ex:
+            print(f"[MasterDeepTest][{self._current_category}] ⚠️ Konnte alten md-Cache nicht leeren: {ex!r}")
 
         # ---- Frame-Cache prüfen --------------------------------------------
         cached = apply_cached_values(self._scene, self._scene.frame_current)
