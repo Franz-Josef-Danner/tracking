@@ -657,8 +657,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             return False
 
         s.track_names = active_tracks  # Update der Liste
-        if dropped > 0:
-            print(f"[TrackCycle] {dropped} inaktive Tracks entfernt → {len(active_tracks)} verbleibend.")
 
         # --- Neue Abbruchbedingungen ---
         frames_per_track = int(scene.kaiserlich_frames_per_track) * 2
