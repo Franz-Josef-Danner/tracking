@@ -29,21 +29,22 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 # ----------------------------------------------------------
                 # Sicheren CLIP_EDITOR-Kontext herstellen
                 # ----------------------------------------------------------
-                area, region, space = find_clip_editor_area(context)
-                if area is None or region is None or space is None:
+                window, area, region, space = find_clip_editor_area(getattr(getattr(context, "space_data", None), "clip", None))
+                if window is None or area is None or region is None or space is None:
                     raise RuntimeError("Keine CLIP_EDITOR Area gefunden – filter_tracks benötigt gültigen Kontext.")
 
                 print("[Kaiserlich Tracker][MasterCycle][CTX] ✓ CLIP_EDITOR gefunden "
-                      f"(area.type={getattr(area,'type',None)}, region.type={getattr(region,'type',None)}, "
+                      f"(window={getattr(window, 'as_pointer', lambda: None)()}, "
+                      f"area.type={getattr(area,'type',None)}, region.type={getattr(region,'type',None)}, "
                       f"has space.clip={bool(getattr(space,'clip',None))})")
 
                 # 1) Globaler Filter für alle Tracks (mit Override)
-                with bpy.context.temp_override(area=area, region=region, space_data=space):
+                with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                     deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(threshold=30.0)
                 print(f"[Kaiserlich Tracker][MasterCycle] FilterAll abgeschlossen – {deleted_count_all} Tracks gelöscht.")
 
                 # 2) Lokaler Filter für problematische Tracks (mit Override)
-                with bpy.context.temp_override(area=area, region=region, space_data=space):
+                with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                     filter_problematic_tracks(context, threshold=10.0)
                 print("[Kaiserlich Tracker][MasterCycle] FilterTracks abgeschlossen.")
 
