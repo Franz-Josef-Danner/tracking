@@ -29,8 +29,20 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 # ------------------------------------------------------------------
                 # Gültigen CLIP_EDITOR Kontext sicherstellen
                 # ------------------------------------------------------------------
-                area, region, space = find_clip_editor_area(context)
-                if not area or not region or not space:
+                result = find_clip_editor_area(context)
+                # Ergebnis flexibel interpretieren
+                if isinstance(result, (list, tuple)):
+                    if len(result) >= 3:
+                        area, region, space = result[:3]
+                    elif len(result) == 2:
+                        area, space = result
+                        region = getattr(area, "regions", [None])[0]
+                    else:
+                        raise RuntimeError("find_clip_editor_area hat ein unerwartetes Rückgabeformat.")
+                else:
+                    raise RuntimeError("find_clip_editor_area hat kein Tuple/List zurückgegeben.")
+
+                if not area or not space:
                     raise RuntimeError("Keine CLIP_EDITOR Area gefunden – filter_tracks benötigt gültigen Kontext.")
 
                 # ------------------------------------------------------------------
