@@ -54,6 +54,38 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 else:
                     print(f"[Kaiserlich Tracker][MasterCycle][CTX] ✅ Clip-Zuweisung bestätigt ({space.clip.name}).")
 
+                # ----------------------------------------------------------
+                # Deep Diagnostic: Context intern prüfen
+                # ----------------------------------------------------------
+                print("[Kaiserlich Tracker][MasterCycle][CTX-Check] Starte Context-Validierung …")
+                try:
+                    current_area = getattr(bpy.context, "area", None)
+                    current_region = getattr(bpy.context, "region", None)
+                    current_space = getattr(bpy.context, "space_data", None)
+                    print(f"[Kaiserlich Tracker][MasterCycle][CTX-Check] Vor Override: "
+                          f"area={getattr(current_area,'type',None)}, "
+                          f"region={getattr(current_region,'type',None)}, "
+                          f"space={getattr(current_space,'type',None)}, "
+                          f"clip.valid={bool(getattr(current_space,'clip',None))})")
+                except Exception as diag_err:
+                    print(f"[Kaiserlich Tracker][MasterCycle][CTX-Check] ⚠️ Fehler bei Vor-Diagnose: {diag_err!r}")
+
+                # ----------------------------------------------------------
+                # Testweise Override-Diagnose: prüft, ob Zugriff auf clip möglich ist
+                # ----------------------------------------------------------
+                try:
+                    with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+                        print("[Kaiserlich Tracker][MasterCycle][CTX-Test] 🔍 Innerhalb Override:")
+                        print(f"    → area={getattr(bpy.context.area,'type',None)}")
+                        print(f"    → region={getattr(bpy.context.region,'type',None)}")
+                        print(f"    → space={getattr(bpy.context.space_data,'type',None)}")
+                        print(f"    → clip.valid={bool(getattr(bpy.context.space_data,'clip',None))}")
+                        tracking = getattr(getattr(bpy.context.space_data,'clip',None),'tracking',None)
+                        print(f"    → tracking.valid={bool(tracking)}")
+                except Exception as e_test:
+                    print(f"[Kaiserlich Tracker][MasterCycle][CTX-Test] ⚠️ Fehler im Override-Test: {e_test!r}")
+
+                print("[Kaiserlich Tracker][MasterCycle][CTX-Check] Context-Diagnose abgeschlossen.")
                 # 1) Globaler Filter für alle Tracks (mit Override)
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                     deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(threshold=30.0)
