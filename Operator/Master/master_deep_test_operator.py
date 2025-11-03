@@ -346,29 +346,164 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         """Durchläuft die Threshold-Stufen sequentiell und prüft je Durchgang."""
         if self._current_step_index >= len(REDUCTION_STEPS):
             return True
-        # DeepTest nutzt direkt die ShortTest-Werte für Detect/Adapt
-        scene = self._scene
+    
+        step_factor = REDUCTION_STEPS[self._current_step_index]
+        next_val = max(MIN_THRESHOLD_VAL, self._base_value * step_factor)
+        self._current_value = next_val
+    
+        # ---- Threshold setzen (Szene aktualisieren) ----------------------------
+        if self._current_category == "rot_xy":
+            # Neue Formel: kaiserlich_rot_thresh_y = min(1, kaiserlich_rot_thresh_x * (Vertikale / Horizontale Auflösung))
+            y_val = min(1.0, next_val * (self._hz / self._vc))
+            set_scene_props(
+                self._scene,
+                kaiserlich_rot_thresh_x=next_val,
+                kaiserlich_rot_thresh_y=y_val
+            )
+    
+        elif self._current_category == "scale":
+            set_scene_props(self._scene,
+                            kaiserlich_scale_thresh_min=next_val,
+                            kaiserlich_scale_thresh_max=min(1,next_val * 1.1))
+        elif self._current_category == "rot_scale_rot":
+            set_scene_props(
+                self._scene,
+                kaiserlich_rot_scale_thresh_rot=next_val,
+                kaiserlich_rot_scale_thresh_scale=0.0
+            )
+
+        elif self._current_category == "rot_scale_scale":
+            set_scene_props(
+                self._scene,
+                kaiserlich_rot_scale_thresh_rot=0.0,
+                kaiserlich_rot_scale_thresh_scale=next_val
+            )
+    
+        elif self._current_category == "perspective":
+            set_scene_props(self._scene, kaiserlich_perspective_thresh=next_val)
+        
+        # ---- Detect (vollständig nach DetectAdapt-Struktur) --------------------
+        ef_target = int(self._scene.kaiserlich_markers_per_frame)
+        tolerance = ef_target * 0.10
+        hz = self._hz
+        vc = self._vc
         ma = self._margin
         tr = self._threshold
         pz = self._pattern_size
+        scene = self._scene
 
-        # Snapshot und Cleanup – keine Schleife, keine Zählung
         pre_snapshot = snapshot_active_markers(context)
-        detect_features(context, placement='FRAME', margin=ma, threshold=tr,
-                        min_distance=int(max(1, round(self._last_md))))
-        post_snapshot = snapshot_active_markers(context)
-        alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
-        cleaned_new, deleted_old = cleanup_new_markers(
-            context, alte_marker, neue_marker, pz=pz, hz=self._hz, vc=self._vc)
+        baseline_start_tracknames = {t.name for t in self._clip.tracking.tracks}
 
-        # Auswahl auf neue Marker setzen
-        self._final_new_tracks = [m['track'] for m in cleaned_new]
+        max_loops = self._detect_loop_max
+        last_md = float(self._last_md)
+        cleaned_new = []
+
+        # --- Fix: Cached min_distance übernehmen und Suche überspringen ---
+        _md_cache = self._scene.get("min_distance_values", {})
+        fn = str(self._scene.frame_current)
+        if fn in _md_cache:
+            cached_md = float(_md_cache[fn])
+            self._last_md = cached_md
+            last_md = cached_md
+            # Nur einmalige Detection durchführen, keine iterative Anpassung
+            max_loops = 1
+
+
+        for loop in range(max_loops):
+            detect_features(context, placement='FRAME', margin=ma, threshold=tr,
+                            min_distance=int(max(1, round(last_md))))
+
+            # Blender selektiert automatisch neue Marker → zurücksetzen
+            clip = getattr(context.space_data, 'clip', None)
+            if clip and getattr(clip, 'tracking', None):
+                for trk in clip.tracking.tracks:
+                    trk.select = False
+
+            post_snapshot = snapshot_active_markers(context)
+            alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
+            if len(neue_marker) > 0:
+                print("   ➤ Beispiel neue Marker:", [m['track'] for m in neue_marker[:5]])
+            if len(alte_marker) > 0:
+                print("   ➤ Beispiel alte Marker:", [m['track'] for m in alte_marker[:5]])           
+
+            # Cleanup schützt alte Marker
+            cleaned_new, deleted_old = cleanup_new_markers(
+                context, alte_marker, neue_marker, pz=pz, hz=hz, vc=vc)
+            remaining = len(cleaned_new)
+
+            # --- Desync prüfen ---
+            if clip and getattr(clip, "tracking", None):
+                clip_names = {t.name for t in clip.tracking.tracks}
+                synced_cleaned = [m for m in cleaned_new if m['track'] in clip_names]
+                if len(synced_cleaned) != len(cleaned_new):
+                    removed = [m['track'] for m in cleaned_new if m['track'] not in clip_names]
+                cleaned_new = synced_cleaned
+                remaining = len(cleaned_new)
+
+
+            diff = remaining - ef_target
+            # --- Entfernt: Zählungs- und Löschlogik ---
+            # Der Deep-Test übernimmt nun exakt die DetectAdapt-Struktur des Shorttests,
+            # ohne auf Markeranzahl oder Toleranz zu reagieren.
+            # Nur adaptive min_distance wird noch berechnet.
+            ratio = remaining / max(1, ef_target)
+            factor = (((ratio - 1.0) / 2.0) + 1.0)
+            new_md = last_md * factor
+            new_md = min(max(new_md, 2.0), hz * 0.25)
+            last_md = new_md
+
+            # Entfernt: delete_tracks_by_names() in Loop, keine Löschung mehr erforderlich
+            time.sleep(0.05)
+
+        self._last_md = last_md
+
+        # Speicherung pro Frame (inkl. Interpolation)
+        frame_num = scene.frame_current
+        md_val = float(last_md)
+        if "min_distance_values" not in scene:
+            scene["min_distance_values"] = {}
+        md_dict = scene["min_distance_values"]
+        known_list = list(md_dict.get("known_frames", []))
+        if frame_num not in known_list:
+            known_list.append(frame_num)
+            known_list.sort()
+        md_dict["known_frames"] = known_list
+        md_dict[str(frame_num)] = md_val
+
+        if len(known_list) > 1:
+            for i in range(len(known_list) - 1):
+                f_start = known_list[i]
+                f_end = known_list[i + 1]
+                if f_end - f_start < 2:
+                    continue
+                v_start = float(md_dict[str(f_start)])
+                v_end = float(md_dict[str(f_end)])
+                for f in range(f_start + 1, f_end):
+                    t = (f - f_start) / float(f_end - f_start)
+                    interp = v_start + (v_end - v_start) * t
+                    md_dict[str(f)] = interp
+
+        # Nur wirklich neue Marker selektieren
         clip = getattr(context.space_data, 'clip', None)
+        final_tracks = []
         if clip and getattr(clip, 'tracking', None):
-            for trk in clip.tracking.tracks:
-                trk.select = (trk.name in self._final_new_tracks)
+            trk_list = clip.tracking.tracks
+            new_tracks = [t for t in trk_list if t.name not in baseline_start_tracknames]
+            for t in trk_list:
+                t.select = False
+            for nt in new_tracks:
+                nt.select = True
+                final_tracks.append(nt.name)
 
-        bpy.context.view_layer.update()
+        self._final_new_tracks = final_tracks
+
+        try:
+            bpy.context.view_layer.update()
+        except:
+            pass
+
+        # ---- Tracking starten (non-blocking) ----
         self._track_start(context)
         self._phase = "tracking_tick"
         return False
@@ -566,61 +701,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         total_len = int(self._track_state.total_len if self._track_state.total_len >= 0 else 0)
         compare_len = int(self._goal_map.get(self._current_category, 0))
 
-        # ---- Bewertung (adaptive Stufenlogik) -------------------------------
-        if total_len >= compare_len:
-            self._goal_map[self._current_category] = total_len
-            self._best_thresholds[self._current_category] = self._current_value
-
-            # ---- Frame-Werte im Cache speichern ----------------------------
-            frame_values = {self._current_category: self._current_value}
-            save_frame_values(self._scene, self._scene.frame_current, frame_values)
-            if self._current_category == "rot_xy":
-
-                set_scene_props(self._scene,
-                    kaiserlich_rot_thresh_x=1.0,
-                    kaiserlich_rot_thresh_y=1.0)
-            elif self._current_category == "scale":
-                set_scene_props(self._scene,
-                    kaiserlich_scale_thresh_min=1.0,
-                    kaiserlich_scale_thresh_max=1.0)
-            elif self._current_category in ("rot_scale_rot", "rot_scale_scale"):
-                set_scene_props(self._scene,
-                    kaiserlich_rot_scale_thresh_rot=1.0,
-                    kaiserlich_rot_scale_thresh_scale=1.0)
-            elif self._current_category == "perspective":
-                set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
-
-            self._current_step_index += 1
-
-        else:
-            # Kein Zugewinn → prüfen, ob MIN erreicht
-            if self._current_value <= MIN_THRESHOLD_VAL + 1e-12:
-                # --- NEU: Zähler für aufeinanderfolgende MIN-Erreichungen ---
-                if not hasattr(self, "_min_reach_count"):
-                    self._min_reach_count = 0
-
-                self._min_reach_count += 1
-
-                # Wenn dreimal hintereinander erreicht, Kategorie beenden
-                if self._min_reach_count >= 3:
-                    self._current_step_index = len(REDUCTION_STEPS)
-                    self._min_reach_count = 0
-                    return True
-
-                # ansonsten zur nächsten Stufe springen
-                self._current_step_index += 1
-                # Wichtig: Basis auf 1.0 zurücksetzen, damit die nächste Stufe
-                # exakt dem definierten REDUCTION_STEPS-Faktor entspricht.
-                self._base_value = 1.0
-
-            else:
-                # Bei Zielverfehlung ohne MIN: nicht in derselben Stufe „heruntermultiplizieren“,
-                # sondern zur nächsten REDUCTION_STEPS-Stufe wechseln.
-                if hasattr(self, "_min_reach_count"):
-                    self._min_reach_count = 0
-                self._current_step_index += 1
-                # Basiswert zurücksetzen, damit next_val = 1.0 * REDUCTION_STEPS[idx]
-                self._base_value = 1.0   
+        # ---- Bereinigt: keine Zählungs- oder Zielvergleiche mehr ----
+        # Deep-Test läuft unabhängig von Track-Längen oder Zielwerten.
+        self._best_thresholds[self._current_category] = self._current_value
+        frame_values = {self._current_category: self._current_value}
+        save_frame_values(self._scene, self._scene.frame_current, frame_values)
+        self._current_step_index += 1
 
         # --------------------------------------------------------------------
         # Kein Rücksprung auf Szenenanfang mehr:
