@@ -812,17 +812,24 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     self._min_reach_count = 0
                     return True
 
-                # ansonsten normale Stufen-Iteration
+                # ansonsten zur nächsten Stufe springen
                 self._current_step_index += 1
-                # Basiswert unverändert lassen – nächste Stufe startet vom aktuellen Startpunkt.
+                # Wichtig: Basis auf 1.0 zurücksetzen, damit die nächste Stufe
+                # exakt dem definierten REDUCTION_STEPS-Faktor entspricht.
+                self._base_value = 1.0
 
             else:
-                # bei erfolgreicher Iteration Zähler zurücksetzen
+                # Bei Zielverfehlung ohne MIN: nicht in derselben Stufe „heruntermultiplizieren“,
+                # sondern zur nächsten REDUCTION_STEPS-Stufe wechseln.
                 if hasattr(self, "_min_reach_count"):
                     self._min_reach_count = 0
-                # gleiche Stufe wiederholen mit weiter abgesenktem Basiswert
-                self._base_value = self._current_value
-                print(f"[MasterDeepTest][Eval] ↻ Ziel verfehlt | Wiederhole Stufe {self._current_step_index+1} mit niedrigerem Threshold")
+                self._current_step_index += 1
+                # Basiswert zurücksetzen, damit next_val = 1.0 * REDUCTION_STEPS[idx]
+                self._base_value = 1.0
+                print(
+                    f"[MasterDeepTest][Eval] → Ziel verfehlt | wechsle zu Stufe "
+                    f"{self._current_step_index}/{len(REDUCTION_STEPS)}"
+                )
 
         # --------------------------------------------------------------------
         # Kein Rücksprung auf Szenenanfang mehr:
