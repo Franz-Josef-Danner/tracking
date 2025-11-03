@@ -388,6 +388,18 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         last_md = float(self._last_md)
         cleaned_new = []
 
+        # --- Fix: Cached min_distance übernehmen und Suche überspringen ---
+        _md_cache = self._scene.get("min_distance_values", {})
+        fn = str(self._scene.frame_current)
+        if fn in _md_cache:
+            cached_md = float(_md_cache[fn])
+            self._last_md = cached_md
+            last_md = cached_md
+            print(f"[MasterDeepTest][DetectAdapt] 💾 Cached min_distance verwendet: {cached_md:.2f}")
+            # Nur einmalige Detection durchführen, keine iterative Anpassung
+            max_loops = 1
+
+
         for loop in range(max_loops):
             print(f"\n[MasterDeepTest][DetectAdapt] --- LOOP {loop+1} ---")
             print(f"[MasterDeepTest][DetectAdapt] Aktuelles min_distance = {last_md:.2f}")
