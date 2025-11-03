@@ -4,6 +4,9 @@ from bpy.types import Operator, Context
 
 # ---- Helper-Importe ---------------------------------------------------------
 from ...Helper.low_marker_frame import find_first_weak_frame
+from ...Helper.filter_all_tracks import filter_and_delete_all_tracks
+from ...Helper.filter_tracks import filter_problematic_tracks
+from ...Helper.update_default_sizes import update_default_sizes
 
 class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
     """Master Operator – setzt Playhead auf Frame mit den wenigsten aktiven Markern"""
@@ -19,9 +22,34 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         # Wenn kein Frame gefunden wurde → regulär beenden
         # ------------------------------------------------------------------
         if frame is None:
-            self.report({'INFO'}, "[Master] Kein schwacher Frame gefunden oder Marker-Ziel nicht unterschritten.")
-            print("[Kaiserlich Tracker][Master] Kein schwacher Frame gefunden – ShortTest wird NICHT gestartet.")
-            return {'FINISHED'}
+            print("[Kaiserlich Tracker][MasterCycle] ⚠️ Kein schwacher Frame gefunden – führe globales Filter-Cleanup durch ...")
+
+            try:
+                # 1) Globaler Filter für alle Tracks
+                deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(threshold=30.0)
+                print(f"[Kaiserlich Tracker][MasterCycle] FilterAll abgeschlossen – {deleted_count_all} Tracks gelöscht.")
+
+                # 2) Lokaler Filter für problematische Tracks
+                filter_problematic_tracks(context, threshold=10.0)
+                print("[Kaiserlich Tracker][MasterCycle] FilterTracks abgeschlossen.")
+
+                # 3) Erneuter Versuch, einen schwachen Frame zu finden
+                frame = find_first_weak_frame(context)
+                if frame is None:
+                    print("[Kaiserlich Tracker][MasterCycle] ❌ Auch nach Filter kein schwacher Frame gefunden – beende Zyklus.")
+                    self.report({'INFO'}, "[MasterCycle] Kein schwacher Frame nach Filterung – Vorgang abgeschlossen.")
+                    return {'FINISHED'}
+                try:
+                    op, os, np, ns = update_default_sizes(context)
+                    self.report({'INFO'}, f"[Defaults] pattern {op}->{np}, search {os}->{ns}")
+                except ValueError as e:
+                    self.report({'WARNING'}, str(e))
+                    
+                print(f"[Kaiserlich Tracker][MasterCycle] ✅ Neuer schwacher Frame gefunden nach Filterung: {frame}")
+            except Exception as ex:
+                print(f"[Kaiserlich Tracker][MasterCycle] ❌ Fehler während Filter/Retry-Prozess: {ex!r}")
+                self.report({'ERROR'}, f"Fehler bei Filterprozess: {ex}")
+                return {'CANCELLED'}
 
         # ------------------------------------------------------------------
         # Wenn ein Frame gefunden wurde → Playhead setzen und ShortTest starten
