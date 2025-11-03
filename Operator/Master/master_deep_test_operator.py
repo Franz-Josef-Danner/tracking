@@ -845,7 +845,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self._scene.frame_current = int(restore_frame)
                 if self._space and getattr(self._space, "clip_user", None):
                     self._space.clip_user.frame_current = int(restore_frame)
-                print(f"[DeepTest] ⏩ Playhead global wiederhergestellt: Frame {restore_frame}")
+        except Exception as ex:
+            print(f"[DeepTest] ⚠️ Fehler bei globaler Wiederherstellung: {ex!r}")
         # --------------------------------------------------------------
         # Finale, funktionierende Variante: verzögerter Aufruf via Timer
         # --------------------------------------------------------------
@@ -858,7 +859,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                         print("[DeepTest] ⚠️ Kein CLIP_EDITOR gefunden – Folgeoperator übersprungen.")
                         return None
 
-                    region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                    # Robuste Regionswahl: bevorzugt WINDOW, sonst erste Region
+                    region = next((r for r in area.regions if r.type == 'WINDOW'), None) or (area.regions[-1] if area.regions else None)
                     with bpy.context.temp_override(window=bpy.context.window, area=area, region=region):
                         result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
                         print(f"[DeepTest] → Folge-Operator gestartet, Rückgabe: {result}")
