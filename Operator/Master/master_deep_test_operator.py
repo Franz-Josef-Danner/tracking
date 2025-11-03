@@ -211,6 +211,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         print(f"[DeepTest] ⚠️ Fehler in execute: {ex!r}")
         return self._teardown(context, cancelled=True)
 
+
     # ------------------------------------------------------------------------
     # Helper: Alle Tracks im aktiven Clip deselektieren
     # ------------------------------------------------------------------------
