@@ -174,6 +174,26 @@ def _phase_execute(context: bpy.types.Context, phase_fn) -> bool:
         print(f"[resolve_operator][ERROR] Modal Solve fehlgeschlagen: {e}")
         raise
 
+    # --- NEU: Warten bis Solve wirklich abgeschlossen ist ---
+    import time
+    def _wait_for_solve(context, timeout=15.0):
+        """Aktives Warten, bis clip.tracking.reconstruction.is_valid == True."""
+        clip = getattr(getattr(context, "space_data", None), "clip", None)
+        if clip is None and bpy.data.movieclips:
+            clip = bpy.data.movieclips[0]
+        if clip is None:
+            raise RuntimeError("Kein MovieClip im aktuellen Kontext gefunden.")
+
+        start = time.time()
+        while time.time() - start < timeout:
+            if clip.tracking.reconstruction.is_valid:
+                print("[resolve_operator][DEBUG] Reconstruction valid – Solve abgeschlossen.")
+                return True
+            time.sleep(0.25)
+        print("[resolve_operator][ERROR] Timeout – Solve nicht abgeschlossen.")
+        return False
+
+    _wait_for_solve(context)
     # 3) Fehler messen
     print("[resolve_operator][DEBUG] -> Ermittle durchschnittlichen Fehler …")
     try:
