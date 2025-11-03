@@ -113,7 +113,13 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
                     # FilterAll im gesicherten Kontext starten
                     try:
-                        deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(threshold=30.0, clip=clip_obj)
+                        # Da wir uns bereits im temp_override befinden,
+                        # darf kein zusätzliches Override in den Helper gelangen.
+                        # Nur threshold + clip übergeben.
+                        deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(
+                            threshold=30.0,
+                            clip=clip_obj
+                        )
                         print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ▶ Nach filter_and_delete_all_tracks: deleted_count_all={deleted_count_all}")
                     except Exception as call_err:
                         print(f"[Kaiserlich Tracker][MasterCycle][CTX-LIVE] ❌ Ausnahme während filter_and_delete_all_tracks: {call_err!r}")
