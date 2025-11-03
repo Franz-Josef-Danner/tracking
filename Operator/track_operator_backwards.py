@@ -243,7 +243,32 @@ class KAISERLICHTRACKER_OT_track_cycle_backwards(bpy.types.Operator):
             if not cancelled else
             "[Kaiserlich Tracker][ModalBackwards] ❌ Rückwärts-Zyklus abgebrochen."
         )
+        # ----------------------------------------------------
+        # Automatische Übergabe an TrackCycle (Vorwärts)
+        # ----------------------------------------------------
+        if not cancelled:
+            try:
+                print("[Kaiserlich Tracker][ModalBackwards] ➜ Übergabe an Track-Cycle (Vorwärts)...")
 
+                # Kontext sichern
+                window, area, region, space = self._window, self._area, self._region, self._space
+                if not all([window, area, region, space]):
+                    print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Ungültiger Kontext – TrackCycle nicht gestartet.")
+                    return
+
+                # Sicheren Kontext für Operator-Call verwenden
+                override = {
+                    "window": window,
+                    "area": area,
+                    "region": region,
+                    "space_data": space,
+                }
+
+                # Operator-Aufruf innerhalb des Clip-Editor-Kontexts
+                bpy.ops.kaiserlich_tracker.track_cycle(override)
+
+            except Exception as e:
+                print(f"[Kaiserlich Tracker][ModalBackwards] ❌ Fehler bei Übergabe an Track-Cycle: {e}")
 
 # ------------------------------------------------------------
 # Register
