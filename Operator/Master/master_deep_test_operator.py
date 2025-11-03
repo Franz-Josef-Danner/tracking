@@ -107,7 +107,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     _search_size: int = 0
     # ------------------------------------------------------------------------
     def execute(self, context: Context):
-        self._scene = context.scene
+        try:
+            self._scene = context.scene
         self._clip = get_active_clip(context)
         if not self._clip:
             self.report({'ERROR'}, "Kein aktiver Clip gefunden.")
@@ -205,7 +206,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         wm.modal_handler_add(self)
         self._track_state = _TrackState(active=False, current=0, end=0, active_names=[], total_len=-1)
         self._phase = "category_select"
-        return {'RUNNING_MODAL'}
+            return {'RUNNING_MODAL'}
+        except Exception as ex:
+            print(f"[DeepTest] ⚠️ Fehler in execute: {ex!r}")
+            return self._teardown(context, cancelled=True)
 
     # ------------------------------------------------------------------------
     # Helper: Alle Tracks im aktiven Clip deselektieren
@@ -231,7 +235,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return self._teardown(context, cancelled=True)
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
-
+        try:
         if self._phase == "category_select":
             if not self._categories_queue:
                 return self._finish(context)
@@ -269,8 +273,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 else:
                     return self._finish(context)
             return {'RUNNING_MODAL'}
-
         return {'RUNNING_MODAL'}
+        except Exception as ex:
+            print(f"[DeepTest] ⚠️ Unerwarteter Fehler: {ex!r}")
+            return self._teardown(context, cancelled=True)
 
     # ------------------------------------------------------------------------
     def _prepare_category(self, context):
