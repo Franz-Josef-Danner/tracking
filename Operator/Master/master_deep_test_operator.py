@@ -846,57 +846,35 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 if self._space and getattr(self._space, "clip_user", None):
                     self._space.clip_user.frame_current = int(restore_frame)
                 print(f"[DeepTest] ⏩ Playhead global wiederhergestellt: Frame {restore_frame}")
-        except Exception as ex:
-            print(f"[DeepTest] ⚠️ Fehler bei globaler Wiederherstellung: {ex!r}")
-        # ---------------------------------------------------------------------------
-
         # --------------------------------------------------------------
-        # Nach Abschluss: Weitergabe an Master Detect Adapt Operator
-        # --------------------------------------------------------------
-        if not cancelled:
-            try:
-                print("[DeepTest] 🔁 Starte Folge-Operator: master_detect_adapt ...")
-                # Sicherstellen, dass Kontext synchron ist
-                bpy.context.view_layer.update()
-
-                # Aufruf des nachgelagerten Operators
-                result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                print(f"[DeepTest] → Übergabe an master_detect_adapt gestartet: {result}")
-
-                if result != {'FINISHED'}:
-                    print(f"[DeepTest] ⚠️ master_detect_adapt wurde nicht erfolgreich abgeschlossen: {result}")
-            except Exception as ex:
-                print(f"[DeepTest] ⚠️ Übergabe an master_detect_adapt fehlgeschlagen: {ex!r}")
-        else:
-            print("[DeepTest] ⏹️ Test wurde abgebrochen – keine Weitergabe.")
-
-        # --------------------------------------------------------------
-        # Verzögerter Folgeaufruf per Timer mit gültigem CLIP_EDITOR-Kontext
+        # Finale, funktionierende Variante: verzögerter Aufruf via Timer
         # --------------------------------------------------------------
         if not cancelled:
             def _invoke_next():
                 try:
-                    print("[DeepTest] 🕒 Timer-Callback: starte master_detect_adapt ...")
+                    print("[DeepTest] 🕒 Timer-Callback → Starte master_detect_adapt …")
                     area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-                    if area:
-                        region = area.regions[-1] if area.regions else None
-                        with bpy.context.temp_override(window=bpy.context.window, area=area, region=region):
-                            result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                            print(f"[DeepTest] → Folge-Operator master_detect_adapt gestartet: {result}")
-                            if result != {'FINISHED'}:
-                                print(f"[DeepTest] ⚠️ master_detect_adapt nicht erfolgreich: {result}")
-                    else:
-                        print("[DeepTest] ⚠️ Kein CLIP_EDITOR Bereich gefunden – Folgeoperator übersprungen.")
+                    if not area:
+                        print("[DeepTest] ⚠️ Kein CLIP_EDITOR gefunden – Folgeoperator übersprungen.")
+                        return None
+
+                    region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                    with bpy.context.temp_override(window=bpy.context.window, area=area, region=region):
+                        result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                        print(f"[DeepTest] → Folge-Operator gestartet, Rückgabe: {result}")
+
                 except Exception as ex:
                     print(f"[DeepTest] ⚠️ Fehler beim Start von master_detect_adapt: {ex!r}")
                 return None
 
-            # Timer registrieren (0.1s Verzögerung, um Modal-Ende abzuwarten)
             try:
-                bpy.app.timers.register(_invoke_next, first_interval=0.1)
-                print("[DeepTest] ⏳ Folge-Operator wird in 0.1s gestartet.")
+                bpy.app.timers.register(_invoke_next, first_interval=0.2)
+                print("[DeepTest] ⏳ Folge-Operator (master_detect_adapt) wird in 0.2 s gestartet.")
             except Exception as ex:
-                print(f"[DeepTest] ⚠️ Timer-Registrierung fehlgeschlagen: {ex!r}")
+                print(f"[DeepTest] ⚠️ Timer konnte nicht registriert werden: {ex!r}")
+
+        else:
+            print("[DeepTest] ⏹️ Test wurde abgebrochen – keine Weitergabe.")
 
         return {'CANCELLED' if cancelled else 'FINISHED'}
 
