@@ -25,12 +25,23 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             print("[Kaiserlich Tracker][MasterCycle] ⚠️ Kein schwacher Frame gefunden – führe globales Filter-Cleanup durch ...")
 
             try:
-                # 1) Globaler Filter für alle Tracks
-                deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(threshold=30.0)
+                # 1) Gültigen CLIP_EDITOR-Bereich finden
+                area = next((a for a in context.screen.areas if a.type == "CLIP_EDITOR"), None)
+                if area is None:
+                    raise RuntimeError("Keine CLIP_EDITOR Area gefunden – Filterprozess kann nicht ausgeführt werden.")
+
+                override = context.copy()
+                override["area"] = area
+                override["region"] = next((r for r in area.regions if r.type == "WINDOW"), None)
+
+                # 2) Globaler Filter für alle Tracks mit Override
+                with bpy.context.temp_override(**override):
+                    deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(threshold=30.0)
                 print(f"[Kaiserlich Tracker][MasterCycle] FilterAll abgeschlossen – {deleted_count_all} Tracks gelöscht.")
 
-                # 2) Lokaler Filter für problematische Tracks
-                filter_problematic_tracks(context, threshold=10.0)
+                # 3) Lokaler Filter für problematische Tracks mit Override
+                with bpy.context.temp_override(**override):
+                    filter_problematic_tracks(context, threshold=10.0)
                 print("[Kaiserlich Tracker][MasterCycle] FilterTracks abgeschlossen.")
 
                 # 3) Erneuter Versuch, einen schwachen Frame zu finden
