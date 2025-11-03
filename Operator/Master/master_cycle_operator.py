@@ -7,6 +7,7 @@ from ...Helper.low_marker_frame import find_first_weak_frame
 from ...Helper.filter_all_tracks import filter_and_delete_all_tracks
 from ...Helper.filter_tracks import filter_problematic_tracks
 from ...Helper.update_default_sizes import update_default_sizes
+from ...Helper.find_clip_editor_area import find_clip_editor_area
 
 class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
     """Master Operator – setzt Playhead auf Frame mit den wenigsten aktiven Markern"""
@@ -25,12 +26,25 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             print("[Kaiserlich Tracker][MasterCycle] ⚠️ Kein schwacher Frame gefunden – führe globales Filter-Cleanup durch ...")
 
             try:
-                # 1) Globaler Filter für alle Tracks
-                deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(threshold=30.0)
+                # ----------------------------------------------------------
+                # Sicheren CLIP_EDITOR-Kontext herstellen
+                # ----------------------------------------------------------
+                area, region, space = find_clip_editor_area(context)
+                if area is None or region is None or space is None:
+                    raise RuntimeError("Keine CLIP_EDITOR Area gefunden – filter_tracks benötigt gültigen Kontext.")
+
+                print("[Kaiserlich Tracker][MasterCycle][CTX] ✓ CLIP_EDITOR gefunden "
+                      f"(area.type={getattr(area,'type',None)}, region.type={getattr(region,'type',None)}, "
+                      f"has space.clip={bool(getattr(space,'clip',None))})")
+
+                # 1) Globaler Filter für alle Tracks (mit Override)
+                with bpy.context.temp_override(area=area, region=region, space_data=space):
+                    deleted_names_all, deleted_count_all = filter_and_delete_all_tracks(threshold=30.0)
                 print(f"[Kaiserlich Tracker][MasterCycle] FilterAll abgeschlossen – {deleted_count_all} Tracks gelöscht.")
 
-                # 2) Lokaler Filter für problematische Tracks
-                filter_problematic_tracks(context, threshold=10.0)
+                # 2) Lokaler Filter für problematische Tracks (mit Override)
+                with bpy.context.temp_override(area=area, region=region, space_data=space):
+                    filter_problematic_tracks(context, threshold=10.0)
                 print("[Kaiserlich Tracker][MasterCycle] FilterTracks abgeschlossen.")
 
                 # 3) Erneuter Versuch, einen schwachen Frame zu finden
