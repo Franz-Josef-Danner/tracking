@@ -868,7 +868,51 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
             def _invoke_next(win, area, region, space):
                 try:
-                    print("[DeepTest] 🕒 Timer-Callback → Übergabe an master_detect_adapt …")
+                    print("\n[DeepTest][FollowUp] 🕒 Timer-Callback → Versuch, master_detect_adapt zu starten …")
+
+                    # --- 1. Diagnose: Kontext-Objekte prüfen ---
+                    print("[DeepTest][FollowUp][Diag] Eingehende Referenzen:")
+                    print(f"   Window: {win}")
+                    print(f"   Area:   {area}")
+                    print(f"   Region: {region}")
+                    print(f"   Space:  {space}")
+
+                    # --- 2. Blender-Kontext prüfen ---
+                    if bpy.context is None:
+                        print("[DeepTest][FollowUp][Diag] ❌ bpy.context ist None – Timer läuft evtl. im Offscreen-Thread.")
+                        return None
+
+                    ctx_win = bpy.context.window
+                    ctx_scr = getattr(ctx_win, 'screen', None)
+                    print(f"[DeepTest][FollowUp][Diag] Aktuelles Window: {ctx_win}, Screen: {ctx_scr}")
+
+                    # --- 3. Sicherstellen, dass Screen vorhanden ist ---
+                    if not ctx_scr:
+                        print("[DeepTest][FollowUp][Diag] ❌ Kein aktiver Screen gefunden – keine Areas verfügbar.")
+                        return None
+
+                    # --- 4. Suche CLIP_EDITOR ---
+                    active_win = ctx_win or win
+                    active_area = None
+                    active_region = None
+                    active_space = None
+                    for a in active_win.screen.areas:
+                        print(f"[DeepTest][FollowUp][Scan] Area: {a.type}")
+                        if a.type == 'CLIP_EDITOR':
+                            active_area = a
+                            active_region = next((r for r in a.regions if r.type == 'WINDOW'), None) or a.regions[-1]
+                            active_space = next((s for s in a.spaces if s.type == 'CLIP_EDITOR'), None)
+                            break
+
+                    if not active_area:
+                        print("[DeepTest][FollowUp][Diag] ❌ Kein CLIP_EDITOR in aktuellem Screen gefunden.")
+                        return None
+
+                    print(f"[DeepTest][FollowUp][Diag] ✅ CLIP_EDITOR gefunden: Area={active_area}, Region={active_region}, Space={active_space}")
+
+                    # --- 5. Operator-Verfügbarkeit prüfen ---
+                    has_op = hasattr(bpy.ops.kaiserlich_tracker, "master_detect_adapt")
+                    print(f"[DeepTest][FollowUp][Diag] Operator verfügbar: {has_op}")
 
                     # Kontext zur Laufzeit erneut prüfen – Timer läuft evtl. außerhalb des ursprünglichen Fensters
                     active_win = bpy.context.window or win
@@ -889,14 +933,22 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                         return None
 
                     override = dict(window=active_win, area=active_area, region=active_region, space_data=active_space)
-                    print(f"[DeepTest] Kontext aktiv: {active_area}, {active_region}, {active_space}")
+                    print(f"[DeepTest][FollowUp] Kontext aktiv: Area={active_area}, Region={active_region}, Space={active_space}")
 
-                    with bpy.context.temp_override(**override):
-                        result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                        print(f"[DeepTest] → master_detect_adapt gestartet, Rückgabe: {result}")
+                    try:
+                        with bpy.context.temp_override(**override):
+                            result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                            print(f"[DeepTest][FollowUp] → master_detect_adapt gestartet, Rückgabe: {result}")
+                            if result is None:
+                                print("[DeepTest][FollowUp][Diag] ⚠️ Operator-Aufruf gab None zurück.")
+                            elif isinstance(result, set) and 'CANCELLED' in result:
+                                print("[DeepTest][FollowUp][Diag] ⚠️ Operator meldete CANCELLED.")
+                            else:
+                                print("[DeepTest][FollowUp][Diag] ✅ Operator erfolgreich ausgeführt.")
+                    except Exception as inner_ex:
+                        print(f"[DeepTest][FollowUp][Diag] ❌ Fehler während temp_override-Aufruf: {inner_ex!r}")
 
-                    # Erfolg wird nur geloggt, kein Rückgabewert nötig
-                    print("[DeepTest] ✅ Übergabe erfolgreich ausgeführt.")
+                    print("[DeepTest][FollowUp] ✅ Timer-Callback abgeschlossen.")
                 except Exception as ex:
                     print(f"[DeepTest] ⚠️ Fehler beim Start von master_detect_adapt: {ex!r}")
                 return None
