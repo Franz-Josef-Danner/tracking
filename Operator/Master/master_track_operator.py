@@ -213,7 +213,17 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             if not cancelled else
             "[Kaiserlich Tracker][Modal] ❌ Zyklus abgebrochen."
         )
-
+        # ------------------------------------------------------------------
+        # Nach Abschluss: Übergabe an Master-Cycle-Operator
+        # ------------------------------------------------------------------
+        if not cancelled:
+            try:
+                print("[Kaiserlich Tracker][MasterTrack] ➜ Übergabe an Master-Cycle-Operator ...")
+                bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
+            except Exception as e:
+                print(f"[Kaiserlich Tracker][MasterTrack] ⚠️ Fehler bei Übergabe an Master-Cycle-Operator: {e}")
+        else:
+            print("[Kaiserlich Tracker][MasterTrack] Übergabe an Master-Cycle-Operator übersprungen (abgebrochen).")
 
 # ------------------------------------------------------------
 # Register
