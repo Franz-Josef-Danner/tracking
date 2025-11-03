@@ -277,6 +277,15 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         print(f"\n[MasterDeepTest][Category] → {self._current_category}")
         self._base_value = 1.0
         self._current_step_index = 0
+        # --- Harte Rücksetzung interner Threshold- und Statewerte ---
+        self._base_value = 1.0
+        self._current_value = 1.0
+        self._threshold = 0.0001
+        self._last_md = 100.0
+        self._detect_loop = 0
+        self._current_step_index = 0
+        print(f"[MasterDeepTest][{self._current_category}] Internal state reset → threshold=0.0001, base=1.0, md=100.0")
+
         # Vergleichslänge direkt aus Szenenwert der Kategorie
         self._current_goal = int(self._goal_map.get(self._current_category, 0))
         self._best_thresholds[self._current_category] = 1.0
@@ -321,6 +330,9 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             print("[MasterDeepTest][rot_scale_scale] Init SCALE-Threshold-Test")
         elif self._current_category == "perspective":
             set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
+
+        # --- Logging für Übergang ---
+        print(f"[MasterDeepTest][{self._current_category}] Thresholds und interner State vollständig zurückgesetzt.")
 
     # ------------------------------------------------------------------------
     def _process_threshold_cycle(self, context) -> bool:
