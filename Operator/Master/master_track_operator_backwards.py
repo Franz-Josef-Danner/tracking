@@ -243,7 +243,37 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             if not cancelled else
             "[Kaiserlich Tracker][ModalBackwards] ❌ Rückwärts-Zyklus abgebrochen."
         )
+        # --------------------------------------------------------
+        # Kontextübergabe an Forward-Tracking (Master Track Cycle)
+        # --------------------------------------------------------
+        if not cancelled:
+            try:
+                print("[Kaiserlich Tracker][ModalBackwards] ➜ Übergabe an Master Track Cycle (vorwärts)...")
 
+                # Kontext sichern
+                clip = getattr(context.space_data, "clip", None)
+                if clip is None:
+                    print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Kein aktiver Clip – Übergabe übersprungen.")
+                    return
+
+                # Clip-Editor-Bereich wiederfinden
+                window, area, region, space = find_clip_editor_area(clip)
+                if not window:
+                    print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Keine CLIP_EDITOR Area – Übergabe übersprungen.")
+                    return
+
+                # Temporären Kontext erzeugen
+                override = context.copy()
+                override["window"] = window
+                override["area"] = area
+                override["region"] = region
+                override["space_data"] = space
+
+                # Forward-Operator ausführen
+                bpy.ops.kaiserlich_tracker.master_track_cycle(override)
+                print("[Kaiserlich Tracker][ModalBackwards] ✅ Übergabe erfolgreich gestartet.")
+            except Exception as e:
+                print(f"[Kaiserlich Tracker][ModalBackwards] ❌ Fehler bei Übergabe: {e}")
 
 # ------------------------------------------------------------
 # Register
