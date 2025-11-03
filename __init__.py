@@ -21,6 +21,7 @@ from .Operator.Master.master_shorttest_operator import KAISERLICHTRACKER_OT_mast
 from .Operator.Master.master_deep_test_operator import KAISERLICHTRACKER_OT_master_deep_test_operator
 from .Operator.Master.master_detect_adapt_operator import KAISERLICHTRACKER_OT_master_detect_adapt
 from .Operator.Master.master_track_operator_backwards import KAISERLICHTRACKER_OT_master_track_cycle_backwards
+from .Operator.Master.master_cycle_operator import KAISERLICHTRACKER_OT_master_cycle_operator
 from .Operator.master_operator import KAISERLICHTRACKER_OT_master_operator
 
 # ---- Klassenliste ----------------------------------------------------------
@@ -36,6 +37,7 @@ classes = (
     KAISERLICHTRACKER_OT_master_deep_test_operator,
     KAISERLICHTRACKER_OT_master_detect_adapt,
     KAISERLICHTRACKER_OT_master_track_cycle_backwards,
+    KAISERLICHTRACKER_OT_master_cycle_operator,
     KAISERLICHTRACKER_OT_master_operator,
 )
 
