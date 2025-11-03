@@ -851,14 +851,38 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # Finale, funktionierende Variante: verzögerter Aufruf via Timer
         # --------------------------------------------------------------
         if not cancelled:
-            def _invoke_next():
+            import functools
+
+            # Gesicherten Kontext aus self holen, aber als unabhängige Referenzen speichern
+            win = getattr(self, "_window", bpy.context.window)
+            area = getattr(self, "_area", None)
+            region = getattr(self, "_region", None)
+            space = getattr(self, "_space", None)
+
+            # Fallback falls Area/Region verloren
+            if not area or not region or not space:
+                area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+                if area:
+                    region = next((r for r in area.regions if r.type == 'WINDOW'), None) or area.regions[-1]
+                    space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+
+            def _invoke_next(win, area, region, space):
                 try:
                     print("[DeepTest] 🕒 Timer-Callback → Starte master_detect_adapt …")
-                    # Versuche zuerst gespeicherte CLIP-Kontexte zu verwenden
-                    win = getattr(self, "_window", bpy.context.window)
-                    area = getattr(self, "_area", None)
-                    region = getattr(self, "_region", None)
-                    space = getattr(self, "_space", None)
+                    override = dict(window=win, area=area, region=region, space_data=space)
+                    if area and region and space:
+                        with bpy.context.temp_override(**override):
+                            result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                            print(f"[DeepTest] → master_detect_adapt gestartet, Rückgabe: {result}")
+                    else:
+                        print("[DeepTest] ⚠️ Kein valider CLIP_EDITOR-Kontext verfügbar – Übersprungen.")
+                except Exception as ex:
+                    print(f"[DeepTest] ⚠️ Fehler beim Start von master_detect_adapt: {ex!r}")
+                return None
+
+            timer_func = functools.partial(_invoke_next, win, area, region, space)
+            bpy.app.timers.register(timer_func, first_interval=0.1)
+            print("[DeepTest] ⏳ Folge-Operator (master_detect_adapt) wird in 0.1 s gestartet.")
 
                     # Fallback, falls etwas davon None ist
                     if area is None or region is None or space is None:
