@@ -301,10 +301,10 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                 override['area'] = area
                 override['region'] = next((r for r in area.regions if r.type == 'WINDOW'), None)
 
-                # Richtiger Aufruf: 'INVOKE_DEFAULT' ist hier ein benannter Parameter
+                # ✅ Korrekte Aufrufstruktur: 'INVOKE_DEFAULT' zuerst, override als keyword
                 result = bpy.ops.kaiserlich_tracker.master_track_cycle_backwards(
-                    override,
-                    'INVOKE_DEFAULT'
+                    'INVOKE_DEFAULT',
+                    **override
                 )
 
                 print(f"[Kaiserlich Tracker][MasterDetectAdapt] Operator-Aufrufresultat: {result}")
@@ -314,29 +314,7 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
         except Exception as e:
             print(f"[Kaiserlich Tracker][MasterDetectAdapt] ❌ Fehler beim Start von Track-Cycle-Backwards: {e}")
 
-        # ----------------------------------------------------------------------
-        # Nach Abschluss: Kontext sicher an master_track_cycle_backwards übergeben
-        # ----------------------------------------------------------------------
-        print("[Kaiserlich Tracker][MasterDetectAdapt] ➜ Starte automatischen Übergang zu Track-Cycle-Backwards ...")
+        # 🧹 Doppelter Block entfernt, korrekter Aufruf integriert
 
-        try:
-            area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-            if area:
-                override = context.copy()
-                override['area'] = area
-                override['region'] = next((r for r in area.regions if r.type == 'WINDOW'), None)
-
-                # Richtiger Aufruf: 'INVOKE_DEFAULT' ist hier ein benannter Parameter
-                result = bpy.ops.kaiserlich_tracker.master_track_cycle_backwards(
-                    override,
-                    'INVOKE_DEFAULT'
-                )
-
-                print(f"[Kaiserlich Tracker][MasterDetectAdapt] Operator-Aufrufresultat: {result}")
-                print("[Kaiserlich Tracker][MasterDetectAdapt] Kontext erfolgreich an Track-Cycle-Backwards übergeben.")
-            else:
-                print("[Kaiserlich Tracker][MasterDetectAdapt] ⚠️ Keine CLIP_EDITOR-Area gefunden – Operator-Aufruf übersprungen.")
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][MasterDetectAdapt] ❌ Fehler beim Start von Track-Cycle-Backwards: {e}")
 
         return {'FINISHED'}
