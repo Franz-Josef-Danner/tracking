@@ -729,12 +729,47 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                       f"Untergrenze ({self._current_value:.6f}) erreicht, Ziel {compare_len} nicht erfüllt.")
                 self._current_step_index = len(REDUCTION_STEPS)
                 return True
-            else:
-                # 🔁 Wiederhole aktuelle Stufe mit gleichem Threshold
-                print(f"[DeepTest] 🔁 Wiederhole Stufe '{self._current_category}': "
-                      f"gemessen {total_len}, Ziel {compare_len}, Threshold {self._current_value:.6f}")
-                # keine Änderung des Step-Index → erneute Durchführung derselben Stufe
-                return False  
+
+            # 🔁 Dynamische Wiederholung mit leicht verschärftem Threshold
+            adapt_factor = 0.8  # z. B. 80 % des letzten Wertes
+            new_val = max(MIN_THRESHOLD_VAL, self._current_value * adapt_factor)
+
+            # Abbruchbedingung: wenn die Änderung kleiner als 1e-6 ist, nichts mehr zu gewinnen
+            if abs(new_val - self._current_value) < 1e-6:
+                print(f"[DeepTest] ⚠️ Keine weitere Verbesserung möglich bei {self._current_value:.6f}. "
+                      f"Abbruch der Kategorie '{self._current_category}'.")
+                self._current_step_index = len(REDUCTION_STEPS)
+                return True
+
+            print(f"[DeepTest] 🔁 Wiederhole Stufe '{self._current_category}' "
+                  f"mit verschärftem Threshold: {self._current_value:.6f} → {new_val:.6f} "
+                  f"(Ziel {compare_len}, gemessen {total_len})")
+
+            # neuen Threshold anwenden, bleibt aber in derselben Stufe
+            self._current_value = new_val
+
+            if self._current_category == "rot_xy":
+                y_val = min(1.0, new_val * (self._hz / self._vc))
+                set_scene_props(self._scene,
+                    kaiserlich_rot_thresh_x=new_val,
+                    kaiserlich_rot_thresh_y=y_val)
+            elif self._current_category == "scale":
+                set_scene_props(self._scene,
+                    kaiserlich_scale_thresh_min=new_val,
+                    kaiserlich_scale_thresh_max=min(1, new_val * 1.1))
+            elif self._current_category == "rot_scale_rot":
+                set_scene_props(self._scene,
+                    kaiserlich_rot_scale_thresh_rot=new_val,
+                    kaiserlich_rot_scale_thresh_scale=0.0)
+            elif self._current_category == "rot_scale_scale":
+                set_scene_props(self._scene,
+                    kaiserlich_rot_scale_thresh_rot=0.0,
+                    kaiserlich_rot_scale_thresh_scale=new_val)
+            elif self._current_category == "perspective":
+                set_scene_props(self._scene, kaiserlich_perspective_thresh=new_val)
+
+            # Keine Erhöhung des Step-Index → erneute Durchführung derselben Stufe
+            return False
 
         # --------------------------------------------------------------------
         # Kein Rücksprung auf Szenenanfang mehr:
