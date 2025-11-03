@@ -107,7 +107,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         # Deselect all at start
         try:
             deselected = self._deselect_all_tracks(context)
-            print(f"[Kaiserlich Tracker][Selection] {deselected} Tracks deselektiert (Start).")
         except Exception as ex:
             print(f"[Kaiserlich Tracker][Selection] ⚠️ Deselektion fehlgeschlagen: {ex!r}")
 
@@ -126,7 +125,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         # 0) Init
         if not self._state.initialized:
             self._state.initialized = True
-            print("[Kaiserlich Tracker][AutoCalibrate] Initialized.")
             return {'RUNNING_MODAL'}
 
         # 1) Reset Thresholds
@@ -134,19 +132,15 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             try:
                 reset_all_thresholds(context, active_props=[])
                 self._state.did_reset_thresholds = True
-                print("[Kaiserlich Tracker][AutoCalibrate] Thresholds reset → 1.0")
             except Exception as ex:
-                print(f"[AutoCalibrate] Threshold reset failed: {ex!r}")
                 self._state.did_reset_thresholds = True
             return {'RUNNING_MODAL'}
 
         # 2) Detect-Adapt
         if not self._state.did_detect_adapt:
-            print("[Kaiserlich Tracker][AutoCalibrate] Detect-Adapt gestartet.")
             try:
                 self._detect_adapt_inline(context)
             except Exception as ex:
-                print(f"[AutoCalibrate] Detect-Adapt Fehler: {ex!r}")
                 self._state.detect_adapt_done_confirmed = True
             self._state.did_detect_adapt = True
             return {'RUNNING_MODAL'}
@@ -160,9 +154,7 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             if not self._state.track_active and not self._state.did_track_cycle:
                 try:
                     self._track_cycle_start(context)
-                    print("[Kaiserlich Tracker][AutoCalibrate] Track-Cycle initialisiert.")
                 except Exception as ex:
-                    print(f"[AutoCalibrate] Track-Cycle Init Fehler: {ex!r}")
                     self._state.did_track_cycle = True
                     return {'RUNNING_MODAL'}
                 return {'RUNNING_MODAL'}
@@ -174,7 +166,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                     self._state.track_active = False
                     self._state.track_cycles_done += 1
                     self._state.did_track_cycle = True
-                    print("[Kaiserlich Tracker][AutoCalibrate] Track-Cycle abgeschlossen.")
                     return {'RUNNING_MODAL'}
                 return {'RUNNING_MODAL'}
 
@@ -184,7 +175,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             if not self._state.second_cycle:
                 try:
                     # Setze Rot-Schwellenwerte (X/Y) auf 0,0
-                    print("[Kaiserlich Tracker][AutoCalibrate] Rot-Schwellwerte auf 0 gesetzt.")
                     set_scene_props(context.scene,
                                     kaiserlich_rot_thresh_x=0.00001,
                                     kaiserlich_rot_thresh_y=0.00001)
@@ -207,7 +197,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             if self._state.second_cycle and not self._state.third_cycle:
                 try:
                     # Setze alle Thresholds auf 1.0 zurück und Scale-Min/Max auf 0.00001
-                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Scale-Min/Max auf 0.00001.")
                     reset_all_thresholds(context, active_props=[])
                     set_scene_props(context.scene,
                                     kaiserlich_scale_thresh_min=0.00001,
@@ -230,7 +219,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             if self._state.third_cycle and not getattr(self._state, 'fourth_cycle', False):
                 try:
                     # Setze alle Thresholds auf 1.0 zurück und Rot-Scale-Paar auf 0.00001
-                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Rot-Scale (rot/scale) auf 0.00001.")
                     reset_all_thresholds(context, active_props=[])
                     set_scene_props(context.scene,
                                     kaiserlich_rot_scale_thresh_rot=0.00001,
@@ -253,7 +241,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             if getattr(self._state, 'fourth_cycle', False) and not getattr(self._state, 'fifth_cycle', False):
                 try:
                     # Setze alle Thresholds auf 1.0 zurück und Perspective-Thresh auf 0.00001
-                    print("[Kaiserlich Tracker][AutoCalibrate] Thresholds auf 1.0 gesetzt, Perspective-Thresh auf 0.00001.")
                     reset_all_thresholds(context, active_props=[])
                     set_scene_props(context.scene,
                                     kaiserlich_perspective_thresh=0.00001)
@@ -304,14 +291,12 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                             # Besser als Baseline → in Zielvariable persistieren
                             scene[step_key] = cycle_len
                             best_thresholds.update(thresh_dict)
-                            print(f"[Kaiserlich Tracker][AutoCalibrate] 🔹 Verbesserter Wert in Cycle {cycle_num}: {cycle_len} > {baseline_len} → gespeichert unter '{step_key}'")
                         else:
                             # Kein Zugewinn → Zielvariable bleibt leer
                             print(f"[Kaiserlich Tracker][AutoCalibrate] Kein Zugewinn in Cycle {cycle_num}: {cycle_len} ≤ {baseline_len}")
 
                     # Beste Thresholds (Aggregat der Gewinner) in Szene persistieren
                     scene["kaiserlich_best_thresholds"] = best_thresholds
-                    print(f"[Kaiserlich Tracker][AutoCalibrate] Beste Thresholds: {best_thresholds}")
 
                 except Exception as ex:
                     print(f"[AutoCalibrate] Fehler beim Vergleich der Track-Längen: {ex!r}")
@@ -374,9 +359,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                     space.clip_user.frame_current = new_start
             except Exception:
                 pass
-
-            print(f"[ShortTest] ⏪ Nur {remaining} Frames bis Szenenende – "
-                  f"Playhead verschoben: {current_frame} → {new_start}")
         else:
             pass
         # -------------------------------------------------------------------------------
@@ -407,8 +389,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
         clip = getattr(context.space_data, "clip", None)
         tracking = getattr(clip, "tracking", None)
         baseline_start_tracknames = set(t.name for t in tracking.tracks) if tracking else set()
-        print(f"[Kaiserlich Tracker][DetectAdapt] Ausgangsmarker: {len(pre_snapshot)} | "
-              f"BaselineTracks: {len(baseline_start_tracknames)}")
 
         # --- Adaptive Schleife --------------------------------------------------
         max_loops = 8
@@ -443,8 +423,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
 
         while loop < max_loops:
             loop += 1
-            print(f"\n[Kaiserlich Tracker][DetectAdapt] --- LOOP {loop} ---")
-            print(f"[Kaiserlich Tracker][DetectAdapt] Aktuelles min_distance = {last_md:.2f}")
 
             detect_features(
                 context,
@@ -463,8 +441,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             post_snapshot = snapshot_active_markers(context)
             alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
 
-            print(f"[Kaiserlich Tracker][DetectAdapt] Alte Marker erkannt: {len(alte_marker)}")
-            print(f"[Kaiserlich Tracker][DetectAdapt] Neue Marker erkannt: {len(neue_marker)}")
             if neue_marker:
                 print("   ➤ Beispiel neue Marker:", [m['track'] for m in neue_marker[:5]])
             if alte_marker:
@@ -488,12 +464,8 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                 clip_tracks = {t.name for t in clip.tracking.tracks}
                 real_new = [m for m in neue_marker if m['track'] not in baseline_start_tracknames and m['track'] in clip_tracks]
                 if len(real_new) == 0:
-                    print("[Kaiserlich Tracker][DetectAdapt] ❌ Keine echten neuen Marker erkannt – "
-                          "Iteration wird fortgesetzt, min_distance wird reduziert.")
                     remaining = 0  # erzwingt erneute Iteration
             # -------------------------------------------------------------------
-
-            print(f"[Kaiserlich Tracker][DetectAdapt] Nach Cleanup: {remaining} neue Marker übrig, {deleted_old} alte gelöscht")
 
             diff = remaining - ef_target
             tolerance = ef_target * 0.10
@@ -501,7 +473,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             if remaining == 0:
                 pass
             elif abs(diff) <= tolerance and remaining > 0:
-                print(f"[Kaiserlich Tracker][DetectAdapt] ✅ Ziel erreicht: {remaining}/{ef_target} Marker (±{tolerance:.1f})")
                 break
             else:
                 pass
@@ -846,8 +817,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
 
         except Exception as e:
             print(f"[Kaiserlich Tracker][Cleanup] ⚠️ Fehler beim Abschlusslauf: {e}")
-
-        print("[Kaiserlich Tracker][TrackCycle] ✅ Zyklus vollständig abgeschlossen.")
         return None
 
     # ------------------------------------------------------------------------
