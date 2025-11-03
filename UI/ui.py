@@ -21,6 +21,7 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.use_property_decorate = False
         col.prop(scene, "kaiserlich_markers_per_frame", text="Marker per Frame")
         col.prop(scene, "kaiserlich_frames_per_track", text="Frames per Track")
+        col.prop(scene, "max_error_value", text="Max error Value")
 
         # ▶️ Buttons
         col = layout.column(align=True)
@@ -151,6 +152,13 @@ def register():
         min=0,
         soft_min=0,
     )
+    bpy.types.Scene.max_error_value = bpy.props.IntProperty(
+        name="Max error Value",
+        description="Jeder track mit einem solve error über diesem wert wird ausgefiltert",
+        default=2,
+        min=0.5,
+        soft_min=1,
+    )
 
 def unregister():
     for prop in (
@@ -162,6 +170,7 @@ def unregister():
         "kaiserlich_rot_scale_thresh_scale",
         "kaiserlich_perspective_thresh",
         "kaiserlich_frames_per_track",
+        "max_error_value",
     ):
         if hasattr(bpy.types.Scene, prop):
             delattr(bpy.types.Scene, prop)
