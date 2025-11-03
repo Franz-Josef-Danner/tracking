@@ -334,6 +334,19 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # --- Logging für Übergang ---
         print(f"[MasterDeepTest][{self._current_category}] Thresholds und interner State vollständig zurückgesetzt.")
 
+        # --- NEU: Detect-State vollständig neu initialisieren ---
+        try:
+            _state = init_detect_state(context)
+            self._hz = _state.get("hz", self._hz)
+            self._vc = _state.get("vc", self._vc)
+            self._margin = _state.get("margin", 100)
+            self._pattern_size = _state.get("pattern_size", 50)
+            self._search_size = _state.get("search_size", self._pattern_size * 2)
+            self._threshold = _state.get("threshold", 0.0001)
+            self._last_md = float(_state.get("min_distance", 100.0))
+            print(f"[MasterDeepTest][{self._current_category}] Detect-State reinitialisiert → md={self._last_md:.2f}, pattern={self._pattern_size}, search={self._search_size}")
+        except Exception as ex:
+            print(f"[MasterDeepTest][{self._current_category}] ⚠️ Detect-State-Reset fehlgeschlagen: {ex!r}")
     # ------------------------------------------------------------------------
     def _process_threshold_cycle(self, context) -> bool:
         """Durchläuft die Threshold-Stufen sequentiell und prüft je Durchgang."""
