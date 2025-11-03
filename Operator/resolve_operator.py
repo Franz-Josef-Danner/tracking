@@ -7,7 +7,6 @@
 #   ..Helper/get_average_error.py    -> get_average_error
 #   ..Helper/filter_tracks.py        -> filter_problematic_tracks
 #   ..Helper/low_marker_frame.py     -> find_first_weak_frame
-#   Operator/Master/master_cycle_operator.py -> KAISERLICHTRACKER_OT_master_cycle_operator
 #
 # Nutzung: F3 -> "Kaiserlich: Resolve Master" ausführen
 # Hinweis: Szene-Eigenschaft scene.max_error_value (FloatProperty) wird vorausgesetzt.
@@ -29,7 +28,6 @@ try:
     from ..Helper.get_average_error import get_average_error
     from ..Helper.filter_tracks import filter_problematic_tracks
     from ..Helper.low_marker_frame import find_first_weak_frame
-    from Operator.Master.master_cycle_operator import KAISERLICHTRACKER_OT_master_cycle_operator  # noqa: F401 (nur für Operator-Aufruf)
 except Exception as e:
     # Harte, frühe Fehlermeldung zwecks Diagnose fehlender Module
     raise ImportError(f"[resolve_operator] Fehlende oder fehlerhafte Add-on-Module: {e}")
