@@ -125,9 +125,15 @@ def _find_and_dispatch_cycle(context: bpy.types.Context) -> bool:
     """
     weak_frame = find_first_weak_frame(context)
     if weak_frame is not None:
-        # Master Cycle triggern
-        res = bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
-        return True
+        print("[resolve_operator][DEBUG] -> Schwacher Frame gefunden – Übergabe an Master-Cycle (asynchron) ...")
+        try:
+            res = bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
+            print(f"[resolve_operator][DEBUG] Übergabe erfolgreich gestartet (Result={res})")
+            # Wir gehen davon aus, dass MasterCycle modal übernimmt
+            return True
+        except Exception as e:
+            print(f"[resolve_operator][ERROR] Fehler beim Start des Master-Cycle: {e}")
+            return False
     return False
 
 
@@ -198,6 +204,12 @@ def _phase_execute(context: bpy.types.Context, phase_fn) -> bool:
     delegated = _find_and_dispatch_cycle(context)
     print(f"[resolve_operator][DEBUG] Delegated? {delegated}")
 
+    # Wenn delegiert, sofort beenden – Kontrolle geht an MasterCycle
+    if delegated:
+        print("[resolve_operator][DEBUG] MasterCycle läuft asynchron – ResolveOperator beendet sich jetzt.")
+        return True
+
+    return False
 
 # -------------------------------------------------------------------------
 # Modal Solve Operator (führt Solve asynchron aus und wartet blockierend)
@@ -254,7 +266,7 @@ class KAISERLICHTRACKER_OT_resolve_operator(Operator):
             delegated = _phase_execute(context, refine_intrinsics_reset)
             if delegated:
                 self.report({'INFO'}, "Master-Cycle gestartet (nach RESET).")
-                return {'FINISHED'}
+                return {'FINISHED'}  # Stoppe vollständig, keine weiteren Phasen
 
             # === Phase 2: FOCAL LENGTH ===
             self.log("Phase 2: refine_intrinsics_focal_length_on")
