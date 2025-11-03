@@ -66,12 +66,14 @@ def register():
         min=0,
         soft_min=0,
     )
-    bpy.types.Scene.max_error_value = bpy.props.IntProperty(
-        name="Max error Value",
-        description="Jeder track mit einem solve error über diesem wert wird ausgefiltert",
-        default=2,
+    bpy.types.Scene.max_error_value = bpy.props.FloatProperty(
+        name="Max Error Value",
+        description="Tracks mit einem Solve-Error über diesem Wert werden herausgefiltert",
+        default=2.0,
         min=0.5,
-        soft_min=1,
+        soft_min=1.0,
+        step=0.1,
+        precision=3,
     )
     # UI-Properties registrieren
     try:
