@@ -1,4 +1,4 @@
-# Operator/Master/master_deep_test_operator.py
+# Operator/Master/master_deep_test_operator.py 
 import bpy
 import time
 import math
@@ -227,6 +227,24 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
     # ------------------------------------------------------------------------
     def modal(self, context, event):
+        # ---------------------------------------------------------------
+        # 🧩 Diagnose-Logging für Kontrollfluss
+        # ---------------------------------------------------------------
+        try:
+            phase = getattr(self, "_phase", "undef")
+            cat = getattr(self, "_current_category", None)
+            queue_len = len(getattr(self, "_categories_queue", []))
+            print(f"[DeepTest][Diag] modal() tick | event={event.type} | phase={phase} | category={cat} | queue={queue_len}")
+        except Exception as ex:
+            print(f"[DeepTest][Diag] ⚠️ Fehler beim Status-Log: {ex!r}")
+
+        # Wenn modal() hier überhaupt nicht mehr erscheint,
+        # dann wurde der Operator bereits von Blender beendet.
+        # Wenn sie erscheint, aber kein _finish() folgt,
+        # dann endet der Kontrollfluss vorzeitig.
+
+        # ---------------------------------------------------------------
+
         if event.type == 'ESC':
             return self._teardown(context, cancelled=True)
         if event.type != 'TIMER':
@@ -234,13 +252,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         if self._phase == "category_select":
             if not self._categories_queue:
-                print("[DeepTest][Modal] Kategorie-Queue leer → _finish() wird aufgerufen.")
                 return self._finish(context)
             self._current_category = self._categories_queue.pop(0)
             self._prepare_category(context)
             self._phase = "threshold_cycle"
             return {'RUNNING_MODAL'}
-
+        # Nicht-blockierendes Tracking: wenn Tracking aktiv, pro TIMER-Tick genau einen Schritt
         if self._phase == "tracking_tick":
             running = self._track_tick(context)
             if running:
@@ -249,12 +266,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             self._phase = "threshold_cycle_evaluate"
             return {'RUNNING_MODAL'}
 
-        if self._phase == "threshold_cycle_evaluate":
-            finished = self._evaluate_after_tracking(context)
+        # Auswertung nach beendetem Tracking innerhalb derselben Threshold-Stufe
             if finished:
-                print(f"[DeepTest][Modal] Kategorie {self._current_category} abgeschlossen.")
+                print("[DeepTest][Modal] Kategorie fertig – Queue-Länge:", len(self._categories_queue))
                 if self._categories_queue:
-                    print(f"[DeepTest][Modal] Nächste Kategorie → {self._categories_queue[0]}")
                     self._phase = "category_select"
                     return {'RUNNING_MODAL'}
                 print("[DeepTest][Modal] Alle Kategorien abgeschlossen → _finish() wird aufgerufen.")
@@ -265,8 +280,11 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         if self._phase == "threshold_cycle":
             finished = self._process_threshold_cycle(context)
+            print(f"[DeepTest][Diag] Nach _process_threshold_cycle: finished={finished}, queue_len={len(self._categories_queue)}")
             if finished:
-                print(f"[DeepTest][Modal] Kategorie {self._current_category} abgeschlossen (threshold_cycle).")
+                print(f"[DeepTest][Diag] Phase={self._phase}, Category={self._current_category}, Queue={self._categories_queue}")
+            if finished:
+                print("[DeepTest][Modal] Kategorie fertig (threshold_cycle) – Queue-Länge:", len(self._categories_queue))
                 if self._categories_queue:
                     self._phase = "category_select"
                     return {'RUNNING_MODAL'}
@@ -274,6 +292,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 return self._finish(context)
             return {'RUNNING_MODAL'}
 
+        # ---------------------------------------------------------------
+        # Wenn keine der Phasen mehr greift → Kontrolle verloren
+        # ---------------------------------------------------------------
+        print(f"[DeepTest][Diag] WARNUNG: Keine Phase matcht! Aktuelle Phase={self._phase}")
         return {'RUNNING_MODAL'}
 
     # ------------------------------------------------------------------------
