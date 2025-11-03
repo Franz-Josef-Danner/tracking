@@ -193,6 +193,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     self._last_md = cached_md
 
         except Exception as ex:
+            print(f"[MasterDeepTest][InitDetect] ⚠️ Parameterinitialisierung fehlgeschlagen: {ex!r}")
 
         # Zielwerte laden
         # Zielwerte aus den Szenenvariablen ermitteln
