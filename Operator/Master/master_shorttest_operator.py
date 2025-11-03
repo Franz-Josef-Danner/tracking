@@ -290,10 +290,12 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                         if cycle_len > baseline_len:
                             # Besser als Baseline → in Zielvariable persistieren
                             scene[step_key] = cycle_len
+                            print(f"[KAISERLICHTRACKER][LOG] {step_key} gesetzt (Cycle {cycle_num}) = {cycle_len}")
                             best_thresholds.update(thresh_dict)
                         else:
                             # Kein Zugewinn → Zielvariable bleibt leer
                             print(f"[Kaiserlich Tracker][AutoCalibrate] Kein Zugewinn in Cycle {cycle_num}: {cycle_len} ≤ {baseline_len}")
+                            print(f"[KAISERLICHTRACKER][LOG] {step_key} NICHT gesetzt (Cycle {cycle_num}) = {cycle_len} ≤ {baseline_len}")
 
                     # Beste Thresholds (Aggregat der Gewinner) in Szene persistieren
                     scene["kaiserlich_best_thresholds"] = best_thresholds
@@ -313,6 +315,14 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             # Wenn keine der obigen Bedingungen zutrifft → finale Routine (Fallback)
             self._state.done = True
             return self._teardown(context, cancelled=False)
+
+            # Log-Endausgabe aller Längenwerte
+            print("[KAISERLICHTRACKER][LOG] AutoCalibrate abgeschlossen — Endwerte:")
+            print(f"  {SCENE_TOTAL_TRACK_LEN_BASE}  = {scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 'n/a')}")
+            print(f"  {SCENE_TOTAL_TRACK_LEN_STEP1} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 'n/a')}")
+            print(f"  {SCENE_TOTAL_TRACK_LEN_STEP2} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 'n/a')}")
+            print(f"  {SCENE_TOTAL_TRACK_LEN_STEP3} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 'n/a')}")
+            print(f"  {SCENE_TOTAL_TRACK_LEN_STEP4} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP4, 'n/a')}")
 
         return {'RUNNING_MODAL'}
     
@@ -768,8 +778,10 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             # Baseline im ersten Zyklus zusätzlich speichern (wie bisher)
             if cycle_idx == 1:
                 scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
+                print(f"[KAISERLICHTRACKER][LOG] SCENE_TOTAL_TRACK_LEN_BASE gesetzt: {total_len}")
             else:
                 print(f"[Kaiserlich Tracker][Baseline] Total Track Length (Frame {end_f}) = {total_len} (gespeichert unter '{key_cycle}')")
+            print(f"[KAISERLICHTRACKER][LOG] {key_cycle} gespeichert: {total_len}")
 
             # 3) Danach Playhead auf Tracking-Start-Frame zurücksetzen (für internen Folgezyklus)
             start_f = int(self._state.track_start_frame or 1)
