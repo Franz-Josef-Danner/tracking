@@ -38,37 +38,46 @@ def _solve_camera_invoke_default(context: bpy.types.Context) -> None:
     Standardisierte Ausführung von Blender Solve-Operator mit INVOKE_DEFAULT.
     Wir laufen bewusst synchron; falls UI-Kontext fehlt, fallback auf EXEC_DEFAULT.
     """
-    def _get_clip_context(ctx: bpy.types.Context):
-        """Sucht oder konstruiert einen gültigen Clip-Editor-Kontext für bpy.ops.clip.*"""
-        # Prüfen, ob aktueller Context bereits Clip enthält
-        if hasattr(ctx, "space_data") and getattr(ctx.space_data, "clip", None):
-            return ctx
+    # 1) Clip-Editor-Area/Region/Speicher suchen
+    area = None
+    region = None
+    space = None
 
-        # Andernfalls passenden Bereich suchen
-        for area in bpy.context.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                for region in area.regions:
-                    if region.type == 'WINDOW':
-                        override = bpy.context.copy()
-                        override["area"] = area
-                        override["region"] = region
-                        override["space_data"] = area.spaces.active
-                        return override
-        # Fallback: direkter Kontext
-        return ctx
+    # a) bevorzugt: aktueller Context ist bereits CLIP_EDITOR
+    if getattr(context, "area", None) and getattr(context.area, "type", "") == 'CLIP_EDITOR':
+        area = context.area
+        # passende WINDOW-Region suchen
+        for r in area.regions:
+            if r.type == 'WINDOW':
+                region = r
+                break
+        space = area.spaces.active if area.spaces else None
 
-    # Sicheren Kontext beschaffen
-    override = _get_clip_context(context)
+    # b) sonst: in aktueller Screen nach CLIP_EDITOR suchen
+    if area is None:
+        for a in bpy.context.screen.areas:
+            if a.type == 'CLIP_EDITOR':
+                area = a
+                for r in a.regions:
+                    if r.type == 'WINDOW':
+                        region = r
+                        break
+                space = a.spaces.active if a.spaces else None
+                break
 
-    # Solve-Versuch mit Override
+    # c) Wenn kein CLIP_EDITOR existiert, abbrechen
+    if area is None or region is None or space is None:
+        print("[resolve_operator] ❌ Kein CLIP_EDITOR-Kontext verfügbar – Solve abgebrochen.")
+        raise RuntimeError("No CLIP_EDITOR context available")
+
+    # 2) temp_override verwenden und Solve durchführen
     try:
-        bpy.ops.clip.solve_camera('INVOKE_DEFAULT', override=override)
+        with bpy.context.temp_override(area=area, region=region, space_data=space):
+            bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
     except RuntimeError:
-        try:
-            bpy.ops.clip.solve_camera('EXEC_DEFAULT', override=override)
-        except Exception as e:
-            print(f"[resolve_operator] Solve-Aufruf fehlgeschlagen: {e}")
-
+        # Fallback: EXEC_DEFAULT (z. B. in Headless/ohne UI-Flow)
+        with bpy.context.temp_override(area=area, region=region, space_data=space):
+            bpy.ops.clip.solve_camera('EXEC_DEFAULT')
 
 def _check_and_filter(context: bpy.types.Context, avg_err: float) -> float:
     """
