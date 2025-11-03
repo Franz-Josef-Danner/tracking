@@ -178,6 +178,7 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                                     kaiserlich_rot_thresh_x=0.00001,
                                     kaiserlich_rot_thresh_y=0.00001)
                 except Exception as ex:
+                    pass
                 # Flags setzen, um zweiten Detect-/Track‑Durchlauf zu initiieren
                 self._state.second_cycle = True
                 # Merke die in diesem Durchlauf verwendeten Schwellenwerte
