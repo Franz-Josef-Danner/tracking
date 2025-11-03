@@ -40,7 +40,7 @@ SCENE_TOTAL_TRACK_LEN_STEP3 = "kaiserlich_len_rot_scale_00"
 SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_00"
 
 # ---- Reduktions-Stufen ------------------------------------------------------
-REDUCTION_STEPS = [0.05, 0.5, 0.8, 0.9, 0.95, 0.98, 0.99]
+REDUCTION_STEPS = [0.05, 0.07, 0.10, 0.14, 0.20, 0.29, 0.42, 0.60, 0.86, 0.99]
 MIN_THRESHOLD_VAL = 0.00001
 
 # ---- Interner Tracking-State (nicht-blockierend) ---------------------------
