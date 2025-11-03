@@ -288,20 +288,17 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                             best_thresholds.update(thresh_dict)
                         else:
                             # Kein Zugewinn → Zielvariable bleibt leer
-                            print(f"[Kaiserlich Tracker][AutoCalibrate] Kein Zugewinn in Cycle {cycle_num}: {cycle_len} ≤ {baseline_len}")
-
+                            pass
                     # Beste Thresholds (Aggregat der Gewinner) in Szene persistieren
                     scene["kaiserlich_best_thresholds"] = best_thresholds
 
                 except Exception as ex:
-                    print(f"[AutoCalibrate] Fehler beim Vergleich der Track-Längen: {ex!r}")
-
+                    pass
                 # Final: Alle Thresholds auf 1.0 zurücksetzen
                 try:
                     reset_all_thresholds(context, active_props=[])
                 except Exception as ex:
-                    print(f"[AutoCalibrate] Fehler beim finalen Reset: {ex!r}")
-
+                    pass
                 self._state.done = True
                 return self._teardown(context, cancelled=False)
 
@@ -356,7 +353,7 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                 pass
                 
         else:
-            print(f"[ShortTest] ✅ Ausreichend Frames ({remaining}) – keine Verschiebung erforderlich.")
+            pass        
         # -------------------------------------------------------------------------------
 
         # Bootstrap-Parameter
