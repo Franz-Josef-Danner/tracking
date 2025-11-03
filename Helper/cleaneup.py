@@ -18,7 +18,6 @@ def cleanup_new_markers(
     Alte Marker werden grundsätzlich nicht gelöscht.
     """
 
-    print(f"[Cleanup] Eingabe: {len(alte_marker)} alte / {len(neue_marker)} neue Marker")
     if not neue_marker or not alte_marker:
         return neue_marker, 0
     if pz <= 0:
@@ -38,8 +37,6 @@ def cleanup_new_markers(
     active_old = [m for m in alte_marker if _track_active(m["track"])]
     active_new = [m for m in neue_marker if _track_active(m["track"])]
 
-    print(f"[Cleanup] Aktive alte Marker: {len(active_old)}")
-    print(f"[Cleanup] Aktive neue Marker: {len(active_new)}")
 
     if not active_new or not active_old:
         return neue_marker, 0
@@ -55,7 +52,6 @@ def cleanup_new_markers(
 
     old_pixels = build_old_pixel_map()
     thresh = float(pz) * 0.025
-    print(f"[Cleanup] Threshold: {thresh:.3f}px (basierend auf pz={pz})")
 
     for nm in list(active_new):
         nm_px_x = float(nm["co"][0]) * hz
@@ -78,5 +74,4 @@ def cleanup_new_markers(
         if too_close:
             continue
 
-    print(f"[Cleanup] Ergebnis: {deleted_new} neue Marker gelöscht, alte geschützt ({len(protected_names)}).")
     return neue_marker, 0
