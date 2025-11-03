@@ -4,6 +4,7 @@ from bpy.types import Operator, Context
 
 # ---- Helper-Importe ---------------------------------------------------------
 from ..Helper.low_marker_frame import find_first_weak_frame
+from ..Helper.bootstrap import run_bootstrap  # <--- Bootstrap importieren
 
 class KAISERLICHTRACKER_OT_master_operator(Operator):
     """Master Operator – setzt Playhead auf Frame mit den wenigsten aktiven Markern"""
@@ -13,6 +14,18 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context: Context):
+        # ------------------------------------------------------------------
+        # Bootstrap ausführen, um Startparameter zu berechnen
+        # ------------------------------------------------------------------
+        scene = context.scene
+        ef_target = int(getattr(scene, "kaiserlich_markers_per_frame", 25))
+        params = run_bootstrap(context, ef_target)
+        if params:
+            scene["bootstrap_params"] = params
+            print(f"[Kaiserlich Tracker][Bootstrap] Initialisiert mit {params}")
+        else:
+            print("[Kaiserlich Tracker][Bootstrap] ⚠️ Bootstrap konnte nicht ausgeführt werden (kein aktiver Clip).")
+
         frame = find_first_weak_frame(context)
 
         # ------------------------------------------------------------------
