@@ -825,24 +825,27 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         except Exception as ex:
             print(f"[DeepTest] ⚠️ Fehler beim Wiederherstellen des Playheads: {ex!r}")
         # -------------------------------------------------------------------
-
-        # --- NEU: Direkte Übergabe an master_detect_adapt nach Szenen-Update ---
+        # --- FINAL: Direkt an master_detect_adapt übergeben und DeepTest beenden ---
         try:
             area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-            if area:
-                region = next((r for r in area.regions if r.type == 'WINDOW'), None) or area.regions[-1]
-                space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
-                override = dict(window=bpy.context.window, area=area, region=region, space_data=space)
-                print("[DeepTest] 🚀 Starte master_detect_adapt direkt nach DeepTest-Abschluss …")
-                with bpy.context.temp_override(**override):
-                    result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                    print(f"[DeepTest] → master_detect_adapt gestartet, Rückgabe: {result}")
-            else:
-                print("[DeepTest] ⚠️ Kein CLIP_EDITOR-Kontext – master_detect_adapt übersprungen.")
-        except Exception as ex:
-            print(f"[DeepTest] ⚠️ Fehler beim Start von master_detect_adapt: {ex!r}")
+            if not area:
+                print("[DeepTest] ❌ Kein CLIP_EDITOR – Übergabe abgebrochen.")
+                return {'CANCELLED'}
 
-        return self._teardown(context, cancelled=False)
+            region = next((r for r in area.regions if r.type == 'WINDOW'), None) or area.regions[-1]
+            space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+            override = dict(window=bpy.context.window, area=area, region=region, space_data=space)
+
+            print("[DeepTest] 🚀 Übergabe an master_detect_adapt …")
+            with bpy.context.temp_override(**override):
+                result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                print(f"[DeepTest] → master_detect_adapt gestartet, Rückgabe: {result}")
+
+            return result or {'FINISHED'}
+
+        except Exception as ex:
+            print(f"[DeepTest] ⚠️ Fehler bei direkter Übergabe an master_detect_adapt: {ex!r}")
+            return {'CANCELLED'}
 
     def _teardown(self, context, cancelled=False):
         wm = context.window_manager
