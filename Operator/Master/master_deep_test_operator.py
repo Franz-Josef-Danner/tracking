@@ -849,7 +849,22 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         except Exception as ex:
             print(f"[MasterDeepTest] ⚠️ Fehler bei globaler Wiederherstellung: {ex!r}")
         # ---------------------------------------------------------------------------
+        # ---------------------------------------------------------------------------
+        # 🔁 NACH ABSCHLUSS: Weitergabe an Master Detect Adapt Operator
+        # ---------------------------------------------------------------------------
+        if not cancelled:
+            try:
+                # Sicherstellen, dass aktuelle Kontextdaten vollständig sind
+                if context and hasattr(bpy.ops, "kaiserlich_tracker"):
+                    print("[MasterDeepTest] 🔁 Starte Übergabe an 'master_detect_adapt' Operator ...")
+                    result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                    print(f"[MasterDeepTest] Übergabe an DetectAdapt ausgelöst: {result}")
+                else:
+                    print("[MasterDeepTest] ⚠️ Kontext oder Operatorstruktur unvollständig – Übergabe übersprungen.")
+            except Exception as ex:
+                print(f"[MasterDeepTest] ⚠️ Fehler bei Übergabe an master_detect_adapt: {ex!r}")
 
+        # Rückgabestatus wie gewohnt
         return {'CANCELLED' if cancelled else 'FINISHED'}
 
 
