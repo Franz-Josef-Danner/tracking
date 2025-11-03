@@ -205,10 +205,11 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         wm.modal_handler_add(self)
         self._track_state = _TrackState(active=False, current=0, end=0, active_names=[], total_len=-1)
         self._phase = "category_select"
-            return {'RUNNING_MODAL'}
-        except Exception as ex:
-            print(f"[DeepTest] ⚠️ Fehler in execute: {ex!r}")
-            return self._teardown(context, cancelled=True)
+        return {'RUNNING_MODAL'}
+
+    except Exception as ex:
+        print(f"[DeepTest] ⚠️ Fehler in execute: {ex!r}")
+        return self._teardown(context, cancelled=True)
 
     # ------------------------------------------------------------------------
     # Helper: Alle Tracks im aktiven Clip deselektieren
