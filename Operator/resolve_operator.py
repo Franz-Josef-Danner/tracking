@@ -177,7 +177,7 @@ def _phase_execute(context: bpy.types.Context, phase_fn) -> bool:
     # --- NEU: Warten bis Solve wirklich abgeschlossen ist ---
     import time
     def _wait_for_solve(context, timeout=15.0):
-        """Aktives Warten, bis clip.tracking.reconstruction.is_valid == True."""
+        """Wartet, bis clip.tracking.reconstruction.is_valid True ist, ohne UI zu blockieren."""
         clip = getattr(getattr(context, "space_data", None), "clip", None)
         if clip is None and bpy.data.movieclips:
             clip = bpy.data.movieclips[0]
@@ -186,11 +186,14 @@ def _phase_execute(context: bpy.types.Context, phase_fn) -> bool:
 
         start = time.time()
         while time.time() - start < timeout:
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            bpy.context.window_manager.event_timer_add(0.1, window=context.window)
             if clip.tracking.reconstruction.is_valid:
                 print("[resolve_operator][DEBUG] Reconstruction valid – Solve abgeschlossen.")
                 return True
-            time.sleep(0.25)
-        print("[resolve_operator][ERROR] Timeout – Solve nicht abgeschlossen.")
+            time.sleep(0.1)
+
+        print("[resolve_operator][ERROR] Timeout – Solve nicht abgeschlossen (keine gültige Reconstruction).")
         return False
 
     _wait_for_solve(context)
