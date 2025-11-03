@@ -16,6 +16,7 @@ from .Operator.shorttest_operator import KAISERLICHTRACKER_OT_shorttest_operator
 from .Operator.deep_test_operator import KAISERLICHTRACKER_OT_deep_test_operator
 from .Operator.detect_adapt_operator import KAISERLICHTRACKER_OT_detect_adapt
 from .Operator.track_operator_backwards import KAISERLICHTRACKER_OT_track_cycle_backwards
+from .Operator.resolve_operator import KAISERLICHTRACKER_OT_resolve_operator
 from .Operator.Master.master_track_operator import KAISERLICHTRACKER_OT_master_track_cycle
 from .Operator.Master.master_shorttest_operator import KAISERLICHTRACKER_OT_master_shorttest_operator
 from .Operator.Master.master_deep_test_operator import KAISERLICHTRACKER_OT_master_deep_test_operator
@@ -32,6 +33,7 @@ classes = (
     KAISERLICHTRACKER_OT_deep_test_operator,
     KAISERLICHTRACKER_OT_detect_adapt,
     KAISERLICHTRACKER_OT_track_cycle_backwards,
+    KAISERLICHTRACKER_OT_resolve_operator,
     KAISERLICHTRACKER_OT_master_track_cycle,
     KAISERLICHTRACKER_OT_master_shorttest_operator,
     KAISERLICHTRACKER_OT_master_deep_test_operator,
