@@ -696,14 +696,15 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         # ---- Bewertung (adaptive Stufenlogik) -------------------------------
         if total_len >= compare_len:
+            # ✅ Ziel erreicht – Fortschritt speichern und nächste Stufe
             self._goal_map[self._current_category] = total_len
             self._best_thresholds[self._current_category] = self._current_value
 
-            # ---- Frame-Werte im Cache speichern ----------------------------
             frame_values = {self._current_category: self._current_value}
             save_frame_values(self._scene, self._scene.frame_current, frame_values)
-            if self._current_category == "rot_xy":
 
+            # Thresholds für diese Kategorie zurücksetzen
+            if self._current_category == "rot_xy":
                 set_scene_props(self._scene,
                     kaiserlich_rot_thresh_x=1.0,
                     kaiserlich_rot_thresh_y=1.0)
@@ -718,37 +719,22 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             elif self._current_category == "perspective":
                 set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
 
+            print(f"[DeepTest] ✅ Ziel erreicht ({total_len} ≥ {compare_len}), nächste Stufe.")
             self._current_step_index += 1
 
         else:
-            # Kein Zugewinn → prüfen, ob MIN erreicht
+            # ❌ Ziel nicht erreicht
             if self._current_value <= MIN_THRESHOLD_VAL + 1e-12:
-                # --- NEU: Zähler für aufeinanderfolgende MIN-Erreichungen ---
-                if not hasattr(self, "_min_reach_count"):
-                    self._min_reach_count = 0
-
-                self._min_reach_count += 1
-
-                # Wenn dreimal hintereinander erreicht, Kategorie beenden
-                if self._min_reach_count >= 3:
-                    self._current_step_index = len(REDUCTION_STEPS)
-                    self._min_reach_count = 0
-                    return True
-
-                # ansonsten zur nächsten Stufe springen
-                self._current_step_index += 1
-                # Wichtig: Basis auf 1.0 zurücksetzen, damit die nächste Stufe
-                # exakt dem definierten REDUCTION_STEPS-Faktor entspricht.
-                self._base_value = 1.0
-
+                print(f"[DeepTest] ⚠️ Kategorie '{self._current_category}' beendet – "
+                      f"Untergrenze ({self._current_value:.6f}) erreicht, Ziel {compare_len} nicht erfüllt.")
+                self._current_step_index = len(REDUCTION_STEPS)
+                return True
             else:
-                # Bei Zielverfehlung ohne MIN: nicht in derselben Stufe „heruntermultiplizieren“,
-                # sondern zur nächsten REDUCTION_STEPS-Stufe wechseln.
-                if hasattr(self, "_min_reach_count"):
-                    self._min_reach_count = 0
-                self._current_step_index += 1
-                # Basiswert zurücksetzen, damit next_val = 1.0 * REDUCTION_STEPS[idx]
-                self._base_value = 1.0   
+                # 🔁 Wiederhole aktuelle Stufe mit gleichem Threshold
+                print(f"[DeepTest] 🔁 Wiederhole Stufe '{self._current_category}': "
+                      f"gemessen {total_len}, Ziel {compare_len}, Threshold {self._current_value:.6f}")
+                # keine Änderung des Step-Index → erneute Durchführung derselben Stufe
+                return False  
 
         # --------------------------------------------------------------------
         # Kein Rücksprung auf Szenenanfang mehr:
