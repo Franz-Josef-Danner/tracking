@@ -722,15 +722,6 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
             print(f"[TrackCycle] Formel-Fehler: {e}")
 
         # --- 3) Einen Frame weiter tracken ----------------------------------
-        # --- Diagnose: Vor dem Tracking-Schritt ---
-        visible_tracks = [t.name for t in tracking.tracks if t.select]
-        active_frames = [
-            (t.name, [mk.frame for mk in t.markers])
-            for t in tracking.tracks if t.name in s.track_names
-        ]
-        for n, frames in active_frames[:10]:
-            print(f"   ▶ {n}: {len(frames)} Marker ({frames[:5]}...)")
-
         success = track_markers_with_override(
             s.track_window, s.track_area, s.track_region, s.track_space,
             backwards=False, sequence=False
