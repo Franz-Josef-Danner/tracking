@@ -126,12 +126,7 @@ def _find_and_dispatch_cycle(context: bpy.types.Context) -> bool:
     weak_frame = find_first_weak_frame(context)
     if weak_frame is not None:
         # Master Cycle triggern
-        try:
-            res = bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
-        except Exception:
-            # Fallback EXEC
-            res = bpy.ops.kaiserlich_tracker.master_cycle_operator('EXEC_DEFAULT')
-        print(f"[resolve_operator] Master-Cycle gestartet, Operator-Result: {res}")
+        res = bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
         return True
     return False
 
