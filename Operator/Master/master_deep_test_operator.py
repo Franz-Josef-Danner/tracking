@@ -786,32 +786,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         print("\n[DeepTest] ✅ Abschluss – beste Thresholds:")
         for k, v in self._best_thresholds.items():
             print(f"  {k}: {v:.6f}")
-
-        # --- NEU: Prüfen, ob noch eine Kategorie mit gesetztem Szenenwert vorhanden ist ---
-        try:
-            remaining_categories = []
-            for cat, scene_key in [
-                ("rot_xy", SCENE_TOTAL_TRACK_LEN_STEP1),
-                ("scale", SCENE_TOTAL_TRACK_LEN_STEP2),
-                ("rot_scale_rot", SCENE_TOTAL_TRACK_LEN_STEP3),
-                ("rot_scale_scale", SCENE_TOTAL_TRACK_LEN_STEP3),
-                ("perspective", SCENE_TOTAL_TRACK_LEN_STEP4)
-            ]:
-                val = int(self._scene.get(scene_key, 0))
-                if val > 0:
-                    remaining_categories.append(cat)
-
-            print(f"[DeepTest][FinishCheck] Noch gesetzte Kategorien: {remaining_categories}")
-
-            # Wenn keine weiteren Kategorien mehr Werte haben → direkt an master_detect_adapt übergeben
-            if not remaining_categories:
-                print("[DeepTest][FinishCheck] Keine weiteren Kategorien aktiv → Übergabe an master_detect_adapt.")
-                # Übergabe-Logik wird im Teardown ausgelöst
-            else:
-                print("[DeepTest][FinishCheck] Weitere Kategorien aktiv – DeepTest bleibt regulär aktiv.")
-
-        except Exception as ex:
-            print(f"[DeepTest][FinishCheck] ⚠️ Fehler bei Restkategorie-Prüfung: {ex!r}")
         # Ergebnisse global in die Szene schreiben
         scene = context.scene
         scene["kaiserlich_best_thresholds"] = self._best_thresholds
@@ -851,6 +825,34 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         except Exception as ex:
             print(f"[DeepTest] ⚠️ Fehler beim Wiederherstellen des Playheads: {ex!r}")
         # -------------------------------------------------------------------
+        # ---------------------------------------------------------------
+        # NEU: Direkt nach Übertragung der finalen Thresholds → Folge-Operator
+        # ---------------------------------------------------------------
+        try:
+            print("[DeepTest][FollowUp] 🚀 Starte Folgeoperator master_detect_adapt direkt nach Szenenübertragung …")
+
+            win = self._window or bpy.context.window
+            area = self._area or next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+            region = self._region or (area.regions[-1] if area and area.regions else None)
+            space = self._space or (next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None) if area else None)
+
+            if not all([win, area, region, space]):
+                print("[DeepTest][FollowUp] ⚠️ Kein gültiger CLIP_EDITOR-Kontext verfügbar – Folgeoperator übersprungen.")
+            else:
+                override = dict(window=win, area=area, region=region, space_data=space)
+                with bpy.context.temp_override(**override):
+                    result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                    print(f"[DeepTest][FollowUp] → master_detect_adapt gestartet, Rückgabe: {result}")
+
+                    if result is None:
+                        print("[DeepTest][FollowUp][Diag] ⚠️ Operator-Aufruf gab None zurück.")
+                    elif isinstance(result, set) and 'CANCELLED' in result:
+                        print("[DeepTest][FollowUp][Diag] ⚠️ Operator meldete CANCELLED.")
+                    else:
+                        print("[DeepTest][FollowUp][Diag] ✅ Operator erfolgreich ausgeführt.")
+
+        except Exception as ex:
+            print(f"[DeepTest][FollowUp] ❌ Fehler beim Starten des Folgeoperators: {ex!r}")
 
         return self._teardown(context, cancelled=False)
 
