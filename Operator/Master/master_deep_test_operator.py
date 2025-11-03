@@ -421,11 +421,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     trk.select = False
 
             post_snapshot = snapshot_active_markers(context)
-            alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
-            if len(neue_marker) > 0:
-                print("   ➤ Beispiel neue Marker:", [m['track'] for m in neue_marker[:5]])
-            if len(alte_marker) > 0:
-                print("   ➤ Beispiel alte Marker:", [m['track'] for m in alte_marker[:5]])           
+            alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)          
 
             # Cleanup schützt alte Marker
             cleaned_new, deleted_old = cleanup_new_markers(
@@ -582,10 +578,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         # 1) Inaktive Tracks filtern
         ts.active_names, dropped = filter_active_tracks_at_frame(context, ts.active_names, ts.current)
-        if dropped > 0:
-            print(f"[MasterDeepTest][Track] {dropped} inaktive entfernt → {len(ts.active_names)} aktiv")
         if not ts.active_names:
-            print(f"[MasterDeepTest][Track] ✅ Keine aktiven Tracks mehr bei Frame {ts.current}")
             return self._track_finish(context)
 
         # --- Neue Abbruchbedingungen basierend auf UI-Property "Frames per Track" ---
