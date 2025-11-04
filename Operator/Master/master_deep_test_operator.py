@@ -142,21 +142,21 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         scene = context.scene
         step = self.state.step
         val = self.state.next_val
-
-        # Fortschrittsanzeige aktualisieren (Titel + Wert)
+    
         import time
         progress_value = min(1.0, (step + 0.1 * val) / 5.0)
-        set_progress(title=f"DeepTest: Step {int(step)}  (Val={val:.5f})", value=progress_value)
-
-        # Kurze Pause, damit Blender UI updaten kann
-        time.sleep(0.5)
-
-        # Erzwinge sichtbares Redraw des UI
-        wm = bpy.context.window_manager
-        for window in wm.windows:
+        print(f"[DeepTest][UI] set_progress({progress_value:.3f}) Step={step} Val={val:.6f}")
+        set_progress(title=f"DeepTest: Step {int(step)} (Val={val:.5f})", value=progress_value)
+    
+        print(f"[DeepTest][UI] scene.kaiserlich_progress_value={scene.kaiserlich_progress_value:.3f}, "
+              f"title='{scene.kaiserlich_progress_title}'")
+    
+        time.sleep(0.1)
+        for window in bpy.context.window_manager.windows:
             for area in window.screen.areas:
                 if area.type == 'CLIP_EDITOR':
                     area.tag_redraw()
+
             window.cursor_warp(window.width // 2, window.height // 2)
                     
         if step == 0:
