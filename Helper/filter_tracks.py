@@ -101,17 +101,21 @@ def filter_problematic_tracks(
 
     # --- 2) Cleanup via clean_error
     try:
-        tracking_settings = clip.tracking.settings
-        tracking_settings.clean_action = 'DELETE_TRACK'
-        tracking_settings.clean_error = threshold      # Tracks mit größerem Fehler löschen
-        tracking_settings.clean_frames = 0             # Keine Mindestlängenprüfung
+        tracking = clip.tracking
+        settings = tracking.settings
+        settings.clean_action = 'DELETE_TRACK'
+        settings.clean_error = threshold
+        settings.clean_frames = 0
 
-        before = len(clip.tracking.tracks)
-        bpy.ops.clip.clean_tracks()
-        after = len(clip.tracking.tracks)
+        # Sicherstellen, dass Operator im richtigen Context läuft
+        override = context.copy()
+        override["edit_clip"] = clip
+
+        before = len(tracking.tracks)
+        bpy.ops.clip.clean_tracks(override)
+        after = len(tracking.tracks)
 
         deleted = before - after
         print(f"[Kaiserlich Tracker][Filter] Cleanup ✓ – clean_error={threshold:.4f}, gelöscht={deleted}, übrig={after}")
     except Exception as e:
         print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Cleanup über clean_error: {e}")
-        return
