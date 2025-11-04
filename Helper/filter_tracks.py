@@ -105,7 +105,6 @@ def filter_problematic_tracks(
         tracking_settings.clean_action = 'DELETE_TRACK'
         tracking_settings.clean_error = threshold      # Tracks mit größerem Fehler löschen
         tracking_settings.clean_frames = 0             # Keine Mindestlängenprüfung
-        tracking_settings.clean_select = False         # Alle Tracks berücksichtigen
 
         before = len(clip.tracking.tracks)
         bpy.ops.clip.clean_tracks()
