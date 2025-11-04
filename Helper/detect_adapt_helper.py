@@ -112,6 +112,24 @@ def run_detect_adapt(context: bpy.types.Context) -> None:
             min_distance=int(max(1, round(last_md))),
         )
 
+        # --- Diagnose-Block: Marker-Frame-Check ---
+        clip_dbg = getattr(context.space_data, "clip", None)
+        if clip_dbg and getattr(clip_dbg, "tracking", None):
+            print("[DetectAdapt][Diag] --- Marker-Frame-Check nach detect_features ---")
+            frames = {}
+            total_marker_count = 0
+            for t in clip_dbg.tracking.tracks:
+                for m in t.markers:
+                    total_marker_count += 1
+                    frames.setdefault(m.frame, 0)
+                    frames[m.frame] += 1
+            if frames:
+                frame_sorted = sorted(frames.items())
+                print(f"[DetectAdapt][Diag] Marker pro Frame: {frame_sorted[:10]}{' …' if len(frame_sorted)>10 else ''}")
+            print(f"[DetectAdapt][Diag] Gesamtmarker: {total_marker_count}")
+            print(f"[DetectAdapt][Diag] Aktueller Scene-Frame: {context.scene.frame_current}")
+        else:
+            print("[DetectAdapt][Diag] ⚠️ Kein Clip/Tracking-Kontext für Frame-Check verfügbar.")
         # Blender selektiert neue Tracks automatisch → zurücksetzen
         clip = getattr(context.space_data, "clip", None)
         if clip and getattr(clip, "tracking", None):
