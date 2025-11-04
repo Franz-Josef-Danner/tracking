@@ -73,9 +73,10 @@ def filter_problematic_tracks(
     threshold: float = 10.0,
 ) -> None:
     """
-    Wendet den internen Bewegungs-Filter (clip.filter_tracks) ausschließlich
-    anhand des Threshold-Werts an. Entfernt problematische Tracks direkt nach
-    Fehlerwert, ohne Mindestlängen-Heuristik.
+    Wendet den internen Bewegungs-Filter (clip.filter_tracks) an und löscht
+    anschließend alle Tracks mit einem Reprojektion-Error größer als threshold.
+    Nutzt dafür die offizielle Blender-API (clean_error) anstelle manueller
+    Remove-Aufrufe – robust gegenüber Layer-Setups.
 
     Args:
         context: Blender Context (erwartet aktiven Movie Clip im Clip Editor).
@@ -98,30 +99,20 @@ def filter_problematic_tracks(
         print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Anwenden des Filters: {e}")
         return
 
-    # --- 2) Threshold-basiertes Entfernen problematischer Tracks
+    # --- 2) Cleanup via clean_error
     try:
-        tracks = clip.tracking.tracks
-        tracks_list = list(tracks)
+        tracking_settings = clip.tracking.settings
+        tracking_settings.clean_action = 'DELETE_TRACK'
+        tracking_settings.clean_error = threshold      # Tracks mit größerem Fehler löschen
+        tracking_settings.clean_frames = 0             # Keine Mindestlängenprüfung
+        tracking_settings.clean_select = False         # Alle Tracks berücksichtigen
 
-        problematic = [
-            t for t in tracks_list
-            if hasattr(t, "average_error")
-            and isinstance(t.average_error, (int, float))
-            and t.average_error > threshold
-        ]
+        before = len(clip.tracking.tracks)
+        bpy.ops.clip.clean_tracks()
+        after = len(clip.tracking.tracks)
 
-        print(f"[Kaiserlich Tracker][Filter] Identified {len(problematic)} problematic tracks (> threshold={threshold}).")
-
-        deleted = 0
-        for t in problematic:
-            try:
-                tracks.remove(t)
-                deleted += 1
-            except Exception as e:
-                print(f"[Kaiserlich Tracker][Filter] Entfernen fehlgeschlagen ({t.name}): {e}")
-
-        print(f"[Kaiserlich Tracker][Filter] Removed {deleted} tracks (threshold-based).")
-        print(f"[Kaiserlich Tracker][Filter] Übrig: {len(tracks)}")
+        deleted = before - after
+        print(f"[Kaiserlich Tracker][Filter] Cleanup ✓ – clean_error={threshold:.4f}, gelöscht={deleted}, übrig={after}")
     except Exception as e:
-        print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Threshold-Cleanup: {e}")
+        print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Cleanup über clean_error: {e}")
         return
