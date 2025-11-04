@@ -99,24 +99,55 @@ def filter_problematic_tracks(
         print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Anwenden des Filters: {e}")
         return
 
-    # --- 2) Cleanup via clean_error
+    # --- 2) Cleanup ohne Operator: direkt per API nach average_error
     try:
         tracking = clip.tracking
         settings = tracking.settings
-        settings.clean_action = 'DELETE_TRACK'
-        settings.clean_error = threshold
-        settings.clean_frames = 0
+        # Dein Threshold ist bereits in 'threshold'
+
+        # Sicherheitskopie der zu löschenden Tracks sammeln (niemals in-place iterieren)
+        to_delete = []
+        for track in tracking.tracks:
+            try:
+                err = float(getattr(track, "average_error", 0.0))
+            except Exception:
+                err = 0.0
+            if err > threshold:
+                to_delete.append(track)
+
+        # Fallback: Wenn alle Errors 0.0 sind, optional zuerst filtern lassen,
+        # damit Blender die Fehlermetrik aktualisiert.
+        if not to_delete:
+            try:
+                bpy.ops.clip.filter_tracks(track_threshold=threshold)
+                # Nach dem Filter erneut prüfen
+                for track in tracking.tracks:
+                    try:
+                        err = float(getattr(track, "average_error", 0.0))
+                    except Exception:
+                        err = 0.0
+                    if err > threshold:
+                        to_delete.append(track)
+            except Exception:
+                # Filter optional; wenn er fehlschlägt, löschen wir eben nichts hier.
+                pass
 
         before = len(tracking.tracks)
-
-        # Context-Override neu: EXEC_DEFAULT explizit angeben
-        override = context.copy()
-        override["edit_clip"] = clip
-
-        bpy.ops.clip.clean_tracks('EXEC_DEFAULT', override)
+        for t in to_delete:
+            # Robuster Remove, unabhängig von Layern
+            try:
+                tracking.tracks.remove(t)
+            except Exception:
+                # Manche Versionen benötigen den Layer-Kontext
+                if hasattr(tracking, "layers"):
+                    for layer in tracking.layers:
+                        if t in layer.tracks:
+                            layer.tracks.remove(t)
+                            break
 
         after = len(tracking.tracks)
         deleted = before - after
-        print(f"[Kaiserlich Tracker][Filter] Cleanup ✓ – clean_error={threshold:.4f}, gelöscht={deleted}, übrig={after}")
+        print(f"[Kaiserlich Tracker][Filter] Cleanup ✓ – threshold={threshold:.4f}, gelöscht={deleted}, übrig={after}")
     except Exception as e:
-        print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Cleanup über clean_error: {e}")
+        print(f"[Kaiserlich Tracker][Filter] ❌ Cleanup (API) fehlgeschlagen: {e}")
+
