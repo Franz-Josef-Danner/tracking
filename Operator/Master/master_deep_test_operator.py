@@ -32,7 +32,7 @@ class DeepTestState:
     alle_tracker: Set[str] = field(default_factory=set)
 
 
-class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
+class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     bl_idname = "kaiserlichtracker.deep_test"
     bl_label = "Kaiserlich Tracker: Deep Test"
     bl_options = {'REGISTER', 'UNDO'}
