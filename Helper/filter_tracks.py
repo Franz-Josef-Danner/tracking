@@ -90,64 +90,64 @@ def filter_problematic_tracks(
         print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Anwenden des Filters: {e}")
         return
 
-# --- 2) Cleanup via clean_error (nur Kamera-Tracking)
-try:
-    tracking = clip.tracking
-    settings = tracking.settings
-    settings.clean_action = 'DELETE_TRACK'
-    settings.clean_error = float(threshold)
-    settings.clean_frames = 0
-
-    print(f"[Kaiserlich Tracker][Debug] clean_action=DELETE_TRACK, clean_error={settings.clean_error:.4f}, clean_frames={settings.clean_frames}")
-    print("[Kaiserlich Tracker][Debug] Kamera-Tracking-Modus aktiv (kein Object-Tracking).")
-
-    # Trackanzahl zählen
-    def _count_tracks():
-        try:
-            return len(tracking.tracks)
-        except Exception:
-            return 0
-
-    before = _count_tracks()
-
-    # Kontext nach Schema aus filter_all_tracks.py aufbauen
-    window, area, region, space = find_clip_editor_area(clip)
-    if not window:
-        print("[Kaiserlich Tracker][Filter] ❌ Kein CLIP_EDITOR-Kontext auffindbar – clean_tracks nicht ausführbar.")
-        return
-
-    override = {
-        "window": window,
-        "screen": window.screen,
-        "area": area,
-        "region": region,
-        "space_data": space,
-    }
-
-    print(f"[Kaiserlich Tracker][Debug] Context override: window={window}, area={area.type}, region={region.type}, edit_clip={clip.name}")
-
-    # Cleanup ausführen (nur Kamera-Track)
-    result = bpy.ops.clip.clean_tracks(
-        override,
-        'EXEC_DEFAULT',
-        frames=0,
-        error=threshold,
-        action='DELETE_TRACK'
-    )
-
-    if result != {'FINISHED'}:
-        print(f"[Kaiserlich Tracker][Filter] ⚠️ bpy.ops.clip.clean_tracks result={result}")
-
-    after = _count_tracks()
-    deleted = max(0, before - after)
-
-    print(f"[Kaiserlich Tracker][Filter] Cleanup ✓ (Camera) – gelöscht={deleted}, vorher={before}, übrig={after}, threshold={threshold:.4f}")
-
-    if deleted == 0:
-        print("[Kaiserlich Tracker][Debug] 0 gelöscht. Mögliche Ursachen:")
-        print("  • Reprojection-Error nicht vorhanden bzw. <= threshold (prüfe nach Solve).")
-        print("  • Solve / Reconstruction invalide oder noch nicht ausgeführt.")
-        print("  • clean_error greift auf Layer ohne gültige Tracks.")
-
-except Exception as e:
-    print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Cleanup (Camera): {e}")
+    # --- 2) Cleanup via clean_error (nur Kamera-Tracking)
+    try:
+        tracking = clip.tracking
+        settings = tracking.settings
+        settings.clean_action = 'DELETE_TRACK'
+        settings.clean_error = float(threshold)
+        settings.clean_frames = 0
+    
+        print(f"[Kaiserlich Tracker][Debug] clean_action=DELETE_TRACK, clean_error={settings.clean_error:.4f}, clean_frames={settings.clean_frames}")
+        print("[Kaiserlich Tracker][Debug] Kamera-Tracking-Modus aktiv (kein Object-Tracking).")
+    
+        # Trackanzahl zählen
+        def _count_tracks():
+            try:
+                return len(tracking.tracks)
+            except Exception:
+                return 0
+    
+        before = _count_tracks()
+    
+        # Kontext nach Schema aus filter_all_tracks.py aufbauen
+        window, area, region, space = find_clip_editor_area(clip)
+        if not window:
+            print("[Kaiserlich Tracker][Filter] ❌ Kein CLIP_EDITOR-Kontext auffindbar – clean_tracks nicht ausführbar.")
+            return
+    
+        override = {
+            "window": window,
+            "screen": window.screen,
+            "area": area,
+            "region": region,
+            "space_data": space,
+        }
+    
+        print(f"[Kaiserlich Tracker][Debug] Context override: window={window}, area={area.type}, region={region.type}, edit_clip={clip.name}")
+    
+        # Cleanup ausführen (nur Kamera-Track)
+        result = bpy.ops.clip.clean_tracks(
+            override,
+            'EXEC_DEFAULT',
+            frames=0,
+            error=threshold,
+            action='DELETE_TRACK'
+        )
+    
+        if result != {'FINISHED'}:
+            print(f"[Kaiserlich Tracker][Filter] ⚠️ bpy.ops.clip.clean_tracks result={result}")
+    
+        after = _count_tracks()
+        deleted = max(0, before - after)
+    
+        print(f"[Kaiserlich Tracker][Filter] Cleanup ✓ (Camera) – gelöscht={deleted}, vorher={before}, übrig={after}, threshold={threshold:.4f}")
+    
+        if deleted == 0:
+            print("[Kaiserlich Tracker][Debug] 0 gelöscht. Mögliche Ursachen:")
+            print("  • Reprojection-Error nicht vorhanden bzw. <= threshold (prüfe nach Solve).")
+            print("  • Solve / Reconstruction invalide oder noch nicht ausgeführt.")
+            print("  • clean_error greift auf Layer ohne gültige Tracks.")
+    
+    except Exception as e:
+        print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Cleanup (Camera): {e}")
