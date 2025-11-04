@@ -53,6 +53,15 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
     _timer = None
 
+    # --- UI sichtbarer Converter-Wert ---
+    converter: bpy.props.FloatProperty(
+        name="Converter",
+        description="Aktueller Zwischenwert zur Fortschrittsanzeige",
+        default=0.0,
+        min=0.0,
+        max=1.0
+    )
+
     def execute(self, context: Context):
         self.state = DeepTestState()
         wm = context.window_manager
@@ -135,6 +144,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 return
             s.base_value = s.reference_value
             s.converter = abs(s.start - s.lower_limit) / 2.0
+            self.converter = s.converter
             s.next_val = s.next_val + s.converter
             print(f"[DeepTest][Calc] Neuer Step-Wert: {s.step:.8f} → NextVal={s.next_val:.8f}")
             self._set_step_threshold(context)     # Mid
@@ -163,6 +173,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             print(f"[DeepTest][Adjust][+] converter={conv:.8f}, NextVal={s.next_val:.8f}")
             if conv > 0.0001:
                 s.next_val = s.next_val + conv
+                s.converter = conv
+                self.converter = conv
                 self._set_step_threshold(context)
                 s.phase = "ADJUST_PLUS_TRACK"
             else:
@@ -192,6 +204,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             print(f"[DeepTest][Adjust][-] converter={conv:.8f}, NextVal={s.next_val:.8f}")
             if conv > 0.0001:
                 s.next_val = s.next_val - conv
+                s.converter = conv
+                self.converter = conv
                 self._set_step_threshold(context)
                 s.phase = "ADJUST_MINUS_TRACK"
             else:
@@ -231,13 +245,19 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         scene = context.scene
         step = self.state.step
         val = self.state.next_val
-        converter = self.state.converter
+        # Synchronisierung mit UI-Property
+        converter = self.converter
         pro = (converter / -100) + 100
-        # Nur Werte setzen – kein Sleep/Blocken, Redraw macht modal()
+        # Fortschrittsanzeige – basiert auf live aktualisiertem Converter
         set_progress(
             title=f"DeepTest: Step {int(step)} (progress={pro:.5f})",
             value=min(1.0, (step - converter) / 5.0)
         )
+        # Optional in Szene speichern, falls Panels darauf zugreifen:
+        try:
+            scene.kaiserlich_converter = converter
+        except Exception:
+            pass
                     
         if step == 0:
             if clip:
