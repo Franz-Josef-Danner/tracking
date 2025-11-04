@@ -46,59 +46,93 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     bl_label = "Kaiserlich Tracker: Deep Test"
     bl_options = {'REGISTER', 'UNDO'}
 
+    _timer = None
+
     def execute(self, context: Context):
         self.state = DeepTestState()
-        self.state.next_val = 0.0
-        self.state.stop_flag = False
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.25, window=context.window)
+        wm.modal_handler_add(self)
+        print("[DeepTest][Modal] 🚀 Gestartet – UI bleibt aktiv.")
+        return {'RUNNING_MODAL'}
 
-        while not self.state.stop_flag:
-            print(f"\n[DeepTest][Step {self.state.step}] --- Neue Threshold-Phase gestartet ---")
-            self._set_step_threshold(context)
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            print("[DeepTest][Modal] ❌ Abgebrochen.")
+            self.cancel(context)
+            return {'CANCELLED'}
 
+        if event.type == 'TIMER':
             if self.state.stop_flag:
-                print("[DeepTest] ✅ Alle Threshold-Phasen abgeschlossen.")
-                break
+                print("[DeepTest][Modal] ✅ Alle Threshold-Stufen abgeschlossen – Prozess beendet.")
+                self.cancel(context)
+                return {'FINISHED'}
 
-            self.state.next_val = 1.0
-            self._set_step_threshold(context)
-            self._track(context)
-            print(f"[DeepTest][Result] Referenzwert: {self.state.reference_value:.3f}")
+            try:
+                self._process_step(context)
+            except Exception as e:
+                print(f"[DeepTest][Modal] ⚠️ Fehler: {e}")
+                self.cancel(context)
+                return {'CANCELLED'}
 
+        return {'PASS_THROUGH'}
+
+    def cancel(self, context):
+        wm = context.window_manager
+        if self._timer:
+            wm.event_timer_remove(self._timer)
+            self._timer = None
+
+    def _process_step(self, context: Context):
+        """Ein DeepTest-Schritt pro Timer-Aufruf"""
+        print(f"\n[DeepTest][Step {self.state.step}] --- Neue Threshold-Phase gestartet ---")
+        self._set_step_threshold(context)
+
+        if self.state.stop_flag:
+            return
+
+        self.state.next_val = 1.0
+        self._set_step_threshold(context)
+        self._track(context)
+        print(f"[DeepTest][Result] Referenzwert: {self.state.reference_value:.3f}")
+
+        self.state.base_value = self.state.reference_value
+        self.state.start = self.state.next_val
+        self.state.next_val = 0.00001
+        self._set_step_threshold(context)
+        self.state.lower_limit = self.state.next_val
+        print(f"[DeepTest][Range] Start={self.state.start:.8f}, LowerLimit={self.state.lower_limit:.8f}")
+        self._track(context)
+        print(f"[DeepTest][Result] Referenzwert nach Low={self.state.reference_value:.3f}")
+
+        if self.state.reference_value <= self.state.base_value:
+            print(f"[DeepTest][Adjust] Kein Anstieg – Schritt {self.state.step + 1}")
+            self.state.step = self.state.step + 1
+            return
+
+        self.state.base_value = self.state.reference_value 
+        self.state.converter = abs(self.state.start - self.state.lower_limit) / 2.0
+        self.state.next_val = self.state.next_val + self.state.converter
+        print(f"[DeepTest][Calc] Neuer Step-Wert: {self.state.step:.8f} → NextVal={self.state.next_val:.8f}")
+        self._set_step_threshold(context)
+        self._track(context)
+        print(f"[DeepTest][Result] Nach Mid-Test: {self.state.reference_value:.3f}")
+
+        if self.state.reference_value < self.state.base_value:
+            print("[DeepTest][Decision] ⬇️ Wert gefallen → Minus-Threshold-Richtung")
+            self._minus_thresh(context)
+        elif self.state.reference_value > self.state.base_value:
+            print("[DeepTest][Decision] ⬆️ Wert gestiegen → Plus-Threshold-Richtung")
             self.state.base_value = self.state.reference_value
-            self.state.start = self.state.next_val
-            self.state.next_val = 0.00001
-            self._set_step_threshold(context)
-            self.state.lower_limit = self.state.next_val
-            print(f"[DeepTest][Range] Start={self.state.start:.8f}, LowerLimit={self.state.lower_limit:.8f}")
-            self._track(context)
-            print(f"[DeepTest][Result] Referenzwert nach Low={self.state.reference_value:.3f}")
+            self._plus_thresh(context)
+        else:
+            print("[DeepTest][Decision] ⏸ Keine Änderung → Bleibe bei Plus-Richtung")
+            self._plus_thresh(context)
 
-            if self.state.reference_value <= self.state.base_value:
-                print(f"[DeepTest][Adjust] Kein Anstieg – Schritt {self.state.step + 1}")
-                self.state.step = self.state.step + 1
-                continue
-            self.state.base_value = self.state.reference_value 
-            self.state.converter = abs(self.state.start - self.state.lower_limit) / 2.0
-            self.state.next_val = self.state.next_val + self.state.converter
-            print(f"[DeepTest][Calc] Neuer Step-Wert: {self.state.step:.8f} → NextVal={self.state.next_val:.8f}")
-            self._set_step_threshold(context)
-            self._track(context)
-            print(f"[DeepTest][Result] Nach Mid-Test: {self.state.reference_value:.3f}")
-
-            if self.state.reference_value < self.state.base_value:
-                print("[DeepTest][Decision] ⬇️ Wert gefallen → Minus-Threshold-Richtung")
-                self._minus_thresh(context)
-            else:
-                if self.state.reference_value > self.state.base_value:
-                    print("[DeepTest][Decision] ⬆️ Wert gestiegen → Plus-Threshold-Richtung")
-                    self.state.base_value = self.state.reference_value
-                    self._plus_thresh(context)
-                else:
-                    print("[DeepTest][Decision] ⏸ Keine Änderung → Bleibe bei Plus-Richtung")
-                    self._plus_thresh(context)
-
-        print("[DeepTest] ✅ Alle Threshold-Stufen abgeschlossen – Prozess beendet.")
-        return {'FINISHED'}
+        # UI Refresh
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                area.tag_redraw()
 
     
     def _set_step_threshold(self, context: Context) -> None:
