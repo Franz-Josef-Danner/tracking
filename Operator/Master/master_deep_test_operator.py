@@ -1,926 +1,298 @@
-# Operator/Master/master_deep_test_operator.py
 import bpy
-import time
-import math
-from dataclasses import dataclass
-from typing import Optional, List, Dict, Any, Tuple, Set
 from bpy.types import Operator, Context
+from dataclasses import dataclass, field
+from typing import Set
 
-# ---- Helper-Importe ---------------------------------------------------------
-from ...Helper.util_clip import get_active_clip
-from ...Helper.scene import get_end_frame
-from ...Helper.playhead_helper import reset_to_frame
-from ...Helper.newmarker import classify_markers
-from ...Helper.find_clip_editor_area import find_clip_editor_area
 from ...Helper.snapshot import snapshot_active_markers
-from ...Helper.detect import detect_features
-from ...Helper.cleaneup import cleanup_new_markers
-from ...Helper.delete import delete_tracks_by_names
-from ...Helper.track_length_helper import get_total_track_length
-from ...Helper.track_markers_helper import track_markers_with_override
+from ...Helper.detect_adapt_helper import run_detect_adapt
+from ...Helper.util_clip import get_active_clip
+from ...Helper.playhead_helper import reset_to_frame
 from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
-from ...Helper.util_scene import set_scene_props
-from ...Helper.init_detect_state import init_detect_state
-from ...Helper.reset_helper import reset_all_thresholds
-from ...Helper.selection_helper import collect_selected_track_names
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
-from ...Helper.filter_and_delete_tracks import filter_and_delete_tracks
+from ...Helper.track_length_helper import get_total_track_length
+from ...Helper.delete import delete_tracks_by_names
+from ...Helper.get_clip_context import get_clip_context
 
-# ---- Frame-Cache-Import ----------------------------------------------------
-from ...Helper.frame_value_cache import (
-    get_frame_values,
-    save_frame_values,
-    apply_cached_values
-)
-# ---- Szenen-Keys ------------------------------------------------------------
-SCENE_TOTAL_TRACK_LEN_BASE  = "kaiserlich_len_baseline_00"
-SCENE_TOTAL_TRACK_LEN_STEP1 = "kaiserlich_len_rot_xy_00"
-SCENE_TOTAL_TRACK_LEN_STEP2 = "kaiserlich_len_scale_00"
-SCENE_TOTAL_TRACK_LEN_STEP3 = "kaiserlich_len_rot_scale_00"
-SCENE_TOTAL_TRACK_LEN_STEP4 = "kaiserlich_len_perspective_00"
 
-# ---- Reduktions-Stufen ------------------------------------------------------
-REDUCTION_STEPS = [0.05, 0.067, 0.089, 0.119, 0.158, 0.211, 0.281, 0.375, 0.499, 0.666, 0.888]
-MIN_THRESHOLD_VAL = 0.00001
-
-# ---- Interner Tracking-State (nicht-blockierend) ---------------------------
 @dataclass
-class _TrackState:
-    active: bool = False
-    current: int = 0
-    end: int = 0
-    active_names: List[str] = None
-    total_len: int = -1  # -1 = noch nicht gemessen
+class DeepTestState:
+    """Kapselt alle Laufzeitdaten des Deep-Test-Prozesses."""
+    counter: int = 0
+    stop_flag: bool = False
+
+    basis: float = 0.0
+    vergleichswert: float = 0.0
+    start: float = 0.0
+    ende: float = 0.0
+    stufe: float = 0.0
+    next_val: float = 0.0
+
+    alte_tracker: Set[str] = field(default_factory=set)
+    neu_tracker: Set[str] = field(default_factory=set)
+    alle_tracker: Set[str] = field(default_factory=set)
 
 
-class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
-    """Deep Threshold Test (Modal): führt pro Kategorie stufenweise Reduktion der Thresholds durch und testet jeweils."""
-    bl_idname = "kaiserlich_tracker.master_deep_test_operator"
-    bl_label = "Kaiserlich Tracker — Deep Test"
+class KAISERLICHTRACKER_OT_deep_test_operator(Operator):
+    bl_idname = "kaiserlichtracker.deep_test"
+    bl_label = "Kaiserlich Tracker: Deep Test"
     bl_options = {'REGISTER', 'UNDO'}
 
-    # Laufzeitvariablen -------------------------------------------------------
-    _timer = None
-    _scene: Optional[bpy.types.Scene] = None
-    _clip: Optional[bpy.types.MovieClip] = None
-    _window = None
-    _area = None
-    _region = None
-    _space = None
-
-    _hz: int = 0
-    _vc: int = 0
-    _ratio_xy: float = 1.0
-
-    _ef_target: int = 25
-    _tolerance: float = 0.0
-
-    _start_frame: int = 1
-    _end_frame: int = 1
-    _current_frame: int = 1
-
-    _phase: str = "init"
-    _categories_queue: List[str] = []
-    _current_category: Optional[str] = None
-
-    _current_step_index: int = 0
-    _base_value: float = 1.0
-    _current_value: float = 1.0
-    _current_goal: int = 0
-
-    _detect_loop: int = 0
-    _detect_loop_max: int = 8
-    _pre_snapshot: List[Dict[str, Any]] = []
-    _baseline_start_tracknames: Set[str] = set()
-    _last_md: float = 100.0
-    _processing_names: List[str] = []
-    _final_new_tracks: List[str] = []
-
-    _goal_map: Dict[str, int] = {}
-    _best_thresholds: Dict[str, float] = {}
-    _track_state: _TrackState = _TrackState()
-
-    # Detect-Parameter (paritätisch zum Shorttest)
-    _margin: int = 100
-    _threshold: float = 0.0001
-    _pattern_size: int = 50
-    _search_size: int = 0
-    # ------------------------------------------------------------------------
     def execute(self, context: Context):
-        self._scene = context.scene
-        self._clip = get_active_clip(context)
-        if not self._clip:
-            self.report({'ERROR'}, "Kein aktiver Clip gefunden.")
-            return {'CANCELLED'}
+        self.state = DeepTestState()
+        self.state.next_val = 0.0
+        self.state.stop_flag = False
 
-        self._window, self._area, self._region, self._space = find_clip_editor_area(self._clip)
-        if not self._window:
-            self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
-            return {'CANCELLED'}
+        while True:
+            self._set_threshold(context)
 
-        # --- NEU: harte Deselektion aller Tracks zu Beginn -----------------
-        try:
-            deselected = self._deselect_all_tracks(context)
-        except Exception as ex:
-            print(f"[Kaiserlich Tracker][MasterDeepTest][Selection] ⚠️ Deselektion fehlgeschlagen: {ex!r}")
+            # Haupt-Loop über alle Threshold-Stufen
+            while not self.state.stop_flag:
+                self._set_step_threshold(context)
+                if self.state.stop_flag:
+                    break  # einziger Abbruchpunkt im Prozess
 
-        self._hz, self._vc = self._clip.size
-        self._ratio_xy = (self._hz / self._vc) if self._vc else 1.0
-        self._ef_target = int(self._scene.kaiserlich_markers_per_frame)
-        self._tolerance = max(1.0, self._ef_target * 0.10)
-        self._start_frame = int(self._scene.frame_start)
-        self._end_frame = int(get_end_frame(context))
-        self._current_frame = max(self._start_frame, int(self._scene.frame_current))
-        self._space.clip_user.frame_current = self._current_frame
-        self._scene.frame_current = self._current_frame
+                # --- Tracking-Testzyklus ---
+                self.state.next_val = 1.0
+                self._set_step_threshold(context)
+                self._track(context)
+                self.state.basis = self.state.vergleichswert
 
-        # --- NEU: Sicherstellen, dass mindestens 50 Frames bis Szenenende verbleiben ---
-        current_frame = int(self._scene.frame_current)
-        end_frame = int(get_end_frame(context))
-        remaining = end_frame - current_frame
+                self.state.start = self.state.next_val
+                self.state.next_val = 0.00001
+                self._set_step_threshold(context)
+                self.state.ende = self.state.next_val
+                self._track(context)
 
-        # Ursprungsposition global sichern
-        self._user_original_frame = current_frame
+                if self.state.vergleichswert <= self.state.basis:
+                    self.state.stufe += 1
+                    continue
 
-        if remaining < 50:
-            new_start = max(self._scene.frame_start, end_frame - 50)
-            self._scene.frame_current = new_start
-            try:
-                if self._space and getattr(self._space, "clip_user", None):
-                    self._space.clip_user.frame_current = new_start
-            except Exception:
-                pass
-        else:
-            print(f"[MasterDeepTest] ✅ Ausreichend Frames ({remaining}) – keine Verschiebung erforderlich.")
-        # -------------------------------------------------------------------------------
-        # Thresholds global auf 1.0 zurücksetzen (ShortTest-Parität)
-        try:
-            reset_all_thresholds(context, active_props=[])
-        except Exception as e:
-            print(f"[MasterDeepTest][Init] ⚠️ Threshold-Reset fehlgeschlagen: {e!r}")
-        # Detect-Parameter initialisieren (identisch zum ShortTest)
-        try:
-            scene = context.scene
-            params = scene.get("bootstrap_params", None)
+                self.state.stufe = abs(self.state.start - self.state.ende) / 2.0
+                self.state.next_val = self.state.next_val + self.state.stufe
+                self._set_step_threshold(context)
+                self._track(context)
 
-            if params:
-                self._last_md = float(params.get('md', 100))
-                self._margin = int(round(float(params.get('ma', 100)) * 1.1))
-                self._threshold = float(params.get('tr', 0.5))
-                self._pattern_size = int(params.get('pz', 50))
-                self._search_size = int(params.get('sz', 100))
-                self._hz = int(params.get('hz', 1))
-                self._vc = int(params.get('vc', 1))
-            else:
-                clip = getattr(context.space_data, "clip", None)
-                if clip is None:
-                    raise RuntimeError("Kein aktiver Clip verfügbar (Fallback fehlgeschlagen).")
-
-                self._hz, self._vc = clip.size
-                tracking_settings = getattr(clip.tracking, "settings", None)
-                self._margin = getattr(tracking_settings, "margin", 100)
-                self._pattern_size = getattr(tracking_settings, "pattern_size", 50)
-                self._search_size = getattr(tracking_settings, "search_size", 100)
-                self._last_md = self._hz * 0.025
-                self._threshold = 0.0001
-
-            # Frame-spezifisches min_distance ggf. überschreiben
-            md_cache = scene.get("min_distance_values", {})
-            if md_cache:
-                fn = str(scene.frame_current)
-                if fn in md_cache:
-                    cached_md = float(md_cache[fn])
-                    self._last_md = cached_md
-
-        except Exception as ex:
-            print(f"[MasterDeepTest][InitDetect] ⚠️ Parameterinitialisierung fehlgeschlagen: {ex!r}")
-
-        # Zielwerte laden
-        # Zielwerte aus den Szenenvariablen ermitteln
-        self._goal_map = {
-            "rot_xy": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 0)),
-            "scale": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 0)),
-            "rot_scale_rot": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 0)),
-            "rot_scale_scale": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 0)),
-            "perspective": int(self._scene.get(SCENE_TOTAL_TRACK_LEN_STEP4, 0)),
-        }
-
-        # Nur Kategorien mit gesetztem Wert in die Queue aufnehmen
-        self._categories_queue = [cat for cat, val in self._goal_map.items() if val > 0]
-
-        if not self._categories_queue:
-            self.report({'INFO'}, "Keine aktiven Szenenwerte – MasterDeepTest übersprungen, starte DetectAdapt...")
-        
-            try:
-                if hasattr(bpy.ops, "kaiserlich_tracker"):
-                    bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                if self.state.vergleichswert < self.state.basis:
+                    self._minus_thresh(context)
                 else:
-                    print("[MasterDeepTest] ⚠️ Operatorstruktur unvollständig – Übergabe übersprungen.")
-            except Exception as ex:
-                print(f"[MasterDeepTest] ⚠️ Fehler bei Übergabe an master_detect_adapt: {ex!r}")
-        
+                    if self.state.vergleichswert > self.state.basis:
+                        self.state.basis = self.state.vergleichswert
+                        self._plus_thresh(context)
+                    else:
+                        self._plus_thresh(context)
+
+            print("[DeepTest] ✅ Alle Stufen abgeschlossen — Prozessende.")
             return {'FINISHED'}
 
-
-
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.05, window=context.window)
-        wm.modal_handler_add(self)
-        self._track_state = _TrackState(active=False, current=0, end=0, active_names=[], total_len=-1)
-        self._phase = "category_select"
-        return {'RUNNING_MODAL'}
-
-    # ------------------------------------------------------------------------
-    # Helper: Alle Tracks im aktiven Clip deselektieren
-    # ------------------------------------------------------------------------
-    def _deselect_all_tracks(self, context: bpy.types.Context) -> int:
-        """Setzt track.select = False für alle Tracks im aktiven Clip.
-        Returns: Anzahl zuvor selektierter Tracks, die deselektiert wurden.
-        """
-        clip = getattr(context.space_data, "clip", None)
-        tracking = getattr(clip, "tracking", None) if clip else None
-        if not tracking or not getattr(tracking, "tracks", None):
-            return 0
-        changed = 0
-        for tr in tracking.tracks:
-            if getattr(tr, "select", False):
-                tr.select = False
-                changed += 1
-        return changed
-
-    # ------------------------------------------------------------------------
-    def modal(self, context, event):
-        if event.type == 'ESC':
-            return self._teardown(context, cancelled=True)
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
-
-        if self._phase == "category_select":
-            if not self._categories_queue:
-                return self._finish(context)
-            self._current_category = self._categories_queue.pop(0)
-            self._prepare_category(context)
-            self._phase = "threshold_cycle"
-            return {'RUNNING_MODAL'}
-        # Nicht-blockierendes Tracking: wenn Tracking aktiv, pro TIMER-Tick genau einen Schritt
-        if self._phase == "tracking_tick":
-            running = self._track_tick(context)
-            if running:
-                return {'RUNNING_MODAL'}
-            # Tracking fertig → Ergebnis liegt in self._track_state.total_len
-            self._phase = "threshold_cycle_evaluate"
-            return {'RUNNING_MODAL'}
-
-        # Auswertung nach beendetem Tracking innerhalb derselben Threshold-Stufe
-        if self._phase == "threshold_cycle_evaluate":
-            finished = self._evaluate_after_tracking(context)
-            if finished:
-                if self._categories_queue:
-                    self._phase = "category_select"
-                    return {'RUNNING_MODAL'}
-                return self._finish(context)
-            # sonst nächste Stufe derselben Kategorie
-            self._phase = "threshold_cycle"
-            return {'RUNNING_MODAL'}
-
-        if self._phase == "threshold_cycle":
-            finished = self._process_threshold_cycle(context)
-            if finished:
-                if self._categories_queue:
-                    self._phase = "category_select"
-                    return {'RUNNING_MODAL'}
-                else:
-                    return self._finish(context)
-            return {'RUNNING_MODAL'}
-
-        return {'RUNNING_MODAL'}
-
-    # ------------------------------------------------------------------------
-    def _prepare_category(self, context):
-        self._base_value = 1.0
-        self._current_step_index = 0
-        # Vergleichslänge direkt aus Szenenwert der Kategorie
-        self._current_goal = int(self._goal_map.get(self._current_category, 0))
-        self._best_thresholds[self._current_category] = 1.0
-        self._pre_snapshot = snapshot_active_markers(context)
-        self._baseline_start_tracknames = {t.name for t in self._clip.tracking.tracks}
-        # Für jede Kategorie den frame-spezifischen md-Wert prüfen (wie Shorttest)
-        try:
-            _md_cache = self._scene.get("min_distance_values", {})
-            if _md_cache:
-                fn = str(self._scene.frame_current)
-                if fn in _md_cache:
-                    self._last_md = float(_md_cache[fn])
-        except Exception:
-            pass
-
-        # ---- Frame-Cache prüfen --------------------------------------------
-        cached = apply_cached_values(self._scene, self._scene.frame_current)
-        if cached:
-            self._current_step_index = len(REDUCTION_STEPS)
-            return
-        # Reset Thresholds auf 1.0 für die Kategorie
-        if self._current_category == "rot_xy":
-            set_scene_props(self._scene, kaiserlich_rot_thresh_x=1.0, kaiserlich_rot_thresh_y=1.0)
-        elif self._current_category == "scale":
-            set_scene_props(self._scene,
-                kaiserlich_scale_thresh_min=1.0, kaiserlich_scale_thresh_max=1.0)
-        elif self._current_category == "rot_scale_rot":
-            set_scene_props(
-                self._scene,
-                kaiserlich_rot_scale_thresh_rot=1.0,
-                kaiserlich_rot_scale_thresh_scale=0.0
-            )
-
-        elif self._current_category == "rot_scale_scale":
-            set_scene_props(
-                self._scene,
-                kaiserlich_rot_scale_thresh_rot=0.0,
-                kaiserlich_rot_scale_thresh_scale=1.0
-            )
-        elif self._current_category == "perspective":
-            set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
-
-    # ------------------------------------------------------------------------
-    def _process_threshold_cycle(self, context) -> bool:
-        """Durchläuft die Threshold-Stufen sequentiell und prüft je Durchgang."""
-        if self._current_step_index >= len(REDUCTION_STEPS):
-            return True
-    
-        step_factor = REDUCTION_STEPS[self._current_step_index]
-        next_val = max(MIN_THRESHOLD_VAL, self._base_value * step_factor)
-        self._current_value = next_val
-    
-        # ---- Threshold setzen (Szene aktualisieren) ----------------------------
-        if self._current_category == "rot_xy":
-            # Neue Formel: kaiserlich_rot_thresh_y = min(1, kaiserlich_rot_thresh_x * (Vertikale / Horizontale Auflösung))
-            y_val = min(1.0, next_val * (self._hz / self._vc))
-            set_scene_props(
-                self._scene,
-                kaiserlich_rot_thresh_x=next_val,
-                kaiserlich_rot_thresh_y=y_val
-            )
-    
-        elif self._current_category == "scale":
-            set_scene_props(self._scene,
-                            kaiserlich_scale_thresh_min=next_val,
-                            kaiserlich_scale_thresh_max=min(1,next_val * 1.1))
-        elif self._current_category == "rot_scale_rot":
-            set_scene_props(
-                self._scene,
-                kaiserlich_rot_scale_thresh_rot=next_val,
-                kaiserlich_rot_scale_thresh_scale=0.0
-            )
-
-        elif self._current_category == "rot_scale_scale":
-            set_scene_props(
-                self._scene,
-                kaiserlich_rot_scale_thresh_rot=0.0,
-                kaiserlich_rot_scale_thresh_scale=next_val
-            )
-    
-        elif self._current_category == "perspective":
-            set_scene_props(self._scene, kaiserlich_perspective_thresh=next_val)
-        
-        # ---- Detect (vollständig nach DetectAdapt-Struktur) --------------------
-        ef_target = int(self._scene.kaiserlich_markers_per_frame)
-        tolerance = ef_target * 0.10
-        hz = self._hz
-        vc = self._vc
-        ma = self._margin
-        tr = self._threshold
-        pz = self._pattern_size
-        scene = self._scene
-
-        pre_snapshot = snapshot_active_markers(context)
-        baseline_start_tracknames = {t.name for t in self._clip.tracking.tracks}
-
-        max_loops = self._detect_loop_max
-        last_md = float(self._last_md)
-        cleaned_new = []
-
-        # --- Fix: Cached min_distance übernehmen und Suche überspringen ---
-        _md_cache = self._scene.get("min_distance_values", {})
-        fn = str(self._scene.frame_current)
-        if fn in _md_cache:
-            cached_md = float(_md_cache[fn])
-            self._last_md = cached_md
-            last_md = cached_md
-            # Nur einmalige Detection durchführen, keine iterative Anpassung
-            max_loops = 1
-
-
-        for loop in range(max_loops):
-            detect_features(context, placement='FRAME', margin=ma, threshold=tr,
-                            min_distance=int(max(1, round(last_md))))
-
-            # Blender selektiert automatisch neue Marker → zurücksetzen
-            clip = getattr(context.space_data, 'clip', None)
-            if clip and getattr(clip, 'tracking', None):
-                for trk in clip.tracking.tracks:
-                    trk.select = False
-
-            post_snapshot = snapshot_active_markers(context)
-            alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)          
-
-            # Cleanup schützt alte Marker
-            cleaned_new, deleted_old = cleanup_new_markers(
-                context, alte_marker, neue_marker, pz=pz, hz=hz, vc=vc)
-            remaining = len(cleaned_new)
-
-            # --- Desync prüfen ---
-            if clip and getattr(clip, "tracking", None):
-                clip_names = {t.name for t in clip.tracking.tracks}
-                synced_cleaned = [m for m in cleaned_new if m['track'] in clip_names]
-                if len(synced_cleaned) != len(cleaned_new):
-                    removed = [m['track'] for m in cleaned_new if m['track'] not in clip_names]
-                cleaned_new = synced_cleaned
-                remaining = len(cleaned_new)
-            
-            # Zähl- und Löschlogik entfernt: nur ein einziger Detect/Cleanup-Durchlauf pro Threshold-Stufe
-            break
-
-        self._last_md = last_md
-
-        # Speicherung pro Frame (inkl. Interpolation)
-        frame_num = scene.frame_current
-        md_val = float(last_md)
-        if "min_distance_values" not in scene:
-            scene["min_distance_values"] = {}
-        md_dict = scene["min_distance_values"]
-        known_list = list(md_dict.get("known_frames", []))
-        if frame_num not in known_list:
-            known_list.append(frame_num)
-            known_list.sort()
-        md_dict["known_frames"] = known_list
-        md_dict[str(frame_num)] = md_val
-
-        if len(known_list) > 1:
-            for i in range(len(known_list) - 1):
-                f_start = known_list[i]
-                f_end = known_list[i + 1]
-                if f_end - f_start < 2:
-                    continue
-                v_start = float(md_dict[str(f_start)])
-                v_end = float(md_dict[str(f_end)])
-                for f in range(f_start + 1, f_end):
-                    t = (f - f_start) / float(f_end - f_start)
-                    interp = v_start + (v_end - v_start) * t
-                    md_dict[str(f)] = interp
-
-        # Nur wirklich neue Marker selektieren
-        clip = getattr(context.space_data, 'clip', None)
-        final_tracks = []
-        if clip and getattr(clip, 'tracking', None):
-            trk_list = clip.tracking.tracks
-            new_tracks = [t for t in trk_list if t.name not in baseline_start_tracknames]
-            for t in trk_list:
-                t.select = False
-            for nt in new_tracks:
-                nt.select = True
-                final_tracks.append(nt.name)
-
-        self._final_new_tracks = final_tracks
-
-        try:
-            bpy.context.view_layer.update()
-        except:
-            pass
-
-        # ---- Tracking starten (non-blocking) ----
-        self._track_start(context)
-        self._phase = "tracking_tick"
-        return False
-
-
-    # ------------------------------------------------------------------------
-    def _detect_adapt_cycle(self, context):
-        """Führt einen kurzen Detect/Cleanup-Zyklus aus."""
-        detect_features(context, placement='FRAME', margin=100, threshold=0.0001, min_distance=50)
-        post_snapshot = snapshot_active_markers(context)
-        alte, neue = classify_markers(self._pre_snapshot, post_snapshot)
-        cleanup_new_markers(context, alte, neue, pz=50, hz=self._hz, vc=self._vc)
-        self._final_new_tracks = [m['track'] for m in neue]
-        for trk in getattr(self._clip.tracking, "tracks", []):
-            trk.select = (trk.name in self._final_new_tracks)
-
-    # -------------------------------------------------------------------------
-    # Nicht-blockierendes Tracking (Start + Tick + Abschluss)
-    # -------------------------------------------------------------------------
-    def _track_start(self, context) -> None:
-        """Initialisiert das tick-basierte Tracking ohne UI-Blockade."""
-        scene = self._scene
-        clip = self._clip
-        space = self._space
-
-        # --------------------------------------------------------------------
-        #  Startframe bestimmen:
-        #  - Primär: erster Marker-Frame der neu erzeugten Tracks
-        #  - Sekundär: aktueller Playhead
-        #  - Fallback: Szenenstart
-        # --------------------------------------------------------------------
-        start_frame = int(scene.frame_start)
-        try:
-            tracking = getattr(clip, "tracking", None)
-            new_tracks = getattr(self, "_final_new_tracks", [])
-            if tracking and new_tracks:
-                marker_frames = []
-                for name in new_tracks:
-                    tr = tracking.tracks.get(name)
-                    if tr and tr.markers:
-                        marker_frames.append(tr.markers[0].frame)
-                if marker_frames:
-                    start_frame = min(marker_frames)
-            else:
-                # Kein expliziter neuer Track bekannt → aktuellen Frame verwenden
-                start_frame = int(scene.frame_current)
-        except Exception as ex:
-            start_frame = int(scene.frame_current or scene.frame_start)
-
-        # Playhead auf den Startframe setzen (visuell synchronisieren)
-        reset_to_frame(context, start_frame)
-        end_frame = self._end_frame
-        if end_frame < start_frame:
-            end_frame = start_frame
-
-        active_names = list(self._final_new_tracks or [])
-        if not active_names:
-            return 0
-
-        if clip and getattr(clip, "tracking", None):
-            for trk in clip.tracking.tracks:
-                trk.select = (trk.name in active_names)
-
-        scene.frame_current = start_frame
-        space.clip_user.frame_current = start_frame
-
-        self._track_state = _TrackState(
-            active=True,
-            current=start_frame,
-            end=end_frame,
-            active_names=active_names,
-            total_len=-1
-        )
-        # Startframe im State speichern für späteren Reset
-        self._track_state.start_frame = start_frame
-        # Gesamtanzahl speichern für Abbruchbedingung (75%-Regel)
-        self._track_state.start_count = len(active_names)
-
-    def _track_tick(self, context) -> bool:
-        """Führt genau einen Tracking-Schritt aus. True = läuft weiter; False = abgeschlossen."""
-        ts = self._track_state
-        if not ts.active:
-            return False
-
-        scene = self._scene
-        space = self._space
-        window, area, region = self._window, self._area, self._region
-
-        # 1) Inaktive Tracks filtern
-        ts.active_names, dropped = filter_active_tracks_at_frame(context, ts.active_names, ts.current)
-        if not ts.active_names:
-            return self._track_finish(context)
-
-        # --- Neue Abbruchbedingungen basierend auf UI-Property "Frames per Track" ---
-        frames_per_track = int(scene.kaiserlich_frames_per_track) * 2
-        current_frame_index = ts.current - getattr(ts, "start_frame", scene.frame_start)
-
-        # 1. Wenn die gewünschte Frameanzahl pro Track erreicht ist
-        if current_frame_index >= frames_per_track:
-            print(f"[MasterDeepTest][Track] ⏹️ Zielanzahl an Frames pro Track erreicht "
-                  f"({current_frame_index} ≥ {frames_per_track}) – Tracking beendet.")
-            return self._track_finish(context)
-
-        # 2. Wenn keine aktiven Tracks mehr vorhanden sind
-        if len(ts.active_names) == 0:
-            return self._track_finish(context)
-
-        # 3. Wenn das Szenenende erreicht oder überschritten wurde
-        if ts.current >= ts.end:
-            return self._track_finish(context)
-
-        # 2) Formel anwenden (ShortTest-Parität)
-        try:
-            apply_formula_on_selected_tracks(context, max_frames=5)
-        except Exception as e:
-            print(f"[MasterDeepTest][Track] ⚠️ Formel-Fehler: {e!r}")
-
-        # 3) Einen Frame tracken
-        ok = track_markers_with_override(window, area, region, space, backwards=False, sequence=False)
-        if not ok:
-            return self._track_finish(context)
-
-        # 4) Nächster Frame / Ende prüfen
-        ts.current += 1
-        if ts.current > ts.end:
-            return self._track_finish(context)
-
-        scene.frame_current = ts.current
-        space.clip_user.frame_current = ts.current
-        return True
-
-    def _track_finish(self, context) -> bool:
-        """Beendet das Tracking, misst Länge und löscht die temporären Tracks."""
-        ts = self._track_state
-        ts.active = False
-        try:
-            # ----------------------------------------------------------------
-            # 0) Filterung neuer Tracks nach Qualität oder Länge
-            # ----------------------------------------------------------------
-            new_tracks = getattr(self, "_final_new_tracks", [])
-            clip = getattr(self, "_clip", None)
-            if new_tracks and clip and clip.tracking:
-                tracking = clip.tracking
-                tracks = tracking.tracks
-            
-                # Beispiel: Nur Tracks behalten, die mindestens 3 Marker haben
-                valid_names = [
-                    tr.name for tr in tracks
-                    if tr.name in new_tracks and len(tr.markers) >= 3
-                ]
-            
-                # Beispiel: Alle anderen löschen (z.B. schlechte, kurze, leere)
-                to_delete = [tr for tr in new_tracks if tr not in valid_names]
-            
-                if to_delete:
-                    deleted_count = delete_tracks_by_names(context, to_delete)
-                    print(f"[MasterDeepTest] 🧹 {deleted_count} schwache Tracks gelöscht.")
-            
-                # Nur valide Tracks behalten für die weitere Auswertung
-                self._final_new_tracks = valid_names
-            
-            else:
-                print("[MasterDeepTest][Cleanup] ⚠️ Keine neuen Tracks gefunden.")
-
-
-            # View-Layer-Sync wie ShortTest
-            bpy.context.view_layer.update()
-            # Formel anwenden (ShortTest-Parität)
-            apply_formula_on_selected_tracks(context, max_frames=5)
-            # Länge messen (nach Filterung, nur neue Tracks berücksichtigen)
-            ts.total_len = int(
-                get_total_track_length(
-                    context,
-                    start_frame=self._start_frame,
-                    include_names=getattr(self, "_final_new_tracks", []),
-                )
-            )
-
-            # --- LOG: Szenenwerte nach aktuellem Testdurchlauf ---
-            scene = context.scene
-            print("\n[KAISERLICHTRACKER][LOG][DeepTest][Zwischenergebnis]")
-            print(f"  Aktuelle Kategorie: {self._current_category}")
-            print(f"  Gemessene Track-Länge: {ts.total_len}")
-            print(f"  {SCENE_TOTAL_TRACK_LEN_BASE}  = {scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 'n/a')}")
-            print(f"  {SCENE_TOTAL_TRACK_LEN_STEP1} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 'n/a')}")
-            print(f"  {SCENE_TOTAL_TRACK_LEN_STEP2} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 'n/a')}")
-            print(f"  {SCENE_TOTAL_TRACK_LEN_STEP3} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 'n/a')}")
-            print(f"  {SCENE_TOTAL_TRACK_LEN_STEP4} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP4, 'n/a')}")
-            print("------------------------------------------------------\n")
-        except Exception as e:
-            ts.total_len = 0
-
-
-        # Nach jedem Track-Durchgang soll der Playhead auf den ursprünglichen Startframe zurückspringen
-        try:
-            start_f = int(getattr(self._track_state, "start_frame", self._start_frame))
-            reset_to_frame(context, start_f)
-        except Exception as ex:
-            print(f"[MasterDeepTest][Track] ⚠️ Fehler beim Playhead-Reset (Startframe): {ex!r}")
-
-        # Temporäre Tracks löschen
-        try:
-            delete_tracks_by_names(context, self._final_new_tracks)
-        except Exception as e:
-            print(f"[MasterDeepTest][Track] ⚠️ Fehler beim Löschen: {e!r}")
-
-        return False
-
-    # -------------------------------------------------------------------------
-    # Auswertung nach beendetem Tracking in derselben Threshold-Stufe
-    # -------------------------------------------------------------------------
-    def _evaluate_after_tracking(self, context) -> bool:
-        """Bewertet die Ergebnisse der aktuellen Stufe und bereitet die nächste vor.
-        Rückgabe: True = Kategorie fertig, False = nächste Stufe derselben Kategorie.
-        """
-        total_len = int(self._track_state.total_len if self._track_state.total_len >= 0 else 0)
-        compare_len = int(self._goal_map.get(self._current_category, 0))
-
-        # ---- Bewertung (adaptive Stufenlogik) -------------------------------
-        if total_len >= compare_len:
-            # ✅ Ziel erreicht – Fortschritt speichern und nächste Stufe
-            self._goal_map[self._current_category] = total_len
-            self._best_thresholds[self._current_category] = self._current_value
-
-            frame_values = {self._current_category: self._current_value}
-            save_frame_values(self._scene, self._scene.frame_current, frame_values)
-
-            # Thresholds für diese Kategorie zurücksetzen
-            if self._current_category == "rot_xy":
-                set_scene_props(self._scene,
-                    kaiserlich_rot_thresh_x=1.0,
-                    kaiserlich_rot_thresh_y=1.0)
-            elif self._current_category == "scale":
-                set_scene_props(self._scene,
-                    kaiserlich_scale_thresh_min=1.0,
-                    kaiserlich_scale_thresh_max=1.0)
-            elif self._current_category in ("rot_scale_rot", "rot_scale_scale"):
-                set_scene_props(self._scene,
-                    kaiserlich_rot_scale_thresh_rot=1.0,
-                    kaiserlich_rot_scale_thresh_scale=1.0)
-            elif self._current_category == "perspective":
-                set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
-
-            print(f"[DeepTest] ✅ Ziel erreicht ({total_len} ≥ {compare_len}), nächste Stufe.")
-            self._current_step_index += 1
-
-        else:
-            # ❌ Ziel nicht erreicht
-            # ❌ Ziel nicht erreicht — Wiederholung bei Misserfolg (aus deep_test_operator übernommen)
-            if total_len < compare_len:
-                # Wenn der Wert bereits sehr klein ist, Kategorie beenden
-                if self._current_value <= MIN_THRESHOLD_VAL:
-                    print(f"[DeepTest] ⚠️ Kategorie '{self._current_category}' beendet – "
-                          f"Untergrenze ({self._current_value:.6f}) erreicht, Ziel {compare_len} nicht erfüllt.")
-                    self._current_step_index = len(REDUCTION_STEPS)
-                    return True
-
-                # Threshold weiter senken (gleiche Stufe wiederholen)
-                self._base_value = self._current_value * 0.9
-                self._current_value = self._base_value
-
-                print(f"[DeepTest] 🔁 Wiederhole Kategorie '{self._current_category}' – "
-                      f"Threshold weiter reduziert auf {self._current_value:.6f} "
-                      f"(Ziel {compare_len}, gemessen {total_len})")
-
-                if self._current_category == "rot_xy":
-                    y_val = min(1.0, self._current_value * (self._hz / self._vc))
-                    set_scene_props(self._scene,
-                        kaiserlich_rot_thresh_x=self._current_value,
-                        kaiserlich_rot_thresh_y=y_val)
-                elif self._current_category == "scale":
-                    set_scene_props(self._scene,
-                        kaiserlich_scale_thresh_min=self._current_value,
-                        kaiserlich_scale_thresh_max=min(1, self._current_value * 1.1))
-                elif self._current_category == "rot_scale_rot":
-                    set_scene_props(self._scene,
-                        kaiserlich_rot_scale_thresh_rot=self._current_value,
-                        kaiserlich_rot_scale_thresh_scale=0.0)
-                elif self._current_category == "rot_scale_scale":
-                    set_scene_props(self._scene,
-                        kaiserlich_rot_scale_thresh_rot=0.0,
-                        kaiserlich_rot_scale_thresh_scale=self._current_value)
-                elif self._current_category == "perspective":
-                    set_scene_props(self._scene,
-                        kaiserlich_perspective_thresh=self._current_value)
-
-                # Keine Erhöhung des Step-Index → erneute Durchführung derselben Stufe
-                return False
-
-            # Wenn keine Verbesserung oder Ende erreicht → Kategorie abschließen
-            if total_len >= compare_len or self._current_value <= MIN_THRESHOLD_VAL:
-                self._current_step_index = len(REDUCTION_STEPS)
-                return True
-
-        # --------------------------------------------------------------------
-        # Kein Rücksprung auf Szenenanfang mehr:
-        # Nach jeder Auswertung bleibt der Playhead am letzten Tracking-Start.
-        # Dieser Frame wird als Startpunkt für den nächsten Detect-Cycle verwendet.
-        # --------------------------------------------------------------------
-        try:
-            start_f = int(getattr(self._track_state, "start_frame", self._start_frame))
-            reset_to_frame(context, start_f)
-        except Exception as ex:
-            print(f"[MasterDeepTest][Eval] ⚠️ Fehler beim Playhead-Reset (Eval): {ex!r}")
-
-        # Kategorie fertig, wenn alle Reduktionsstufen durch oder MIN erreicht
-        # ---------------------------------------------------------------
-        # 🔁 Thresholds für nächste Kategorie immer auf 1.0 zurücksetzen
-        if self._current_category == "rot_xy":
-            set_scene_props(self._scene,
-                kaiserlich_rot_thresh_x=1.0,
-                kaiserlich_rot_thresh_y=1.0)
-        elif self._current_category == "scale":
-            set_scene_props(self._scene,
-                kaiserlich_scale_thresh_min=1.0,
-                kaiserlich_scale_thresh_max=1.0)
-        elif self._current_category in ("rot_scale_rot", "rot_scale_scale"):
-            set_scene_props(self._scene,
-                kaiserlich_rot_scale_thresh_rot=1.0,
-                kaiserlich_rot_scale_thresh_scale=1.0)
-        elif self._current_category == "perspective":
-            set_scene_props(self._scene, kaiserlich_perspective_thresh=1.0)
-
-        if self._current_step_index >= len(REDUCTION_STEPS):
-            return True
-
-        return False
-
-    # ------------------------------------------------------------------------
-    def _finish(self, context):
-        for k, v in self._best_thresholds.items():
-            print(f"  {k}: {v:.6f}")
-        # Ergebnisse global in die Szene schreiben
+    def _set_threshold(self, context: Context) -> None:
         scene = context.scene
-        scene["kaiserlich_best_thresholds"] = self._best_thresholds
+        # Baseline: alles auf 1 zurücksetzen
+        scene.kaiserlich_rot_thresh_x = 1.0
+        scene.kaiserlich_rot_thresh_y = 1.0
+        scene.kaiserlich_scale_thresh_min = 1.0
+        scene.kaiserlich_scale_thresh_max = 1.0
+        scene.kaiserlich_rot_scale_thresh_rot = 1.0
+        scene.kaiserlich_rot_scale_thresh_scale = 1.0
+        scene.kaiserlich_perspective_thresh = 1.0
 
-        # --- LOG: Übersicht der Ziel- und Vergleichswerte ---
-        print("[KAISERLICHTRACKER][LOG][DeepTest] --- Szenenwerte (Ziele) ---")
-        print(f"  {SCENE_TOTAL_TRACK_LEN_BASE}  = {scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 'n/a')}")
-        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP1} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 'n/a')}")
-        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP2} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 'n/a')}")
-        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP3} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 'n/a')}")
-        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP4} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP4, 'n/a')}")
-        print("[KAISERLICHTRACKER][LOG][DeepTest] --- Beste Thresholds ---")
-        for cat, val in self._best_thresholds.items():
-            print(f"   {cat}: {val:.6f}")
-        print("[KAISERLICHTRACKER][LOG][DeepTest] ----------------------------")
+    def _set_step_threshold(self, context: Context) -> None:
+        clip = get_active_clip()
+        scene = context.scene
 
-        # ---- Thresholds in Szene anwenden ----
-        if "rot_xy" in self._best_thresholds:
-            best_x = self._best_thresholds["rot_xy"]
-            best_y = min(1.0, best_x * (self._hz / self._vc))
-            set_scene_props(scene,
-                kaiserlich_rot_thresh_x=best_x,
-                kaiserlich_rot_thresh_y=best_y)
+        if self.state.stufe == 0:
+            # rot_xy
+            if clip:
+                width, height = clip.size
+                # y an Seitenverhältnis koppeln, gekappt auf 1.0
+                y_val = min(1.0, self.state.next_val * (height / width if width else 1.0))
+                scene.kaiserlich_rot_thresh_x = float(self.state.next_val)
+                scene.kaiserlich_rot_thresh_y = float(y_val)
+            return
 
-        if "scale" in self._best_thresholds:
-            set_scene_props(scene,
-                kaiserlich_scale_thresh_min=self._best_thresholds["scale"],
-                kaiserlich_scale_thresh_max=min(1,self._best_thresholds["scale"] * 1.1))
-        # rot_scale ist zweigeteilt gespeichert
-        rot_val = self._best_thresholds.get("rot_scale_rot")
-        scale_val = self._best_thresholds.get("rot_scale_scale")
-        if rot_val or scale_val:
-            set_scene_props(scene,
-                kaiserlich_rot_scale_thresh_rot=(rot_val or 1.0),
-                kaiserlich_rot_scale_thresh_scale=(scale_val or 1.0))
-        if "perspective" in self._best_thresholds:
-            set_scene_props(scene,
-                kaiserlich_perspective_thresh=self._best_thresholds["perspective"])
+        elif self.state.stufe == 1:
+            # scale_min/max
+            scene.kaiserlich_scale_thresh_min = float(self.state.next_val)
+            scene.kaiserlich_scale_thresh_max = float(min(1.0, self.state.next_val * 1.1))
+            return
 
-        # --- NEU: Playhead nach Test wiederherstellen -----------------------
-        try:
-            restore_frame = getattr(self, "_user_original_frame", None)
-            if restore_frame is not None:
-                self._scene.frame_current = int(restore_frame)
-                if self._space and getattr(self._space, "clip_user", None):
-                    self._space.clip_user.frame_current = int(restore_frame)
-        except Exception as ex:
-            print(f"[MasterDeepTest] ⚠️ Fehler beim Wiederherstellen des Playheads: {ex!r}")
-        # -------------------------------------------------------------------
+        elif self.state.stufe == 2:
+            # rot_scale: rot
+            scene.kaiserlich_rot_scale_thresh_rot = float(self.state.next_val)
+            scene.kaiserlich_rot_scale_thresh_scale = 0.0
+            return
 
-        # --- LOG: Abschlussübersicht ---
-        print("[KAISERLICHTRACKER][LOG][DeepTest] Deep Test abgeschlossen — Endwerte:")
-        print(f"  {SCENE_TOTAL_TRACK_LEN_BASE}  = {scene.get(SCENE_TOTAL_TRACK_LEN_BASE, 'n/a')}")
-        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP1} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP1, 'n/a')}")
-        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP2} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP2, 'n/a')}")
-        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP3} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP3, 'n/a')}")
-        print(f"  {SCENE_TOTAL_TRACK_LEN_STEP4} = {scene.get(SCENE_TOTAL_TRACK_LEN_STEP4, 'n/a')}")
-        print("[KAISERLICHTRACKER][LOG][DeepTest] -----------------------------------")
-    
-        return self._teardown(context, cancelled=False)
+        elif self.state.stufe == 3:
+            # rot_scale: scale
+            scene.kaiserlich_rot_scale_thresh_rot = 0.0
+            scene.kaiserlich_rot_scale_thresh_scale = float(self.state.next_val)
+            return
 
-    def _teardown(self, context, cancelled=False):
-        wm = context.window_manager
-        if self._timer:
-            wm.event_timer_remove(self._timer)
-            self._timer = None
-        msg = "Deep Test abgebrochen." if cancelled else "Deep Test abgeschlossen."
-        try:
-            self.report({'INFO'}, msg)
-        except:
-            print(msg)
-        # --- NEU: Globale Wiederherstellung der ursprünglichen Playhead-Position ---
-        try:
-            restore_frame = getattr(self, "_user_original_frame", None)
-            if restore_frame is not None:
-                self._scene.frame_current = int(restore_frame)
-                if self._space and getattr(self._space, "clip_user", None):
-                    self._space.clip_user.frame_current = int(restore_frame)
-        except Exception as ex:
-            print(f"[MasterDeepTest] ⚠️ Fehler bei globaler Wiederherstellung: {ex!r}")
-        # ---------------------------------------------------------------------------
-        # ---------------------------------------------------------------------------
-        # 🔁 NACH ABSCHLUSS: Weitergabe an Master Detect Adapt Operator
-        # ---------------------------------------------------------------------------
-        if not cancelled:
-            try:
-                # Sicherstellen, dass aktuelle Kontextdaten vollständig sind
-                if context and hasattr(bpy.ops, "kaiserlich_tracker"):
-                    result = bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+        elif self.state.stufe == 4:
+            # perspective
+            scene.kaiserlich_perspective_thresh = float(self.state.next_val)
+            return
+
+        elif self.state.stufe >= 5:
+            self.state.stop_flag = True
+            return
+
+    def _track(self, context: Context) -> None:
+        # Vorher/Nachher-Snapshot
+        self.state.alte_tracker = snapshot_active_markers(context)
+        run_detect_adapt(context)
+        self.state.alle_tracker = snapshot_active_markers(context)
+        self.state.neu_tracker = set(self.state.alle_tracker) - set(self.state.alte_tracker)
+
+        # Vorwärts-Tracking mit Grenzen
+        self._track_forward_with_limits(context)
+
+        # Metrik berechnen
+        scene = context.scene
+        self.state.vergleichswert = get_total_track_length(
+            context,
+            start_frame=scene.frame_start,
+            include_names=self.state.neu_tracker
+        )
+
+        # Aufräumen: nur die neu erzeugten wieder entfernen
+        if self.state.neu_tracker:
+            delete_tracks_by_names(context, include_names=self.state.neu_tracker)
+
+    def _plus_thresh(self, context: Context) -> None:
+        while True:
+            self.state.ende = self.state.next_val
+            step = abs(self.state.start - self.state.ende) / 2.0
+            if step > 0.0001:
+                self.state.next_val = self.state.next_val + step
+                self._set_step_threshold(context)
+                self._track(context)
+                if self.state.vergleichswert >= self.state.basis:
+                    if self.state.vergleichswert > self.state.basis:
+                        self.state.basis = self.state.vergleichswert
+                        continue
+                    else:
+                        continue
                 else:
-                    print("[MasterDeepTest] ⚠️ Kontext oder Operatorstruktur unvollständig – Übergabe übersprungen.")
+                    self._minus_thresh(context)
+            else:
+                self.state.stufe += 1
+                # neue Stufe starten
+                return
+
+    def _minus_thresh(self, context: Context) -> None:
+        while True:
+            self.state.start = self.state.next_val
+            step = abs(self.state.start - self.state.ende) / 2.0
+            if step > 0.0001:
+                self.state.next_val = self.state.next_val - step
+                self._set_step_threshold(context)
+                self._track(context)
+                if self.state.vergleichswert < self.state.basis:
+                    continue
+                else:
+                    if self.state.vergleichswert > self.state.basis:
+                        self.state.basis = self.state.vergleichswert
+                        self._plus_thresh(context)
+                    else:
+                        self._plus_thresh(context)
+            else:
+                self.state.stufe += 1
+                # neue Stufe starten
+                return
+
+    def _track_forward_with_limits(
+        self,
+        context: Context,
+        *,
+        max_frames: int = 50,
+        min_distance_to_end: int = 50,
+        log: bool = True
+    ) -> int:
+        """
+        Führt ein begrenztes Vorwärts-Tracking ab der aktuellen Playhead-Position aus.
+
+        Rückgabe:
+            Gesamtzahl der getrackten Frames (oder 0 bei Abbruch)
+        """
+        scene = context.scene
+        clip = get_active_clip()
+        if not clip or not getattr(clip, "tracking", None):
+            if log:
+                print("[TrackForward] ❌ Kein aktiver Clip gefunden.")
+            return 0
+
+        end_frame = int(scene.frame_end)
+        current_frame = int(scene.frame_current)
+        remaining = end_frame - current_frame
+
+        # --- Startposition prüfen / korrigieren ---
+        if remaining < min_distance_to_end:
+            new_start = max(scene.frame_start, end_frame - min_distance_to_end)
+            if log:
+                print(f"[TrackForward] ⚠️ Weniger als {min_distance_to_end} Frames verbleiben "
+                      f"({remaining}) → Starte bei Frame {new_start}.")
+            reset_to_frame(context, new_start)
+            scene.frame_current = new_start
+            current_frame = new_start
+        else:
+            if log:
+                print(f"[TrackForward] ✅ Genug Frames verbleiben ({remaining}). Starte bei {current_frame}.")
+
+        # --- aktive Tracks ermitteln (selektierte) ---
+        tracking = clip.tracking
+        active_tracks = [t.name for t in tracking.tracks if t.select]
+        if not active_tracks:
+            if log:
+                print("[TrackForward] ⚠️ Keine selektierten Tracks zum Tracken gefunden.")
+            return 0
+
+        # --- Kontext holen ---
+        ctx_override = get_clip_context()
+        if not ctx_override:
+            print("[TrackForward] ❌ Kein gültiger Clip-Kontext verfügbar – Abbruch.")
+            return 0
+
+        # --- Tracking-Schleife ---
+        frames_tracked = 0
+        for _ in range(max_frames):
+            if current_frame >= end_frame:
+                if log:
+                    print("[TrackForward] ⏹️ Szenenende erreicht.")
+                break
+
+            active_tracks, _dropped = filter_active_tracks_at_frame(context, active_tracks, current_frame)
+            if not active_tracks:
+                if log:
+                    print("[TrackForward] ⏹️ Keine aktiven Tracks mehr – Tracking beendet.")
+                break
+
+            try:
+                # leichte Anpassungen vorher, wenn konfiguriert
+                apply_formula_on_selected_tracks(context, max_frames=5)
             except Exception as ex:
-                print(f"[MasterDeepTest] ⚠️ Fehler bei Übergabe an master_detect_adapt: {ex!r}")
+                if log:
+                    print(f"[TrackForward] ⚠️ Formel-Fehler: {ex!r}")
 
-        # Rückgabestatus wie gewohnt
-        return {'CANCELLED' if cancelled else 'FINISHED'}
+            # --- Tracking via Override ---
+            with bpy.context.temp_override(**ctx_override):
+                result = bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False)
+            if 'CANCELLED' in str(result):
+                if log:
+                    print("[TrackForward] ⚠️ Tracking fehlgeschlagen – Abbruch.")
+                break
 
+            frames_tracked += 1
+            current_frame += 1
+            scene.frame_current = current_frame
+            # UI-best effort
+            try:
+                context.space_data.clip_user.frame_current = current_frame
+            except Exception:
+                pass
 
-def register():
-    bpy.utils.register_class(KAISERLICHTRACKER_OT_master_deep_test_operator)
+        total_len = get_total_track_length(context, start_frame=scene.frame_start, include_names=active_tracks)
+        if log:
+            print(f"[TrackForward] ✅ Tracking abgeschlossen – {frames_tracked} Frames getrackt, "
+                  f"Gesamtlänge {total_len}.")
 
-
-def unregister():
-    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_master_deep_test_operator)
+        return frames_tracked
