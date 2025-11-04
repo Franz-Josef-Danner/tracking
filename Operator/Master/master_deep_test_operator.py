@@ -45,58 +45,57 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         print("\n[DeepTest][Init] 🔧 Starte Deep-Test-Sequenz ...")
 
-        while True:
-            self._set_threshold(context)
-            print("[DeepTest][Init] Thresholds zurückgesetzt (alle = 1.0).")
+        self._set_threshold(context)
+        print("[DeepTest][Init] Thresholds zurückgesetzt (alle = 1.0).")
 
-            # Main loop through all threshold steps
-            while not self.state.stop_flag:
-                print(f"\n[DeepTest][Step {self.state.step}] --- Neue Threshold-Phase gestartet ---")
-                self._set_step_threshold(context)
+        # Main loop through all threshold steps
+        while not self.state.stop_flag:
+            print(f"\n[DeepTest][Step {self.state.step}] --- Neue Threshold-Phase gestartet ---")
+            self._set_step_threshold(context)
 
-                if self.state.stop_flag:
-                    print("[DeepTest] ✅ Alle Threshold-Phasen abgeschlossen.")
-                    break
+            if self.state.stop_flag:
+                print("[DeepTest] ✅ Alle Threshold-Phasen abgeschlossen.")
+                break
 
-                print(f"[DeepTest][Step {self.state.step}] Aktueller Testwert: {self.state.next_val:.8f}")
-                self.state.next_val = 1.0
-                self._set_step_threshold(context)
-                print(f"[DeepTest][Track] 🚀 Tracking mit Threshold={self.state.next_val:.8f}")
-                self._track(context)
-                print(f"[DeepTest][Result] Referenzwert: {self.state.reference_value:.3f}")
+            print(f"[DeepTest][Step {self.state.step}] Aktueller Testwert: {self.state.next_val:.8f}")
+            self.state.next_val = 1.0
+            self._set_step_threshold(context)
+            print(f"[DeepTest][Track] 🚀 Tracking mit Threshold={self.state.next_val:.8f}")
+            self._track(context)
+            print(f"[DeepTest][Result] Referenzwert: {self.state.reference_value:.3f}")
 
-                self.state.base_value = self.state.reference_value
-                self.state.start = self.state.next_val
-                self.state.next_val = 0.00001
-                self._set_step_threshold(context)
-                self.state.lower_limit = self.state.next_val
-                print(f"[DeepTest][Range] Start={self.state.start:.8f}, LowerLimit={self.state.lower_limit:.8f}")
-                self._track(context)
-                print(f"[DeepTest][Result] Referenzwert nach Low={self.state.reference_value:.3f}")
+            self.state.base_value = self.state.reference_value
+            self.state.start = self.state.next_val
+            self.state.next_val = 0.00001
+            self._set_step_threshold(context)
+            self.state.lower_limit = self.state.next_val
+            print(f"[DeepTest][Range] Start={self.state.start:.8f}, LowerLimit={self.state.lower_limit:.8f}")
+            self._track(context)
+            print(f"[DeepTest][Result] Referenzwert nach Low={self.state.reference_value:.3f}")
 
-                if self.state.reference_value <= self.state.base_value:
-                    print(f"[DeepTest][Adjust] Kein Anstieg – Schritt {self.state.step + 1}")
-                    self.state.step = self.state.step + 1
-                    continue
+            if self.state.reference_value <= self.state.base_value:
+                print(f"[DeepTest][Adjust] Kein Anstieg – Schritt {self.state.step + 1}")
+                self.state.step = self.state.step + 1
+                continue
 
-                self.state.step = abs(self.state.start - self.state.lower_limit) / 2.0
-                self.state.next_val = self.state.next_val + self.state.step
-                print(f"[DeepTest][Calc] Neuer Step-Wert: {self.state.step:.8f} → NextVal={self.state.next_val:.8f}")
-                self._set_step_threshold(context)
-                self._track(context)
-                print(f"[DeepTest][Result] Nach Mid-Test: {self.state.reference_value:.3f}")
+            self.state.step = abs(self.state.start - self.state.lower_limit) / 2.0
+            self.state.next_val = self.state.next_val + self.state.step
+            print(f"[DeepTest][Calc] Neuer Step-Wert: {self.state.step:.8f} → NextVal={self.state.next_val:.8f}")
+            self._set_step_threshold(context)
+            self._track(context)
+            print(f"[DeepTest][Result] Nach Mid-Test: {self.state.reference_value:.3f}")
 
-                if self.state.reference_value < self.state.base_value:
-                    print("[DeepTest][Decision] ⬇️ Wert gefallen → Minus-Threshold-Richtung")
-                    self._minus_thresh(context)
+            if self.state.reference_value < self.state.base_value:
+                print("[DeepTest][Decision] ⬇️ Wert gefallen → Minus-Threshold-Richtung")
+                self._minus_thresh(context)
+            else:
+                if self.state.reference_value > self.state.base_value:
+                    print("[DeepTest][Decision] ⬆️ Wert gestiegen → Plus-Threshold-Richtung")
+                    self.state.base_value = self.state.reference_value
+                    self._plus_thresh(context)
                 else:
-                    if self.state.reference_value > self.state.base_value:
-                        print("[DeepTest][Decision] ⬆️ Wert gestiegen → Plus-Threshold-Richtung")
-                        self.state.base_value = self.state.reference_value
-                        self._plus_thresh(context)
-                    else:
-                        print("[DeepTest][Decision] ⏸ Keine Änderung → Bleibe bei Plus-Richtung")
-                        self._plus_thresh(context)
+                    print("[DeepTest][Decision] ⏸ Keine Änderung → Bleibe bei Plus-Richtung")
+                    self._plus_thresh(context)
 
         print("[DeepTest] ✅ Alle Threshold-Stufen abgeschlossen – Prozess beendet.")
         return {'FINISHED'}
