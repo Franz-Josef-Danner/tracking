@@ -3,6 +3,7 @@ import bpy
 from bpy.types import Operator, Context
 from dataclasses import dataclass, field
 from typing import Set
+import time
 
 from ...Helper.snapshot import snapshot_active_markers
 from ...Helper.detect_adapt_helper import run_detect_adapt
@@ -64,6 +65,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self.state.lower_limit = self.state.next_val
                 self._track(context)
                 while not self.state.track_flag:
+                    time.sleep(0.1)
                     self._refresh_clip_editor_viewer(context)
                     if self.state.track_flag:
                         if self.state.reference_value <= self.state.base_value:
