@@ -47,7 +47,7 @@ def filter_problematic_tracks(
     Args:
         context: Blender Context (erwartet aktiven Movie Clip im Clip Editor).
         threshold: Threshold für den internen Filter.
-        min_frames: Optional manuell vorgeben; wenn None, wird aus UI gelesen.
+        protected_names: Optionale Menge an Track-Namen, die niemals gelöscht werden dürfen.
     """
     # Sicherstellen, dass wir im Movie Clip Editor sind
     space_data = getattr(context, "space_data", None)
@@ -60,7 +60,18 @@ def filter_problematic_tracks(
 
     # --- 0) UI-Wert für min_frames auflösen (falls nicht manuell gesetzt)
     resolved_min_frames = _get_ui_min_frames(context, fallback=25) if min_frames is None else int(min_frames)
-    print(f"[Kaiserlich Tracker][Filter] Using min_frames={resolved_min_frames} (Quelle: {'UI' if min_frames is None else 'Param'})")
+
+    # --- 0.5) Geschützte Namen aus Szene (optional übergeben) ---
+    protected_names = getattr(context.scene, "kaiserlich_protected_tracks", set()) or set()
+    if not isinstance(protected_names, set):
+        protected_names = set(protected_names)
+
+    if protected_names:
+        print(f"[Kaiserlich Tracker][Filter] 🛡️ {len(protected_names)} geschützte Tracks erkannt (werden nicht gelöscht).")
+        for tr in clip.tracking.tracks:
+            if tr.name in protected_names:
+                tr.select = False
+                tr.lock = True
 
     # --- 1) Interner Filter (Bewegungsanalyse)
     try:
@@ -82,3 +93,10 @@ def filter_problematic_tracks(
         print(f"[Kaiserlich Tracker][Filter] Cleanup ✓ – Tracks mit < {resolved_min_frames} Frames gelöscht.")
     except Exception as e:
         print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Cleanup: {e}")
+
+    # --- 3) Schutz wieder aufheben ---
+    if protected_names:
+        for tr in clip.tracking.tracks:
+            if tr.name in protected_names:
+                tr.lock = False
+        print("[Kaiserlich Tracker][Filter] 🔓 Schutz aufgehoben – alte Marker wieder entsperrt.")
