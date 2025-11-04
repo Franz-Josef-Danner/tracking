@@ -13,7 +13,8 @@ from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.track_length_helper import get_total_track_length
 from ...Helper.delete import delete_tracks_by_names
 from ...Helper.get_clip_context import get_clip_context
-
+# Fortschrittsanzeige
+from ...Helper.ui_progress import set_progress
 
 @dataclass
 class DeepTestState:
@@ -140,7 +141,15 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         scene = context.scene
         step = self.state.step
         val = self.state.next_val
-    
+
+        # Fortschrittsanzeige aktualisieren (Titel + Wert)
+        set_progress(title=f"DeepTest: Step {step}", value=min(1.0, step / 5.0))
+
+        # UI sichtbar aktualisieren
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    area.tag_redraw()
         if step == 0:
             if clip:
                 width, height = clip.size
@@ -216,6 +225,16 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             scene.kaiserlich_perspective_thresh = self.state.perspective_thresh
             print("[DeepTest][Stop] 🛑 Threshold-Test abgeschlossen.")
             self.state.stop_flag = True
+
+            # Fortschrittsanzeige abschließen
+            set_progress(title="DeepTest: abgeschlossen ✅", value=1.0)
+
+            # Finales UI-Update
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == 'CLIP_EDITOR':
+                        area.tag_redraw()
+
             return
 
     
