@@ -75,7 +75,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 print(f"[DeepTest][Adjust] Kein Anstieg – Schritt {self.state.step + 1}")
                 self.state.step = self.state.step + 1
                 continue
-
+            self.state.base_value = self.state.reference_value 
             self.state.converter = abs(self.state.start - self.state.lower_limit) / 2.0
             self.state.next_val = self.state.next_val + self.state.converter
             print(f"[DeepTest][Calc] Neuer Step-Wert: {self.state.step:.8f} → NextVal={self.state.next_val:.8f}")
