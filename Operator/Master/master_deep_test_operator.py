@@ -1,4 +1,4 @@
-Operator/Master/master_deep_test_operator.py
+# Operator/Master/master_deep_test_operator.py
 import bpy
 from bpy.types import Operator, Context
 from dataclasses import dataclass, field
