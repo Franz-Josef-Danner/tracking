@@ -125,18 +125,23 @@ def filter_problematic_tracks(
         }
     
         print(f"[Kaiserlich Tracker][Debug] Context override: window={window}, area={area.type}, region={region.type}, edit_clip={clip.name}")
-    
-        # Cleanup ausführen (nur Kamera-Track)
-        result = bpy.ops.clip.clean_tracks(
-            override,
-            'EXEC_DEFAULT',
-            frames=0,
-            error=threshold,
-            action='DELETE_TRACK'
-        )
-    
-        if result != {'FINISHED'}:
-            print(f"[Kaiserlich Tracker][Filter] ⚠️ bpy.ops.clip.clean_tracks result={result}")
+        
+        # Cleanup ausführen (nur Kamera-Track) – stabiler Kontext mit temp_override
+        with bpy.context.temp_override(
+            window=window,
+            area=area,
+            region=region,
+            space_data=space,
+        ):
+            result = bpy.ops.clip.clean_tracks(
+                'EXEC_DEFAULT',
+                frames=0,
+                error=threshold,
+                action='DELETE_TRACK'
+            )
+
+            if result != {'FINISHED'}:
+                print(f"[Kaiserlich Tracker][Filter] ⚠️ bpy.ops.clip.clean_tracks result={result}")
     
         after = _count_tracks()
         deleted = max(0, before - after)
