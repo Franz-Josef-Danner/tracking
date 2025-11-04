@@ -230,6 +230,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         end_frame = int(scene.frame_end)
         current_frame = int(scene.frame_current)
+        original_frame = current_frame
         remaining = end_frame - current_frame
 
         # --- Validate or adjust start position ---
@@ -302,5 +303,15 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if log:
             print(f"[TrackForward] ✅ Tracking completed – {frames_tracked} frames tracked, "
                   f"total length {total_len}.")
+
+        # --- Restore original playhead position ---
+        try:
+            reset_to_frame(context, original_frame)
+            scene.frame_current = original_frame
+            if log:
+                print(f"[TrackForward] 🔁 Playhead restored to original frame {original_frame}.")
+        except Exception as ex:
+            if log:
+                print(f"[TrackForward] ⚠️ Could not restore playhead: {ex!r}")
 
         return frames_tracked
