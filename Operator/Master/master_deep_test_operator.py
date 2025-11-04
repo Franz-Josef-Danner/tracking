@@ -112,7 +112,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         scene.kaiserlich_rot_scale_thresh_rot = 1.0
         scene.kaiserlich_rot_scale_thresh_scale = 1.0
         scene.kaiserlich_perspective_thresh = 1.0
-
+        return
 
     def _set_step_threshold(self, context: Context) -> None:
         clip = get_active_clip(context)
