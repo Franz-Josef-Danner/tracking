@@ -158,17 +158,17 @@ def register():
     # --- Fortschrittsanzeige ---
     bpy.types.Scene.kaiserlich_progress_value = bpy.props.FloatProperty(
         name="Progress",
-        description="Aktueller Fortschritt in Prozent (0.0–1.0)",
-        default=0.0,
-        min=0.0,
-        max=1.0,
+        description="Aktueller Fortschritt in Prozent (0–100)",
+        default=0,
+        min=0,
+        max=100,
         subtype='FACTOR',
     )
 
     bpy.types.Scene.kaiserlich_progress_title = bpy.props.StringProperty(
         name="Status",
         description="Aktueller Verarbeitungsschritt oder Titel",
-        default="Idle",
+        default="",
     )
 
 def unregister():
