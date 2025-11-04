@@ -153,21 +153,26 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self.state.all_tracks = all_names
         self.state.new_tracks = all_names - old_names
 
-        # --- Neue Marker aktiv selektieren ---
-        clip = get_active_clip(context)
-        scene = context.scene
-        if clip:
-            for t in clip.tracking.tracks:
-                if t.name in self.state.new_tracks:
-                    t.select = True
-                    # Marker am aktuellen Frame suchen oder ersten vorhandenen nehmen
-                    marker = t.markers.find(scene.frame_current)
-                    if not marker and t.markers:
-                        marker = t.markers[0]
-                        scene.frame_current = marker.frame  # Playhead zum Marker verschieben
+        # --- Synchronize selection with Clip Editor context ---
+        bpy.ops.clip.select_all(action='DESELECT')  # deselect everything first
+        for t in clip.tracking.tracks:
+            if t.name in self.state.new_tracks:
+                t.select = True
+                t.markers.foreach_set("select", [True] * len(t.markers))
+        
+        # ensure active track and marker are set for Blender's tracking operator
+        if self.state.new_tracks:
+            first_new = next(iter(self.state.new_tracks))
+            if first_new in clip.tracking.tracks:
+                active_track = clip.tracking.tracks[first_new]
+                clip.tracking.objects.active = clip.tracking.objects.active  # ensure object context
+                clip.tracking.tracks.active = active_track
+                try:
+                    marker = active_track.markers.find(scene.frame_current)
                     if marker:
-                        marker.select = True
-
+                        active_track.markers.active_marker = marker
+                except Exception:
+                    pass
 
         
         # Forward tracking with limits
