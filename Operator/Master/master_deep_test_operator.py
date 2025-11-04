@@ -159,27 +159,77 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self.state.all_tracks = all_names
         self.state.new_tracks = all_names - old_names
 
+        print(f"[DeepTest][Log] Snapshot vor Detect: {len(old_names)} Tracks, nach Detect: {len(all_names)} Tracks, "
+              f"neu erkannt: {len(self.state.new_tracks)}")
+        if self.state.new_tracks:
+            print(f"[DeepTest][Log] Neue Tracks: {sorted(list(self.state.new_tracks))[:8]}{' …' if len(self.state.new_tracks)>8 else ''}")
+ 
         # --- Synchronize selection with Clip Editor context ---
-        bpy.ops.clip.select_all(action='DESELECT')  # deselect everything first
+        deselect_ok = bpy.ops.clip.select_all.poll()
+        if deselect_ok:
+            bpy.ops.clip.select_all(action='DESELECT')
+        else:
+            print("[DeepTest][Warn] clip.select_all nicht verfügbar – Kontext evtl. nicht im CLIP_EDITOR.")
+
+        selected_count = 0
         for t in clip.tracking.tracks:
             if t.name in self.state.new_tracks:
                 t.select = True
-                t.markers.foreach_set("select", [True] * len(t.markers))
+                try:
+                    # Fallback statt foreach_set, damit Marker-Arrays korrekt synchronisiert werden
+                    for m in t.markers:
+                        m.select = True
+                    selected_count += 1
+                except Exception as ex:
+                    print(f"[DeepTest][Warn] Marker-Selektion fehlgeschlagen für '{t.name}': {ex!r}")
+
+        print(f"[DeepTest][Log] Selektion gesetzt: {selected_count} neue Tracks selektiert.")
         
         # ensure active track and marker are set for Blender's tracking operator
         if self.state.new_tracks:
             first_new = next(iter(self.state.new_tracks))
-            if first_new in clip.tracking.tracks:
-                active_track = clip.tracking.tracks[first_new]
-                clip.tracking.objects.active = clip.tracking.objects.active  # ensure object context
-                clip.tracking.tracks.active = active_track
-                try:
-                    marker = active_track.markers.find(scene.frame_current)
+            try:
+                track_map = {t.name: t for t in clip.tracking.tracks}
+                if first_new in track_map:
+                    active_track = track_map[first_new]
+                    # Objekt aktiv halten
+                    if clip.tracking.objects:
+                        clip.tracking.objects.active = clip.tracking.objects[0]
+                    clip.tracking.tracks.active = active_track
+                    scene = context.scene
+                    # Sichere Marker-Aktivierung
+                    frame_idx = int(scene.frame_current)
+                    # find() liefert -1 wenn nicht gefunden; robustes Fallback:
+                    marker = None
+                    try:
+                        marker = active_track.markers.find(frame_idx)
+                        if marker == -1:
+                            marker = active_track.markers[0] if active_track.markers else None
+                    except Exception:
+                        marker = active_track.markers[0] if active_track.markers else None
                     if marker:
                         active_track.markers.active_marker = marker
-                except Exception:
-                    pass
+                    print(f"[DeepTest][Log] Active Track gesetzt: '{active_track.name}', "
+                          f"Marker-Anzahl={len(active_track.markers)}")
+                else:
+                    print(f"[DeepTest][Warn] First-new Track '{first_new}' nicht in clip.tracking.tracks gefunden.")
+            except Exception as ex:
+                print(f"[DeepTest][Warn] Active-Track-Initialisierung fehlgeschlagen: {ex!r}")
+ 
+        # --- Clip-Editor Kontext sicherstellen (UI) ---
+        try:
+            if bpy.context.area:
+                bpy.context.area.ui_type = "CLIP_EDITOR"
+            if bpy.context.space_data:
+                bpy.context.space_data.clip = clip
+                bpy.context.space_data.mode = 'TRACKING'
+            print("[DeepTest][Log] CLIP_EDITOR-Kontext gesetzt (UI).")
+        except Exception as ex:
+            print(f"[DeepTest][Warn] UI-Kontextsetzung CLIP_EDITOR fehlgeschlagen: {ex!r}")
 
+        # Sichtprüfung der tatsächlich selektierten Tracks im Datenblock
+        selected_names_dbg = [t.name for t in clip.tracking.tracks if getattr(t, 'select', False)]
+        print(f"[DeepTest][Debug] Tatsächlich selektiert (Data): {selected_names_dbg[:12]}{' …' if len(selected_names_dbg)>12 else ''}")
         
         # Forward tracking with limits
         self._track_forward_with_limits(context)
@@ -191,6 +241,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             start_frame=scene.frame_start,
             include_names=self.state.new_tracks
         )
+        print(f"[DeepTest][Log] Referenzmetrik (Total Track Length, neue Tracks): {self.state.reference_value}")
 
         # Cleanup: delete only newly created tracks
         if self.state.new_tracks:
@@ -266,7 +317,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         current_frame = int(scene.frame_current)
         original_frame = current_frame
         remaining = end_frame - current_frame
-
+        if log:
+            print(f"[TrackForward][Debug] FrameStart={scene.frame_start}, "
+                  f"Current={current_frame}, End={end_frame}, Remaining={remaining}, "
+                  f"MaxFrames={max_frames}, MinDistToEnd={min_distance_to_end}")
         # --- Validate or adjust start position ---
         if remaining < min_distance_to_end:
             new_start = max(scene.frame_start, end_frame - min_distance_to_end)
@@ -282,7 +336,9 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         # --- Collect active (selected) tracks ---
         tracking = clip.tracking
-        active_tracks = [t.name for t in tracking.tracks if t.select]
+        active_tracks = [t.name for t in tracking.tracks if getattr(t, "select", False)]
+        if log:
+            print(f"[TrackForward][Debug] Aktive (selektierte) Tracks vor Filter: {active_tracks[:12]}{' …' if len(active_tracks)>12 else ''}")
         if not active_tracks:
             if log:
                 print("[TrackForward] ⚠️ No selected tracks found for tracking.")
@@ -293,7 +349,11 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if not ctx_override:
             print("[TrackForward] ❌ No valid clip context available – aborting.")
             return 0
-
+        else:
+            if log:
+                # Minimaler Sanity-Check der Keys im Override
+                print(f"[TrackForward][Debug] Context-Override Keys: {sorted(list(ctx_override.keys()))}")
+ 
         # --- Tracking loop ---
         frames_tracked = 0
         for _ in range(max_frames):
@@ -302,7 +362,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     print("[TrackForward] ⏹️ Scene end reached.")
                 break
 
-            active_tracks, _dropped = filter_active_tracks_at_frame(context, active_tracks, current_frame)
+            active_tracks, dropped = filter_active_tracks_at_frame(context, active_tracks, current_frame)
+            if log:
+                print(f"[TrackForward][Debug] Frame={current_frame}: "
+                      f"Aktiv={len(active_tracks)}, Dropped={len(dropped)}")
             if not active_tracks:
                 if log:
                     print("[TrackForward] ⏹️ No active tracks left – stopping tracking.")
@@ -318,6 +381,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             # --- Execute tracking via override ---
             with bpy.context.temp_override(**ctx_override):
                 result = bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False)
+            if log:
+                print(f"[TrackForward][Debug] Operator result: {result!r}")
             if 'CANCELLED' in str(result):
                 if log:
                     print("[TrackForward] ⚠️ Tracking failed – aborting.")
