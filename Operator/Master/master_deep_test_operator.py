@@ -155,10 +155,16 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         # --- Neue Marker aktiv selektieren ---
         clip = get_active_clip(context)
+        scene = context.scene
         if clip:
             for t in clip.tracking.tracks:
                 if t.name in self.state.new_tracks:
                     t.select = True
+                    # Sicherstellen, dass der Marker am aktuellen Frame ebenfalls aktiv ist
+                    marker = t.markers.find(scene.frame_current)
+                    if marker:
+                        marker.select = True
+
         
         # Forward tracking with limits
         self._track_forward_with_limits(context)
