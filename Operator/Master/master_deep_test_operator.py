@@ -20,7 +20,7 @@ class DeepTestState:
     """Encapsulates all runtime data of the Deep Test process."""
     counter: int = 0
     stop_flag: bool = False
-
+    track_flag: bool = False
     base_value: float = 0.0
     reference_value: float = 0.0
     start: float = 0.0
@@ -56,35 +56,56 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self.state.next_val = 1.0
                 self._set_step_threshold(context)
                 self._track(context)
-                self.state.base_value = self.state.reference_value
-
-                self.state.start = self.state.next_val
-                self.state.next_val = 0.00001
-                self._set_step_threshold(context)
-                self.state.lower_limit = self.state.next_val
-                self._track(context)
-
-                if self.state.reference_value <= self.state.base_value:
-                    self.state.step += 1
-                    continue
-
-                self.state.step = abs(self.state.start - self.state.lower_limit) / 2.0
-                self.state.next_val = self.state.next_val + self.state.step
-                self._set_step_threshold(context)
-                self._track(context)
-
-                if self.state.reference_value < self.state.base_value:
-                    self._minus_thresh(context)
-                else:
-                    if self.state.reference_value > self.state.base_value:
+                self.state.track_flag = False
+                while not self.state.track_flag:
+                    self._refresh_clip_editor_viewer(context)
+                    if self.state.track_flag:
                         self.state.base_value = self.state.reference_value
-                        self._plus_thresh(context)
-                    else:
-                        self._plus_thresh(context)
+        
+                        self.state.start = self.state.next_val
+                        self.state.next_val = 0.00001
+                        self._set_step_threshold(context)
+                        self.state.lower_limit = self.state.next_val
+                        self._track(context)
+                        self.state.track_flag = False
+                        while not self.state.track_flag:
+                            self._refresh_clip_editor_viewer(context)
+                            if self.state.track_flag:
+                                if self.state.reference_value <= self.state.base_value:
+                                    self.state.step += 1
+                                    continue
+                
+                                self.state.step = abs(self.state.start - self.state.lower_limit) / 2.0
+                                self.state.next_val = self.state.next_val + self.state.step
+                                self._set_step_threshold(context)
+                                self._track(context)
+                                self.state.track_flag = False
+                                while not self.state.track_flag:
+                                    self._refresh_clip_editor_viewer(context)
+                                    if self.state.track_flag:
+                                        if self.state.reference_value < self.state.base_value:
+                                            self._minus_thresh(context)
+                                        else:
+                                            if self.state.reference_value > self.state.base_value:
+                                                self.state.base_value = self.state.reference_value
+                                                self._plus_thresh(context)
+                                            else:
+                                                self._plus_thresh(context)
+                
+                            print("[DeepTest] ✅ All steps completed — process finished.")
+                            return {'FINISHED'}
 
-            print("[DeepTest] ✅ All steps completed — process finished.")
-            return {'FINISHED'}
-
+    def _refresh_clip_editor_viewer(self, context: Context):
+        # Alle Fenster und Bereiche iterieren
+        for window in bpy.context.window_manager.windows:
+            screen = window.screen
+            for area in screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    area.tag_redraw()
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            region.tag_redraw()
+    
     def _set_threshold(self, context: Context) -> None:
         scene = context.scene
         # Baseline reset: all threshold parameters set to 1.0
@@ -137,13 +158,19 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             self.state.stop_flag = True
             return
 
-    def _track(self, context: Context) -> None:
-        # Before/After snapshot
-        self.state.old_tracks = snapshot_active_markers(context)
+    def _track(self, context: Context):
+        # Vorher/Nachher-Snapshot
+        old_data = snapshot_active_markers(context)
         run_detect_adapt(context)
-        self.state.all_tracks = snapshot_active_markers(context)
-        self.state.new_tracks = set(self.state.all_tracks) - set(self.state.old_tracks)
-
+        all_data = snapshot_active_markers(context)
+    
+        # Extrahiere nur Namen (stringbasiert)
+        old_names = {d["name"] for d in old_data if isinstance(d, dict) and "name" in d}
+        all_names = {d["name"] for d in all_data if isinstance(d, dict) and "name" in d}
+    
+        self.state.alte_tracker = old_names
+        self.state.alle_tracker = all_names
+        self.state.neu_tracker = all_names - old_names
         # Forward tracking with limits
         self._track_forward_with_limits(context)
 
@@ -158,6 +185,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # Cleanup: delete only newly created tracks
         if self.state.new_tracks:
             delete_tracks_by_names(context, include_names=self.state.new_tracks)
+            self.state.track_flag = True
+            return
 
     def _plus_thresh(self, context: Context) -> None:
         while True:
@@ -167,18 +196,22 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self.state.next_val = self.state.next_val + step
                 self._set_step_threshold(context)
                 self._track(context)
-                if self.state.reference_value >= self.state.base_value:
-                    if self.state.reference_value > self.state.base_value:
-                        self.state.base_value = self.state.reference_value
-                        continue
+                self.state.track_flag = False
+                while not self.state.track_flag:
+                    self._refresh_clip_editor_viewer(context)
+                    if self.state.track_flag:
+                        if self.state.reference_value >= self.state.base_value:
+                            if self.state.reference_value > self.state.base_value:
+                                self.state.base_value = self.state.reference_value
+                                continue
+                            else:
+                                continue
+                        else:
+                            self._minus_thresh(context)
                     else:
-                        continue
-                else:
-                    self._minus_thresh(context)
-            else:
-                self.state.step += 1
-                # start next step
-                return
+                        self.state.step += 1
+                        # start next step
+                        return
 
     def _minus_thresh(self, context: Context) -> None:
         while True:
@@ -188,18 +221,22 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self.state.next_val = self.state.next_val - step
                 self._set_step_threshold(context)
                 self._track(context)
-                if self.state.reference_value < self.state.base_value:
-                    continue
-                else:
-                    if self.state.reference_value > self.state.base_value:
-                        self.state.base_value = self.state.reference_value
-                        self._plus_thresh(context)
+                self.state.track_flag = False
+                while not self.state.track_flag:
+                    self._refresh_clip_editor_viewer(context)
+                    if self.state.track_flag:
+                        if self.state.reference_value < self.state.base_value:
+                            continue
+                        else:
+                            if self.state.reference_value > self.state.base_value:
+                                self.state.base_value = self.state.reference_value
+                                self._plus_thresh(context)
+                            else:
+                                self._plus_thresh(context)
                     else:
-                        self._plus_thresh(context)
-            else:
-                self.state.step += 1
-                # start next step
-                return
+                        self.state.step += 1
+                        # start next step
+                        return
 
     def _track_forward_with_limits(
         self,
@@ -224,6 +261,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         end_frame = int(scene.frame_end)
         current_frame = int(scene.frame_current)
+        original_frame = current_frame
         remaining = end_frame - current_frame
 
         # --- Validate or adjust start position ---
@@ -296,5 +334,15 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if log:
             print(f"[TrackForward] ✅ Tracking completed – {frames_tracked} frames tracked, "
                   f"total length {total_len}.")
+
+        # --- Restore original playhead position ---
+        try:
+            reset_to_frame(context, original_frame)
+            scene.frame_current = original_frame
+            if log:
+                print(f"[TrackForward] 🔁 Playhead restored to original frame {original_frame}.")
+        except Exception as ex:
+            if log:
+                print(f"[TrackForward] ⚠️ Could not restore playhead: {ex!r}")
 
         return frames_tracked
