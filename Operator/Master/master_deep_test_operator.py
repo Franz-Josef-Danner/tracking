@@ -144,7 +144,13 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         old_data = snapshot_active_markers(context)
         run_detect_adapt(context)
         all_data = snapshot_active_markers(context)
-    
+
+        # --- Clip holen und prüfen ---
+        clip = get_active_clip(context)
+        if not clip or not getattr(clip, "tracking", None):
+            print("[DeepTest] ❌ Kein aktiver Clip gefunden – Tracking abgebrochen.")
+            return
+
         # Extrahiere nur Namen (stringbasiert)
         old_names = {d["name"] for d in old_data if isinstance(d, dict) and "name" in d}
         all_names = {d["name"] for d in all_data if isinstance(d, dict) and "name" in d}
