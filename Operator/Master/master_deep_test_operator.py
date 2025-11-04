@@ -3,7 +3,7 @@ import bpy
 from bpy.types import Operator, Context
 from dataclasses import dataclass, field
 from typing import Set
-
+import time
 
 from ...Helper.snapshot import snapshot_active_markers
 from ...Helper.detect_adapt_helper import run_detect_adapt
@@ -41,7 +41,10 @@ class DeepTestState:
     old_tracks: Set[str] = field(default_factory=set)
     new_tracks: Set[str] = field(default_factory=set)
     all_tracks: Set[str] = field(default_factory=set)
-
+    # --- Modal Step Machine ---
+    phase: str = "INIT"          # INIT -> STEP_START -> STEP_TEST_HIGH -> STEP_TEST_LOW -> STEP_MID -> DECIDE -> ADJUST_PLUS/MINUS -> NEXT_STEP -> DONE
+    substep: int = 0             # feingranulare Schritte innerhalb einer Phase
+    yield_flag: bool = False     # UI-Yield Steuerung
 
 class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     bl_idname = "kaiserlichtracker.master_deep_test_operator"
@@ -65,13 +68,15 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return {'CANCELLED'}
 
         if event.type == 'TIMER':
-            if self.state.stop_flag:
+            # sichtbares Progress-Update pro Tick
+            self._ui_progress(context)
+            if self.state.stop_flag or self.state.phase == "DONE":
                 print("[DeepTest][Modal] ✅ Alle Threshold-Stufen abgeschlossen – Prozess beendet.")
                 self.cancel(context)
                 return {'FINISHED'}
 
             try:
-                self._process_step(context)
+                self._process_step_incremental(context)
             except Exception as e:
                 print(f"[DeepTest][Modal] ⚠️ Fehler: {e}")
                 self.cancel(context)
@@ -85,56 +90,132 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             wm.event_timer_remove(self._timer)
             self._timer = None
 
-    def _process_step(self, context: Context):
-        """Ein DeepTest-Schritt pro Timer-Aufruf"""
-        print(f"\n[DeepTest][Step {self.state.step}] --- Neue Threshold-Phase gestartet ---")
-        self._set_step_threshold(context)
-
-        if self.state.stop_flag:
+    def _process_step_incremental(self, context: Context):
+        """Atomare, tick-weise Ausführung – kein Blocking."""
+        s = self.state
+        if s.phase == "INIT":
+            print(f"\n[DeepTest][Step {s.step}] --- Neue Threshold-Phase gestartet ---")
+            s.phase = "STEP_START"
             return
 
-        self.state.next_val = 1.0
-        self._set_step_threshold(context)
-        self._track(context)
-        print(f"[DeepTest][Result] Referenzwert: {self.state.reference_value:.3f}")
-
-        self.state.base_value = self.state.reference_value
-        self.state.start = self.state.next_val
-        self.state.next_val = 0.00001
-        self._set_step_threshold(context)
-        self.state.lower_limit = self.state.next_val
-        print(f"[DeepTest][Range] Start={self.state.start:.8f}, LowerLimit={self.state.lower_limit:.8f}")
-        self._track(context)
-        print(f"[DeepTest][Result] Referenzwert nach Low={self.state.reference_value:.3f}")
-
-        if self.state.reference_value <= self.state.base_value:
-            print(f"[DeepTest][Adjust] Kein Anstieg – Schritt {self.state.step + 1}")
-            self.state.step = self.state.step + 1
+        if s.phase == "STEP_START":
+            self._set_step_threshold(context)     # val aktuell (0)
+            if s.stop_flag: return
+            s.next_val = 1.0
+            self._set_step_threshold(context)     # High
+            s.phase = "STEP_TEST_HIGH"
             return
 
-        self.state.base_value = self.state.reference_value 
-        self.state.converter = abs(self.state.start - self.state.lower_limit) / 2.0
-        self.state.next_val = self.state.next_val + self.state.converter
-        print(f"[DeepTest][Calc] Neuer Step-Wert: {self.state.step:.8f} → NextVal={self.state.next_val:.8f}")
-        self._set_step_threshold(context)
-        self._track(context)
-        print(f"[DeepTest][Result] Nach Mid-Test: {self.state.reference_value:.3f}")
+        if s.phase == "STEP_TEST_HIGH":
+            self._track(context)                  # Blocking Tracking → aber nur 1x pro Tick aufgerufen
+            print(f"[DeepTest][Result] Referenzwert: {s.reference_value:.3f}")
+            s.base_value = s.reference_value
+            s.start = s.next_val
+            s.next_val = 0.00001
+            self._set_step_threshold(context)     # Low
+            s.lower_limit = s.next_val
+            print(f"[DeepTest][Range] Start={s.start:.8f}, LowerLimit={s.lower_limit:.8f}")
+            s.phase = "STEP_TEST_LOW"
+            return
 
-        if self.state.reference_value < self.state.base_value:
-            print("[DeepTest][Decision] ⬇️ Wert gefallen → Minus-Threshold-Richtung")
-            self._minus_thresh(context)
-        elif self.state.reference_value > self.state.base_value:
-            print("[DeepTest][Decision] ⬆️ Wert gestiegen → Plus-Threshold-Richtung")
-            self.state.base_value = self.state.reference_value
-            self._plus_thresh(context)
-        else:
-            print("[DeepTest][Decision] ⏸ Keine Änderung → Bleibe bei Plus-Richtung")
-            self._plus_thresh(context)
+        if s.phase == "STEP_TEST_LOW":
+            self._track(context)
+            print(f"[DeepTest][Result] Referenzwert nach Low={s.reference_value:.3f}")
+            if s.reference_value <= s.base_value:
+                print(f"[DeepTest][Adjust] Kein Anstieg – Schritt {s.step + 1}")
+                s.step += 1
+                if s.step >= 5:
+                    s.phase = "DONE"
+                    s.stop_flag = True
+                else:
+                    s.phase = "INIT"
+                return
+            s.base_value = s.reference_value
+            s.converter = abs(s.start - s.lower_limit) / 2.0
+            s.next_val = s.next_val + s.converter
+            print(f"[DeepTest][Calc] Neuer Step-Wert: {s.step:.8f} → NextVal={s.next_val:.8f}")
+            self._set_step_threshold(context)     # Mid
+            s.phase = "STEP_MID"
+            return
 
-        # UI Refresh
-        for area in context.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                area.tag_redraw()
+        if s.phase == "STEP_MID":
+            self._track(context)
+            print(f"[DeepTest][Result] Nach Mid-Test: {s.reference_value:.3f}")
+            if s.reference_value < s.base_value:
+                print("[DeepTest][Decision] ⬇️ Wert gefallen → Minus-Threshold-Richtung")
+                s.phase = "ADJUST_MINUS"
+            elif s.reference_value > s.base_value:
+                print("[DeepTest][Decision] ⬆️ Wert gestiegen → Plus-Threshold-Richtung")
+                s.base_value = s.reference_value
+                s.phase = "ADJUST_PLUS"
+            else:
+                print("[DeepTest][Decision] ⏸ Keine Änderung → Bleibe bei Plus-Richtung")
+                s.phase = "ADJUST_PLUS"
+            return
+
+        if s.phase == "ADJUST_PLUS":
+            # ein Inkrement der Plus-Richtung
+            s.lower_limit = s.next_val
+            conv = abs(s.start - s.lower_limit) / 2.0
+            print(f"[DeepTest][Adjust][+] converter={conv:.8f}, NextVal={s.next_val:.8f}")
+            if conv > 0.0001:
+                s.next_val = s.next_val + conv
+                self._set_step_threshold(context)
+                s.phase = "ADJUST_PLUS_TRACK"
+            else:
+                print("[DeepTest][Adjust][+] Schrittgröße zu klein → Weiter zur nächsten Stufe.")
+                s.step += 1
+                s.phase = "INIT" if s.step < 5 else "DONE"
+                s.stop_flag = (s.phase == "DONE")
+            return
+
+        if s.phase == "ADJUST_PLUS_TRACK":
+            self._track(context)
+            if s.reference_value >= s.base_value:
+                if s.reference_value > s.base_value:
+                    print("[DeepTest][Adjust][+] Wert verbessert → weiter erhöhen.")
+                    s.base_value = s.reference_value
+                    s.phase = "ADJUST_PLUS"
+                else:
+                    s.phase = "ADJUST_PLUS"
+            else:
+                print("[DeepTest][Adjust][+] Wert verschlechtert → Minusrichtung.")
+                s.phase = "ADJUST_MINUS"
+            return
+
+        if s.phase == "ADJUST_MINUS":
+            s.start = s.next_val
+            conv = abs(s.start - s.lower_limit) / 2.0
+            print(f"[DeepTest][Adjust][-] converter={conv:.8f}, NextVal={s.next_val:.8f}")
+            if conv > 0.0001:
+                s.next_val = s.next_val - conv
+                self._set_step_threshold(context)
+                s.phase = "ADJUST_MINUS_TRACK"
+            else:
+                print("[DeepTest][Adjust][-] Schrittgröße zu klein → Weiter zur nächsten Stufe.")
+                s.step += 1
+                s.phase = "INIT" if s.step < 5 else "DONE"
+                s.stop_flag = (s.phase == "DONE")
+            return
+
+        if s.phase == "ADJUST_MINUS_TRACK":
+            self._track(context)
+            if s.reference_value < s.base_value:
+                print("[DeepTest][Adjust][-] Kein Fortschritt → weiter reduzieren.")
+                s.phase = "ADJUST_MINUS"
+            else:
+                if s.reference_value > s.base_value:
+                    print("[DeepTest][Adjust][-] Wert verbessert → Plusrichtung.")
+                    s.base_value = s.reference_value
+                    s.phase = "ADJUST_PLUS"
+                else:
+                    print("[DeepTest][Adjust][-] Stabil → Plusrichtung.")
+                    s.phase = "ADJUST_PLUS"
+            return
+
+        if s.phase == "DONE":
+            self._finalize(context)
+            return
 
     
     def _set_step_threshold(self, context: Context) -> None:
@@ -143,21 +224,11 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         step = self.state.step
         val = self.state.next_val
     
-        import time
-        progress_value = min(1.0, (step + 0.1 * val) / 5.0)
-        print(f"[DeepTest][UI] set_progress({progress_value:.3f}) Step={step} Val={val:.6f}")
-        set_progress(title=f"DeepTest: Step {int(step)} (Val={val:.5f})", value=progress_value)
-    
-        print(f"[DeepTest][UI] scene.kaiserlich_progress_value={scene.kaiserlich_progress_value:.3f}, "
-              f"title='{scene.kaiserlich_progress_title}'")
-    
-        time.sleep(0.1)
-        for window in bpy.context.window_manager.windows:
-            for area in window.screen.areas:
-                if area.type == 'CLIP_EDITOR':
-                    area.tag_redraw()
-
-            window.cursor_warp(window.width // 2, window.height // 2)
+        # Nur Werte setzen – kein Sleep/Blocken, Redraw macht modal()
+        set_progress(
+            title=f"DeepTest: Step {int(step)} (Val={val:.5f})",
+            value=min(1.0, (step + 0.1 * val) / 5.0)
+        )
                     
         if step == 0:
             if clip:
@@ -234,15 +305,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             scene.kaiserlich_perspective_thresh = self.state.perspective_thresh
             print("[DeepTest][Stop] 🛑 Threshold-Test abgeschlossen.")
             self.state.stop_flag = True
-
-            # Fortschrittsanzeige abschließen
-            set_progress(title="DeepTest: abgeschlossen ✅", value=1.0)
-
-            # Finales UI-Update
-            for window in bpy.context.window_manager.windows:
-                for area in window.screen.areas:
-                    if area.type == 'CLIP_EDITOR':
-                        area.tag_redraw()
+            self.state.phase = "DONE"
 
             return
 
@@ -288,6 +351,23 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             delete_tracks_by_names(context, track_names=self.state.new_tracks)
             print("[DeepTest][Cleanup] 🧹 Neue Tracks gelöscht.")
 
+    def _finalize(self, context: Context):
+        # Fortschrittsanzeige abschließen + UI refresh
+        set_progress(title="DeepTest: abgeschlossen ✅", value=1.0)
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    area.tag_redraw()
+        self.state.stop_flag = True
+
+    def _ui_progress(self, context: Context):
+        # Zentrales, nicht-blockierendes Redraw je Timer-Tick
+        try:
+            for area in context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    area.tag_redraw()
+        except Exception:
+            pass
 
     def _plus_thresh(self, context: Context) -> None:
         print("[DeepTest][Adjust] ➕ Plus-Richtung gestartet.")
