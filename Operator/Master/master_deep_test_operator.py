@@ -287,7 +287,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         # Cleanup: delete only newly created tracks
         if self.state.new_tracks:
-            delete_tracks_by_names(context, include_names=self.state.new_tracks)
+            delete_tracks_by_names(context, track_names=self.state.new_tracks)
             return
 
     def _plus_thresh(self, context: Context) -> None:
