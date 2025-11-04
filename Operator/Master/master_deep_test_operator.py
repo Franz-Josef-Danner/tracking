@@ -83,8 +83,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     else:
                         self._plus_thresh(context)
 
-    print("[DeepTest] ✅ All steps completed — process finished.")
-    return {'FINISHED'}
+        print("[DeepTest] ✅ All steps completed — process finished.")
+        return {'FINISHED'}
 
     
     def _set_threshold(self, context: Context) -> None:
