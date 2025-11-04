@@ -152,6 +152,14 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self.state.old_tracks = old_names
         self.state.all_tracks = all_names
         self.state.new_tracks = all_names - old_names
+
+        # --- Neue Marker aktiv selektieren ---
+        clip = get_active_clip(context)
+        if clip:
+            for t in clip.tracking.tracks:
+                if t.name in self.state.new_tracks:
+                    t.select = True
+        
         # Forward tracking with limits
         self._track_forward_with_limits(context)
 
