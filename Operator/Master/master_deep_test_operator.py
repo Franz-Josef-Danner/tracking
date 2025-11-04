@@ -139,41 +139,130 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             self.state.stop_flag = True
             return
 
-def _track(self, context: Context):
-    clip = get_active_clip(context)
-    if not clip or not getattr(clip, "tracking", None):
-        print("[DeepTest] ❌ Kein aktiver Clip.")
-        return
-
-    old_data = snapshot_active_markers(context)
-    try:
-        run_detect_adapt(context)
-    except Exception as ex:
-        print(f"[DeepTest] ❌ DetectAdapt-Fehler: {ex!r}")
-        return
-
-    import time
-    time.sleep(0.1)
-    bpy.context.view_layer.update()
-
-    all_data = snapshot_active_markers(context)
-    old = {d["track"] for d in old_data if "track" in d}
-    all_ = {d["track"] for d in all_data if "track" in d}
-    self.state.new_tracks = all_ - old
-    print(f"[DeepTest] Neue Tracks: {len(self.state.new_tracks)}")
-
-    self._track_forward_with_limits(context)
-
-    scene = context.scene
-    self.state.reference_value = get_total_track_length(
-        context,
-        start_frame=scene.frame_start,
-        include_names=self.state.new_tracks
-    )
-    print(f"[DeepTest] Track-Länge: {self.state.reference_value}")
-
-    if self.state.new_tracks:
-        delete_tracks_by_names(context, track_names=self.state.new_tracks)
+    def _track(self, context: Context):
+        # --- Diagnose: Vor Detect ---
+        clip = get_active_clip(context)
+        if not clip:
+            return
+    
+        tracking = getattr(clip, "tracking", None)
+        if not tracking:
+            return
+    
+        if not tracking.objects:
+            pass
+        else:
+            pass
+    
+        # --- Vorher/Nachher-Snapshot ---
+        old_data = snapshot_active_markers(context)
+    
+        try:
+            run_detect_adapt(context)
+        except Exception:
+            pass
+    
+        # Sicherstellen, dass Blender seine Daten aktualisiert
+        import time
+        time.sleep(0.1)
+        bpy.context.view_layer.update()
+    
+        all_data = snapshot_active_markers(context)
+    
+        if not tracking.tracks:
+            pass
+    
+        # Clip-Objekte prüfen (nur interne Prüfung; keine Logs)
+        for _ in enumerate(tracking.tracks[:5]):
+            pass
+    
+        # --- Clip holen und prüfen ---
+        clip = get_active_clip(context)
+        if not clip or not getattr(clip, "tracking", None):
+            return
+    
+        # Extrahiere nur Namen (stringbasiert)
+        old_names = {d["track"] for d in old_data if isinstance(d, dict) and "track" in d}
+        all_names = {d["track"] for d in all_data if isinstance(d, dict) and "track" in d}
+    
+        self.state.old_tracks = old_names
+        self.state.all_tracks = all_names
+        self.state.new_tracks = all_names - old_names
+    
+        # --- Synchronize selection with Clip Editor context ---
+        deselect_ok = bpy.ops.clip.select_all.poll()
+        if deselect_ok:
+            bpy.ops.clip.select_all(action='DESELECT')
+        else:
+            pass
+    
+        for t in clip.tracking.tracks:
+            if t.name in self.state.new_tracks:
+                t.select = True
+                try:
+                    # Fallback statt foreach_set, damit Marker-Arrays korrekt synchronisiert werden
+                    for m in t.markers:
+                        m.select = True
+                except Exception:
+                    pass
+    
+        # ensure active track and marker are set for Blender's tracking operator
+        if self.state.new_tracks:
+            first_new = next(iter(self.state.new_tracks))
+            try:
+                track_map = {t.name: t for t in clip.tracking.tracks}
+                if first_new in track_map:
+                    active_track = track_map[first_new]
+                    # Objekt aktiv halten
+                    if clip.tracking.objects:
+                        clip.tracking.objects.active = clip.tracking.objects[0]
+                    clip.tracking.tracks.active = active_track
+                    scene = context.scene
+                    # Sichere Marker-Aktivierung
+                    frame_idx = int(scene.frame_current)
+                    # find() liefert -1 wenn nicht gefunden; robustes Fallback:
+                    marker = None
+                    try:
+                        marker = active_track.markers.find(frame_idx)
+                        if marker == -1:
+                            marker = active_track.markers[0] if active_track.markers else None
+                    except Exception:
+                        marker = active_track.markers[0] if active_track.markers else None
+                    if marker:
+                        active_track.markers.active_marker = marker
+                else:
+                    pass
+            except Exception:
+                pass
+    
+        # --- Clip-Editor Kontext sicherstellen (UI) ---
+        try:
+            if bpy.context.area:
+                bpy.context.area.ui_type = "CLIP_EDITOR"
+            if bpy.context.space_data:
+                bpy.context.space_data.clip = clip
+                bpy.context.space_data.mode = 'TRACKING'
+        except Exception:
+            pass
+    
+        # Sichtprüfung der tatsächlich selektierten Tracks im Datenblock (stumm)
+        _ = [t.name for t in clip.tracking.tracks if getattr(t, 'select', False)]
+    
+        # Forward tracking with limits
+        self._track_forward_with_limits(context)
+    
+        # Compute metric
+        scene = context.scene
+        self.state.reference_value = get_total_track_length(
+            context,
+            start_frame=scene.frame_start,
+            include_names=self.state.new_tracks
+        )
+    
+        # Cleanup: delete only newly created tracks
+        if self.state.new_tracks:
+            delete_tracks_by_names(context, track_names=self.state.new_tracks)
+            return
 
 
     def _plus_thresh(self, context: Context) -> None:
@@ -220,72 +309,87 @@ def _track(self, context: Context):
                 # start next step
                 return
 
-def _track_forward_with_limits(
-    self,
-    context: Context,
-    *,
-    max_frames: int = 50,
-    min_distance_to_end: int = 50,
-    log: bool = True
-) -> int:
-    scene = context.scene
-    clip = get_active_clip(context)
-    if not clip or not getattr(clip, "tracking", None):
-        if log:
-            print("[TrackForward] ❌ Kein aktiver Clip.")
-        return 0
-
-    end_frame = int(scene.frame_end)
-    current_frame = int(scene.frame_current)
-    original_frame = current_frame
-    remaining = end_frame - current_frame
-    if remaining < min_distance_to_end:
-        new_start = max(scene.frame_start, end_frame - min_distance_to_end)
-        reset_to_frame(context, new_start)
-        scene.frame_current = new_start
-        current_frame = new_start
-
-    tracking = clip.tracking
-    active_tracks = [t.name for t in tracking.tracks if getattr(t, "select", False)]
-    if not active_tracks:
-        if log:
-            print("[TrackForward] ⚠️ Keine Tracks selektiert.")
-        return 0
-
-    ctx_override = get_clip_context()
-    if not ctx_override:
-        if log:
-            print("[TrackForward] ❌ Kein gültiger Kontext.")
-        return 0
-
-    frames_tracked = 0
-    for _ in range(max_frames):
-        if current_frame >= end_frame:
-            break
-        active_tracks, dropped = filter_active_tracks_at_frame(context, active_tracks, current_frame)
+    def _track_forward_with_limits(
+        self,
+        context: Context,
+        *,
+        max_frames: int = 50,
+        min_distance_to_end: int = 50,
+        log: bool = True
+    ) -> int:
+        """
+        Performs limited forward tracking starting from the current playhead position.
+    
+        Returns:
+            Total number of tracked frames (0 if aborted)
+        """
+        scene = context.scene
+        clip = get_active_clip(context)
+        if not clip or not getattr(clip, "tracking", None):
+            return 0
+    
+        end_frame = int(scene.frame_end)
+        current_frame = int(scene.frame_current)
+        original_frame = current_frame
+        remaining = end_frame - current_frame
+    
+        # --- Validate or adjust start position ---
+        if remaining < min_distance_to_end:
+            new_start = max(scene.frame_start, end_frame - min_distance_to_end)
+            reset_to_frame(context, new_start)
+            scene.frame_current = new_start
+            current_frame = new_start
+    
+        # --- Collect active (selected) tracks ---
+        tracking = clip.tracking
+        active_tracks = [t.name for t in tracking.tracks if getattr(t, "select", False)]
         if not active_tracks:
-            break
+            return 0
+    
+        # --- Get context override ---
+        ctx_override = get_clip_context()
+        if not ctx_override:
+            return 0
+    
+        # --- Tracking loop ---
+        frames_tracked = 0
+        for _ in range(max_frames):
+            if current_frame >= end_frame:
+                break
+    
+            active_tracks, dropped = filter_active_tracks_at_frame(context, active_tracks, current_frame)
+            if not active_tracks:
+                break
+    
+            try:
+                # minor parameter adjustments before tracking, if configured
+                apply_formula_on_selected_tracks(context, max_frames=5)
+            except Exception:
+                pass
+    
+            # --- Execute tracking via override ---
+            with bpy.context.temp_override(**ctx_override):
+                result = bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False)
+            if 'CANCELLED' in str(result):
+                break
+    
+            frames_tracked += 1
+            current_frame += 1
+            scene.frame_current = current_frame
+    
+            # Best-effort UI update
+            try:
+                context.space_data.clip_user.frame_current = current_frame
+            except Exception:
+                pass
+    
+        total_len = get_total_track_length(context, start_frame=scene.frame_start, include_names=active_tracks)
+    
+        # --- Restore original playhead position ---
         try:
-            apply_formula_on_selected_tracks(context, max_frames=5)
+            reset_to_frame(context, original_frame)
+            scene.frame_current = original_frame
         except Exception:
             pass
-        with bpy.context.temp_override(**ctx_override):
-            result = bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False)
-        if 'CANCELLED' in str(result):
-            break
-        frames_tracked += 1
-        current_frame += 1
-        scene.frame_current = current_frame
-
-    total_len = get_total_track_length(context, start_frame=scene.frame_start, include_names=active_tracks)
-    if log:
-        print(f"[TrackForward] ✅ {frames_tracked} Frames, Länge {total_len}")
-
-    try:
-        reset_to_frame(context, original_frame)
-        scene.frame_current = original_frame
-    except Exception:
-        pass
-
-    return frames_tracked
-
+    
+        return frames_tracked
