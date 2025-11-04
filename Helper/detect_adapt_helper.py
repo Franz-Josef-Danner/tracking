@@ -1,9 +1,32 @@
 # Helper/detect_adapt_helper.py
+# ------------------------------------------------------------
+# Kaiserlich Tracker – Adaptive Marker-Detektion (ehem. Operator)
+# Führt Detect/Cleanup-Zyklen durch, bis die Zielanzahl erreicht ist.
+# Steuerung über dynamischen min_distance.
+# ------------------------------------------------------------
+
+import bpy
+import time
+import math
+
+from .snapshot import snapshot_active_markers
+from .detect import detect_features
+from .newmarker import classify_markers
+from .cleaneup import cleanup_new_markers
+from .delete import delete_tracks_by_names
+
+
 def run_detect_adapt(context: bpy.types.Context) -> None:
+    """
+    Führt eine adaptive Marker-Detektion durch, bis die Zielanzahl
+    aus 'kaiserlich_markers_per_frame' erreicht ist.
+    Steuerung ausschließlich über den Mindestabstand (min_distance).
+    """
     scene = context.scene
     ef_target = int(scene.kaiserlich_markers_per_frame)
 
     params = scene.get("bootstrap_params", None)
+
     if params:
         md = float(params.get("md", 100))
         ma = int(round(float(params.get("ma", 100)) * 1.1))
@@ -16,6 +39,7 @@ def run_detect_adapt(context: bpy.types.Context) -> None:
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
             return
+
         hz = clip.size[0]
         vc = clip.size[1]
         tracking_settings = getattr(clip.tracking, "settings", None)
@@ -26,58 +50,117 @@ def run_detect_adapt(context: bpy.types.Context) -> None:
         tr = 0.0001
 
     pre_snapshot = snapshot_active_markers(context)
+
     clip = getattr(context.space_data, "clip", None)
     tracking = getattr(clip, "tracking", None) if clip else None
-    baseline_start_tracknames = {t.name for t in tracking.tracks} if tracking else set()
+    baseline_start_tracknames = set()
+    if tracking:
+        baseline_start_tracknames = {t.name for t in tracking.tracks}
 
+    max_loops = 8
+    loop = 0
+    final_new_marker_count = 0
     frame_num = scene.frame_current
+
     if "min_distance_values" in scene:
         md_dict = scene["min_distance_values"]
         if str(frame_num) in md_dict:
             last_md = float(md_dict[str(frame_num)])
         else:
-            last_md = float(md)
+            if "known_frames" in md_dict and len(md_dict["known_frames"]) >= 2:
+                known = sorted(md_dict["known_frames"])
+                prev_frames = [f for f in known if f < frame_num]
+                next_frames = [f for f in known if f > frame_num]
+                if prev_frames and next_frames:
+                    f1 = max(prev_frames)
+                    f2 = min(next_frames)
+                    v1 = float(md_dict[str(f1)])
+                    v2 = float(md_dict[str(f2)])
+                    t = (frame_num - f1) / (f2 - f1)
+                    last_md = v1 + (v2 - v1) * t
+                else:
+                    last_md = md
+            else:
+                last_md = md
     else:
-        last_md = float(md)
+        last_md = md
 
-    max_loops = 8
-    loop = 0
-    final_new_marker_count = 0
+    deleted_old = 0
 
     while loop < max_loops:
         loop += 1
-        detect_features(context, placement="FRAME", margin=ma, threshold=tr, min_distance=int(max(1, round(last_md))))
+
+        detect_features(
+            context,
+            placement="FRAME",
+            margin=ma,
+            threshold=tr,
+            min_distance=int(max(1, round(last_md))),
+        )
+
+        clip_dbg = getattr(context.space_data, "clip", None)
+        if clip_dbg and getattr(clip_dbg, "tracking", None):
+            frames = {}
+            total_marker_count = 0
+            for t in clip_dbg.tracking.tracks:
+                for m in t.markers:
+                    total_marker_count += 1
+                    frames.setdefault(m.frame, 0)
+                    frames[m.frame] += 1
+            if frames:
+                frame_sorted = sorted(frames.items())
+
+        clip = getattr(context.space_data, "clip", None)
+        if clip and getattr(clip, "tracking", None):
+            for trk in clip.tracking.tracks:
+                try:
+                    trk.select = False
+                except Exception:
+                    pass
 
         post_snapshot = snapshot_active_markers(context)
         alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
 
-        cleaned_new, _ = cleanup_new_markers(context, alte_marker, neue_marker, pz=pz, hz=hz, vc=vc)
+        cleaned_new, deleted_old = cleanup_new_markers(
+            context, alte_marker, neue_marker, pz=pz, hz=hz, vc=vc
+        )
+
         neue_marker = cleaned_new
         remaining = len(neue_marker)
         final_new_marker_count = remaining
 
         diff = remaining - ef_target
         tolerance = ef_target * 0.10
-        if abs(diff) <= tolerance and remaining > 0:
+
+        if remaining == 0:
+            pass
+        elif abs(diff) <= tolerance and remaining > 0:
             break
 
-        ratio = remaining / max(1, ef_target) if remaining > 0 else 0.0
-        factor = (((ratio - 1.0) / 2.0) + 1.0)
-        last_md = min(max(last_md * factor, 2.0), hz * 0.25)
+        if remaining == 0:
+            last_md = max(2.0, last_md * 0.8)
+        else:
+            ratio = remaining / max(1, ef_target)
+            factor = (((ratio - 1.0) / 2.0) + 1.0)
+            new_md = last_md * factor
+            new_md = min(max(new_md, 2.0), hz * 0.25)
+            last_md = new_md
 
-        if loop < max_loops and neue_marker:
-            delete_tracks_by_names(context, [m["track"] for m in neue_marker])
+        if loop < max_loops:
+            cleaned_names = [m["track"] for m in neue_marker]
+            if cleaned_names:
+                delete_tracks_by_names(context, cleaned_names)
             time.sleep(0.1)
 
     clip = getattr(context.space_data, "clip", None)
     if clip and getattr(clip, "tracking", None):
         tracking = clip.tracking
-        new_tracks = [t for t in tracking.tracks if t.name not in baseline_start_tracknames]
+        new_tracks = [trk for trk in tracking.tracks if trk.name not in baseline_start_tracknames]
         try:
-            for t in tracking.tracks:
-                t.select = False
-            for t in new_tracks:
-                t.select = True
+            for trk in tracking.tracks:
+                trk.select = False
+            for new_trk in new_tracks:
+                new_trk.select = True
         except Exception:
             pass
 
@@ -103,6 +186,5 @@ def run_detect_adapt(context: bpy.types.Context) -> None:
             v_end = float(md_dict[str(f_end)])
             for f in range(f_start + 1, f_end):
                 t = (f - f_start) / float(f_end - f_start)
-                md_dict[str(f)] = v_start + (v_end - v_start) * t
-
-    print(f"[DetectAdapt] ✅ Abgeschlossen – Marker={final_new_marker_count}, min_distance={last_md:.2f}")
+                interp_val = v_start + (v_end - v_start) * t
+                md_dict[str(f)] = interp_val
