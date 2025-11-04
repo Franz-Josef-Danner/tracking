@@ -137,13 +137,19 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             self.state.stop_flag = True
             return
 
-    def _track(self, context: Context) -> None:
-        # Before/After snapshot
-        self.state.old_tracks = snapshot_active_markers(context)
+    def _track(self, context: Context):
+        # Vorher/Nachher-Snapshot
+        old_data = snapshot_active_markers(context)
         run_detect_adapt(context)
-        self.state.all_tracks = snapshot_active_markers(context)
-        self.state.new_tracks = set(self.state.all_tracks) - set(self.state.old_tracks)
-
+        all_data = snapshot_active_markers(context)
+    
+        # Extrahiere nur Namen (stringbasiert)
+        old_names = {d["name"] for d in old_data if isinstance(d, dict) and "name" in d}
+        all_names = {d["name"] for d in all_data if isinstance(d, dict) and "name" in d}
+    
+        self.state.alte_tracker = old_names
+        self.state.alle_tracker = all_names
+        self.state.neu_tracker = all_names - old_names
         # Forward tracking with limits
         self._track_forward_with_limits(context)
 
