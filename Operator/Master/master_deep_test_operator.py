@@ -247,11 +247,11 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         val = self.state.next_val
         # Synchronisierung mit UI-Property
         converter = self.converter
-        pro = (converter / -100) + 100
+        pro = converter
         # Fortschrittsanzeige – basiert auf live aktualisiertem Converter
         set_progress(
             title=f"DeepTest: Step {int(step)} (progress={pro:.5f})",
-            value=min(1.0, (step - converter) / 5.0)
+            value=min(1.0, (step - converter + 1) / 5.0)
         )
         # Optional in Szene speichern, falls Panels darauf zugreifen:
         try:
