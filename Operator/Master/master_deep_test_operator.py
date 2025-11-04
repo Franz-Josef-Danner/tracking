@@ -170,9 +170,9 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         old_names = {d["name"] for d in old_data if isinstance(d, dict) and "name" in d}
         all_names = {d["name"] for d in all_data if isinstance(d, dict) and "name" in d}
     
-        self.state.alte_tracker = old_names
-        self.state.alle_tracker = all_names
-        self.state.neu_tracker = all_names - old_names
+        self.state.old_tracks = old_names
+        self.state.all_tracks = all_names
+        self.state.new_tracks = all_names - old_names
         # Forward tracking with limits
         self._track_forward_with_limits(context)
 
