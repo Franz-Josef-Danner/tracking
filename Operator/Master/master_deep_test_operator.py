@@ -160,10 +160,14 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             for t in clip.tracking.tracks:
                 if t.name in self.state.new_tracks:
                     t.select = True
-                    # Sicherstellen, dass der Marker am aktuellen Frame ebenfalls aktiv ist
+                    # Marker am aktuellen Frame suchen oder ersten vorhandenen nehmen
                     marker = t.markers.find(scene.frame_current)
+                    if not marker and t.markers:
+                        marker = t.markers[0]
+                        scene.frame_current = marker.frame  # Playhead zum Marker verschieben
                     if marker:
                         marker.select = True
+
 
         
         # Forward tracking with limits
