@@ -21,7 +21,7 @@ class DeepTestState:
     """Encapsulates all runtime data of the Deep Test process."""
     counter: int = 0
     stop_flag: bool = False
-    track_flag: bool = False
+
     base_value: float = 0.0
     reference_value: float = 0.0
     start: float = 0.0
@@ -64,42 +64,28 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self._set_step_threshold(context)
                 self.state.lower_limit = self.state.next_val
                 self._track(context)
-                while not self.state.track_flag:
-                    time.sleep(0.1)
-                    self._refresh_clip_editor_viewer(context)
-                    if self.state.track_flag:
-                        if self.state.reference_value <= self.state.base_value:
-                            self.state.step += 1
-                            continue
-        
-                        self.state.step = abs(self.state.start - self.state.lower_limit) / 2.0
-                        self.state.next_val = self.state.next_val + self.state.step
-                        self._set_step_threshold(context)
-                        self._track(context)
-        
-                        if self.state.reference_value < self.state.base_value:
-                            self._minus_thresh(context)
-                        else:
-                            if self.state.reference_value > self.state.base_value:
-                                self.state.base_value = self.state.reference_value
-                                self._plus_thresh(context)
-                            else:
-                                self._plus_thresh(context)
-        
-                    print("[DeepTest] ✅ All steps completed — process finished.")
-                    return {'FINISHED'}
-
-    def _refresh_clip_editor_viewer(self, context: Context):
-        # Alle Fenster und Bereiche iterieren
-        for window in bpy.context.window_manager.windows:
-            screen = window.screen
-            for area in screen.areas:
-                if area.type == 'CLIP_EDITOR':
-                    area.tag_redraw()
-                    for region in area.regions:
-                        if region.type == 'WINDOW':
-                            region.tag_redraw()
+                if self.state.track_flag:
+                    if self.state.reference_value <= self.state.base_value:
+                        self.state.step += 1
+                        continue
     
+                    self.state.step = abs(self.state.start - self.state.lower_limit) / 2.0
+                    self.state.next_val = self.state.next_val + self.state.step
+                    self._set_step_threshold(context)
+                    self._track(context)
+    
+                    if self.state.reference_value < self.state.base_value:
+                        self._minus_thresh(context)
+                    else:
+                        if self.state.reference_value > self.state.base_value:
+                            self.state.base_value = self.state.reference_value
+                            self._plus_thresh(context)
+                        else:
+                            self._plus_thresh(context)
+    
+                print("[DeepTest] ✅ All steps completed — process finished.")
+                return {'FINISHED'}
+   
     def _set_threshold(self, context: Context) -> None:
         scene = context.scene
         # Baseline reset: all threshold parameters set to 1.0
@@ -179,7 +165,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # Cleanup: delete only newly created tracks
         if self.state.new_tracks:
             delete_tracks_by_names(context, include_names=self.state.new_tracks)
-            self.state.track_flag = True
 
     def _plus_thresh(self, context: Context) -> None:
         while True:
