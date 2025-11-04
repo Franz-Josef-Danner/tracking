@@ -65,7 +65,7 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
 
             # Start
             bpy.ops.kaiserlich_tracker.master_deep_test_operator('INVOKE_DEFAULT')
-            print("[Kaiserlich Tracker][Master] ShortTest erfolgreich gestartet.")
+            print("[Kaiserlich Tracker][Master] DeepTest erfolgreich gestartet.")
         except Exception as ex:
             print(f"[Kaiserlich Tracker][Master] ⚠️ Fehler beim Starten des ShortTest: {ex!r}")
             self.report({'WARNING'}, f"Fehler beim Start des ShortTest: {ex}")
