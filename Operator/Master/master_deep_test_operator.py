@@ -234,7 +234,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         converter = self.state.converter
         # Nur Werte setzen – kein Sleep/Blocken, Redraw macht modal()
         set_progress(
-            title = f"DeepTest: Step {int(step)} (progress={( (converter * -100) + 100 ):.5f})"
+            title = f"DeepTest: Step {int(step)} (progress={( (converter * -100) + 100 ):.5f})",
             value=min(1.0, (step - converter) / 5.0)
         )
                     
