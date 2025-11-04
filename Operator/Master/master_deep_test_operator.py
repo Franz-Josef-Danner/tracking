@@ -625,21 +625,33 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         ts.active = False
         try:
             # ----------------------------------------------------------------
-            # 0) Vorab-Filterung neuer Tracks mit Threshold 30
+            # 0) Filterung neuer Tracks nach Qualität oder Länge
             # ----------------------------------------------------------------
             new_tracks = getattr(self, "_final_new_tracks", [])
             clip = getattr(self, "_clip", None)
-            if new_tracks:
-                try:
-                    filter_and_delete_tracks(
-                        include_names=new_tracks,
-                        threshold=30,
-                        clip=clip
-                    )
-                except Exception as e:
-                    print(f"[MasterDeepTest][FilterDelete] ⚠️ Fehler bei Filter/Delete: {e}")
+            if new_tracks and clip and clip.tracking:
+                tracking = clip.tracking
+                tracks = tracking.tracks
+            
+                # Beispiel: Nur Tracks behalten, die mindestens 3 Marker haben
+                valid_names = [
+                    tr.name for tr in tracks
+                    if tr.name in new_tracks and len(tr.markers) >= 3
+                ]
+            
+                # Beispiel: Alle anderen löschen (z.B. schlechte, kurze, leere)
+                to_delete = [tr for tr in new_tracks if tr not in valid_names]
+            
+                if to_delete:
+                    deleted_count = delete_tracks_by_names(context, to_delete)
+                    print(f"[MasterDeepTest] 🧹 {deleted_count} schwache Tracks gelöscht.")
+            
+                # Nur valide Tracks behalten für die weitere Auswertung
+                self._final_new_tracks = valid_names
+            
             else:
-                print("[MasterDeepTest][FilterDelete] ⚠️ Keine neuen Tracks zum Filtern gefunden.")
+                print("[MasterDeepTest][Cleanup] ⚠️ Keine neuen Tracks gefunden.")
+
 
             # View-Layer-Sync wie ShortTest
             bpy.context.view_layer.update()
