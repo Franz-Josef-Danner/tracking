@@ -103,10 +103,41 @@ def filter_problematic_tracks(
     try:
         tracking = clip.tracking
 
+        # --- Diagnose-Logs ---
+        total_tracks = len(tracking.tracks)
+        print(f"[Kaiserlich Tracker][Debug] Gesamtzahl der Tracks: {total_tracks}")
+
+        if hasattr(tracking, 'layers') and tracking.layers:
+            print(f"[Kaiserlich Tracker][Debug] {len(tracking.layers)} Layer gefunden:")
+            for layer in tracking.layers:
+                print(f"    Layer '{layer.name}' → {len(layer.tracks)} Tracks")
+        else:
+            print("[Kaiserlich Tracker][Debug] Keine Layer-API gefunden – arbeite direkt auf tracking.tracks.")
+
+        # Prüfe Selektion
+        selected_count = 0
+        for idx, t in enumerate(tracking.tracks):
+            if getattr(t, "select", False):
+                selected_count += 1
+                print(f"[Kaiserlich Tracker][Debug] SELECTED: {t.name} | Frames={len(t.markers)}")
+            else:
+                # Nur stichprobenartig loggen, um Spam zu vermeiden
+                if idx < 5:
+                    print(f"[Kaiserlich Tracker][Debug] Not selected: {t.name} | Frames={len(t.markers)}")
+
+        print(f"[Kaiserlich Tracker][Debug] Insgesamt {selected_count} selektierte Tracks nach filter_tracks()")
+
+        if selected_count == 0:
+            print("[Kaiserlich Tracker][Filter] ⚠️ Kein Track ist nach filter_tracks() selektiert – "
+                  "Blender hat evtl. keinen Track markiert oder arbeitet im falschen Kontext.")
+            print("→ Prüfe, ob das Script im Movie Clip Editor ausgeführt wird, "
+                  "und ob mindestens ein Tracking-Layer aktiv ist.")
+
+        # --- Ende Diagnose-Logs ---
         # Kandidaten sind nach filter_tracks per 'select' markiert.
         # Wichtig: nicht in-place iterieren.
         selected_tracks = [t for t in tracking.tracks if getattr(t, "select", False)]
-
+        print(f"[Kaiserlich Tracker][Debug] Cleanup-Kandidaten (aus Selektion): {len(selected_tracks)}")
         if not selected_tracks:
             print("[Kaiserlich Tracker][Filter] Info: Keine selektierten Problem-Tracks gefunden – nichts zu löschen.")
             return
@@ -135,5 +166,10 @@ def filter_problematic_tracks(
         after = len(tracking.tracks)
         deleted = before - after
         print(f"[Kaiserlich Tracker][Filter] Pre-Solve Cleanup ✓ – entfernt={deleted}, übrig={after}, threshold={threshold:.4f}")
+        if deleted == 0:
+            print("[Kaiserlich Tracker][Debug] Keine Tracks entfernt – mögliche Ursachen:")
+            print("  • filter_tracks() selektiert keine Tracks (API-Änderung ab Blender 4.0?)")
+            print("  • Script läuft nicht im Movie Clip Editor-Kontext (space_data.clip == None)")
+            print("  • Layer oder active_tracking_object nicht korrekt gesetzt.")
     except Exception as e:
         print(f"[Kaiserlich Tracker][Filter] ❌ Pre-Solve Cleanup fehlgeschlagen: {e}")
