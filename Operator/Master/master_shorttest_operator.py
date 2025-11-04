@@ -723,69 +723,64 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
     # Track-Cycle: Cleanup/Finish
     # ------------------------------------------------------------------------
     def _track_cycle_finish(self, context: bpy.types.Context):
-        """Selektions-Reset, Baseline und Cleanup per Namensliste (löscht **alle** neu erzeugten Tracks)."""
+        """Selektions-Reset, Baseline und Cleanup per Namensliste (löscht alle neu erzeugten Tracks)."""
         clip = getattr(context.space_data, "clip", None)
         tracking = getattr(clip, "tracking", None) if clip else None
-
+        scene = context.scene
+    
         try:
             # ----------------------------------------------------------------
-            # 0) Vorab-Filterung neuer Tracks mit Threshold 30
+            # 0) Filterung neuer Tracks vor Messung
             # ----------------------------------------------------------------
             new_tracks = getattr(self._state, "created_track_names", [])
-            if new_tracks:
-                try:
-                    filter_and_delete_tracks(
-                        include_names=new_tracks,
-                        threshold=30,
-                        clip=clip
-                    )
-                except Exception:
-                    pass
+            valid_tracks = []
+            to_delete = []
+    
+            if tracking and new_tracks:
+                for tr in tracking.tracks:
+                    if tr.name in new_tracks:
+                        # Beispielkriterium: mind. 3 Marker behalten
+                        if len(tr.markers) >= 3:
+                            valid_tracks.append(tr.name)
+                        else:
+                            to_delete.append(tr.name)
+    
+                if to_delete:
+                    deleted = delete_tracks_by_names(context, to_delete)
+                    print(f"[ShortTest] 🧹 {deleted} ungültige Tracks entfernt.")
             else:
-                pass
-
-            # 1) Letzten aktiven Frame sichern (ohne Off-by-One-Kompensation)
-            end_f = int(self._state.track_frame_current or context.scene.frame_current)
-            scene = context.scene
-            scene.frame_current = end_f
-            if self._state.track_space:
-                self._state.track_space.clip_user.frame_current = end_f
-
-            # Sicherstellen, dass View-Layer den letzten Tracking-Status widerspiegelt
-            try:
-                bpy.context.view_layer.update()
-            except Exception:
-                pass
-
-            # 2) Gesamt-Track-Länge der verbleibenden Tracks messen, bevor irgendetwas gelöscht wird
+                print("[ShortTest][Cleanup] ⚠️ Keine neuen Tracks gefunden oder kein Tracking aktiv.")
+    
+            # ----------------------------------------------------------------
+            # 1) Länge messen (nur valide Tracks)
+            # ----------------------------------------------------------------
             total_len = int(
                 get_total_track_length(
                     context,
                     start_frame=int(self._state.track_start_frame or 1),
-                    include_names=getattr(self._state, "created_track_names", []),
+                    include_names=valid_tracks,
                 )
             )
+    
             cycle_idx = int(getattr(self._state, "track_cycles_done", 0)) + 1
             key_cycle = f"kaiserlich_len_cycle_{cycle_idx}"
             scene[key_cycle] = total_len
-
-            # Baseline im ersten Zyklus zusätzlich speichern (wie bisher)
+    
             if cycle_idx == 1:
                 scene[SCENE_TOTAL_TRACK_LEN_BASE] = total_len
-            else:
-                pass
-
-            # 3) Danach Playhead auf Tracking-Start-Frame zurücksetzen (für internen Folgezyklus)
+    
+            # ----------------------------------------------------------------
+            # 2) Tracking-Startframe wiederherstellen
+            # ----------------------------------------------------------------
             start_f = int(self._state.track_start_frame or 1)
             reset_to_frame(context, start_f)
             context.scene.frame_current = start_f
-            if self._state.track_space:
+            if getattr(self._state, "track_space", None):
                 self._state.track_space.clip_user.frame_current = start_f
-
-            # HINWEIS: Nicht dauerhaft auf Startframe "stehen bleiben".
-            # Die finale Rücksetzung auf die ursprüngliche User-Position erfolgt zentral in _teardown().
-            # --- Persistente Sammelstruktur für spätere Analyse ---
-            # Speichert alle gemessenen Längen in einer Liste unter 'kaiserlich_len_results'
+    
+            # ----------------------------------------------------------------
+            # 3) Statistik und Persistenz
+            # ----------------------------------------------------------------
             results = scene.get("kaiserlich_len_results", [])
             results.append({
                 "cycle": cycle_idx,
@@ -794,34 +789,27 @@ class KAISERLICHTRACKER_OT_master_shorttest_operator(bpy.types.Operator):
                 "thresholds": self._state.cycle_thresholds.get(cycle_idx, {}),
             })
             scene["kaiserlich_len_results"] = results
-
-            # --- Best-Value Tracking (fortlaufend) ---
-            best_len = scene.get("kaiserlich_len_best", 0)
-            if total_len > best_len:
+    
+            if total_len > scene.get("kaiserlich_len_best", 0):
                 scene["kaiserlich_len_best"] = total_len
                 scene["kaiserlich_len_best_cycle"] = cycle_idx
                 scene["kaiserlich_len_best_thresholds"] = self._state.cycle_thresholds.get(cycle_idx, {})
-
-            # 3) Alle neu erzeugten Tracks deterministisch per Namen löschen
-            deleted_total = 0
-            # Primäre Quelle: created_track_names (wurde in _detect_adapt_inline gesetzt)
-            names_to_delete = list(dict.fromkeys(getattr(self._state, "created_track_names", [])))
-            # Fallback: falls leer, letzte aktive Liste verwenden (kann nur 1 Name enthalten)
-            if not names_to_delete:
-                names_to_delete = list(dict.fromkeys(self._state.track_names or []))
-
-            if names_to_delete:
-                for name in names_to_delete:
-                    try:
-                        deleted_total += delete_tracks_by_names(context, [name])
-                    except Exception as _e:
-                        pass
-            else:
-                pass
-
-        except Exception:
-            pass
+    
+            # ----------------------------------------------------------------
+            # 4) Cleanup: alle neuen (auch gültigen) Tracks löschen
+            # ----------------------------------------------------------------
+            all_to_delete = list(dict.fromkeys(new_tracks))
+            if all_to_delete:
+                deleted_total = delete_tracks_by_names(context, all_to_delete)
+                print(f"[ShortTest] 🧽 {deleted_total} temporäre Tracks entfernt (Cycle {cycle_idx}).")
+    
+            bpy.context.view_layer.update()
+    
+        except Exception as e:
+            print(f"[ShortTest][Finish] ⚠️ Fehler: {e!r}")
+    
         return None
+
 
     # ------------------------------------------------------------------------
     # Cleanup / Teardown (muss innerhalb der Klasse definiert sein)
