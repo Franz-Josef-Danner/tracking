@@ -241,7 +241,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if step == 0:
             if clip:
                 width, height = clip.size
-                y_val = min(1.0, val * (height / width if width else 1.0))
+                y_val = min(1.0, val * (width / height if width else 1.0))
                 scene.kaiserlich_rot_thresh_x = float(val)
                 scene.kaiserlich_rot_thresh_y = float(y_val)
                 self.state.rot_thresh_x = float(val)
