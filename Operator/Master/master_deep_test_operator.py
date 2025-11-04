@@ -194,8 +194,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return
 
         # Extrahiere nur Namen (stringbasiert)
-        old_names = {d["name"] for d in old_data if isinstance(d, dict) and "name" in d}
-        all_names = {d["name"] for d in all_data if isinstance(d, dict) and "name" in d}
+        old_names = {d["track"] for d in old_data if isinstance(d, dict) and "track" in d}
+        all_names = {d["track"] for d in all_data if isinstance(d, dict) and "track" in d}
     
         self.state.old_tracks = old_names
         self.state.all_tracks = all_names
