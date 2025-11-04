@@ -3,6 +3,7 @@ import bpy
 from bpy.types import Operator, Context
 from dataclasses import dataclass, field
 from typing import Set
+import time
 
 from ...Helper.snapshot import snapshot_active_markers
 from ...Helper.detect_adapt_helper import run_detect_adapt
@@ -96,6 +97,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                             return {'FINISHED'}
 
     def _refresh_clip_editor_viewer(self, context: Context):
+        time.sleep(0.1) 
         # Alle Fenster und Bereiche iterieren
         for window in bpy.context.window_manager.windows:
             screen = window.screen
