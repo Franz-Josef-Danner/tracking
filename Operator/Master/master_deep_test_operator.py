@@ -1,3 +1,4 @@
+Operator/Master/master_deep_test_operator.py
 import bpy
 from bpy.types import Operator, Context
 from dataclasses import dataclass, field
@@ -96,7 +97,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         scene.kaiserlich_perspective_thresh = 1.0
 
     def _set_step_threshold(self, context: Context) -> None:
-        clip = get_active_clip()
+        clip = get_active_clip(context)
         scene = context.scene
 
         if self.state.step == 0:
@@ -215,7 +216,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             Total number of tracked frames (0 if aborted)
         """
         scene = context.scene
-        clip = get_active_clip()
+        clip = get_active_clip(context)
         if not clip or not getattr(clip, "tracking", None):
             if log:
                 print("[TrackForward] ❌ No active clip found.")
