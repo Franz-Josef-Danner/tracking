@@ -3,7 +3,6 @@ import bpy
 from bpy.types import Operator, Context
 from dataclasses import dataclass, field
 from typing import Set
-import time
 
 from ...Helper.snapshot import snapshot_active_markers
 from ...Helper.detect_adapt_helper import run_detect_adapt
@@ -21,7 +20,6 @@ class DeepTestState:
     """Encapsulates all runtime data of the Deep Test process."""
     counter: int = 0
     stop_flag: bool = False
-    track_flag: bool = False
     
     base_value: float = 0.0
     reference_value: float = 0.0
@@ -58,56 +56,36 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self.state.next_val = 1.0
                 self._set_step_threshold(context)
                 self._track(context)
-                self.state.track_flag = False
-                while not self.state.track_flag:
-                    self._refresh_clip_editor_viewer(context)
-                    if self.state.track_flag:
-                        self.state.base_value = self.state.reference_value
-        
-                        self.state.start = self.state.next_val
-                        self.state.next_val = 0.00001
-                        self._set_step_threshold(context)
-                        self.state.lower_limit = self.state.next_val
-                        self._track(context)
-                        self.state.track_flag = False
-                        while not self.state.track_flag:
-                            self._refresh_clip_editor_viewer(context)
-                            if self.state.track_flag:
-                                if self.state.reference_value <= self.state.base_value:
-                                    self.state.step = self.state.step + 1
-                                    continue
-                
-                                self.state.step = abs(self.state.start - self.state.lower_limit) / 2.0
-                                self.state.next_val = self.state.next_val + self.state.step
-                                self._set_step_threshold(context)
-                                self._track(context)
-                                self.state.track_flag = False
-                                while not self.state.track_flag:
-                                    self._refresh_clip_editor_viewer(context)
-                                    if self.state.track_flag:
-                                        if self.state.reference_value < self.state.base_value:
-                                            self._minus_thresh(context)
-                                        else:
-                                            if self.state.reference_value > self.state.base_value:
-                                                self.state.base_value = self.state.reference_value
-                                                self._plus_thresh(context)
-                                            else:
-                                                self._plus_thresh(context)
-                
-                            print("[DeepTest] ✅ All steps completed — process finished.")
-                            return {'FINISHED'}
 
-    def _refresh_clip_editor_viewer(self, context: Context):
-        time.sleep(0.1) 
-        # Alle Fenster und Bereiche iterieren
-        for window in bpy.context.window_manager.windows:
-            screen = window.screen
-            for area in screen.areas:
-                if area.type == 'CLIP_EDITOR':
-                    area.tag_redraw()
-                    for region in area.regions:
-                        if region.type == 'WINDOW':
-                            region.tag_redraw()
+                self.state.base_value = self.state.reference_value
+
+                self.state.start = self.state.next_val
+                self.state.next_val = 0.00001
+                self._set_step_threshold(context)
+                self.state.lower_limit = self.state.next_val
+                self._track(context)
+
+                if self.state.reference_value <= self.state.base_value:
+                    self.state.step = self.state.step + 1
+                    continue
+
+                self.state.step = abs(self.state.start - self.state.lower_limit) / 2.0
+                self.state.next_val = self.state.next_val + self.state.step
+                self._set_step_threshold(context)
+                self._track(context)
+
+                if self.state.reference_value < self.state.base_value:
+                    self._minus_thresh(context)
+                else:
+                    if self.state.reference_value > self.state.base_value:
+                        self.state.base_value = self.state.reference_value
+                        self._plus_thresh(context)
+                    else:
+                        self._plus_thresh(context)
+
+    print("[DeepTest] ✅ All steps completed — process finished.")
+    return {'FINISHED'}
+
     
     def _set_threshold(self, context: Context) -> None:
         scene = context.scene
@@ -159,7 +137,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         elif self.state.step >= 5:
             self.state.stop_flag = True
-            self.state.track_flag = True
             return
 
     def _track(self, context: Context):
@@ -189,7 +166,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # Cleanup: delete only newly created tracks
         if self.state.new_tracks:
             delete_tracks_by_names(context, include_names=self.state.new_tracks)
-            self.state.track_flag = True
             return
 
     def _plus_thresh(self, context: Context) -> None:
@@ -200,22 +176,19 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self.state.next_val = self.state.next_val + step
                 self._set_step_threshold(context)
                 self._track(context)
-                self.state.track_flag = False
-                while not self.state.track_flag:
-                    self._refresh_clip_editor_viewer(context)
-                    if self.state.track_flag:
-                        if self.state.reference_value >= self.state.base_value:
-                            if self.state.reference_value > self.state.base_value:
-                                self.state.base_value = self.state.reference_value
-                                continue
-                            else:
-                                continue
-                        else:
-                            self._minus_thresh(context)
+
+                if self.state.reference_value >= self.state.base_value:
+                    if self.state.reference_value > self.state.base_value:
+                        self.state.base_value = self.state.reference_value
+                        continue
                     else:
-                        self.state.step = self.state.step + 1
-                        # start next step
-                        return
+                        continue
+                else:
+                    self._minus_thresh(context)
+            else:
+                self.state.step = self.state.step + 1
+                # start next step
+                return
 
     def _minus_thresh(self, context: Context) -> None:
         while True:
@@ -225,22 +198,19 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self.state.next_val = self.state.next_val - step
                 self._set_step_threshold(context)
                 self._track(context)
-                self.state.track_flag = False
-                while not self.state.track_flag:
-                    self._refresh_clip_editor_viewer(context)
-                    if self.state.track_flag:
-                        if self.state.reference_value < self.state.base_value:
-                            continue
-                        else:
-                            if self.state.reference_value > self.state.base_value:
-                                self.state.base_value = self.state.reference_value
-                                self._plus_thresh(context)
-                            else:
-                                self._plus_thresh(context)
+
+                if self.state.reference_value < self.state.base_value:
+                    continue
+                else:
+                    if self.state.reference_value > self.state.base_value:
+                        self.state.base_value = self.state.reference_value
+                        self._plus_thresh(context)
                     else:
-                        self.state.step = self.state.step + 1
-                        # start next step
-                        return
+                        self._plus_thresh(context)
+            else:
+                self.state.step = self.state.step + 1
+                # start next step
+                return
 
     def _track_forward_with_limits(
         self,
