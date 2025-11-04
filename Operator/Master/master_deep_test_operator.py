@@ -159,6 +159,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         elif self.state.step >= 5:
             self.state.stop_flag = True
+            self.state.track_flag = True
             return
 
     def _track(self, context: Context):
