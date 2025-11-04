@@ -140,10 +140,52 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return
 
     def _track(self, context: Context):
-        # Vorher/Nachher-Snapshot
+        # --- Diagnose: Vor Detect ---
+        clip = get_active_clip(context)
+        if not clip:
+            print("[DeepTest][Diag] ❌ Kein aktiver Clip vor Detect vorhanden.")
+            return
+
+        tracking = getattr(clip, "tracking", None)
+        if not tracking:
+            print("[DeepTest][Diag] ❌ Clip besitzt kein Tracking-Objekt.")
+            return
+
+        if not tracking.objects:
+            print("[DeepTest][Diag] ⚠️ clip.tracking.objects ist leer – DetectAdapt kann keine neuen Tracks anlegen.")
+        else:
+            print(f"[DeepTest][Diag] Aktive Tracking-Objekte: {len(tracking.objects)}, "
+                  f"Aktives Objekt: {tracking.objects.active.name if tracking.objects.active else 'None'}")
+
+        print(f"[DeepTest][Diag] Tracks vor Detect: {len(tracking.tracks)}, "
+              f"Gesamt Marker (Summe): {sum(len(t.markers) for t in tracking.tracks)}")
+
+        # --- Vorher/Nachher-Snapshot ---
         old_data = snapshot_active_markers(context)
-        run_detect_adapt(context)
+
+        print("[DeepTest][Diag] Starte DetectAdapt (run_detect_adapt)...")
+        try:
+            run_detect_adapt(context)
+        except Exception as ex:
+            print(f"[DeepTest][Diag] ❌ DetectAdapt Exception: {ex!r}")
+
+        # Sicherstellen, dass Blender seine Daten aktualisiert
+        import time
+        time.sleep(0.1)
+        bpy.context.view_layer.update()
+
+        print(f"[DeepTest][Diag] Tracks nach Detect: {len(tracking.tracks)}, "
+              f"Gesamt Marker (Summe): {sum(len(t.markers) for t in tracking.tracks)}")
+
         all_data = snapshot_active_markers(context)
+
+        if not tracking.tracks:
+            print("[DeepTest][Diag] ⚠️ Nach Detect keine clip.tracking.tracks vorhanden – "
+                  "DetectAdapt hat keine Daten erzeugt oder Kontext war falsch.")
+
+        # Clip-Objekte prüfen
+        for i, t in enumerate(tracking.tracks[:5]):
+            print(f"[DeepTest][Diag] Track {i}: {t.name}, Marker={len(t.markers)}")
 
         # --- Clip holen und prüfen ---
         clip = get_active_clip(context)
