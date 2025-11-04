@@ -23,27 +23,17 @@ def snapshot_active_markers(context) -> List[MarkerSnapshot]:
         clip_edit = getattr(context, "edit_movieclip", None)
         clip = clip_ui or clip_edit
 
-        print(
-            f"[Snapshot][Diag] area={area_type}, space_type={space_type}, "
-            f"has_space={has_space}, clip_ui={'Y' if clip_ui else 'N'}, "
-            f"clip_edit={'Y' if clip_edit else 'N'}"
-        )
-
         if clip is None:
-            print("[Snapshot] ❌ Kein aktiver Clip im Kontext (weder space.clip noch edit_movieclip).")
             return []
     except Exception as e:
-        print(f"[Snapshot][Err] Kontextabfrage fehlgeschlagen: {e!r}")
         return []
 
     tracking = getattr(clip, "tracking", None)
     if tracking is None:
-        print("[Snapshot] ❌ clip.tracking ist None.")
         return []
 
     current_frame = int(getattr(context.scene, "frame_current", 0))
     total_tracks = len(getattr(tracking, "tracks", []))
-    print(f"[Snapshot][Diag] frame={current_frame}, total_tracks={total_tracks}")
 
     out: List[MarkerSnapshot] = []
     empty_or_muted_tracks = 0
@@ -75,18 +65,4 @@ def snapshot_active_markers(context) -> List[MarkerSnapshot]:
         })
 
     # --- Ergebnisdiagnostik --------------------------------------------------
-    if not out:
-        print(
-            "[Snapshot][Diag] Ergebnis leer. Gründe (Zähler): "
-            f"muted/empty_tracks={empty_or_muted_tracks}, "
-            f"no_marker_at_frame={no_marker_at_frame}, "
-            f"muted_markers={muted_markers}"
-        )
-    else:
-        preview = out[:5]
-        print(
-            f"[Snapshot][OK] aktive Marker={len(out)} (Preview {len(preview)}): "
-            + ", ".join(f"{m['track']}@{m['frame']}" for m in preview)
-        )
-
     return out
