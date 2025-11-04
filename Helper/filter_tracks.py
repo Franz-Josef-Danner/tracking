@@ -107,14 +107,15 @@ def filter_problematic_tracks(
         settings.clean_error = threshold
         settings.clean_frames = 0
 
-        # Sicherstellen, dass Operator im richtigen Context läuft
+        before = len(tracking.tracks)
+
+        # Context-Override neu: EXEC_DEFAULT explizit angeben
         override = context.copy()
         override["edit_clip"] = clip
 
-        before = len(tracking.tracks)
-        bpy.ops.clip.clean_tracks(override)
-        after = len(tracking.tracks)
+        bpy.ops.clip.clean_tracks('EXEC_DEFAULT', override)
 
+        after = len(tracking.tracks)
         deleted = before - after
         print(f"[Kaiserlich Tracker][Filter] Cleanup ✓ – clean_error={threshold:.4f}, gelöscht={deleted}, übrig={after}")
     except Exception as e:
