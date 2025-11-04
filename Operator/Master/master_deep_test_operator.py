@@ -51,11 +51,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self.state.next_val = 0.0
         self.state.stop_flag = False
 
-        print("\n[DeepTest][Init] 🔧 Starte Deep-Test-Sequenz ...")
-
-        self._set_threshold(context)
-        print("[DeepTest][Init] Thresholds zurückgesetzt (alle = 1.0).")
-
         while not self.state.stop_flag:
             print(f"\n[DeepTest][Step {self.state.step}] --- Neue Threshold-Phase gestartet ---")
             self._set_step_threshold(context)
@@ -65,6 +60,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 break
 
             self.state.next_val = 1.0
+            self._set_step_threshold(context)
             self._track(context)
             print(f"[DeepTest][Result] Referenzwert: {self.state.reference_value:.3f}")
 
