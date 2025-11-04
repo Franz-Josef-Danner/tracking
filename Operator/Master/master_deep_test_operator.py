@@ -49,7 +49,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self._set_threshold(context)
         print("[DeepTest][Init] Thresholds zurückgesetzt (alle = 1.0).")
 
-        # Main loop through all threshold steps
         while not self.state.stop_flag:
             print(f"\n[DeepTest][Step {self.state.step}] --- Neue Threshold-Phase gestartet ---")
             self._set_step_threshold(context)
@@ -58,10 +57,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 print("[DeepTest] ✅ Alle Threshold-Phasen abgeschlossen.")
                 break
 
-            print(f"[DeepTest][Step {self.state.step}] Aktueller Testwert: {self.state.next_val:.8f}")
             self.state.next_val = 1.0
             self._set_step_threshold(context)
-            print(f"[DeepTest][Track] 🚀 Tracking mit Threshold={self.state.next_val:.8f}")
             self._track(context)
             print(f"[DeepTest][Result] Referenzwert: {self.state.reference_value:.3f}")
 
@@ -104,7 +101,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
     def _set_threshold(self, context: Context) -> None:
         scene = context.scene
-        # Baseline reset: all threshold parameters set to 1.0
         scene.kaiserlich_rot_thresh_x = 1.0
         scene.kaiserlich_rot_thresh_y = 1.0
         scene.kaiserlich_scale_thresh_min = 1.0
@@ -165,7 +161,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return
     
         old_data = snapshot_active_markers(context)
-        print(f"[DeepTest][Track] Snapshot vor Detect: {len(old_data)} Marker erfasst.")
 
         try:
             run_detect_adapt(context)
@@ -178,7 +173,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         bpy.context.view_layer.update()
 
         all_data = snapshot_active_markers(context)
-        print(f"[DeepTest][Track] Snapshot nach Detect: {len(all_data)} Marker erfasst.")
 
         old_names = {d["track"] for d in old_data if isinstance(d, dict) and "track" in d}
         all_names = {d["track"] for d in all_data if isinstance(d, dict) and "track" in d}
@@ -186,7 +180,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self.state.old_tracks = old_names
         self.state.all_tracks = all_names
         self.state.new_tracks = all_names - old_names
-        print(f"[DeepTest][Track] Neue Tracks erkannt: {len(self.state.new_tracks)}")
 
         self._track_forward_with_limits(context)
 
@@ -319,9 +312,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 context.space_data.clip_user.frame_current = current_frame
             except Exception:
                 pass
-
-        total_len = get_total_track_length(context, start_frame=scene.frame_start, include_names=active_tracks)
-        print(f"[DeepTest][TrackFwd] 🧭 Vorwärts getrackt: {frames_tracked} Frames, Länge={total_len:.3f}")
 
         try:
             reset_to_frame(context, original_frame)
