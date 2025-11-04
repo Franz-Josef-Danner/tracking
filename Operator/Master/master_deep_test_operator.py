@@ -3,7 +3,6 @@ import bpy
 from bpy.types import Operator, Context
 from dataclasses import dataclass, field
 from typing import Set
-import time
 
 from ...Helper.snapshot import snapshot_active_markers
 from ...Helper.detect_adapt_helper import run_detect_adapt
@@ -64,28 +63,28 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self._set_step_threshold(context)
                 self.state.lower_limit = self.state.next_val
                 self._track(context)
-                if self.state.track_flag:
-                    if self.state.reference_value <= self.state.base_value:
-                        self.state.step += 1
-                        continue
-    
-                    self.state.step = abs(self.state.start - self.state.lower_limit) / 2.0
-                    self.state.next_val = self.state.next_val + self.state.step
-                    self._set_step_threshold(context)
-                    self._track(context)
-    
-                    if self.state.reference_value < self.state.base_value:
-                        self._minus_thresh(context)
+
+                if self.state.reference_value <= self.state.base_value:
+                    self.state.step += 1
+                    continue
+
+                self.state.step = abs(self.state.start - self.state.lower_limit) / 2.0
+                self.state.next_val = self.state.next_val + self.state.step
+                self._set_step_threshold(context)
+                self._track(context)
+
+                if self.state.reference_value < self.state.base_value:
+                    self._minus_thresh(context)
+                else:
+                    if self.state.reference_value > self.state.base_value:
+                        self.state.base_value = self.state.reference_value
+                        self._plus_thresh(context)
                     else:
-                        if self.state.reference_value > self.state.base_value:
-                            self.state.base_value = self.state.reference_value
-                            self._plus_thresh(context)
-                        else:
-                            self._plus_thresh(context)
-    
-                print("[DeepTest] ✅ All steps completed — process finished.")
-                return {'FINISHED'}
-   
+                        self._plus_thresh(context)
+
+            print("[DeepTest] ✅ All steps completed — process finished.")
+            return {'FINISHED'}
+
     def _set_threshold(self, context: Context) -> None:
         scene = context.scene
         # Baseline reset: all threshold parameters set to 1.0
@@ -138,19 +137,13 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             self.state.stop_flag = True
             return
 
-    def _track(self, context: Context):
-        # Vorher/Nachher-Snapshot
-        old_data = snapshot_active_markers(context)
+    def _track(self, context: Context) -> None:
+        # Before/After snapshot
+        self.state.old_tracks = snapshot_active_markers(context)
         run_detect_adapt(context)
-        all_data = snapshot_active_markers(context)
-    
-        # Extrahiere nur Namen (stringbasiert)
-        old_names = {d["name"] for d in old_data if isinstance(d, dict) and "name" in d}
-        all_names = {d["name"] for d in all_data if isinstance(d, dict) and "name" in d}
-    
-        self.state.alte_tracker = old_names
-        self.state.alle_tracker = all_names
-        self.state.neu_tracker = all_names - old_names
+        self.state.all_tracks = snapshot_active_markers(context)
+        self.state.new_tracks = set(self.state.all_tracks) - set(self.state.old_tracks)
+
         # Forward tracking with limits
         self._track_forward_with_limits(context)
 
@@ -231,7 +224,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         end_frame = int(scene.frame_end)
         current_frame = int(scene.frame_current)
-        original_frame = current_frame
         remaining = end_frame - current_frame
 
         # --- Validate or adjust start position ---
@@ -304,15 +296,5 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if log:
             print(f"[TrackForward] ✅ Tracking completed – {frames_tracked} frames tracked, "
                   f"total length {total_len}.")
-
-        # --- Restore original playhead position ---
-        try:
-            reset_to_frame(context, original_frame)
-            scene.frame_current = original_frame
-            if log:
-                print(f"[TrackForward] 🔁 Playhead restored to original frame {original_frame}.")
-        except Exception as ex:
-            if log:
-                print(f"[TrackForward] ⚠️ Could not restore playhead: {ex!r}")
 
         return frames_tracked
