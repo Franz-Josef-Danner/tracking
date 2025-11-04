@@ -4,6 +4,7 @@ from bpy.types import Operator, Context
 from dataclasses import dataclass, field
 from typing import Set
 
+
 from ...Helper.snapshot import snapshot_active_markers
 from ...Helper.detect_adapt_helper import run_detect_adapt
 from ...Helper.util_clip import get_active_clip
@@ -143,13 +144,21 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         val = self.state.next_val
 
         # Fortschrittsanzeige aktualisieren (Titel + Wert)
-        set_progress(title=f"DeepTest: Step {step}", value=min(1.0, step / 5.0))
+        import time
+        progress_value = min(1.0, (step + 0.1 * val) / 5.0)
+        set_progress(title=f"DeepTest: Step {int(step)}  (Val={val:.5f})", value=progress_value)
 
-        # UI sichtbar aktualisieren
-        for window in bpy.context.window_manager.windows:
+        # Kurze Pause, damit Blender UI updaten kann
+        time.sleep(0.05)
+
+        # Erzwinge sichtbares Redraw des UI
+        wm = bpy.context.window_manager
+        for window in wm.windows:
             for area in window.screen.areas:
                 if area.type == 'CLIP_EDITOR':
                     area.tag_redraw()
+            window.cursor_warp(window.width // 2, window.height // 2)
+                    
         if step == 0:
             if clip:
                 width, height = clip.size
