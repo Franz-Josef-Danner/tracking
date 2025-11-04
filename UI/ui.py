@@ -86,6 +86,7 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.scale_y = 1.4
         col.prop(scene, "kaiserlich_progress_title", text="")
         col.prop(scene, "kaiserlich_progress_value", text="Progress")
+        col.label(text=f"{scene.kaiserlich_progress_value * 100:.1f}%")
 
 # ==========================================================
 # Registrierung der UI-Properties
@@ -158,10 +159,10 @@ def register():
     # --- Fortschrittsanzeige ---
     bpy.types.Scene.kaiserlich_progress_value = bpy.props.FloatProperty(
         name="Progress",
-        description="Aktueller Fortschritt in Prozent (0–100)",
-        default=0,
-        min=0,
-        max=100,
+        description="Aktueller Fortschritt in Prozent (0.0–1.0)",
+        default=0.0,
+        min=0.0,
+        max=1.0,
         subtype='FACTOR',
     )
 
