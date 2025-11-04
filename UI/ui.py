@@ -79,6 +79,14 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.use_property_decorate = False
         col.prop(scene, "kaiserlich_perspective_thresh", text="Perspective Δ")
 
+        layout.separator()
+        layout.label(text="Status")
+
+        col = layout.column(align=True)
+        col.scale_y = 1.4
+        col.prop(scene, "kaiserlich_progress_title", text="")
+        col.prop(scene, "kaiserlich_progress_value", text="Progress")
+
 # ==========================================================
 # Registrierung der UI-Properties
 # ==========================================================
@@ -147,6 +155,21 @@ def register():
         precision=6,
         subtype='FACTOR',
     )
+    # --- Fortschrittsanzeige ---
+    bpy.types.Scene.kaiserlich_progress_value = bpy.props.FloatProperty(
+        name="Progress",
+        description="Aktueller Fortschritt in Prozent (0.0–1.0)",
+        default=0.0,
+        min=0.0,
+        max=1.0,
+        subtype='FACTOR',
+    )
+
+    bpy.types.Scene.kaiserlich_progress_title = bpy.props.StringProperty(
+        name="Status",
+        description="Aktueller Verarbeitungsschritt oder Titel",
+        default="Idle",
+    )
 
 def unregister():
     for prop in (
@@ -159,6 +182,8 @@ def unregister():
         "kaiserlich_perspective_thresh",
         "kaiserlich_frames_per_track",
         "max_error_value",
+        "kaiserlich_progress_value",
+        "kaiserlich_progress_title",
     ):
         if hasattr(bpy.types.Scene, prop):
             delattr(bpy.types.Scene, prop)
