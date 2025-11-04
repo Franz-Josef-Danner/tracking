@@ -33,11 +33,11 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         # ------------------------------------------------------------------
         if frame is None:
             self.report({'INFO'}, "[Master] Kein schwacher Frame gefunden oder Marker-Ziel nicht unterschritten.")
-            print("[Kaiserlich Tracker][Master] Kein schwacher Frame gefunden – ShortTest wird NICHT gestartet.")
+            print("[Kaiserlich Tracker][Master] Kein schwacher Frame gefunden – DeepTest wird NICHT gestartet.")
             return {'FINISHED'}
 
         # ------------------------------------------------------------------
-        # Wenn ein Frame gefunden wurde → Playhead setzen und ShortTest starten
+        # Wenn ein Frame gefunden wurde → Playhead setzen und DeepTest starten
         # ------------------------------------------------------------------
         scene = context.scene
         scene.frame_current = frame
@@ -48,10 +48,10 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         except Exception:
             pass
 
-        print(f"[Kaiserlich Tracker][Master] Playhead gesetzt auf Frame {frame} – Starte ShortTest.")
-        self.report({'INFO'}, f"[Master] Playhead auf Frame {frame} gesetzt – ShortTest wird gestartet.")
+        print(f"[Kaiserlich Tracker][Master] Playhead gesetzt auf Frame {frame} – Starte DeepTest.")
+        self.report({'INFO'}, f"[Master] Playhead auf Frame {frame} gesetzt – DeepTest wird gestartet.")
 
-        # Operator-Aufruf (vollständiger ShortTest)
+        # Operator-Aufruf (vollständiger DeepTest)
         # Erwartete ID: bl_idname = "kaiserlich_tracker.master_deep_test_operator"
         op_id = "kaiserlich_tracker.master_deep_test_operator"
         try:
@@ -67,8 +67,8 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
             bpy.ops.kaiserlich_tracker.master_deep_test_operator('INVOKE_DEFAULT')
             print("[Kaiserlich Tracker][Master] DeepTest erfolgreich gestartet.")
         except Exception as ex:
-            print(f"[Kaiserlich Tracker][Master] ⚠️ Fehler beim Starten des ShortTest: {ex!r}")
-            self.report({'WARNING'}, f"Fehler beim Start des ShortTest: {ex}")
+            print(f"[Kaiserlich Tracker][Master] ⚠️ Fehler beim Starten des DeepTest: {ex!r}")
+            self.report({'WARNING'}, f"Fehler beim Start des DeepTest: {ex}")
 
         return {'FINISHED'}
 
