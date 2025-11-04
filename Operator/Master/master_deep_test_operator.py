@@ -406,8 +406,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
             active_tracks, dropped = filter_active_tracks_at_frame(context, active_tracks, current_frame)
             if log:
+                if isinstance(dropped, int):
+                 dropped_count = dropped
+                else:
+                 dropped_count = len(dropped) if dropped is not None else 0
                 print(f"[TrackForward][Debug] Frame={current_frame}: "
-                      f"Aktiv={len(active_tracks)}, Dropped={len(dropped)}")
+                   f"Aktiv={len(active_tracks)}, Dropped={dropped_count}")
             if not active_tracks:
                 if log:
                     print("[TrackForward] ⏹️ No active tracks left – stopping tracking.")
