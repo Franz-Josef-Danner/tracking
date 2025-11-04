@@ -149,7 +149,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         set_progress(title=f"DeepTest: Step {int(step)}  (Val={val:.5f})", value=progress_value)
 
         # Kurze Pause, damit Blender UI updaten kann
-        time.sleep(0.05)
+        time.sleep(0.5)
 
         # Erzwinge sichtbares Redraw des UI
         wm = bpy.context.window_manager
