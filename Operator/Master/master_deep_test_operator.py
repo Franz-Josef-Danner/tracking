@@ -125,6 +125,9 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 print(f"[DeepTest][Adjust] Kein Anstieg – Schritt {s.step + 1}")
                 s.step += 1
                 if s.step >= 5:
+                    print("[DeepTest][Finalize] → Letzter Threshold-Set-Aufruf für Step>=5")
+                    # Finalen Threshold schreiben
+                    self._set_step_threshold(context)
                     s.phase = "DONE"
                     s.stop_flag = True
                 else:
