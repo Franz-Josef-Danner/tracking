@@ -56,7 +56,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     def execute(self, context: Context):
         self.state = DeepTestState()
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.25, window=context.window)
+        self._timer = wm.event_timer_add(0.1, window=context.window)
         wm.modal_handler_add(self)
         print("[DeepTest][Modal] 🚀 Gestartet – UI bleibt aktiv.")
         return {'RUNNING_MODAL'}
@@ -197,9 +197,14 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             else:
                 print("[DeepTest][Adjust][-] Schrittgröße zu klein → Weiter zur nächsten Stufe.")
                 s.step += 1
-                s.phase = "INIT" if s.step < 5 else "DONE"
-                s.stop_flag = (s.phase == "DONE")
-            return
+                if s.step >= 5:
+                   print("[DeepTest][Finalize] → Letzter Threshold-Set-Aufruf für Step>=5")
+                   self._set_step_threshold(context)  # <-- führt deinen finalen Block aus
+                   s.phase = "DONE"
+                   s.stop_flag = True
+                else:
+                   s.phase = "INIT"
+                return
 
         if s.phase == "ADJUST_MINUS_TRACK":
             self._track(context)
