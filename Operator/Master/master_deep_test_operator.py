@@ -33,7 +33,7 @@ class DeepTestState:
 
 
 class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
-    bl_idname = "kaiserlichtracker.deep_test"
+    bl_idname = "kaiserlichtracker.master_deep_test_operator"
     bl_label = "Kaiserlich Tracker: Deep Test"
     bl_options = {'REGISTER', 'UNDO'}
 
