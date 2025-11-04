@@ -43,7 +43,6 @@ def run_detect_adapt(context: bpy.types.Context) -> None:
         # ⚠️ Fallback-Bootstrap falls kein Master-Bootstrap existiert
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
-            print("[Kaiserlich Tracker][DetectAdapt] ❌ Kein aktiver Clip verfügbar.")
             return
 
         hz = clip.size[0]
@@ -115,7 +114,6 @@ def run_detect_adapt(context: bpy.types.Context) -> None:
         # --- Diagnose-Block: Marker-Frame-Check ---
         clip_dbg = getattr(context.space_data, "clip", None)
         if clip_dbg and getattr(clip_dbg, "tracking", None):
-            print("[DetectAdapt][Diag] --- Marker-Frame-Check nach detect_features ---")
             frames = {}
             total_marker_count = 0
             for t in clip_dbg.tracking.tracks:
@@ -125,9 +123,7 @@ def run_detect_adapt(context: bpy.types.Context) -> None:
                     frames[m.frame] += 1
             if frames:
                 frame_sorted = sorted(frames.items())
-                print(f"[DetectAdapt][Diag] Marker pro Frame: {frame_sorted[:10]}{' …' if len(frame_sorted)>10 else ''}")
-            print(f"[DetectAdapt][Diag] Gesamtmarker: {total_marker_count}")
-            print(f"[DetectAdapt][Diag] Aktueller Scene-Frame: {context.scene.frame_current}")
+
         else:
             print("[DetectAdapt][Diag] ⚠️ Kein Clip/Tracking-Kontext für Frame-Check verfügbar.")
         # Blender selektiert neue Tracks automatisch → zurücksetzen
@@ -223,4 +219,3 @@ def run_detect_adapt(context: bpy.types.Context) -> None:
                 interp_val = v_start + (v_end - v_start) * t
                 md_dict[str(f)] = interp_val
 
-    print(f"[Kaiserlich Tracker][DetectAdapt] ✅ abgeschlossen – Marker={final_new_marker_count}, min_distance={last_md:.3f}")
