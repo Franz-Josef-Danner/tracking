@@ -22,6 +22,7 @@ class DeepTestState:
     counter: int = 0
     stop_flag: bool = False
     track_flag: bool = False
+    
     base_value: float = 0.0
     reference_value: float = 0.0
     start: float = 0.0
@@ -73,7 +74,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                             self._refresh_clip_editor_viewer(context)
                             if self.state.track_flag:
                                 if self.state.reference_value <= self.state.base_value:
-                                    self.state.step += 1
+                                    self.state.step = self.state.step + 1
                                     continue
                 
                                 self.state.step = abs(self.state.start - self.state.lower_limit) / 2.0
@@ -211,7 +212,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                         else:
                             self._minus_thresh(context)
                     else:
-                        self.state.step += 1
+                        self.state.step = self.state.step + 1
                         # start next step
                         return
 
@@ -236,7 +237,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                             else:
                                 self._plus_thresh(context)
                     else:
-                        self.state.step += 1
+                        self.state.step = self.state.step + 1
                         # start next step
                         return
 
