@@ -99,77 +99,81 @@ def filter_problematic_tracks(
         print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Anwenden des Filters: {e}")
         return
 
-    # --- 2) Pre-Solve Cleanup: lösche die durch filter_tracks selektierten Kandidaten
+    # --- 2) Cleanup via clean_error (Operator, korrekter Kontext)
     try:
         tracking = clip.tracking
+        settings = tracking.settings
+        settings.clean_action = 'DELETE_TRACK'
+        settings.clean_error  = float(threshold)
+        settings.clean_frames = 0
 
-        # --- Diagnose-Logs ---
-        total_tracks = len(tracking.tracks)
-        print(f"[Kaiserlich Tracker][Debug] Gesamtzahl der Tracks: {total_tracks}")
+        # Sanity-Log
+        print(f"[Kaiserlich Tracker][Debug] clean_action=DELETE_TRACK, clean_error={settings.clean_error:.4f}, clean_frames={settings.clean_frames}")
 
-        if hasattr(tracking, 'layers') and tracking.layers:
-            print(f"[Kaiserlich Tracker][Debug] {len(tracking.layers)} Layer gefunden:")
-            for layer in tracking.layers:
-                print(f"    Layer '{layer.name}' → {len(layer.tracks)} Tracks")
+        # Relevantes Tracking-Objekt (nur Log, Operator nutzt Scene/Context)
+        active_obj = getattr(tracking, "active_object", None)
+        if active_obj:
+            print(f"[Kaiserlich Tracker][Debug] Active tracking object: {active_obj.name} ({len(active_obj.tracks)} Tracks)")
         else:
-            print("[Kaiserlich Tracker][Debug] Keine Layer-API gefunden – arbeite direkt auf tracking.tracks.")
+            print("[Kaiserlich Tracker][Debug] Warnung: Kein active_object gefunden.")
 
-        # Prüfe Selektion
-        selected_count = 0
-        for idx, t in enumerate(tracking.tracks):
-            if getattr(t, "select", False):
-                selected_count += 1
-                print(f"[Kaiserlich Tracker][Debug] SELECTED: {t.name} | Frames={len(t.markers)}")
-            else:
-                # Nur stichprobenartig loggen, um Spam zu vermeiden
-                if idx < 5:
-                    print(f"[Kaiserlich Tracker][Debug] Not selected: {t.name} | Frames={len(t.markers)}")
+        # Einen gültigen CLIP_EDITOR-Kontext erzwingen (Area/Region/Window + edit_clip)
+        win = None
+        area = None
+        region = None
+        for w in bpy.context.window_manager.windows:
+            for a in w.screen.areas:
+                if a.type == 'CLIP_EDITOR':
+                    # Bevorzugt die WINDOW-Region
+                    reg = next((r for r in a.regions if r.type == 'WINDOW'), None)
+                    if reg is not None:
+                        win, area, region = w, a, reg
+                        break
+            if win:
+                break
 
-        print(f"[Kaiserlich Tracker][Debug] Insgesamt {selected_count} selektierte Tracks nach filter_tracks()")
-
-        if selected_count == 0:
-            print("[Kaiserlich Tracker][Filter] ⚠️ Kein Track ist nach filter_tracks() selektiert – "
-                  "Blender hat evtl. keinen Track markiert oder arbeitet im falschen Kontext.")
-            print("→ Prüfe, ob das Script im Movie Clip Editor ausgeführt wird, "
-                  "und ob mindestens ein Tracking-Layer aktiv ist.")
-
-        # --- Ende Diagnose-Logs ---
-        # Kandidaten sind nach filter_tracks per 'select' markiert.
-        # Wichtig: nicht in-place iterieren.
-        selected_tracks = [t for t in tracking.tracks if getattr(t, "select", False)]
-        print(f"[Kaiserlich Tracker][Debug] Cleanup-Kandidaten (aus Selektion): {len(selected_tracks)}")
-        if not selected_tracks:
-            print("[Kaiserlich Tracker][Filter] Info: Keine selektierten Problem-Tracks gefunden – nichts zu löschen.")
+        if not (win and area and region):
+            print("[Kaiserlich Tracker][Filter] ❌ Kein CLIP_EDITOR-Kontext auffindbar – clean_tracks nicht ausführbar.")
+            print("→ Öffne einen Movie Clip Editor (Area.type='CLIP_EDITOR') oder führe im Tracking-Workspace aus.")
             return
 
-        before = len(tracking.tracks)
-
-        # Robust entfernen – erst global, bei Bedarf layer-spezifisch.
-        for t in selected_tracks:
-            removed = False
+        # Vorher/Nachher zählen (über aktives Objekt, falls vorhanden; sonst Gesamtliste)
+        def _count_tracks():
             try:
-                tracking.tracks.remove(t)
-                removed = True
+                if active_obj and getattr(active_obj, 'tracks', None) is not None:
+                    return len(active_obj.tracks)
             except Exception:
                 pass
+            try:
+                return len(tracking.tracks)
+            except Exception:
+                return 0
 
-            if (not removed) and hasattr(tracking, "layers"):
-                for layer in tracking.layers:
-                    if t in layer.tracks:
-                        try:
-                            layer.tracks.remove(t)
-                            removed = True
-                            break
-                        except Exception:
-                            continue
+        before = _count_tracks()
 
-        after = len(tracking.tracks)
-        deleted = before - after
-        print(f"[Kaiserlich Tracker][Filter] Pre-Solve Cleanup ✓ – entfernt={deleted}, übrig={after}, threshold={threshold:.4f}")
+        # temp_override ist der korrekte Weg ab Blender 4.x
+        # Wichtig: edit_clip muss gesetzt sein.
+        print(f"[Kaiserlich Tracker][Debug] Context override: window={win}, area={area.type}, region={region.type}, edit_clip={clip.name}")
+        try:
+            ctx = bpy.context
+            # Ab Blender 4.x vorhanden; in 3.6 ebenfalls (Backport).
+            with ctx.temp_override(window=win, area=area, region=region, edit_clip=clip):
+                # EXEC_DEFAULT erzwingt direkten Operatorlauf ohne UI-Invoke
+                bpy.ops.clip.clean_tracks('EXEC_DEFAULT')
+        except AttributeError:
+            # Fallback für sehr alte Builds ohne temp_override (unwahrscheinlich)
+            override = {'window': win, 'screen': win.screen, 'area': area, 'region': region, 'edit_clip': clip}
+            bpy.ops.clip.clean_tracks('EXEC_DEFAULT', override)
+
+        after = _count_tracks()
+        deleted = max(0, before - after)
+        print(f"[Kaiserlich Tracker][Filter] Cleanup ✓ (clean_error) – gelöscht={deleted}, vorher={before}, übrig={after}, threshold={threshold:.4f}")
+
         if deleted == 0:
-            print("[Kaiserlich Tracker][Debug] Keine Tracks entfernt – mögliche Ursachen:")
-            print("  • filter_tracks() selektiert keine Tracks (API-Änderung ab Blender 4.0?)")
-            print("  • Script läuft nicht im Movie Clip Editor-Kontext (space_data.clip == None)")
-            print("  • Layer oder active_tracking_object nicht korrekt gesetzt.")
+            print("[Kaiserlich Tracker][Debug] 0 gelöscht. Mögliche Ursachen:")
+            print("  • Reprojection-Error nicht vorhanden bzw. <= threshold (prüfe nach Solve).")
+            print("  • Solve / Reconstruction fehlte oder ist invalide (recon.is_valid == False).")
+            print("  • clean_error greift auf anderes Objekt/Layer als erwartet – prüfe active_object und Clip.")
+
     except Exception as e:
-        print(f"[Kaiserlich Tracker][Filter] ❌ Pre-Solve Cleanup fehlgeschlagen: {e}")
+        print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Cleanup über clean_error: {e}")
