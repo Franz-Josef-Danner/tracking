@@ -253,13 +253,16 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # Synchronisierung mit UI-Property (zuerst lesen, dann verwenden)
         converter = self.state.converter
 
-        vale = min(100, 100 - (((math.log10 (max(0.00001,converter) * 100000) - 0.176095) * 1.03) * 20))
-        total = min(100,(step + 1) * 17) - (vale / 10)
-        set_progress(title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)")
+        vale = min(100.0, 100.0 - (((math.log10(max(0.00001, converter) * 100000.0) - 0.176095) * 1.03) * 20.0))
+        total = max(0.0, min(100.0, (step + 1) * 17.0 - (vale / 10.0)))
+        set_progress(title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)", value=vale)
+ 
         try:
             scene.kaiserlich_converter = converter
-            scene.kaiserlich_progress_step_title = total
-        except Exception:
+            # Strings für Titelzeilen setzen (sichtbar via layout.label):
+            scene.kaiserlich_progress_title = f"DeepTest – Step {int(step)}"
+            scene.kaiserlich_progress_step  = f"Gesamtfortschritt: {total:.0f}%"
+         except Exception:
             pass
                     
         if step == 0:
