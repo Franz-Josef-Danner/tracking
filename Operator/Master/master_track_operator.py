@@ -142,6 +142,9 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
         # Fortschritts-Update pro Frame (inkrementell)
         try:
+            # Sicherstellen, dass Fortschritts-Map existiert
+            if not hasattr(context.scene, "kaiserlich_progress_map"):
+                init_marker_progress(context.scene)
             update_marker_progress(context.scene, clip, self._current_frame)
         except Exception as e:
             print(f"[Kaiserlich Tracker][Progress] ⚠️ Fortschritts-Update fehlgeschlagen: {e}")
@@ -222,8 +225,9 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
         # Letzter Fortschritts-Refresh bei Abschluss
         try:
-            _, perc = compute_marker_progress(context.scene, update_ui=True)
-            context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
+            if not hasattr(context.scene, "kaiserlich_progress_map"):
+                init_marker_progress(context.scene)
+            _, perc = update_marker_progress(context.scene, clip, self._current_frame, update_ui=True)
         except Exception as e:
             print(f"[Kaiserlich Tracker][Progress] ⚠️ Abschluss-Update fehlgeschlagen: {e}")
 
