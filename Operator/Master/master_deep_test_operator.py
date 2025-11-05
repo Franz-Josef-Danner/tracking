@@ -414,7 +414,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
     def _finalize(self, context: Context):
         # Fortschrittsanzeige abschließen + UI refresh
-        set_progress(title="DeepTest: abgeschlossen ✅", value=1.0)
         for window in bpy.context.window_manager.windows:
             for area in window.screen.areas:
                 if area.type == 'CLIP_EDITOR':
