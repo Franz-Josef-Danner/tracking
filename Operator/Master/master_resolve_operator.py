@@ -1,4 +1,4 @@
-# master_resolve_operator.py
+# Operator/Master/master_resolve_operator.py
 # Copyright (...)
 # Zweck: Löst die Kamera iterativ und verfeinert Intrinsics gemäß vordefiniertem Eskalationspfad.
 # Erwartete Abhängigkeiten (in Ihrem Add-on vorhanden):
