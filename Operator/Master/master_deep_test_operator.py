@@ -255,7 +255,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         val_int = int(round(vale))  # 0 Dezimalstellen, 0–100
     
         set_progress(
-            title=f"DeepTest: Step {int(step)} (progress={val_int:d}%)",
+            title=f"DeepTest: Step {int(step)} (progress={vale_int:d}%)",
             value=val_int
         )
     
