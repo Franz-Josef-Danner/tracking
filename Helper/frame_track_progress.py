@@ -61,9 +61,9 @@ def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -
 
     perc = (100.0 * value / goal) if goal > 0 else 0.0
 
-    # Optional in Szene schreiben
+    # Optional in Szene schreiben (ohne Nachkommastellen)
     if hasattr(scene, "kaiserlich_marker_progress"):
-        scene.kaiserlich_marker_progress = perc
+        scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
 
     # Optional UI refreshen
     if update_ui:
