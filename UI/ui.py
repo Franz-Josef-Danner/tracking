@@ -31,13 +31,13 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         # Zwei Buttons nebeneinander
         row = col.row(align=True)
         row.operator("kaiserlich_tracker.master_shorttest_operator", text="Short Test Thresholds", icon="VIEWZOOM")
-        row.operator("kaiserlich_tracker.master_deep_test_operator", text="Deep Test Thresholds", icon="ZOOM_IN")
+        row.operator("kaiserlichtracker.master_deep_test_operator", text="Deep Test Thresholds", icon="ZOOM_IN")
 
         col.operator("kaiserlich_tracker.master_detect_adapt", text="Run Detect Adapt", icon="STICKY_UVS_DISABLE")
         
         row = col.row(align=True)
         row.operator("kaiserlich_tracker.master_track_cycle_backwards", text="Track Cycle (Backwards)", icon="TRACKING_BACKWARDS")
-        row.operator("kaiserlich_tracker.cycle_operator", text="Track Cycle (Forward)", icon="TRACKING_FORWARDS")
+        row.operator("kaiserlichtracker.cycle_operator", text="Track Cycle (Forward)", icon="TRACKING_FORWARDS")
 
         col.operator("kaiserlich_tracker.master_resolve_operator", text="Run resolve camera", icon="STICKY_UVS_DISABLE")
      
