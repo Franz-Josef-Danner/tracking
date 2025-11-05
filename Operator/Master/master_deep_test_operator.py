@@ -255,9 +255,9 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         vale = min(100.0, 100.0 - (((math.log10(max(0.00001, converter) * 100000.0) - 0.176095) * 1.03) * 20.0))
         if converter > 0.00002:
             total = max(0.0, min(100.0, ((step + 1) * 17.0) - ((100 - vale)/6)))
+            scene.kaiserlich_progress_step  = f"Total: {int(total)}%"
         # 🟢 Fortschrittswerte in Szene-Properties schreiben (für UI-Refresh)
         scene.kaiserlich_progress_title = f"Single Tests: {int(vale)}%"
-        scene.kaiserlich_progress_step  = f"Total: {int(total)}%"
         try:
             scene.kaiserlich_converter = converter
             # 🟢 Nach Aktualisierung gezielt UI-Region refreshen
