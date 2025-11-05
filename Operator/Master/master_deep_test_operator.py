@@ -252,6 +252,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         set_progress(
             title=f"DeepTest: Step {int(step)} (progress={pro:.5f})",
             value=min(100, ((step*20) - converter + 1) / 5.0)
+            print("balken wert: "{value:.8f})
         )
         # Optional in Szene speichern, falls Panels darauf zugreifen:
         try:
