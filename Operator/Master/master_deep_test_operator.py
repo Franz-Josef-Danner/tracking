@@ -79,12 +79,15 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if event.type == 'TIMER':
             # sichtbares Progress-Update pro Tick
             self._ui_progress(context)
-            if self.state.stop_flag or self.state.phase == "DONE":
-                print("[DeepTest][Modal] ✅ Alle Threshold-Stufen abgeschlossen – Prozess beendet.")
-                self.cancel(context)
-                return {'FINISHED'}
-
             try:
+                # Wenn fertig, finalize & Handover ausführen
+                if self.state.stop_flag or self.state.phase == "DONE":
+                    print("[DeepTest][Modal] ✅ Alle Threshold-Stufen abgeschlossen – Prozess beendet.")
+                    self._finalize(context)                     # <-- jetzt wird finalize aufgerufen
+                    self.cancel(context)
+                    return {'FINISHED'}
+
+                # sonst normalen Schritt fortsetzen
                 self._process_step_incremental(context)
             except Exception as e:
                 print(f"[DeepTest][Modal] ⚠️ Fehler: {e}")
