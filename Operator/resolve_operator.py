@@ -26,7 +26,7 @@ try:
         refine_intrinsics_radial_distortion_on,
     )
     from ..Helper.get_average_error import get_average_error
-    from ..Helper.filter_tracks import filter_problematic_tracks
+    from ..Helper.clean_error_tracks import clean_error_tracks
     from ..Helper.low_marker_frame import find_first_weak_frame
 except Exception as e:
     # Harte, frühe Fehlermeldung zwecks Diagnose fehlender Module
@@ -114,7 +114,12 @@ def _check_and_filter(context: bpy.types.Context, avg_err: float) -> float:
     # Nur wenn überschritten, filtern (Faktor 2 laut Vorgabe)
     if avg_err > max_err:
         threshold = avg_err * 2.0
-        filter_problematic_tracks(context, threshold)
+        # Nutzung des neuen CleanError-Helpers mit Fallback-Policy (min. 20.0)
+        try:
+            clean_error_tracks(context, threshold=threshold)
+        except Exception:
+            # Falls kein gültiger Wert vorliegt, Fallback verwenden
+            clean_error_tracks(context, threshold=20.0)
     return avg_err
 
 
