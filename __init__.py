@@ -1,3 +1,4 @@
+# __init__.py
 bl_info = {
     "name": "Kaiserlich Tracker",
     "author": "Franz-Josef Danner",
