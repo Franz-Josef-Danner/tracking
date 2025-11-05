@@ -356,6 +356,22 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             print("[DeepTest][Track] ⚠️ Kein aktiver Clip gefunden.")
             return
     
+        scene = context.scene
+
+        # --- Frame-Setup ---
+        reset_to_frame(context, scene.frame_start)
+        frame_szenen_ende = int(scene.frame_end)
+        frame_max = frame_szenen_ende - 50
+        frame_playhead = int(scene.frame_current)
+
+        restore_playhead = None
+        if frame_playhead > frame_max:
+            restore_playhead = frame_playhead
+            scene.frame_current = frame_max
+            bpy.context.view_layer.update()
+            print(f"[DeepTest][Frame] ⚙️ Playhead temporär auf Frame {frame_max} gesetzt (vorher {restore_playhead}).")
+
+        # --- Snapshot vor Detect ---
         old_data = snapshot_active_markers(context)
 
         try:
@@ -364,7 +380,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             print("[DeepTest][Track] ⚠️ run_detect_adapt() fehlgeschlagen.")
             pass
 
-        import time
         time.sleep(0.1)
         bpy.context.view_layer.update()
 
@@ -372,14 +387,13 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         old_names = {d["track"] for d in old_data if isinstance(d, dict) and "track" in d}
         all_names = {d["track"] for d in all_data if isinstance(d, dict) and "track" in d}
-    
+
         self.state.old_tracks = old_names
         self.state.all_tracks = all_names
         self.state.new_tracks = all_names - old_names
 
         self._track_forward_with_limits(context)
 
-        scene = context.scene
         self.state.reference_value = get_total_track_length(
             context,
             start_frame=scene.frame_start,
@@ -390,6 +404,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if self.state.new_tracks:
             delete_tracks_by_names(context, track_names=self.state.new_tracks)
             print("[DeepTest][Cleanup] 🧹 Neue Tracks gelöscht.")
+
+        # --- Playhead Restore ---
+        if restore_playhead is not None:
+            scene.frame_current = restore_playhead
+            bpy.context.view_layer.update()
+            print(f"[DeepTest][Frame] 🔁 Playhead wiederhergestellt auf Frame {restore_playhead}.")
 
     def _finalize(self, context: Context):
         # Fortschrittsanzeige abschließen + UI refresh
