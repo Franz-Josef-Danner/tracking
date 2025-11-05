@@ -37,7 +37,7 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         
         row = col.row(align=True)
         row.operator("kaiserlich_tracker.master_track_cycle_backwards", text="Track Cycle (Backwards)", icon="TRACKING_BACKWARDS")
-        row.operator("kaiserlichtracker.cycle_operator", text="Track Cycle (Forward)", icon="TRACKING_FORWARDS")
+        row.operator("kaiserlich_tracker.master_track_cycle", text="Track Cycle (Forward)", icon="TRACKING_FORWARDS")
 
         col.operator("kaiserlich_tracker.master_resolve_operator", text="Run resolve camera", icon="STICKY_UVS_DISABLE")
      
