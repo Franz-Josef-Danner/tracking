@@ -166,6 +166,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         except Exception as e:
             print(f"[Kaiserlich Tracker][ModalBackwards] ⚠️ apply_formula Fehler: {e}")
 
+        # Fortschritts-Update pro Frame (inkrementell)
+        try:
+            if not hasattr(context.scene, "kaiserlich_progress_map"):
+                init_marker_progress(context.scene)
+            update_marker_progress(context.scene, clip, self._current_frame)
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][ProgressBackwards] ⚠️ Fortschritts-Update fehlgeschlagen: {e}")
 
         # Tracking-Schritt über Helper (rückwärts)
         success = track_markers_with_override(
