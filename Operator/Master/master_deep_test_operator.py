@@ -255,13 +255,19 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         vale = min(100.0, 100.0 - (((math.log10(max(0.00001, converter) * 100000.0) - 0.176095) * 1.03) * 20.0))
         total = max(0.0, min(100.0, (step + 1) * 17.0 - (vale / 10.0)))
-        set_progress(title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)", value=vale)
+        set_progress(title=f"DeepTest: (progress={vale:.0f}%)", value=vale)
+        
  
         try:
             scene.kaiserlich_converter = converter
             # Strings für Titelzeilen setzen (sichtbar via layout.label):
             scene.kaiserlich_progress_title = f"DeepTest – Step {int(step)}"
             scene.kaiserlich_progress_step  = f"Gesamtfortschritt: {total:.0f}%"
+            # 🟢 Nach Aktualisierung beide UI-Labels refreshen
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == 'CLIP_EDITOR':
+                        area.tag_redraw()
         except Exception:
             pass
                     
