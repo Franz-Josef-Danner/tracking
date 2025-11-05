@@ -81,10 +81,14 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 
         layout.separator()
         layout.label(text="Status")
-        # Fortschrittsanzeigen mit Property-Bindung
-        layout.prop(scene, "kaiserlich_progress_title", text="Single Tests")
-        layout.prop(scene, "kaiserlich_progress_step", text="Total Progress")
-        layout.prop(scene, "kaiserlich_progress_value", text="Progress (%)", slider=True)
+        # 🟢 Fortschrittsanzeigen als Balken (alle drei visuell gleich)
+        col = layout.column(align=True)
+        col.use_property_split = True
+        col.use_property_decorate = False
+
+        col.prop(scene, "kaiserlich_progress_value", text="Single Tests", slider=True)
+        col.prop(scene, "kaiserlich_progress_total", text="Total Progress", slider=True)
+
 # ==========================================================
 # Registrierung der UI-Properties
 # ==========================================================
