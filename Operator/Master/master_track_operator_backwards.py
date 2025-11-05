@@ -13,8 +13,7 @@ from ...Helper.find_clip_editor_area import find_clip_editor_area
 from ...Helper.selection_helper import collect_selected_track_names
 from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
-from ...Helper.frame_track_progress import init_marker_progress, update_marker_progress
-
+from ...Helper.frame_track_progress import compute_marker_progress
 
 # ------------------------------------------------------------
 # Operator
@@ -110,11 +109,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         # Historien initialisieren
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
-        # Fortschritts-Map initialisieren (neue inkrementelle Methode)
-        try:
-            init_marker_progress(scene)
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Init] ⚠️ Fortschritts-Init fehlgeschlagen: {e}")
 
         # Selektion fixieren
         tracking = clip.tracking
@@ -123,7 +117,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         # Timer aktivieren
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.25, window=context.window)
+        self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
 
         print("[Kaiserlich Tracker][ModalBackwards] Tracking-Zyklus rückwärts gestartet...")
@@ -166,13 +160,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         except Exception as e:
             print(f"[Kaiserlich Tracker][ModalBackwards] ⚠️ apply_formula Fehler: {e}")
 
-        # Fortschritts-Update pro Frame (inkrementell)
+        # Fortschritt der Markerberechnung updaten (UI-sicher)
         try:
-            if not hasattr(context.scene, "kaiserlich_progress_map"):
-                init_marker_progress(context.scene)
-            update_marker_progress(context.scene, clip, self._current_frame)
+            _, perc = compute_marker_progress(context.scene, update_ui=True)
+            context.scene.kaiserlich_marker_progress = perc
         except Exception as e:
-            print(f"[Kaiserlich Tracker][ProgressBackwards] ⚠️ Fortschritts-Update fehlgeschlagen: {e}")
+            print(f"[Kaiserlich Tracker][ProgressBackwards] ⚠️ Fortschrittsberechnung fehlgeschlagen: {e}")
 
         # Tracking-Schritt über Helper (rückwärts)
         success = track_markers_with_override(
@@ -257,6 +250,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             if not cancelled else
             "[Kaiserlich Tracker][ModalBackwards] ❌ Rückwärts-Zyklus abgebrochen."
         )
+
+        # Letzter Fortschritts-Refresh bei Abschluss
+        try:
+            _, perc = compute_marker_progress(context.scene, update_ui=True)
+            context.scene.kaiserlich_marker_progress = perc
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][ProgressBackwards] ⚠️ Abschluss-Update fehlgeschlagen: {e}")
 
         # --------------------------------------------------------
         # Kontextübergabe an Forward-Tracking (Master Track Cycle)
