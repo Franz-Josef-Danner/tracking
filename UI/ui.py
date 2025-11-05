@@ -86,6 +86,10 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.scale_y = 1.4
         col.prop(scene, "kaiserlich_progress_title", text="")
 
+        # Zweite Fortschrittsanzeige – aktueller Step-Wert
+        row = layout.row(align=True)
+        row.label(text="Aktueller Step:")
+        row.prop(scene, "kaiserlich_progress_step", text="")
 # ==========================================================
 # Registrierung der UI-Properties
 # ==========================================================
@@ -173,6 +177,14 @@ def register():
         default="",
     )
 
+    bpy.types.Scene.kaiserlich_progress_step = bpy.props.IntProperty(
+        name="Step",
+        description="Aktueller Threshold-Test-Schritt (0–5)",
+        default=0,
+        min=0,
+        max=5,
+    )
+
 def unregister():
     for prop in (
         "kaiserlich_rot_thresh_x",
@@ -186,6 +198,7 @@ def unregister():
         "max_error_value",
         "kaiserlich_progress_value",
         "kaiserlich_progress_title",
+        "kaiserlich_progress_step",
     ):
         if hasattr(bpy.types.Scene, prop):
             delattr(bpy.types.Scene, prop)
