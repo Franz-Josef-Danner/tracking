@@ -87,8 +87,8 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col.prop(scene, "kaiserlich_progress_title", text="")
 
         # Zweite Fortschrittsanzeige – aktueller Step-Wert
-        row = layout.row(align=True)
-        row.label(text="Aktueller Step:")
+        col = layout.column(align=True)
+        col.scale_y = 1.4
         row.prop(scene, "kaiserlich_progress_step", text="")
 # ==========================================================
 # Registrierung der UI-Properties
