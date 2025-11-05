@@ -250,24 +250,23 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         scene = context.scene
         step = self.state.step
         val = self.state.next_val
-        # Synchronisierung mit UI-Property (zuerst lesen, dann verwenden)
         converter = self.state.converter
 
         vale = min(100.0, 100.0 - (((math.log10(max(0.00001, converter) * 100000.0) - 0.176095) * 1.03) * 20.0))
         total = max(0.0, min(100.0, (step + 1) * 17.0 - (vale / 10.0)))
-        set_progress(title=f"DeepTest: (progress={vale:.0f}%)", value=vale)
-        
- 
+        # 🟢 Fortschrittswerte in Szene-Properties schreiben (für UI-Refresh)
+        scene.kaiserlich_progress_value = vale
+        scene.kaiserlich_progress_title = f"Single Tests: {int(vale)}%"
+        scene.kaiserlich_progress_step  = f"Total: {int(total)}%"
         try:
             scene.kaiserlich_converter = converter
-            # Strings für Titelzeilen setzen (sichtbar via layout.label):
-            scene.kaiserlich_progress_title = f"DeepTest – Step {int(step)}"
-            scene.kaiserlich_progress_step  = f"Gesamtfortschritt: {total:.0f}%"
-            # 🟢 Nach Aktualisierung beide UI-Labels refreshen
+            # 🟢 Nach Aktualisierung gezielt UI-Region refreshen
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == 'CLIP_EDITOR':
-                        area.tag_redraw()
+                        for region in area.regions:
+                            if region.type == 'UI':
+                                region.tag_redraw()
         except Exception:
             pass
                     
