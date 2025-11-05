@@ -171,7 +171,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             s.lower_limit = s.next_val
             conv = abs(s.start - s.lower_limit) / 2.0
             print(f"[DeepTest][Adjust][+] converter={conv:.8f}, NextVal={s.next_val:.8f}")
-            if conv > 0.0001:
+            if conv > 0.00001:
                 s.next_val = s.next_val + conv
                 s.converter = conv
                 self.converter = conv
@@ -202,7 +202,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             s.start = s.next_val
             conv = abs(s.start - s.lower_limit) / 2.0
             print(f"[DeepTest][Adjust][-] converter={conv:.8f}, NextVal={s.next_val:.8f}")
-            if conv > 0.0001:
+            if conv > 0.00001:
                 s.next_val = s.next_val - conv
                 s.converter = conv
                 self.converter = conv
@@ -405,7 +405,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             self.state.lower_limit = self.state.next_val
             converter = abs(self.state.start - self.state.lower_limit) / 2.0
             print(f"[DeepTest][Adjust][+] converter={converter:.8f}, NextVal={self.state.next_val:.8f}")
-            if converter > 0.0001:
+            if converter > 0.00001:
                 self.state.next_val = self.state.next_val + converter
                 self._set_step_threshold(context)
                 self._track(context)
@@ -432,7 +432,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             self.state.start = self.state.next_val
             converter = abs(self.state.start - self.state.lower_limit) / 2.0
             print(f"[DeepTest][Adjust][-] converter={converter:.8f}, NextVal={self.state.next_val:.8f}")
-            if converter > 0.0001:
+            if converter > 0.00001:
                 self.state.next_val = self.state.next_val - converter
                 self._set_step_threshold(context)
                 self._track(context)
