@@ -6,7 +6,7 @@ def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -
     Schreibt optional den Fortschritt in Szene-Properties (UI refresh optional).
     Rückgabe: (value, perc)
     """
-    # Versuche zuerst Clip aus Clip Editor
+    # --- Clip ermitteln (unverändert zur bisherigen Kommunikation) ---
     clip = None
     for window in bpy.context.window_manager.windows:
         for area in window.screen.areas:
@@ -18,7 +18,7 @@ def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -
         if clip:
             break
 
-    # Fallback auf Sequencer (nicht ideal, aber failsafe)
+    # Fallback (unverändert)
     if clip is None and hasattr(scene, "sequence_editor_active_strip"):
         strip = scene.sequence_editor_active_strip
         if strip and hasattr(strip, "clip"):
@@ -31,41 +31,44 @@ def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -
     if not tracks:
         return 0, 0.0
 
-    frame_start = scene.frame_start
-    frame_end   = scene.frame_end
-    multi       = getattr(scene, "kaiserlich_markers_per_frame", 1)
+    # --- Eingangsparameter & Zielgröße ---
+    frame_start = int(scene.frame_start)
+    frame_end   = int(scene.frame_end)
+    multi       = int(getattr(scene, "kaiserlich_markers_per_frame", 1))
 
-    if frame_end <= frame_start or multi <= 0:
+    if frame_end < frame_start or multi <= 0:
         return 0, 0.0
 
-    scene_duration = frame_end - frame_start + 1
+    # inkl. Endframe rechnen
+    scene_duration = (frame_end - frame_start + 1)
     goal = scene_duration * multi
+    if goal <= 0:
+        return 0, 0.0
+
+    # --- Pro-Frame-Zählung (robust & effizient) ---
+    # Sammeln der Marker-Anzahlen je Frame in einem Durchlauf über alle Marker
+    per_frame_counts = {f: 0 for f in range(frame_start, frame_end + 1)}
+    for tr in tracks:
+        # Falls nur „aktive/gültige“ Marker zählen sollen, hier optional filtern (mk.mute, tr.mute, etc.)
+        for mk in tr.markers:
+            f = mk.frame
+            if frame_start <= f <= frame_end and not mk.mute:
+                # Frühzeitige Kappung auf multi spart Summationszeit bei sehr dichter Markerdichte
+                if per_frame_counts[f] < multi:
+                    per_frame_counts[f] += 1
+
+    # --- Aggregation mit Cap pro Frame ---
     value = 0
-
-    # Frameweise Marker zählen
     for f in range(frame_start, frame_end + 1):
-        count_this_frame = 0
-        for tr in tracks:
-            for m in tr.markers:
-                if m.frame == f:
-                    count_this_frame += 1
-                    if count_this_frame >= multi:
-                        break
-            if count_this_frame >= multi:
-                break
-
-        # Cap auf multi
-        if count_this_frame > multi:
-            count_this_frame = multi
-        value += count_this_frame
+        # per_frame_counts[f] ist bereits auf multi gekappt
+        value += per_frame_counts[f]
 
     perc = (100.0 * value / goal) if goal > 0 else 0.0
 
-    # Optional in Szene schreiben (ohne Nachkommastellen)
+    # --- UI/Properties (Kommunikation unverändert) ---
     if hasattr(scene, "kaiserlich_marker_progress"):
         scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
 
-    # Optional UI refreshen
     if update_ui:
         for window in bpy.context.window_manager.windows:
             for area in window.screen.areas:
