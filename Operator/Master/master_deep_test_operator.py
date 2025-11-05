@@ -249,7 +249,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # Synchronisierung mit UI-Property
         converter = self.converter    
         # Fortschrittsanzeige – basiert auf live aktualisiertem Converter
-        vale = (((step+5)-LOG10(converter*100000))/10)*100
+        vale = (((step+5)-math.LOG10(converter*100000))/10)*100
     
         set_progress(
             title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)",
