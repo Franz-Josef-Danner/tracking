@@ -144,7 +144,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # Fortschritt der Markerberechnung updaten (UI-sicher)
         try:
             _, perc = compute_marker_progress(context.scene, update_ui=True)
-            context.scene.kaiserlich_marker_progress = perc
+            context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
         except Exception as e:
             print(f"[Kaiserlich Tracker][Progress] ⚠️ Fortschrittsberechnung fehlgeschlagen: {e}")
 
@@ -225,7 +225,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # Letzter Fortschritts-Refresh bei Abschluss
         try:
             _, perc = compute_marker_progress(context.scene, update_ui=True)
-            context.scene.kaiserlich_marker_progress = perc
+            context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
         except Exception as e:
             print(f"[Kaiserlich Tracker][Progress] ⚠️ Abschluss-Update fehlgeschlagen: {e}")
 
