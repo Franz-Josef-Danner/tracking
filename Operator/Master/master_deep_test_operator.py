@@ -3,7 +3,7 @@ import bpy
 from bpy.types import Operator, Context
 from dataclasses import dataclass, field
 from typing import Set
-import time
+import time, math
 
 from ...Helper.snapshot import snapshot_active_markers
 from ...Helper.detect_adapt_helper import run_detect_adapt
@@ -247,11 +247,9 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         val = self.state.next_val
     
         # Synchronisierung mit UI-Property
-        converter = self.converter
-        pro = (1 - converter) * 100
-    
+        converter = self.converter    
         # Fortschrittsanzeige – basiert auf live aktualisiertem Converter
-        vale = min(100.0, ((step - converter + 1) / 5.0) * 100.0)
+        vale = min(100.0, ((step - math.pow(10, converter) + 10) / 5.0) * 100.0)
     
         set_progress(
             title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)",
