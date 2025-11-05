@@ -251,8 +251,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         pro = (1 - converter) * 100
     
         # Fortschrittsanzeige – basiert auf live aktualisiertem Converter
-        val = min(100.0, ((step - converter + 1) / 5.0) * 100.0)
-        val_int = int(round(val))  # 0 Dezimalstellen, 0–100
+        vale = min(100.0, ((step - converter + 1) / 5.0) * 100.0)
+        val_int = int(round(vale))  # 0 Dezimalstellen, 0–100
     
         set_progress(
             title=f"DeepTest: Step {int(step)} (progress={val_int:d}%)",
