@@ -13,7 +13,7 @@ from ...Helper.find_clip_editor_area import find_clip_editor_area
 from ...Helper.selection_helper import collect_selected_track_names
 from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
-from ...Helper.frame_track_progress import compute_marker_progress
+from ..Helper.frame_track_progress import init_marker_progress, update_marker_progress
 
 
 # ------------------------------------------------------------
