@@ -177,12 +177,10 @@ def register():
         default="",
     )
 
-    bpy.types.Scene.kaiserlich_progress_step = bpy.props.IntProperty(
+    bpy.types.Scene.kaiserlich_progress_step_title = bpy.props.StringProperty(
         name="Step",
-        description="Aktueller Threshold-Test-Schritt (0–5)",
-        default=0,
-        min=0,
-        max=5,
+        description="Titelzeile für den aktuellen Step (z. B. 'Step 3/5')",
+        default="",
     )
 
 def unregister():
@@ -198,7 +196,7 @@ def unregister():
         "max_error_value",
         "kaiserlich_progress_value",
         "kaiserlich_progress_title",
-        "kaiserlich_progress_step",
+        "kaiserlich_progress_step_title",
     ):
         if hasattr(bpy.types.Scene, prop):
             delattr(bpy.types.Scene, prop)
