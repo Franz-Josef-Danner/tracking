@@ -85,10 +85,11 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col = layout.column(align=True)
         col.scale_y = 1.4
         col.prop(scene, "kaiserlich_progress_title", text=f"{scene.kaiserlich_progress_value * 100:.1f}%")
-        # Fortschrittsanzeige ohne Zahl (visueller Balken via Slider-Hack)
+        # --- Fortschrittsbalken ohne Zahl (funktioniert in allen Blender-Versionen) ---
         row = col.row(align=True)
-        split = row.split(factor=1.0)
-        split.prop(scene, "kaiserlich_progress_value", text="", slider=True, emboss=False)
+        row.prop(scene, "kaiserlich_progress_value", text="", slider=True)
+        # Overlay-Trick: dieselbe Property als Textfeld ohne Slider, um Zahl zu verstecken
+        row.prop(scene, "kaiserlich_progress_value", text="", emboss=False)
 # ==========================================================
 # Registrierung der UI-Properties
 # ==========================================================
