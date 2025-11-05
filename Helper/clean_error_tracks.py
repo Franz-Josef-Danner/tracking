@@ -1,64 +1,76 @@
 # Helper/clean_error_tracks.py
-# Zweck: Entfernt fehlerhafte Tracks im MovieClip basierend auf Reprojektion-Error
-# Autor: Kaiserlich Tracker (Franz)
-# Kompatibel mit: Blender 3.6+ (inkl. temp_override)
-# Nutzung: clean_error_tracks(context, threshold=1.0, action='DELETE_TRACK')
+# Zweck: Sichere Hülle um bpy.ops.clip.clean_error mit zuverlässigem Fallback:
+#        Wenn kein gültiger Schwellenwert ermittelt werden kann -> threshold = 20.0
 
+import math
 import bpy
 
+DEFAULT_CLEAN_ERROR = 20.0  # Harte Vorgabe laut Anforderung
 
-def clean_error_tracks(context, threshold: float = 1.0, action: str = 'DELETE_TRACK') -> None:
+def _coerce_threshold(value) -> float:
+    """Konvertiert beliebige Eingaben in einen nutzbaren float-Threshold.
+    Fallback: DEFAULT_CLEAN_ERROR (20.0), wenn None/NaN/inf/<=0.
     """
-    Entfernt oder selektiert Tracks, deren Reprojektion-Fehler über dem Grenzwert liegt.
-    Nutzt bpy.ops.clip.clean_error(...) im sicheren CLIP_EDITOR-Kontext.
+    try:
+        thr = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_CLEAN_ERROR
+
+    if not math.isfinite(thr) or thr <= 0.0:
+        return DEFAULT_CLEAN_ERROR
+    return thr
+
+
+def clean_error_tracks(
+    context: bpy.types.Context,
+    threshold: float | None = None,
+    action: str = 'DELETE_TRACK'
+) -> None:
+    """
+    Führt bpy.ops.clip.clean_error kontext-sicher aus.
+    Fallback-Policy: threshold -> 20.0, wenn value ungültig.
 
     Args:
-        context (bpy.types.Context): Aktueller Kontext (beliebig, z. B. Operator-Kontext)
-        threshold (float): Grenzwert (Fehler > threshold → betroffen)
-        action (str): 'DELETE_TRACK', 'DELETE_SEGMENTS' oder 'SELECT'
+        context: beliebiger Blender-Kontext (Operator/Modal/UI)
+        threshold: gewünschter Grenzwert; None/NaN/inf/≤0 -> 20.0
+        action: 'DELETE_TRACK' | 'DELETE_SEGMENTS' | 'SELECT'
     """
-    # --- Gültigen Clip-Editor finden ---
+    thr = _coerce_threshold(threshold)
+
+    # --- CLIP_EDITOR suchen ---
     area = None
     region = None
     space = None
 
-    # a) Falls aktueller Kontext bereits CLIP_EDITOR ist
+    # a) aktueller Kontext bereits CLIP_EDITOR?
     if getattr(context, "area", None) and getattr(context.area, "type", "") == "CLIP_EDITOR":
         area = context.area
-        for r in area.regions:
-            if r.type == "WINDOW":
-                region = r
-                break
-        space = area.spaces.active if area.spaces else None
+        region = next((r for r in area.regions if r.type == "WINDOW"), None)
+        space  = area.spaces.active if area.spaces else None
 
-    # b) Sonst: ersten CLIP_EDITOR im aktiven Screen suchen
+    # b) sonst ersten CLIP_EDITOR im aktiven Screen nehmen
     if area is None:
         for a in bpy.context.screen.areas:
             if a.type == "CLIP_EDITOR":
                 area = a
-                for r in a.regions:
-                    if r.type == "WINDOW":
-                        region = r
-                        break
-                space = a.spaces.active if a.spaces else None
+                region = next((r for r in a.regions if r.type == "WINDOW"), None)
+                space  = a.spaces.active if a.spaces else None
                 break
 
-    # c) Wenn kein Clip-Editor verfügbar → Abbruch
     if not all([area, region, space]):
         print("[CleanErrorTracks] ❌ Kein CLIP_EDITOR-Kontext gefunden.")
         return
 
-    # d) Clip prüfen
     clip = getattr(space, "clip", None)
     if clip is None:
         print("[CleanErrorTracks] ❌ Kein aktiver MovieClip im Space vorhanden.")
         return
 
-    # --- Operator sicher aufrufen ---
+    # --- Operator sicher ausführen ---
     try:
         with bpy.context.temp_override(area=area, region=region, space_data=space):
-            print(f"[CleanErrorTracks] 🧹 Starte clean_error (threshold={threshold:.4f}, action={action}) …")
-            bpy.ops.clip.clean_error(clean_error=threshold, action=action)
-            print(f"[CleanErrorTracks] ✅ Clean-Error abgeschlossen (Clip={clip.name}).")
+            print(f"[CleanErrorTracks] 🧹 clean_error(threshold={thr:.4f}, action={action}) …")
+            bpy.ops.clip.clean_error(clean_error=thr, action=action)
+            print(f"[CleanErrorTracks] ✅ abgeschlossen (Clip={clip.name}).")
     except Exception as e:
         print(f"[CleanErrorTracks] ❌ Fehler bei clean_error: {e}")
