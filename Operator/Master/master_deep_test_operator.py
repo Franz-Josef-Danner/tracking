@@ -130,11 +130,13 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             s.phase = "STEP_TEST_LOW"
             return
 
-        if s.phase == "STEP_TEST_LOW":
+       if s.phase == "STEP_TEST_LOW":
             self._track(context)
             print(f"[DeepTest][Result] Referenzwert nach Low={s.reference_value:.3f}")
             if s.reference_value <= s.base_value:
                 print(f"[DeepTest][Adjust] Kein Anstieg – Schritt {s.step + 1}")
+                s.next_val = 1
+                self._set_step_threshold(context)
                 s.step += 1
                 if s.step >= 5:
                     print("[DeepTest][Finalize] → Letzter Threshold-Set-Aufruf für Step>=5")
