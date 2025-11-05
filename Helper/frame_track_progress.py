@@ -63,8 +63,8 @@ def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -
 
     # Optional in Szene schreiben
     if hasattr(scene, "kaiserlich_marker_progress"):
-    # String-Formatierung mit max. 1 Dezimalstelle und %-Zeichen
-    scene.kaiserlich_marker_progress = f"{perc:.1f}%"
+        # String-Formatierung mit max. 1 Dezimalstelle und %-Zeichen
+        scene.kaiserlich_marker_progress = f"{perc:.1f}%"
 
     # Optional UI refreshen
     if update_ui:
