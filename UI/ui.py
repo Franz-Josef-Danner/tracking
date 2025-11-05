@@ -183,11 +183,7 @@ def register():
     bpy.types.Scene.kaiserlich_marker_progress = bpy.props.StringProperty(
         name="Marker Progress",
         description="Prozentualer Fortschritt (Marker pro Frame über Szene hinweg)",
-        default=0.0,
-        min=0.0,
-        max=100.0,
-        precision=2,
-        subtype='PERCENTAGE',
+        default="",
     )
 
 def unregister():
