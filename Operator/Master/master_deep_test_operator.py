@@ -254,10 +254,11 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         converter = self.state.converter
 
         vale = min(100, 100 - (((math.log10 (max(0.00001,converter) * 100000) - 0.176095) * 1.03) * 20))
-        
+        total = step - (vale / 10)
         set_progress(title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)")
         try:
             scene.kaiserlich_converter = converter
+            scene.kaiserlich_progress_step = int(total)
         except Exception:
             pass
                     
