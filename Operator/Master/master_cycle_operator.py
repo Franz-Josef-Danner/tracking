@@ -239,8 +239,8 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         self.report({'INFO'}, f"[Master] Playhead auf Frame {frame} gesetzt – ShortTest wird gestartet.")
 
         # Operator-Aufruf (vollständiger ShortTest)
-        # Erwartete ID: bl_idname = "kaiserlich_tracker.master_deep_test_operator"
-        op_id = "kaiserlich_tracker.master_deep_test_operator"
+        # Erwartete ID: bl_idname = "kaiserlichtracker.master_deep_test_operator"
+        op_id = "kaiserlichtracker.master_deep_test_operator"
         try:
             # Sanity-Check: Ist der Operator registriert?
             op_cls = bpy.ops
@@ -251,7 +251,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 return {'CANCELLED'}
 
             # Start
-            bpy.ops.kaiserlich_tracker.master_deep_test_operator('INVOKE_DEFAULT')
+            bpy.ops.kaiserlichtracker.master_deep_test_operator('INVOKE_DEFAULT')
             print("[Kaiserlich Tracker][Master] ShortTest erfolgreich gestartet.")
         except Exception as ex:
             print(f"[Kaiserlich Tracker][Master] ⚠️ Fehler beim Starten des ShortTest: {ex!r}")
