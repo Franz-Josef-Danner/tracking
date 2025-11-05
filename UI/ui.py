@@ -85,6 +85,10 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         # Fortschrittsanzeigen mit Property-Bindung
         layout.prop(scene, "kaiserlich_progress_title", text="Single Tests")
         layout.prop(scene, "kaiserlich_progress_step", text="Total Progress")
+
+        layout.separator()
+        layout.label(text="Marker Tracking Progress")
+        layout.prop(scene, "kaiserlich_marker_progress", text="Marker Progress (%)")
 # ==========================================================
 # Registrierung der UI-Properties
 # ==========================================================
@@ -178,6 +182,17 @@ def register():
         default="",
     )
 
+    # --- Marker Tracking Fortschritt (global, für beide Operator) ---
+    bpy.types.Scene.kaiserlich_marker_progress = bpy.props.FloatProperty(
+        name="Marker Progress",
+        description="Prozentualer Fortschritt (Marker pro Frame über Szene hinweg)",
+        default=0.0,
+        min=0.0,
+        max=100.0,
+        precision=2,
+        subtype='PERCENTAGE',
+    )
+
 def unregister():
     for prop in (
         "kaiserlich_rot_thresh_x",
@@ -192,6 +207,7 @@ def unregister():
         "kaiserlich_progress_value",
         "kaiserlich_progress_title",
         "kaiserlich_progress_step",
+        "kaiserlich_marker_progress",
     ):
         if hasattr(bpy.types.Scene, prop):
             delattr(bpy.types.Scene, prop)
