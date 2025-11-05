@@ -262,7 +262,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             # Strings für Titelzeilen setzen (sichtbar via layout.label):
             scene.kaiserlich_progress_title = f"DeepTest – Step {int(step)}"
             scene.kaiserlich_progress_step  = f"Gesamtfortschritt: {total:.0f}%"
-         except Exception:
+        except Exception:
             pass
                     
         if step == 0:
