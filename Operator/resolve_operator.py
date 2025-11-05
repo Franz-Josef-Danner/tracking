@@ -113,7 +113,7 @@ def _check_and_filter(context: bpy.types.Context, avg_err: float) -> float:
 
     # Nur wenn überschritten, filtern (Faktor 2 laut Vorgabe)
     if avg_err > max_err:
-        threshold = avg_err * 2.0
+        threshold = avg_err * 1.5
         # Nutzung des neuen CleanError-Helpers mit Fallback-Policy (min. 20.0)
         try:
             clean_error_tracks(context, threshold=threshold)
