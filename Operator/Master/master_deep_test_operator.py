@@ -355,7 +355,23 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if not clip:
             print("[DeepTest][Track] ⚠️ Kein aktiver Clip gefunden.")
             return
-    
+        scene = context.scene
+
+        # --- Frame-Grenzlogik ---
+        frame_playhead = int(scene.frame_current)
+        frame_end = int(scene.frame_end)
+        frame_max = max(scene.frame_start, frame_end - 50)
+
+        restore_playhead = None
+
+        # Nur eingreifen, wenn der aktuelle Frame zu nahe am Ende liegt
+        if frame_playhead > frame_max:
+            restore_playhead = frame_playhead
+            print(f"[DeepTest][Playhead] Temporär auf Frame {frame_max} gesetzt (vorher {frame_playhead}).")
+            reset_to_frame(context, frame_max)
+            scene.frame_current = frame_max
+
+        # --- Normaler Tracking-Ablauf ---
         old_data = snapshot_active_markers(context)
 
         try:
@@ -372,14 +388,13 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         old_names = {d["track"] for d in old_data if isinstance(d, dict) and "track" in d}
         all_names = {d["track"] for d in all_data if isinstance(d, dict) and "track" in d}
-    
+
         self.state.old_tracks = old_names
         self.state.all_tracks = all_names
         self.state.new_tracks = all_names - old_names
 
         self._track_forward_with_limits(context)
 
-        scene = context.scene
         self.state.reference_value = get_total_track_length(
             context,
             start_frame=scene.frame_start,
@@ -390,6 +405,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if self.state.new_tracks:
             delete_tracks_by_names(context, track_names=self.state.new_tracks)
             print("[DeepTest][Cleanup] 🧹 Neue Tracks gelöscht.")
+
+        # --- Playhead zurücksetzen ---
+        if restore_playhead is not None:
+            reset_to_frame(context, restore_playhead)
+            scene.frame_current = restore_playhead
+            print(f"[DeepTest][Playhead] Wiederhergestellt auf ursprünglichen Frame {restore_playhead}.")
 
     def _finalize(self, context: Context):
         # Fortschrittsanzeige abschließen + UI refresh
