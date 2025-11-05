@@ -254,7 +254,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         vale = min(100.0, ((step - converter + 1) / 5.0) * 100.0)
     
         set_progress(
-            title=f"DeepTest: Step {int(step)} (progress={vale_int:d}%)",
+            title=f"DeepTest: Step {int(step)} (progress={vale:d}%)",
         )
     
         # Optional in Szene speichern, falls Panels darauf zugreifen:
