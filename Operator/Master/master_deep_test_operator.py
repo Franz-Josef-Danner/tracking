@@ -258,7 +258,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         set_progress(title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)")
         try:
             scene.kaiserlich_converter = converter
-            scene.kaiserlich_progress_step_title = f"Step {int(total)}"
+            scene.kaiserlich_progress_step_title = total
         except Exception:
             pass
                     
