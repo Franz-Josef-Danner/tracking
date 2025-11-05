@@ -243,34 +243,29 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     def _set_step_threshold(self, context: Context) -> None:
         clip = get_active_clip(context)
         scene = context.scene
-        step = float(self.state.step)
-        val  = float(self.state.next_val)
+        step = self.state.step
+        val = self.state.next_val
+        if converter <= 0:
+            # kleinsten sinnvollen Wert annehmen (oder 0 zurückgeben)
+            conv_for_log = 1e-12
+        else:
+            conv_for_log = converter
+        # Synchronisierung mit UI-Property
+        converter = self.converter    
+        # Fortschrittsanzeige – basiert auf live aktualisiertem Converter
+        vale = (((step+5)-math.log10(conv_for_log*100000))/10)*100
     
-        # --- FIX: converter korrekt initialisieren, bevor er genutzt wird ---
-        # Quelle: bevorzugt State, Fallback UI-Property, dann 0.0
-        converter = float(self.state.converter if hasattr(self.state, "converter") else 0.0)
-        if converter <= 0.0:
-            converter = float(getattr(self, "converter", 0.0))
+        set_progress(
+            title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)",
+        )
     
-        # Für Log/Progress eine numerisch stabile Variante
-        conv_for_log = converter if converter > 0.0 else 1e-12
-    
-        # Fortschrittsanzeige (dein gewünschtes Mapping)
-        vale = (((step + 5.0) - math.log10(conv_for_log * 100000.0)) / 10.0) * 100.0
-    
-        # UI-Progress aktualisieren (nur Titel; Wert optional)
-        try:
-            set_progress(title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)")
-        except Exception:
-            pass
-    
-        # Optional in Szene spiegeln (Panel-Zugriff)
+        # Optional in Szene speichern, falls Panels darauf zugreifen:
         try:
             scene.kaiserlich_converter = converter
         except Exception:
             pass
-    
-        # --- Threshold-Sets pro Step ---
+
+                    
         if step == 0:
             if clip:
                 width, height = clip.size
@@ -279,58 +274,63 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 scene.kaiserlich_rot_thresh_y = float(y_val)
                 self.state.rot_thresh_x = float(val)
                 self.state.rot_thresh_y = float(y_val)
-                scene.kaiserlich_scale_thresh_min = 1.0
-                scene.kaiserlich_scale_thresh_max = 1.0
-                scene.kaiserlich_rot_scale_thresh_rot = 1.0
-                scene.kaiserlich_rot_scale_thresh_scale = 1.0
-                scene.kaiserlich_perspective_thresh = 1.0
+                scene.kaiserlich_scale_thresh_min = 1
+                scene.kaiserlich_scale_thresh_max = 1
+                scene.kaiserlich_rot_scale_thresh_rot = 1
+                scene.kaiserlich_rot_scale_thresh_scale = 1
+                scene.kaiserlich_perspective_thresh = 1
+                print(f"[DeepTest][Set] 🔸 rot_xy → X={val:.8f}, Y={y_val:.8f}")
             return
-    
+
         elif step == 1:
-            scene.kaiserlich_rot_thresh_x = 1.0
-            scene.kaiserlich_rot_thresh_y = 1.0
+            scene.kaiserlich_rot_thresh_x = 1
+            scene.kaiserlich_rot_thresh_y = 1
             scene.kaiserlich_scale_thresh_min = float(val)
             scene.kaiserlich_scale_thresh_max = float(min(1.0, val * 1.1))
             self.state.scale_thresh_min = float(val)
             self.state.scale_thresh_max = float(min(1.0, val * 1.1))
-            scene.kaiserlich_rot_scale_thresh_rot = 1.0
-            scene.kaiserlich_rot_scale_thresh_scale = 1.0
-            scene.kaiserlich_perspective_thresh = 1.0
+            scene.kaiserlich_rot_scale_thresh_rot = 1
+            scene.kaiserlich_rot_scale_thresh_scale = 1
+            scene.kaiserlich_perspective_thresh = 1
+            print(f"[DeepTest][Set] 🔸 scale_min/max → Min={scene.kaiserlich_scale_thresh_min:.8f}, Max={scene.kaiserlich_scale_thresh_max:.8f}")
             return
-    
+
         elif step == 2:
-            scene.kaiserlich_rot_thresh_x = 1.0
-            scene.kaiserlich_rot_thresh_y = 1.0
-            scene.kaiserlich_scale_thresh_min = 1.0
-            scene.kaiserlich_scale_thresh_max = 1.0
+            scene.kaiserlich_rot_thresh_x = 1
+            scene.kaiserlich_rot_thresh_y = 1
+            scene.kaiserlich_scale_thresh_min = 1
+            scene.kaiserlich_scale_thresh_max = 1
             scene.kaiserlich_rot_scale_thresh_rot = float(val)
             scene.kaiserlich_rot_scale_thresh_scale = 0.0
             self.state.rot_scale_thresh_rot = float(val)
-            scene.kaiserlich_perspective_thresh = 1.0
+            scene.kaiserlich_perspective_thresh = 1
+            print(f"[DeepTest][Set] 🔸 rot_scale (Rotation) → Rot={val:.8f}")
             return
-    
+
         elif step == 3:
-            scene.kaiserlich_rot_thresh_x = 1.0
-            scene.kaiserlich_rot_thresh_y = 1.0
-            scene.kaiserlich_scale_thresh_min = 1.0
-            scene.kaiserlich_scale_thresh_max = 1.0
+            scene.kaiserlich_rot_thresh_x = 1
+            scene.kaiserlich_rot_thresh_y = 1
+            scene.kaiserlich_scale_thresh_min = 1
+            scene.kaiserlich_scale_thresh_max = 1
             scene.kaiserlich_rot_scale_thresh_rot = 0.0
             scene.kaiserlich_rot_scale_thresh_scale = float(val)
             self.state.rot_scale_thresh_scale = float(val)
-            scene.kaiserlich_perspective_thresh = 1.0
+            scene.kaiserlich_perspective_thresh = 1
+            print(f"[DeepTest][Set] 🔸 rot_scale (Scale) → Scale={val:.8f}")
             return
-    
+
         elif step == 4:
-            scene.kaiserlich_rot_thresh_x = 1.0
-            scene.kaiserlich_rot_thresh_y = 1.0
-            scene.kaiserlich_scale_thresh_min = 1.0
-            scene.kaiserlich_scale_thresh_max = 1.0
-            scene.kaiserlich_rot_scale_thresh_rot = 1.0
-            scene.kaiserlich_rot_scale_thresh_scale = 1.0
+            scene.kaiserlich_rot_thresh_x = 1
+            scene.kaiserlich_rot_thresh_y = 1
+            scene.kaiserlich_scale_thresh_min = 1
+            scene.kaiserlich_scale_thresh_max = 1
+            scene.kaiserlich_rot_scale_thresh_rot = 1
+            scene.kaiserlich_rot_scale_thresh_scale = 1
             scene.kaiserlich_perspective_thresh = float(val)
             self.state.perspective_thresh = float(val)
+            print(f"[DeepTest][Set] 🔸 perspective → {val:.8f}")
             return
-    
+
         elif step >= 5:
             scene.kaiserlich_rot_thresh_x = self.state.rot_thresh_x
             scene.kaiserlich_rot_thresh_y = self.state.rot_thresh_y
@@ -339,10 +339,11 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             scene.kaiserlich_rot_scale_thresh_rot = self.state.rot_scale_thresh_rot
             scene.kaiserlich_rot_scale_thresh_scale = self.state.rot_scale_thresh_scale
             scene.kaiserlich_perspective_thresh = self.state.perspective_thresh
+            print("[DeepTest][Stop] 🛑 Threshold-Test abgeschlossen.")
             self.state.stop_flag = True
             self.state.phase = "DONE"
-            return
 
+            return
 
     
     def _track(self, context: Context):
