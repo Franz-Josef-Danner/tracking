@@ -245,26 +245,22 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         scene = context.scene
         step = self.state.step
         val = self.state.next_val
-        if converter <= 0:
-            # kleinsten sinnvollen Wert annehmen (oder 0 zurückgeben)
-            conv_for_log = 1e-12
-        else:
-            conv_for_log = converter
-        # Synchronisierung mit UI-Property
-        converter = self.converter    
+        # Synchronisierung mit UI-Property (zuerst lesen, dann verwenden)
+        converter = float(getattr(self, "converter", 0.0))
+        conv_for_log = converter if converter > 0 else 1e-12
+
         # Fortschrittsanzeige – basiert auf live aktualisiertem Converter
-        vale = (((step+5)-math.log10(conv_for_log*100000))/10)*100
-    
-        set_progress(
-            title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)",
-        )
-    
-        # Optional in Szene speichern, falls Panels darauf zugreifen:
+        try:
+            vale = (((float(step) + 5.0) - math.log10(conv_for_log * 100000.0)) / 10.0) * 100.0
+            vale = max(0.0, min(100.0, vale))
+        except Exception:
+            vale = 0.0
+
+        set_progress(title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)")
         try:
             scene.kaiserlich_converter = converter
         except Exception:
             pass
-
                     
         if step == 0:
             if clip:
@@ -395,6 +391,26 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 if area.type == 'CLIP_EDITOR':
                     area.tag_redraw()
         self.state.stop_flag = True
+
+        # ▶︎ Übergabe an master_detect_adapt nach Abschluss
+        self._invoke_master_detect_adapt(context)
+
+
+    def _invoke_master_detect_adapt(self, context: Context) -> None:
+        """Startet am CLIP_EDITOR den Operator 'kaiserlich_tracker.master_detect_adapt'."""
+        try:
+            area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+            if not area:
+                print("[DeepTest][Handover] ⚠️ Keine CLIP_EDITOR-Area gefunden – Übergabe übersprungen.")
+                return
+            override = context.copy()
+            override['area'] = area
+            override['region'] = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            with context.temp_override(**override):
+                bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+            print("[DeepTest][Handover] ▶️ master_detect_adapt gestartet.")
+        except Exception as e:
+            print(f"[DeepTest][Handover] ❌ Übergabe fehlgeschlagen: {e}")
 
     def _ui_progress(self, context: Context):
         # Zentrales, nicht-blockierendes Redraw je Timer-Tick
