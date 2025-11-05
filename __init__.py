@@ -76,7 +76,17 @@ def register():
         step=0.1,
         precision=3,
     )
-    # UI-Properties registrieren
+
+    # Fortschrittswert (global, für mehrere Operatoren zugänglich)
+    bpy.types.Scene.kaiserlich_marker_progress = bpy.props.FloatProperty(
+        name="Marker Progress",
+        description="Prozentualer Fortschritt (Marker pro Frame über Szene hinweg)",
+        default=0.0,
+        min=0.0,
+        max=100.0,
+        precision=2,
+        subtype='PERCENTAGE'
+    )
     try:
         from .UI import ui
         ui.register()
@@ -94,6 +104,9 @@ def unregister():
         del bpy.types.Scene.kaiserlich_frames_per_track
     if hasattr(bpy.types.Scene, "max_error_value"):
         del bpy.types.Scene.max_error_value
+
+    if hasattr(bpy.types.Scene, "kaiserlich_marker_progress"):
+        del bpy.types.Scene.kaiserlich_marker_progress
 
     try:
         from .UI import ui
