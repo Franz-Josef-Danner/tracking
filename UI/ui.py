@@ -81,15 +81,10 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 
         layout.separator()
         layout.label(text="Status")
-
-        col = layout.column(align=True)
-        col.scale_y = 1.4
-        col.prop(scene, "kaiserlich_progress_title", text="")
-
-        # Zweite Fortschrittsanzeige – aktueller Step-Wert
-        col = layout.column(align=True)
-        col.scale_y = 1.4
-        col.prop(scene, "kaiserlich_progress_step", text="")
+        # Erste Überschriftzeile (Titel)
+        layout.label(text=scene.kaiserlich_progress_title if scene.kaiserlich_progress_title else "—")
+        # Zweite Überschriftzeile (Step/Total)
+        layout.label(text=scene.kaiserlich_progress_step if scene.kaiserlich_progress_step else "—")
 # ==========================================================
 # Registrierung der UI-Properties
 # ==========================================================
@@ -177,8 +172,9 @@ def register():
         default="",
     )
 
-    bpy.types.Scene.kaiserlich_progress_step_title = bpy.props.StringProperty(
-        name="Total",
+    bpy.types.Scene.kaiserlich_progress_step = bpy.props.StringProperty(
+        name="Step",
+        description="Aktueller Step-Titel (zweite Zeile)",
         default="",
     )
 
@@ -195,7 +191,7 @@ def unregister():
         "max_error_value",
         "kaiserlich_progress_value",
         "kaiserlich_progress_title",
-        "kaiserlich_progress_step_title",
+        "kaiserlich_progress_step",
     ):
         if hasattr(bpy.types.Scene, prop):
             delattr(bpy.types.Scene, prop)
