@@ -90,6 +90,11 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
         # Historien initialisieren
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
+        # Fortschritts-Map initialisieren (neue inkrementelle Methode)
+        try:
+            init_marker_progress(scene)
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][Init] ⚠️ Fortschritts-Init fehlgeschlagen: {e}")
 
         # Selektion fixieren
         tracking = clip.tracking
