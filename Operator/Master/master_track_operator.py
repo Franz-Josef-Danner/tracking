@@ -13,8 +13,7 @@ from ...Helper.find_clip_editor_area import find_clip_editor_area
 from ...Helper.selection_helper import collect_selected_track_names
 from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
-from ...Helper.frame_track_progress import init_marker_progress, update_marker_progress
-
+from ...Helper.frame_track_progress import compute_marker_progress
 
 # ------------------------------------------------------------
 # Operator
@@ -90,11 +89,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
         # Historien initialisieren
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
-        # Fortschritts-Map initialisieren (neue inkrementelle Methode)
-        try:
-            init_marker_progress(scene)
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Init] ⚠️ Fortschritts-Init fehlgeschlagen: {e}")
 
         # Selektion fixieren
         tracking = clip.tracking
@@ -103,7 +97,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
         # Timer aktivieren
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.25, window=context.window)
+        self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
 
         print("[Kaiserlich Tracker][Modal] Tracking-Zyklus gestartet...")
@@ -140,14 +134,18 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             if mk:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
 
-        # Fortschritts-Update pro Frame (inkrementell)
+        # Formel anwenden (z. B. für Optimierungen)
         try:
-            # Sicherstellen, dass Fortschritts-Map existiert
-            if not hasattr(context.scene, "kaiserlich_progress_map"):
-                init_marker_progress(context.scene)
-            update_marker_progress(context.scene, clip, self._current_frame)
+            apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception as e:
-            print(f"[Kaiserlich Tracker][Progress] ⚠️ Fortschritts-Update fehlgeschlagen: {e}")
+            print(f"[Kaiserlich Tracker][Modal] ⚠️ apply_formula Fehler: {e}")
+
+        # Fortschritt der Markerberechnung updaten (UI-sicher)
+        try:
+            _, perc = compute_marker_progress(context.scene, update_ui=True)
+            context.scene.kaiserlich_marker_progress = perc
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][Progress] ⚠️ Fortschrittsberechnung fehlgeschlagen: {e}")
 
         # Tracking-Schritt über Helper
         success = track_markers_with_override(
@@ -225,9 +223,8 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
         # Letzter Fortschritts-Refresh bei Abschluss
         try:
-            if not hasattr(context.scene, "kaiserlich_progress_map"):
-                init_marker_progress(context.scene)
-            _, perc = update_marker_progress(context.scene, clip, self._current_frame, update_ui=True)
+            _, perc = compute_marker_progress(context.scene, update_ui=True)
+            context.scene.kaiserlich_marker_progress = perc
         except Exception as e:
             print(f"[Kaiserlich Tracker][Progress] ⚠️ Abschluss-Update fehlgeschlagen: {e}")
 
