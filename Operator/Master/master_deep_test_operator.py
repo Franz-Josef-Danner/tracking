@@ -251,7 +251,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # Synchronisierung mit UI-Property (zuerst lesen, dann verwenden)
         converter = self.state.converter
 
-        vale = (1 - converter) * 100
+        vale = math.log10(converter * 100000) * 20
         
         set_progress(title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)")
         try:
