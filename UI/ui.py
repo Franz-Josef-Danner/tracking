@@ -85,9 +85,10 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col = layout.column(align=True)
         col.scale_y = 1.4
         col.prop(scene, "kaiserlich_progress_title", text=f"{scene.kaiserlich_progress_value * 100:.1f}%")
-        # Reiner Fortschrittsbalken ohne Zahl (keine mittige Anzeige)
-        col.template_progress_bar(scene.kaiserlich_progress_value, text="")
-
+        # Fortschrittsanzeige ohne Zahl (visueller Balken via Slider-Hack)
+        row = col.row(align=True)
+        split = row.split(factor=1.0)
+        split.prop(scene, "kaiserlich_progress_value", text="", slider=True, emboss=False)
 # ==========================================================
 # Registrierung der UI-Properties
 # ==========================================================
