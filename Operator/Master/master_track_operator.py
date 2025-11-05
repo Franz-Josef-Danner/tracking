@@ -140,18 +140,11 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             if mk:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
 
-        # Formel anwenden (z. B. für Optimierungen)
+        # Fortschritts-Update pro Frame (inkrementell)
         try:
-            apply_formula_on_selected_tracks(context, max_frames=5)
+            update_marker_progress(context.scene, clip, self._current_frame)
         except Exception as e:
-            print(f"[Kaiserlich Tracker][Modal] ⚠️ apply_formula Fehler: {e}")
-
-        # Fortschritt der Markerberechnung updaten (UI-sicher)
-        try:
-            _, perc = compute_marker_progress(context.scene, update_ui=True)
-            context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Progress] ⚠️ Fortschrittsberechnung fehlgeschlagen: {e}")
+            print(f"[Kaiserlich Tracker][Progress] ⚠️ Fortschritts-Update fehlgeschlagen: {e}")
 
         # Tracking-Schritt über Helper
         success = track_markers_with_override(
