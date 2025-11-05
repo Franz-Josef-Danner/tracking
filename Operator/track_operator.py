@@ -91,10 +91,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
         # Historien initialisieren
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
         # Fortschritts-Map initialisieren (neue inkrementelle Methode)
-        try:
-            init_marker_progress(scene)
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Init] ⚠️ Fortschritts-Init fehlgeschlagen: {e}")
 
         # Selektion fixieren
         tracking = clip.tracking
@@ -145,12 +141,6 @@ class KAISERLICHTRACKER_OT_track_cycle(bpy.types.Operator):
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception as e:
             print(f"[Kaiserlich Tracker][Modal] ⚠️ apply_formula Fehler: {e}")
-
-        # Fortschritts-Update pro Frame (inkrementell)
-        try:
-            update_marker_progress(context.scene, clip, self._current_frame)
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Progress] ⚠️ Fortschritts-Update fehlgeschlagen: {e}")
 
         # Tracking-Schritt über Helper
         success = track_markers_with_override(
