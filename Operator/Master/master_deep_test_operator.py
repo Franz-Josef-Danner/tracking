@@ -251,7 +251,12 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         # Fortschrittsanzeige – basiert auf live aktualisiertem Converter
         set_progress(
             title=f"DeepTest: Step {int(step)} (progress={pro:.5f})",
-            value=min(100, ((step - converter + 1) / 5.0)*100)
+            val = min(100.0, ((step - converter + 1) / 5.0) * 100.0)
+            val_int = int(round(val))          # 0 Dezimalstellen, 0–100
+            set_progress(
+                title=f"DeepTest: Step {int(step)} (progress={val_int:d}%)",
+                value=val_int
+            )
         )
         # Optional in Szene speichern, falls Panels darauf zugreifen:
         try:
