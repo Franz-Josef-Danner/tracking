@@ -111,11 +111,27 @@ def _check_and_filter(context: bpy.types.Context, avg_err: float) -> float:
 
     max_err = float(scene.max_error_value)
 
+    # --- Fehler prüfen & Schwellenwert absichern ---
+    try:
+        val = float(avg_err)
+    except (TypeError, ValueError):
+        val = 0.0
+
+    # Wenn kein verwertbarer Error vorliegt -> harter Fallback
+    if val <= 0.0 or not (val == val):  # NaN-Schutz
+        print("[master_resolve_operator] ⚠️ Kein gültiger Fehlerwert gefunden – Fallback threshold=20.0")
+        clean_error_tracks(context, 20.0)
+        return 20.0
+
     # Nur wenn überschritten, filtern (Faktor 2 laut Vorgabe)
-    if avg_err > max_err:
-        threshold = avg_err * 2.0
+    if val > max_err:
+        threshold = val * 2.0
+        # Sicherheitsnetz: negative, inf oder zu kleine Werte → 20.0
+        if threshold <= 0.0 or threshold == float("inf"):
+            threshold = 20.0
         clean_error_tracks(context, threshold)
-    return avg_err
+
+    return val
 
 
 def _find_and_dispatch_cycle(context: bpy.types.Context) -> bool:
