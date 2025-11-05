@@ -118,7 +118,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         # Timer aktivieren
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.05, window=context.window)
+        self._timer = wm.event_timer_add(0.25, window=context.window)
         wm.modal_handler_add(self)
 
         print("[Kaiserlich Tracker][ModalBackwards] Tracking-Zyklus rückwärts gestartet...")
