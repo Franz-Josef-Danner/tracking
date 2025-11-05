@@ -178,8 +178,7 @@ def register():
     )
 
     bpy.types.Scene.kaiserlich_progress_step_title = bpy.props.StringProperty(
-        name="Step",
-        description="Titelzeile für den aktuellen Step (z. B. 'Step 3/5')",
+        name="Total",
         default="",
     )
 
