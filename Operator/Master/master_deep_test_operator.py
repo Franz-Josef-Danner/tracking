@@ -249,16 +249,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         step = self.state.step
         val = self.state.next_val
         # Synchronisierung mit UI-Property (zuerst lesen, dann verwenden)
-        converter = float(getattr(self, "converter", 0.0))
-        conv_for_log = converter if converter > 0 else 1e-12
+        converter = self.state.converter
 
-        # Fortschrittsanzeige – basiert auf live aktualisiertem Converter
-        try:
-            vale = (((float(step) + 5.0) - math.log10(conv_for_log * 100000.0)) / 10.0) * 100.0
-            vale = max(0.0, min(100.0, vale))
-        except Exception:
-            vale = 0.0
-
+        vale = (1 - converter) * 100
+        
         set_progress(title=f"DeepTest: Step {int(step)} (progress={vale:.0f}%)")
         try:
             scene.kaiserlich_converter = converter
