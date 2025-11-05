@@ -252,7 +252,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         val = self.state.next_val
         converter = self.state.converter
 
-        vale = min(100.0, 100.0 - (((math.log10(max(0.00001, converter) * 100000.0) - 0.176095) * 1.03) * 20.0))
+        vale = min(100.0, 100.0 - (((math.log10(max(0.00001, converter) * 100000.0) - 0.205) * 1.03) * 20.0))
         if vale < 100:
             total = max(0.0, min(100.0, ((step + 1) * 17.0) - ((100 - vale)/6)))
             scene.kaiserlich_progress_step  = f"Total: {int(total)}%"
