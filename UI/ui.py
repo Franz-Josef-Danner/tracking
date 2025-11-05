@@ -84,8 +84,9 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 
         col = layout.column(align=True)
         col.scale_y = 1.4
-        col.prop(scene, "kaiserlich_progress_value", icon_only=True)
-        
+        col.prop(scene, "kaiserlich_progress_title", text="")
+        col.prop(scene, "kaiserlich_progress_value", text="Progress")
+
 # ==========================================================
 # Registrierung der UI-Properties
 # ==========================================================
