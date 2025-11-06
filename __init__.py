@@ -20,6 +20,7 @@ from .Operator.Master.master_detect_adapt_operator import KAISERLICHTRACKER_OT_m
 from .Operator.Master.master_track_operator_backwards import KAISERLICHTRACKER_OT_master_track_cycle_backwards
 from .Operator.Master.master_cycle_operator import KAISERLICHTRACKER_OT_master_cycle_operator
 from .Operator.Master.master_resolve_operator import KAISERLICHTRACKER_OT_master_resolve_operator, KAISERLICHTRACKER_OT_master_solve_modal
+from .Helper.clean_error_tracks_modal import KAISERLICHTRACKER_OT_clean_error_modal
 
 # ---- Klassenliste ----------------------------------------------------------
 classes = (
@@ -39,6 +40,7 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+    register_class(KAISERLICHTRACKER_OT_clean_error_modal)
 
     # Property für Eingabefeld
     bpy.types.Scene.kaiserlich_markers_per_frame = bpy.props.IntProperty(
@@ -77,6 +79,7 @@ def register():
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
+    unregister_class(KAISERLICHTRACKER_OT_clean_error_modal)
 
     # Property entfernen
     if hasattr(bpy.types.Scene, "kaiserlich_markers_per_frame"):
