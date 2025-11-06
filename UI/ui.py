@@ -39,8 +39,10 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         row.operator("kaiserlich_tracker.master_track_cycle_backwards", text="Track Cycle (Backwards)", icon="TRACKING_BACKWARDS")
         row.operator("kaiserlich_tracker.master_track_cycle", text="Track Cycle (Forward)", icon="TRACKING_FORWARDS")
 
-        col.operator("kaiserlich_tracker.master_resolve_operator", text="Run resolve camera", icon="STICKY_UVS_DISABLE")
-     
+        row = col.row(align=True)
+        row.operator("kaiserlich_tracker.master_resolve_operator", text="solve camera", icon="OUTLINER_OB_CAMERA")
+        row.operator("kaiserlich_tracker.clean_error_modal", text="Track Cycle (Forward)", icon="ERROR", icon="FORWARD", icon="TRASH")
+      
         layout.separator()
 
         # --- Rotation Thresholds ---
