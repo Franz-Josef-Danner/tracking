@@ -49,12 +49,7 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
     )
 
     def _get_track_error(self, track) -> float | None:
-        """
-        Versucht mehrere mögliche Quellen für einen 'solve error' zu lesen.
-        Falls kein direkter Wert vorhanden ist, werden Marker-errors gemittelt (falls vorhanden).
-        Wenn nichts gefunden wird, None zurückgeben.
-        """
-        # mögliche Property-Namen prüfen (häufige Bezeichnungen / Fallbacks)
+        """Ermittelt den Solve Error eines Tracks über verschiedene Quellen."""
         candidates = ("average_error", "error", "solve_error", "reprojection_error")
         for name in candidates:
             val = getattr(track, name, None)
@@ -64,7 +59,7 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
                 except Exception:
                     pass
 
-        # Fallback: Mittelwert über marker-Fehler (falls Marker.error existiert)
+        # Fallback: Mittelwert über Marker-Fehler
         try:
             markers = getattr(track, "markers", None)
             if markers and len(markers) > 0:
@@ -72,15 +67,11 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
                 for m in markers:
                     v = getattr(m, "error", None)
                     if v is not None:
-                        try:
-                            vals.append(float(v))
-                        except Exception:
-                            pass
+                        vals.append(float(v))
                 if vals:
                     return sum(vals) / len(vals)
         except Exception:
             pass
-
         return None
 
     def _write_blender_textlog(self, lines: list[str]):
@@ -88,12 +79,12 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
         txt = bpy.data.texts.get(name)
         if txt is None:
             txt = bpy.data.texts.new(name)
-        # Clear existing content
         txt.clear()
         for ln in lines:
             txt.write(ln + "\n")
 
     def execute(self, context):
+        scene = context.scene
         clip = _find_active_clip(context)
         if clip is None:
             self.report({'ERROR'}, "Kein Clip gefunden (Clip Editor oder Sequencer).")
@@ -112,23 +103,44 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
                 "name": t.name,
                 "error": err,
                 "length": length,
-                "track": t
             })
 
-        # Filter nach Threshold
+        # Filter
         if self.filter_mode == 'ABOVE':
             results = [r for r in results if r["error"] is not None and r["error"] >= self.threshold]
         elif self.filter_mode == 'BELOW':
             results = [r for r in results if r["error"] is not None and r["error"] <= self.threshold]
 
-        # Sortieren (Tracks mit None-Error an Ende)
-        results.sort(key=lambda r: (r["error"] is None, -r["error"] if r["error"] is not None else 0.0) if self.sort_desc else (r["error"] is None, r["error"] if r["error"] is not None else 0.0))
+        # Sortieren
+        results.sort(
+            key=lambda r: (r["error"] is None, -r["error"] if r["error"] is not None else 0.0)
+            if self.sort_desc else
+            (r["error"] is None, r["error"] if r["error"] is not None else 0.0)
+        )
 
-        # Log-Ausgabe (Konsole + Report + Blender Textblock)
+        # Durchschnittsberechnung
+        valid_errors = [r["error"] for r in results if r["error"] is not None]
+        avg_error = sum(valid_errors) / len(valid_errors) if valid_errors else None
+        max_error_value = getattr(scene, "max_error_value", None)
+
+        # Vergleichslogik
+        comparison = ""
+        if avg_error is not None and max_error_value is not None:
+            if avg_error > max_error_value:
+                comparison = f"⛔ Durchschnittsfehler {avg_error:.4f} > Max {max_error_value:.4f} — Grenzwert überschritten"
+            else:
+                comparison = f"✅ Durchschnittsfehler {avg_error:.4f} ≤ Max {max_error_value:.4f} — innerhalb Grenzwert"
+        elif avg_error is not None:
+            comparison = f"ℹ Durchschnittsfehler {avg_error:.4f} (kein Max error Value in Szene definiert)"
+        else:
+            comparison = "⚠ Keine gültigen Error-Werte gefunden."
+
+        # Log-Ausgabe
         lines = []
-        header = f"[Kaiserlich][ListTracksBySolveError] Clip='{clip.name}' — Tracks: {len(results)} (Total in Clip: {len(tracks)})"
+        header = f"[Kaiserlich][SolveError] Clip='{clip.name}' — {len(results)} Tracks (Total im Clip: {len(tracks)})"
         lines.append(header)
         print(header)
+
         for r in results:
             name = r["name"]
             length = r["length"]
@@ -140,9 +152,36 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
             lines.append(line)
             print(line)
 
-        # Schreibe in Blender Text-Editor zur Persistenz
+        # Durchschnittsergebnis
+        lines.append("-" * 70)
+        if avg_error is not None:
+            lines.append(f"[Summary] Durchschnittlicher Solve Error: {avg_error:.4f}")
+        else:
+            lines.append("[Summary] Kein gültiger Solve Error berechnet.")
+        if max_error_value is not None:
+            lines.append(f"[Summary] Max error Value (Scene): {max_error_value:.4f}")
+        lines.append(f"[Summary] Vergleich: {comparison}")
+        print("-" * 70)
+        print(comparison)
+
+        # Log in Text-Block schreiben
         self._write_blender_textlog(lines)
 
-        # Kurze Rückmeldung im UI
-        self.report({'INFO'}, f"Tracks geloggt ({len(results)}) — Text: Kaiserlich_SolveError_Log")
+        # UI Info
+        self.report({'INFO'}, f"Tracks geloggt, Durchschnitt: {avg_error:.4f}" if avg_error else "Keine gültigen Errors gefunden.")
         return {'FINISHED'}
+
+
+# Registrierung
+classes = (KAISERLICHTRACKER_OT_clean_error_operator,)
+
+def register():
+    for c in classes:
+        bpy.utils.register_class(c)
+
+def unregister():
+    for c in reversed(classes):
+        bpy.utils.unregister_class(c)
+
+if __name__ == "__main__":
+    register()
