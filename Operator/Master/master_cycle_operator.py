@@ -274,6 +274,25 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
         # Abschlussmeldung
         print("[Kaiserlich Tracker][MasterCycle] ✅ Vorgang vollständig abgeschlossen.")
+        # ------------------------------------------------------------------
+        # Track-Qualitätsbewertung (Prozentwert in UI schreiben)
+        # ------------------------------------------------------------------
+        try:
+            from ...Helper.track_quality_metrics import compute_track_quality_metrics
+            metrics = compute_track_quality_metrics(context)
+            percent = f"{int(round(metrics['prozent']))}%"
+            context.scene.kaiserlich_quality_percent = percent
+            print(f"[Kaiserlich Tracker][MasterCycle] 🎯 Track Quality: {percent}")
+
+            # UI-Refresh forcieren
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == 'CLIP_EDITOR':
+                        for region in area.regions:
+                            if region.type == 'UI':
+                                region.tag_redraw()
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][MasterCycle] ⚠️ Fehler bei Qualitätsanalyse: {e}")
 
         return {'FINISHED'}
     
