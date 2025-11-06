@@ -1,7 +1,8 @@
 # Operator/Master/master_clean_error_operator.py
 import bpy
 from bpy.types import Operator
-from bpy.props import FloatProperty, BoolProperty, EnumProperty
+from bpy.props import FloatProperty, BoolProperty
+
 
 def _find_active_clip(context: bpy.types.Context):
     """Sucht zuerst Clip im Clip-Editor, fallback auf active strip (Sequencer)."""
@@ -19,6 +20,7 @@ def _find_active_clip(context: bpy.types.Context):
         if strip and getattr(strip, "clip", None):
             return strip.clip
     return None
+
 
 class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
     """Listet alle Tracks und deren Solve/Error-Werte und schreibt ein Log"""
@@ -160,6 +162,16 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
         # Log speichern
         self._write_blender_textlog(lines)
         self.report({'INFO'}, "Solve Error Analyse abgeschlossen.")
+
+        # ------------------------------------------------------------
+        # 🧩 Nach Abschluss direkt an MasterCycle übergeben
+        # ------------------------------------------------------------
+        try:
+            bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
+            self.report({'INFO'}, "Übergabe an MasterCycleOperator gestartet.")
+        except Exception as e:
+            self.report({'ERROR'}, f"Fehler bei Übergabe an MasterCycleOperator: {e}")
+
         return {'FINISHED'}
 
 
