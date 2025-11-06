@@ -69,7 +69,42 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         except Exception as ex:
             print(f"[Kaiserlich Tracker][Master] ⚠️ Fehler beim Starten des DeepTest: {ex!r}")
             self.report({'WARNING'}, f"Fehler beim Start des DeepTest: {ex}")
+        # ------------------------------------------------------------------
+        # 🧮 Abschluss: Marker-Fortschritt berechnen und in Szene-Properties schreiben
+        # ------------------------------------------------------------------
+        try:
+            from ...Helper.frame_track_progress import compute_marker_progress
+            value, perc = compute_marker_progress(context.scene, update_ui=True)
+            print(f"[Kaiserlich Tracker][MasterCycle] 📊 Marker-Fortschritt berechnet: {value} Marker ({perc:.2f}%)")
 
+            # Fortschritt als Report ausgeben
+            self.report({'INFO'}, f"[Progress] Marker gesamt: {value}, Fortschritt: {perc:.1f}%")
+
+        except Exception as progress_err:
+            print(f"[Kaiserlich Tracker][MasterCycle] ⚠️ Fehler bei compute_marker_progress: {progress_err!r}")
+            self.report({'WARNING'}, f"Fortschrittsberechnung fehlgeschlagen: {progress_err}")
+
+        # Abschlussmeldung
+        print("[Kaiserlich Tracker][MasterCycle] ✅ Vorgang vollständig abgeschlossen.")
+        # ------------------------------------------------------------------
+        # Track-Qualitätsbewertung (Prozentwert in UI schreiben)
+        # ------------------------------------------------------------------
+        try:
+            from ...Helper.track_quality_metrics import compute_track_quality_metrics
+            metrics = compute_track_quality_metrics(context)
+            percent = f"{int(round(metrics['prozent']))}%"
+            context.scene.kaiserlich_quality_percent = percent
+            print(f"[Kaiserlich Tracker][MasterCycle] 🎯 Track Quality: {percent}")
+
+            # UI-Refresh forcieren
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == 'CLIP_EDITOR':
+                        for region in area.regions:
+                            if region.type == 'UI':
+                                region.tag_redraw()
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][MasterCycle] ⚠️ Fehler bei Qualitätsanalyse: {e}")
         return {'FINISHED'}
 
 # ---- Registrierung ----------------------------------------------------------
