@@ -1,4 +1,4 @@
-# Helper/clean_error_tracks_modal.py
+# Operator/clean_error_tracks_modal_operator.py
 import bpy
 from bpy.types import Operator
 
