@@ -19,7 +19,7 @@ except Exception as e:
 
 
 class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
-    """Gestufter Kamera-Solve mit Intrinsics-Eskalation und String-Fortschritt."""
+    """Gestufter Kamera-Solve mit Intrinsics-Eskalation, Fehlerprüfung und String-Fortschritt."""
     bl_idname = "kaiserlich_tracker.master_resolve_operator"
     bl_label = "Kaiserlich: Resolve Master (gestuft)"
     bl_options = {'REGISTER', 'UNDO'}
@@ -35,7 +35,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
     _avg_error = None
     _area = _region = _space = None
 
-    MAX_STAGES = 4  # Solve-Stufen
+    MAX_STAGES = 4  # Anzahl der Solve-Stufen
 
     # ---------------- Lifecycle ----------------
     def invoke(self, context, event):
@@ -45,7 +45,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         self._phase = 0
         self._stage = 0
         self._elapsed = 0.0
-        self._update_progress(context, 0.0)
+        self._update_progress(context, 0)
         self._log_info("[Resolve] Gestufter Solve gestartet.")
         return {'RUNNING_MODAL'}
 
@@ -69,15 +69,14 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             if self._stage > self.MAX_STAGES:
                 self._log_warn("[Resolve] Alle Solve-Stufen erfolglos → CleanError folgt.")
                 bpy.ops.kaiserlich_tracker.clean_error_operator('INVOKE_DEFAULT')
-                self._update_progress(context, 100.0)
+                self._update_progress(context, 100)
                 return self._finish(context)
 
             self._run_solve_stage(context, self._stage)
             self._phase = 2
             self._elapsed = 0.0
-            # Anfangspunkt für Stufe
-            base_progress = (self._stage - 1) / self.MAX_STAGES * 100.0
-            self._update_progress(context, base_progress)
+            progress = int((self._stage - 1) / self.MAX_STAGES * 100)
+            self._update_progress(context, progress)
             return {'RUNNING_MODAL'}
 
         # --- PHASE 2: Polling nach Solve ---------------------------------
@@ -87,31 +86,28 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             err_val = self._safe_avg_error(clip)
             max_err = getattr(context.scene, "max_error_value", 20.0)
 
-            # Fortlaufende lineare Fortschrittsinterpolation
-            base = (self._stage - 1) / self.MAX_STAGES * 100.0
-            local = min(self._elapsed / self.timeout_seconds, 1.0) * (100.0 / self.MAX_STAGES)
-            percent = base + local
-            self._update_progress(context, percent)
-
             if err_val is not None:
                 self._avg_error = err_val
                 self._log_info(f"[Resolve][Stage{self._stage}] AvgError={err_val:.4f} | Max={max_err:.4f}")
                 if err_val <= max_err:
                     self._log_info(f"[Resolve] Erfolg in Stufe {self._stage} (AvgError={err_val:.4f} ≤ {max_err:.4f})")
-                    self._update_progress(context, 100.0)
+                    self._update_progress(context, 100)
                     return self._finish(context)
 
-                # Zu hoher Fehler → nächste Stufe
+                # Wenn zu hoch → nächste Stufe
                 self._stage += 1
                 self._phase = 1
+                progress = int((self._stage - 1) / self.MAX_STAGES * 100)
+                self._update_progress(context, progress)
                 self._log_info(f"[Resolve] → Eskalation zu Stufe {self._stage}")
                 return {'RUNNING_MODAL'}
 
-            # Timeout erreicht → nächste Stufe
             if self._elapsed >= self.timeout_seconds:
                 self._log_warn(f"[Resolve][Stage{self._stage}] Timeout ohne gültigen Fehlerwert.")
                 self._stage += 1
                 self._phase = 1
+                progress = int((self._stage - 1) / self.MAX_STAGES * 100)
+                self._update_progress(context, progress)
                 return {'RUNNING_MODAL'}
 
             return {'RUNNING_MODAL'}
@@ -123,6 +119,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         """Führt den Solve mit definierten Intrinsics-Settings aus."""
         refine_intrinsics_reset(context)
 
+        # Stage-Konfiguration
         if stage == 1:
             pass  # Focal=False, Principal=False, Dist=False
         elif stage == 2:
@@ -137,6 +134,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
         self._log_info(f"[Resolve][Stage{stage}] Solve gestartet (Focal={stage>1}, Principal={stage>2}, Dist={stage>3})")
 
+        # Ausführung Solve
         try:
             buf_out, buf_err = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
@@ -160,13 +158,12 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         except Exception:
             return None
 
-    def _update_progress(self, context, value: float):
-        """Aktualisiert den UI-Fortschritt als Text (z. B. '42.3%')."""
+    def _update_progress(self, context, value: int):
+        """Aktualisiert String-UI-Property für Fortschritt (z. B. '75 %')."""
         scene = context.scene
-        percent_str = f"{round(min(value, 100.0), 1):.1f}%"
+        percent_str = f"{value} %"
         if hasattr(scene, "kaiserlich_progress_title"):
             scene.kaiserlich_progress_title = percent_str
-            # UI-Refresh
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == 'CLIP_EDITOR':
@@ -176,7 +173,6 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         wm = context.window_manager
         if self._timer:
             wm.event_timer_remove(self._timer)
-        self._update_progress(context, 100.0)
         self._log_info("[Resolve] Vorgang " + ("abgebrochen." if cancelled else "abgeschlossen."))
         return {'CANCELLED'} if cancelled else {'FINISHED'}
 
