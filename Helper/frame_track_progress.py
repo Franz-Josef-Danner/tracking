@@ -41,14 +41,14 @@ def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -
         return 0, 0.0
 
     # inkl. Endframe rechnen
-    scene_duration = (frame_end - frame_start + 1)
+    scene_duration = (frame_end - frame_start + 2)
     goal = scene_duration * multi
     if goal <= 0:
         return 0, 0.0
 
     # --- Pro-Frame-Zählung (robust & effizient) ---
     # Sammeln der Marker-Anzahlen je Frame in einem Durchlauf über alle Marker
-    per_frame_counts = {f: 0 for f in range(frame_start, frame_end + 1)}
+    per_frame_counts = {f: 0 for f in range(frame_start, frame_end + 2)}
     for tr in tracks:
         # Falls nur „aktive/gültige“ Marker zählen sollen, hier optional filtern (mk.mute, tr.mute, etc.)
         for mk in tr.markers:
@@ -60,7 +60,7 @@ def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -
 
     # --- Aggregation mit Cap pro Frame ---
     value = 0
-    for f in range(frame_start, frame_end + 1):
+    for f in range(frame_start, frame_end + 2):
         # per_frame_counts[f] ist bereits auf multi gekappt
         value += per_frame_counts[f]
 
