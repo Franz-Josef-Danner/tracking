@@ -2,7 +2,7 @@
 import bpy
 from bpy.types import Operator, Context
 
-class KAISERLICHTRACKER_OT_clean_error_modal(Operator):
+class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
     """Führt den internen Clean Error aus (bpy.ops.clip.clean_error)"""
     bl_idname = "kaiserlich_tracker.clean_error_operator"
     bl_label = "Clean Error (Direct)"
