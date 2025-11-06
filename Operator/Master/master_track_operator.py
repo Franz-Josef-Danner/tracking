@@ -222,18 +222,16 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         except Exception as e:
             print(f"[Kaiserlich Tracker][Progress] ⚠️ Abschluss-Update fehlgeschlagen: {e}")
         # ------------------------------------------------------------------
-        # Qualitätsanalyse nach Abschluss
+        # Prozentwert in Szene schreiben
         # ------------------------------------------------------------------
         try:
             from ...Helper.track_quality_metrics import compute_track_quality_metrics
             metrics = compute_track_quality_metrics(context)
-            summary = (f"Alle={metrics['anzahl_alle_tracks']} | <25f={metrics['anzahl_unter_25']} | "
-                       f"Lang={metrics['anzahl_lange_tracks']} | Spikes={metrics['anzahl_spike_tracks']} | "
-                       f"Sauber={metrics['saubere_tracks']} | %={metrics['prozent']:.1f}")
-            print(f"[Kaiserlich Tracker][Quality] {summary}")
-            # UI-String setzen
-            context.scene.kaiserlich_quality_summary = summary
-            # gezielt UI refreshen
+            percent = f"{int(round(metrics['prozent']))}%"
+            context.scene.kaiserlich_quality_percent = percent
+            print(f"[Kaiserlich Tracker][Quality] {percent}")
+
+            # UI-Refresh
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == 'CLIP_EDITOR':
@@ -241,7 +239,8 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                             if region.type == 'UI':
                                 region.tag_redraw()
         except Exception as e:
-            print(f"[Kaiserlich Tracker][Quality] ⚠️ Analysefehler: {e}")
+            print(f"[Kaiserlich Tracker][Quality] ⚠️ Fehler beim Schreiben des Prozentwertes: {e}")
+
         # ------------------------------------------------------------------
         # Nach Abschluss: Übergabe an Master-Cycle-Operator
         # ------------------------------------------------------------------
