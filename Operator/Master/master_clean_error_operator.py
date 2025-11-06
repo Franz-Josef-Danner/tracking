@@ -120,46 +120,28 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
             limit = avg_error * 2.0
             lines.append(f"[Summary] ⛔ Durchschnitt {avg_error:.4f} > Max {max_error_value:.4f}")
             lines.append(f"[Summary] Löschgrenze = Durchschnitt * 2 = {limit:.4f}")
-        
+           
             delete_count = 0
-        
-            # --- Sicheren CLIP_EDITOR-Kontext vorbereiten ---
-            clip_area = None
-            clip_space = None
-            for window in context.window_manager.windows:
-                for area in window.screen.areas:
-                    if area.type == 'CLIP_EDITOR':
-                        clip_area = area
-                        clip_space = area.spaces.active
-                        break
-                if clip_area:
-                    break
-        
-            if not clip_area:
-                self.report({'ERROR'}, "Kein CLIP_EDITOR-Kontext gefunden.")
+
+            # --- Tracks direkt über API löschen ---
+            tracks = getattr(clip.tracking, "tracks", None)
+            if not hasattr(tracks, "remove"):
+                self.report({'ERROR'}, "clip.tracking.tracks.remove() nicht verfügbar.")
                 return {'CANCELLED'}
-        
-            # --- Tracks löschen ---
+
             for r in results:
                 if r["error"] is not None and r["error"] > limit:
-                    # Track selektieren
-                    for t in clip.tracking.tracks:
-                        t.select = False
-                    r["track"].select = True
-        
-                    # Kontext korrekt überschreiben
-                    with bpy.context.temp_override(area=clip_area, space_data=clip_space, edit_clip=clip):
-                        try:
-                            bpy.ops.clip.track_delete()
-                            delete_count += 1
-                            msg = f"[Delete] ❌ {r['name']} (Error {r['error']:.4f} > {limit:.4f})"
-                            lines.append(msg)
-                            print(msg)
-                        except Exception as e:
-                            msg = f"[Delete][ERROR] {r['name']} → {e}"
-                            lines.append(msg)
-                            print(msg)
-        
+                    try:
+                        tracks.remove(r["track"])
+                        delete_count += 1
+                        msg = f"[Delete] ❌ {r['name']} (Error {r['error']:.4f} > {limit:.4f})"
+                        lines.append(msg)
+                        print(msg)
+                    except Exception as e:
+                        msg = f"[Delete][ERROR] {r['name']} → {e}"
+                        lines.append(msg)
+                        print(msg)
+
             lines.append(f"[Summary] → {delete_count} Tracks gelöscht.")
             print(f"[Summary] → {delete_count} Tracks gelöscht.")
 
