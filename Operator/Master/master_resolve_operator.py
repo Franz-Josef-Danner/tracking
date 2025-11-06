@@ -3,6 +3,7 @@ from __future__ import annotations
 import bpy
 from bpy.types import Operator
 from bpy.props import BoolProperty
+from typing import Optional
 
 # --- Imports aus Ihrem Add-on ---
 try:
@@ -19,13 +20,136 @@ except Exception as e:
     raise ImportError(f"[master_resolve_operator] Fehlende oder fehlerhafte Add-on-Module: {e}")
 
 # -------------------------------------------------------------------------
-# Bestehende Hilfsfunktionen unverändert übernommen
+# Fehlende Helper lokal bereitstellen (unveränderte Logik, keine Umbenennungen)
 # -------------------------------------------------------------------------
-# (gleiche Funktionen _solve_camera_invoke_default, _check_and_filter, _find_and_dispatch_cycle, _phase_execute)
+def _solve_camera_invoke_default(context: bpy.types.Context) -> None:
+    """
+    Standardisierte Ausführung von Blender Solve-Operator mit INVOKE_DEFAULT.
+    Fällt bei fehlendem UI-Kontext auf EXEC_DEFAULT zurück.
+    """
+    area: Optional[bpy.types.Area] = None
+    region: Optional[bpy.types.Region] = None
+    space: Optional[bpy.types.Space] = None
 
-# ... [dein Originalcode für Hilfsfunktionen bleibt exakt gleich] ...
+    # a) bevorzugt: aktueller Context ist bereits CLIP_EDITOR
+    if getattr(context, "area", None) and getattr(context.area, "type", "") == 'CLIP_EDITOR':
+        area = context.area
+        for r in area.regions:
+            if r.type == 'WINDOW':
+                region = r
+                break
+        space = area.spaces.active if area.spaces else None
+
+    # b) sonst: in aktueller Screen nach CLIP_EDITOR suchen
+    if area is None:
+        for a in bpy.context.screen.areas:
+            if a.type == 'CLIP_EDITOR':
+                area = a
+                for r in a.regions:
+                    if r.type == 'WINDOW':
+                        region = r
+                        break
+                space = a.spaces.active if a.spaces else None
+                break
+
+    # c) Wenn kein CLIP_EDITOR existiert, abbrechen
+    if area is None or region is None or space is None:
+        raise RuntimeError("No CLIP_EDITOR context available")
+
+    # 2) temp_override verwenden und Solve durchführen
+    try:
+        with bpy.context.temp_override(area=area, region=region, space_data=space):
+            bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+    except RuntimeError:
+        with bpy.context.temp_override(area=area, region=region, space_data=space):
+            bpy.ops.clip.solve_camera('EXEC_DEFAULT')
 
 
+def _check_and_filter(context: bpy.types.Context, avg_err: float) -> float:
+    """
+    Prüft Fehler vs. Scene.max_error_value, filtert problematische Tracks,
+    wenn Grenzwert überschritten. Gibt den (ggf. unveränderten) Fehler zurück.
+    """
+    scene = context.scene
+    if not hasattr(scene, "max_error_value"):
+        raise AttributeError(
+            "[master_resolve_operator] scene.max_error_value ist nicht definiert. "
+            "Bitte FloatProperty in Ihrem Add-on registrieren."
+        )
+
+    max_err = float(scene.max_error_value)
+
+    # --- Fehler prüfen & Schwellenwert absichern ---
+    try:
+        val = float(avg_err)
+    except (TypeError, ValueError):
+        val = 0.0
+
+    # NaN/<=0 → Fallback Filter 20.0
+    if val <= 0.0 or not (val == val):
+        try:
+            clean_error_tracks(context, 20.0)
+        except Exception:
+            pass
+        return 20.0
+
+    # Nur wenn überschritten, filtern (Faktor 2 laut Vorgabe)
+    if val > max_err:
+        threshold = val * 2.0
+        if threshold <= 0.0 or threshold == float("inf"):
+            threshold = 20.0
+        try:
+            clean_error_tracks(context, threshold)
+        except Exception:
+            pass
+
+    return val
+
+
+def _find_and_dispatch_cycle(context: bpy.types.Context) -> bool:
+    """
+    Sucht einen schwachen Frame. Falls vorhanden, delegiert an den Master-Cycle-Operator.
+    Rückgabe: True -> Cycle gestartet; False -> kein schwacher Frame gefunden.
+    """
+    weak_frame = find_first_weak_frame(context)
+    if weak_frame is not None:
+        try:
+            bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
+            return True
+        except Exception:
+            return False
+    return False
+
+
+def _phase_execute(context: bpy.types.Context, phase_fn) -> bool:
+    """
+    Führt eine Verfeinerungsphase aus (unverändert zur synchronen Variante):
+      1) phase_fn() aufrufen (z. B. reset / focal / principal / radial)
+      2) Solve (via eigener Solve-Modal-Operator)
+      3) get_average_error
+      4) ggf. filter_tracks
+      5) find_first_weak_frame -> ggf. Master-Cycle
+    Rückgabe: True -> Prozess wurde an Master-Cycle übergeben
+             False -> Kein schwacher Frame, weiter eskalieren
+    """
+    # 1) Phase konfigurieren
+    phase_fn(context)
+    # 2) Solve
+    bpy.ops.kaiserlich_tracker.master_solve_modal('INVOKE_DEFAULT')
+    # 3) Fehler messen (Clip direkt aus Context ziehen)
+    clip = getattr(getattr(context, "space_data", None), "clip", None)
+    if clip is None:
+        clip = getattr(bpy.context, "edit_movieclip", None)
+    if clip is None and bpy.data.movieclips:
+        clip = bpy.data.movieclips[0]
+    if clip is None:
+        raise AttributeError("Kein MovieClip im aktuellen Kontext gefunden.")
+    avg_err = get_average_error(clip)
+    # 4) Prüfen/Filtern
+    _check_and_filter(context, avg_err)
+    # 5) Weak Frame prüfen und ggf. Master-Cycle starten
+    delegated = _find_and_dispatch_cycle(context)
+    return bool(delegated)
 # -------------------------------------------------------------------------
 # Modal Master Resolve Operator mit Timer
 # -------------------------------------------------------------------------
@@ -54,7 +178,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
     def invoke(self, context, event):
         self._context_cache = context
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)  # 0.5 Sekunden Tick
+        self._timer = wm.event_timer_add(0.5, window=context.window)  # 0.5 s Tick
         wm.modal_handler_add(self)
         self._phase = 0
         self._phases = [
