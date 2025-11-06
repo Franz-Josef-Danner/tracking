@@ -68,9 +68,24 @@ def clean_error_tracks(
 
     # --- Operator sicher ausführen ---
     try:
-        with bpy.context.temp_override(area=area, region=region, space_data=space):
-            print(f"[CleanErrorTracks] 🧹 clean_error(threshold={thr:.4f}, action={action}) …")
-            bpy.ops.clip.clean_error(clean_error=thr, action=action)
-            print(f"[CleanErrorTracks] ✅ abgeschlossen (Clip={clip.name}).")
+        override = bpy.context.copy()
+        override["window"] = bpy.context.window
+        override["screen"] = bpy.context.window.screen
+        override["area"] = area
+        override["region"] = region
+        override["space_data"] = space
+
+        print(f"[CleanErrorTracks] 🧹 clean_error(threshold={thr:.4f}, action={action}) …")
+        bpy.ops.clip.clean_error(override, clean_error=thr, action=action)
+        print(f"[CleanErrorTracks] ✅ abgeschlossen (Clip={clip.name}).")
+
     except Exception as e:
         print(f"[CleanErrorTracks] ❌ Fehler bei clean_error: {e}")
+        if hasattr(clip, "tracking"):
+            tracks = clip.tracking.tracks
+            for t in tracks:
+                if t.average_error > thr:
+                    clip.tracking.tracks.remove(t)
+            print(f"[CleanErrorTracks] ⚙️ Fallback: Manuelles Löschen mit Threshold={thr:.2f} abgeschlossen.")
+
+
