@@ -51,8 +51,8 @@ def compute_track_quality_metrics(
     *,
     min_len_for_long=25,
     spike_threshold=0.005,
-    velocity_thresh=0.08,
-    accel_thresh=0.20,
+    velocity_thresh=0.008,
+    accel_thresh=0.020,
 ):
     """
     Bewertet die Trackingqualität:
