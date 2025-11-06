@@ -1,4 +1,3 @@
-# Helper/track_quality_metrics.py
 import bpy
 import math
 
@@ -8,7 +7,7 @@ def _count_spikes_for_track(track, velocity_thresh=0.008, accel_thresh=0.020):
     ms = sorted([m for m in track.markers if not m.mute], key=lambda m: m.frame)
     if len(ms) < 3:
         print(f"[Spikes] ⚪ Track '{track.name}' zu kurz ({len(ms)} Marker) – übersprungen.")
-        return 0
+        return 0, 0, 0  # (spikes, vel_spikes, acc_spikes)
 
     spikes = 0
     vel_spikes = 0
@@ -39,20 +38,24 @@ def _count_spikes_for_track(track, velocity_thresh=0.008, accel_thresh=0.020):
 
         prev_v = v
 
-    print(
-        f"[Spikes][{track.name}] 🔹 Gesamt: {spikes} (Velocity={vel_spikes}, Accel={acc_spikes}) "
-        f"bei {len(ms)} aktiven Markern."
-    )
-    return spikes
+    # --- Finale Printausgabe für den Track ---
+    print(f"[Spikes][{track.name}] 🔹 Gesamtübersicht:")
+    print(f"    • Velocity-Spikes : {vel_spikes}")
+    print(f"    • Accel-Spikes    : {acc_spikes}")
+    print(f"    • Gesamt-Spikes   : {spikes}")
+    print(f"    • Aktive Marker   : {len(ms)}")
+    print("──────────────────────────────────────────────────────")
+
+    return spikes, vel_spikes, acc_spikes
 
 
 def compute_track_quality_metrics(
     context: bpy.types.Context,
     *,
     min_len_for_long=25,
-    spike_threshold=0.015,
-    velocity_thresh=0.025,
-    accel_thresh=0.060,
+    spike_threshold=0.012,
+    velocity_thresh=0.020,
+    accel_thresh=0.050,
 ):
     """
     Bewertet die Trackingqualität:
@@ -64,8 +67,6 @@ def compute_track_quality_metrics(
     - Prozent = Anteil sauberer, langer Tracks an allen Tracks.
     """
     # --- Dynamische Mindestlänge aus Szene holen ---------------------------------
-    # Quelle: col.prop(scene, "max_error_value", text="Max error Value")
-    # Logik: float -> floor -> min. 1; Fallback: 25
     try:
         scene = context.scene
         dyn_val = getattr(scene, "max_error_value", None)
@@ -74,10 +75,8 @@ def compute_track_quality_metrics(
         dyn_float = float(dyn_val)
         if not math.isfinite(dyn_float) or dyn_float <= 0:
             raise ValueError("scene.max_error_value ungültig")
-        # Frameschwelle als ganze Zahl interpretieren (Floor), mind. 1
         min_len_for_long = max(1, int(math.floor(dyn_float)))
     except Exception:
-        # Fallback: bestehender Default (25)
         min_len_for_long = max(1, int(math.floor(min_len_for_long)))
 
     clip = getattr(context, "edit_movieclip", None) or (
@@ -95,7 +94,7 @@ def compute_track_quality_metrics(
     print(f"[Quality] 🟢 Alle aktiven Tracks: {anzahl_alle_tracks}")
 
     # ------------------------------------------------------------
-    # 2. Länge jedes Tracks (nur aktive Marker)
+    # 2. Länge jedes Tracks
     # ------------------------------------------------------------
     unter_25 = []
     for t in alle_tracks:
@@ -103,9 +102,9 @@ def compute_track_quality_metrics(
         if not active_frames:
             continue
         seg_len = (max(active_frames) - min(active_frames)) + 1
-        print(f"[Quality] 📏 Track '{t.name}' aktive Segmentlänge: {seg_len}")
         if seg_len < min_len_for_long:
             unter_25.append(t)
+        print(f"[Quality] 📏 Track '{t.name}' Segmentlänge: {seg_len}")
 
     anzahl_unter_25 = len(unter_25)
     print(f"[Quality] 🟡 Unter {min_len_for_long} Frames: {anzahl_unter_25}")
@@ -117,11 +116,13 @@ def compute_track_quality_metrics(
     print(f"[Quality] 🔵 Lange Tracks (≥ {min_len_for_long}): {anzahl_lange_tracks}")
 
     # ------------------------------------------------------------
-    # 4. Spike-Erkennung (mehr als 3 Spikes)
+    # 4. Spike-Erkennung
     # ------------------------------------------------------------
     spike_tracks = []
     for t in alle_tracks:
-        spikes = _count_spikes_for_track(t, velocity_thresh=velocity_thresh, accel_thresh=accel_thresh)
+        spikes, vel_spikes, acc_spikes = _count_spikes_for_track(
+            t, velocity_thresh=velocity_thresh, accel_thresh=accel_thresh
+        )
         if spikes > spike_threshold:
             spike_tracks.append(t)
             print(f"[Quality] ⚠️ SpikeTrack '{t.name}' mit {spikes} Spikes (>{spike_threshold})")
@@ -130,17 +131,17 @@ def compute_track_quality_metrics(
     print(f"[Quality] 🧨 Tracks mit >{spike_threshold} Spikes: {anzahl_spike_tracks}")
 
     # ------------------------------------------------------------
-    # 5. Saubere Tracks und Prozent
+    # 5. Saubere Tracks & Prozent
     # ------------------------------------------------------------
     saubere_tracks = max(0, anzahl_lange_tracks - anzahl_spike_tracks)
-    print(f"[Quality] 🧩 Saubere Tracks: {saubere_tracks}")
-
     if anzahl_alle_tracks < 1:
         prozent = 0.0
     else:
         prozent = (100.0 / anzahl_alle_tracks) * saubere_tracks
 
+    print(f"[Quality] 🧩 Saubere Tracks: {saubere_tracks}")
     print(f"[Quality] 🎯 Endergebnis: {prozent:.2f}%")
+    print("══════════════════════════════════════════════════════")
 
     return {
         "anzahl_alle_tracks": anzahl_alle_tracks,
