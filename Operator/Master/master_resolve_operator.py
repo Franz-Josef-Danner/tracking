@@ -130,7 +130,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         if self._phase == 3:
             try:
                 self._log_info(f"[Resolve][Phase3] CleanError start (thr={self.threshold:.3f}, action={self.action}).")
-                bpy.ops.kaiserlich_tracker.clean_error_modal(
+                bpy.ops.kaiserlich_tracker.clean_error_operator(
                     'INVOKE_DEFAULT',
                     threshold=self.threshold,
                     action=self.action
