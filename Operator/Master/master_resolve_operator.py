@@ -19,7 +19,7 @@ except Exception as e:
 
 
 class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
-    """Gestufter Kamera-Solve mit Intrinsics-Eskalation und Fehlerprüfung."""
+    """Gestufter Kamera-Solve mit Intrinsics-Eskalation und Fehlerprüfung + kontinuierlichem Fortschritt."""
     bl_idname = "kaiserlich_tracker.master_resolve_operator"
     bl_label = "Kaiserlich: Resolve Master (gestuft)"
     bl_options = {'REGISTER', 'UNDO'}
@@ -35,6 +35,8 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
     _avg_error = None
     _area = _region = _space = None
 
+    MAX_STAGES = 4  # 4 definierte Solve-Stufen
+
     # ---------------- Lifecycle ----------------
     def invoke(self, context, event):
         wm = context.window_manager
@@ -43,6 +45,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         self._phase = 0
         self._stage = 0
         self._elapsed = 0.0
+        self._update_progress(context, 0.0)
         self._log_info("[Resolve] Gestufter Solve gestartet.")
         return {'RUNNING_MODAL'}
 
@@ -63,14 +66,18 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
         # --- PHASE 1: Solve-Sequenz --------------------------------------
         if self._phase == 1:
-            if self._stage > 4:
-                self._log_warn("[Resolve] Alle 4 Solve-Stufen erfolglos → CleanError folgt.")
+            if self._stage > self.MAX_STAGES:
+                self._log_warn("[Resolve] Alle Solve-Stufen erfolglos → CleanError folgt.")
                 bpy.ops.kaiserlich_tracker.clean_error_operator('INVOKE_DEFAULT')
+                self._update_progress(context, 100.0)
                 return self._finish(context)
 
             self._run_solve_stage(context, self._stage)
             self._phase = 2
             self._elapsed = 0.0
+            # Nach Start der Solve-Stufe – Anfangspunkt des Fortschritts setzen
+            base_progress = (self._stage - 1) / self.MAX_STAGES * 100.0
+            self._update_progress(context, base_progress)
             return {'RUNNING_MODAL'}
 
         # --- PHASE 2: Polling nach Solve ---------------------------------
@@ -80,11 +87,18 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             err_val = self._safe_avg_error(clip)
             max_err = getattr(context.scene, "max_error_value", 20.0)
 
+            # Kontinuierliche Fortschrittsinterpolation innerhalb dieser Stufe
+            base = (self._stage - 1) / self.MAX_STAGES * 100.0
+            local = min(self._elapsed / self.timeout_seconds, 1.0) * (100.0 / self.MAX_STAGES)
+            percent = base + local
+            self._update_progress(context, percent)
+
             if err_val is not None:
                 self._avg_error = err_val
                 self._log_info(f"[Resolve][Stage{self._stage}] AvgError={err_val:.4f} | Max={max_err:.4f}")
                 if err_val <= max_err:
                     self._log_info(f"[Resolve] Erfolg in Stufe {self._stage} (AvgError={err_val:.4f} ≤ {max_err:.4f})")
+                    self._update_progress(context, 100.0)
                     return self._finish(context)
 
                 # Wenn zu hoch → nächste Stufe
@@ -148,10 +162,21 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         except Exception:
             return None
 
+    def _update_progress(self, context, value: float):
+        """Aktualisiert den UI-Fortschritt (0–100 %) in scene.kaiserlich_progress_title."""
+        scene = context.scene
+        if hasattr(scene, "kaiserlich_progress_title"):
+            scene.kaiserlich_progress_title = round(min(value, 100.0), 1)
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == 'CLIP_EDITOR':
+                        area.tag_redraw()
+
     def _finish(self, context, cancelled=False):
         wm = context.window_manager
         if self._timer:
             wm.event_timer_remove(self._timer)
+        self._update_progress(context, 100.0)
         self._log_info("[Resolve] Vorgang " + ("abgebrochen." if cancelled else "abgeschlossen."))
         return {'CANCELLED'} if cancelled else {'FINISHED'}
 
