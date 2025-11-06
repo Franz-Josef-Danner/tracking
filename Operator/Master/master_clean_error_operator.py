@@ -1,4 +1,4 @@
-# kaiserlich_list_tracks_by_solve_error.py
+# Operator/Master/master_clean_error_operator.py
 import bpy
 from bpy.types import Operator
 from bpy.props import FloatProperty, BoolProperty, EnumProperty
