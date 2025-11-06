@@ -274,6 +274,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
                     try:
                         result = clean_error_tracks(context, threshold)
                     except Exception as e:
+                        pass
                     if _find_and_dispatch_cycle(context):
                         self.report({'INFO'}, "Master-Cycle gestartet (nach Fallback 3).")
                         return {'FINISHED'}
