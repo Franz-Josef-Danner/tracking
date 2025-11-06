@@ -245,51 +245,55 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             "[Kaiserlich Tracker][ModalBackwards] ❌ Rückwärts-Zyklus abgebrochen."
         )
 
-        # Letzter Fortschritts-Refresh bei Abschluss
-        try:
-            _, perc = compute_marker_progress(context.scene, update_ui=True)
-            context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][ProgressBackwards] ⚠️ Abschluss-Update fehlgeschlagen: {e}")
         # ------------------------------------------------------------------
-        # Qualitätsanalyse nach Abschluss
+        # 1️⃣ Zuerst: Qualitätsmetrik berechnen
         # ------------------------------------------------------------------
         try:
             from ...Helper.track_quality_metrics import compute_track_quality_metrics
             metrics = compute_track_quality_metrics(context)
-            percent = f"{int(round(metrics['prozent']))}%"
-            context.scene.kaiserlich_quality_percent = percent
-            print(f"[Kaiserlich Tracker][QualityBackwards] {percent}")
+            quality_percent = float(metrics.get("prozent", 100.0))
+            context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
+            print(f"[Kaiserlich Tracker][QualityBackwards] 🎯 {quality_percent:.1f}%")
 
+            # UI sofort aktualisieren
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
-                    if area.type == 'CLIP_EDITOR':
+                    if area.type == "CLIP_EDITOR":
                         for region in area.regions:
-                            if region.type == 'UI':
+                            if region.type == "UI":
                                 region.tag_redraw()
         except Exception as e:
-            print(f"[Kaiserlich Tracker][QualityBackwards] ⚠️ Fehler beim Schreiben des Prozentwertes: {e}")
+            print(f"[Kaiserlich Tracker][QualityBackwards] ⚠️ Qualitätsberechnung fehlgeschlagen: {e}")
+            quality_percent = 100.0  # Fallback für Fortschritt
+
+        # ------------------------------------------------------------------
+        # 2️⃣ Danach: Fortschritt (mit Qualitätsfaktor)
+        # ------------------------------------------------------------------
+        try:
+            from ...Helper.frame_track_progress import compute_marker_progress
+            value, perc = compute_marker_progress(context.scene, update_ui=True)
+            context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
+            print(f"[Kaiserlich Tracker][ProgressBackwards] 📊 Marker: {value} | Effektiv: {perc:.1f}%")
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][ProgressBackwards] ⚠️ Abschluss-Update fehlgeschlagen: {e}")
 
         # --------------------------------------------------------
-        # Kontextübergabe an Forward-Tracking (Master Track Cycle)
+        # 3️⃣ Kontextübergabe an Forward-Tracking (Master Track Cycle)
         # --------------------------------------------------------
         if not cancelled:
             try:
                 print("[Kaiserlich Tracker][ModalBackwards] ➜ Übergabe an Master Track Cycle (vorwärts)...")
 
-                # Kontext sichern
                 clip = getattr(context.space_data, "clip", None)
                 if clip is None:
                     print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Kein aktiver Clip – Übergabe übersprungen.")
                     return
 
-                # Clip-Editor-Bereich wiederfinden
                 window, area, region, space = find_clip_editor_area(clip)
                 if not window:
                     print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Keine CLIP_EDITOR Area – Übergabe übersprungen.")
                     return
 
-                # Neuen Kontext mit temp_override nutzen (Blender 4.x+ API)
                 with context.temp_override(window=window, area=area, region=region, space_data=space):
                     bpy.ops.kaiserlich_tracker.master_track_cycle()
 
