@@ -86,10 +86,8 @@ def _check_and_filter(context: bpy.types.Context, avg_err: float) -> float:
         val = 0.0
 
     if val <= 0.0 or not (val == val):  # NaN-Schutz
-        print(f"[Resolve][Error-Filter] ⚠️ Ungültiger Fehlerwert ({avg_err}); setze 20.0 als Threshold.")
         try:
             result = clean_error_tracks(context, 20.0)
-            print(f"[Resolve][Error-Filter] 🧹 Cleaned error tracks mit Threshold=20.0 → Result: {result}")
         except Exception as e:
             print(f"[Resolve][Error-Filter] ❌ Fehler beim Clean: {e}")
         return 20.0
@@ -99,10 +97,8 @@ def _check_and_filter(context: bpy.types.Context, avg_err: float) -> float:
         threshold = val * 2.0
         if threshold <= 0.0 or threshold == float("inf"):
             threshold = 20.0
-        print(f"[Resolve][Error-Filter] 🚀 Fehler {val:.3f} > Max {max_err:.3f} → Filter starte mit Threshold={threshold:.3f}")
         try:
             result = clean_error_tracks(context, threshold)
-            print(f"[Resolve][Error-Filter] 🧹 Cleaned error tracks (Threshold={threshold:.3f}) → Result: {result}")
         except Exception as e:
             print(f"[Resolve][Error-Filter] ❌ Fehler beim Clean: {e}")
     else:
@@ -260,41 +256,32 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
                 # 1️⃣ Erster Fallback: Filter ohne Multiplikation
                 self.log("Fallback 1: Direkter Filter mit avg_err")
-                print(f"[Resolve][Fallback1] 🔧 Clean-Start mit Threshold={avg_err:.3f}")
                 _check_and_filter(context, avg_err)
-                print(f"[Resolve][Fallback1] ✅ Clean abgeschlossen")
                 if _find_and_dispatch_cycle(context):
                     self.report({'INFO'}, "Master-Cycle gestartet (nach Fallback 1).")
                     return {'FINISHED'}
 
                 # 2️⃣ Zweiter Fallback: Solve erneut
                 self.log("Fallback 2: Neuer Solve nach direktem Filter")
-                print("[Resolve][Fallback2] 🔁 Solve erneut gestartet …")
                 bpy.ops.kaiserlich_tracker.master_solve_modal('INVOKE_DEFAULT')
                 avg_err = get_average_error(clip)
-                print(f"[Resolve][Fallback2] 🔍 Neuer Fehlerwert nach Solve: {avg_err}")
                 self.log(f"Fehler nach Fallback-2-Solve: {avg_err}")
 
                 if avg_err > max_err:
                     # 3️⃣ Dritter Fallback: Filter mit max_error_value als Schwelle
                     self.log("Fallback 3: Filter mit Scene.max_error_value als Schwelle")
                     threshold = max_err
-                    print(f"[Resolve][Fallback3] 🔧 Clean-Start mit Threshold={threshold:.3f}")
                     try:
                         result = clean_error_tracks(context, threshold)
-                        print(f"[Resolve][Fallback3] 🧹 Cleaned error tracks (Threshold={threshold:.3f}) → Result: {result}")
                     except Exception as e:
-                        print(f"[Resolve][Fallback3] ❌ Fehler beim Clean: {e}")
                     if _find_and_dispatch_cycle(context):
                         self.report({'INFO'}, "Master-Cycle gestartet (nach Fallback 3).")
                         return {'FINISHED'}
 
                     # Letzter Solve-Versuch
                     self.log("Fallback 3b: Letzter Solve nach hartem Filter")
-                    print("[Resolve][Fallback3b] 🔁 Letzter Solve wird ausgeführt …")
                     bpy.ops.kaiserlich_tracker.master_solve_modal('INVOKE_DEFAULT')
                     avg_err = get_average_error(clip)
-                    print(f"[Resolve][Fallback3b] 🔍 Fehler nach Solve: {avg_err}")
                     self.log(f"Fehler nach Fallback-3b-Solve: {avg_err}")
 
                     if avg_err > max_err:
