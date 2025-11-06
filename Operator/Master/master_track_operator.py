@@ -221,7 +221,18 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
         except Exception as e:
             print(f"[Kaiserlich Tracker][Progress] ⚠️ Abschluss-Update fehlgeschlagen: {e}")
-
+        # ------------------------------------------------------------------
+        # Qualitätsanalyse nach Abschluss
+        # ------------------------------------------------------------------
+        try:
+            from ...Helper.track_quality_metrics import compute_track_quality_metrics
+            metrics = compute_track_quality_metrics(context)
+            print(f"[Kaiserlich Tracker][Quality] "
+                  f"Alle={metrics['anzahl_alle_tracks']} | <25f={metrics['anzahl_unter_25']} | "
+                  f"Lang={metrics['anzahl_lange_tracks']} | Spikes={metrics['anzahl_spike_tracks']} | "
+                  f"Sauber={metrics['saubere_tracks']} | %={metrics['prozent']:.1f}")
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][Quality] ⚠️ Analysefehler: {e}")
         # ------------------------------------------------------------------
         # Nach Abschluss: Übergabe an Master-Cycle-Operator
         # ------------------------------------------------------------------
