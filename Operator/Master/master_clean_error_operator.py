@@ -144,7 +144,7 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
 
 
 # Registrierung
-classes = (KAISERLICHTRACKER_OT_list_tracks_by_solve_error,)
+classes = (KAISERLICHTRACKER_OT_clean_error_operator,)
 
 def register():
     for c in classes:
