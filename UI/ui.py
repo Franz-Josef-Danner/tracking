@@ -193,9 +193,9 @@ def register():
         default="",
     )
     # --- Zusammenfassung Qualitätsanalyse (String für UI) ---
-    bpy.types.Scene.kaiserlich_quality_summary = bpy.props.StringProperty(
+    bpy.types.Scene.kaiserlich_quality_percent = bpy.props.StringProperty(
         name="Track Quality",
-        description="Kompakte Qualitätsmetrik: Alle/<25f/Lang/Spikes/Sauber/%",
+        description="Reine Prozentzahl der sauberen Tracks (z. B. '51%')",
         default="",
     )
 
