@@ -66,87 +66,65 @@ def clean_error_tracks(
         print("[CleanErrorTracks] ❌ Kein aktiver MovieClip im Space vorhanden.")
         return
 
-    # --- Operator sicher ausführen (wenn registriert) ---
+    # --- Operator sicher ausführen ---
     try:
-        print(f"[CleanErrorTracks] 🔍 Vorbereitungen: area={area}, region={region}, space={space}")
-        if hasattr(clip, "tracking") and hasattr(clip.tracking, "objects"):
-            # Vorher-Status
-            total_tracks = sum(len(obj.tracks) for obj in clip.tracking.objects)
-            print(f"[CleanErrorTracks] 🎞️ Clip '{clip.name}' enthält {total_tracks} Tracks vor dem Clean.")
+        total_before = 0
+        try:
+            total_before = sum(len(obj.tracks) for obj in clip.tracking.objects)
+        except Exception:
+            total_before = len(getattr(clip.tracking, "tracks", []))
+        print(f"[CleanErrorTracks] 🔍 Vorbereitungen:")
+        print(f"  ↳ area={area}, region={region}, space={space}")
+        print(f"  ↳ window={getattr(bpy.context, 'window', None)}, screen={getattr(getattr(bpy.context, 'window', None), 'screen', None)}")
+        print(f"  ↳ Clip='{clip.name}', Tracks gesamt (vorher)={total_before}")
+        print(f"  ↳ Action={action}, Threshold={thr:.4f}")
+        print(f"[CleanErrorTracks] 🧹 clean_error() wird gestartet …")
 
-        # Versuch über Operator (falls verfügbar)
-        with bpy.context.temp_override(area=area, region=region, space_data=space, edit_movieclip=clip):
-            print(f"[CleanErrorTracks] 🧹 clean_error(threshold={thr:.4f}, action={action}) …")
-            result = bpy.ops.clip.clean_error(clean_error=thr, action=action)  # kann „could not be found“ werfen
-            print(f"[CleanErrorTracks] ✅ Operator ausgeführt (Result={result}, Clip={clip.name}).")
+        # 🪟 Sicherstellen, dass ein Clip-Editor-Fenster existiert
+        if not any(a.type == 'CLIP_EDITOR' for a in bpy.context.window.screen.areas):
+            print("[CleanErrorTracks] 🪟 Kein CLIP_EDITOR offen – öffne temporäres Fenster.")
+            bpy.ops.screen.userpref_show('INVOKE_DEFAULT')
+            win = bpy.context.window_manager.windows[-1]
+            scr = win.screen
+            scr.areas[0].type = 'CLIP_EDITOR'
+            temp_window_used = True
+        else:
+            win = bpy.context.window
+            scr = win.screen
+            temp_window_used = False
+        print(f"[CleanErrorTracks][DBG] Fenster/Screens:")
+        print(f"  ↳ win={win}, scr={scr}, areas={len(scr.areas)}")
 
-        # Nachher-Status
-        if hasattr(clip, "tracking") and hasattr(clip.tracking, "objects"):
-            total_tracks_after = sum(len(obj.tracks) for obj in clip.tracking.objects)
-            print(f"[CleanErrorTracks] 📊 Tracks nach clean_error: {total_tracks_after}")
-        return
+        area = next((a for a in scr.areas if a.type == 'CLIP_EDITOR'), None)
+        if area is None:
+            raise RuntimeError("[CleanErrorTracks] Kein CLIP_EDITOR in aktuellem Screen gefunden.")
+        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+        if region is None:
+            raise RuntimeError("[CleanErrorTracks] Keine WINDOW-Region im CLIP_EDITOR gefunden.")
+        space = area.spaces.active
+        if space is None:
+            raise RuntimeError("[CleanErrorTracks] Keine aktive Space im CLIP_EDITOR.")
+        space.clip = clip
+        if space.clip is None:
+            raise RuntimeError("[CleanErrorTracks] space.clip ist None nach Zuweisung.")
+        print(f"[CleanErrorTracks][DBG] Clip-Editor ready → area={area}, region={region}, space={space}, clip={space.clip}")
+        # 🔁 Sicherer Kontext
+        with bpy.context.temp_override(window=win, screen=scr, area=area, region=region, space_data=space, edit_movieclip=clip):
+            result = bpy.ops.clip.clean_error(clean_error=thr, action=action)
+            print(f"[CleanErrorTracks] ✅ Operator ausgeführt (Result={result}).")
+
+        try:
+            total_after = sum(len(obj.tracks) for obj in clip.tracking.objects)
+        except Exception:
+            total_after = len(getattr(clip.tracking, "tracks", []))
+        print(f"[CleanErrorTracks] 📊 Tracks nach clean_error: {total_after} (Δ={total_before - total_after})")
+        # 🧹 Fenster wieder schließen, falls es nur temporär geöffnet wurde
+        if temp_window_used:
+            try:
+                bpy.ops.wm.window_close({'window': win})
+                print("[CleanErrorTracks] 🪟 Temporäres Fenster geschlossen.")
+            except Exception as wc_ex:
+                print(f"[CleanErrorTracks] ⚠️ Fenster-Schließung fehlgeschlagen: {wc_ex}")
 
     except Exception as e:
         print(f"[CleanErrorTracks] ❌ Fehler bei clean_error: {e}")
-        # -> Fallback aktivieren
-        pass
-
-    # --- Fallback: Operator-basiert im echten Clip-Editor-Kontext ---
-    try:
-        tracking = getattr(clip, "tracking", None)
-        if tracking is None or not hasattr(tracking, "objects") or not tracking.objects:
-            print("[CleanErrorTracks] ⚠️ Fallback: Keine Tracking-Objekte gefunden.")
-            return
-    
-        candidates = []
-        for obj in tracking.objects:
-            for t in obj.tracks:
-                if getattr(t, "average_error", 0.0) > thr:
-                    candidates.append((obj, t))
-    
-        print(f"[CleanErrorTracks] ⚙️ Fallback aktiviert → {len(candidates)} Tracks über Threshold={thr:.2f}.")
-    
-        deleted = 0
-    
-        # Vollständiger UI-Kontext finden
-        window = bpy.context.window
-        screen = window.screen
-        area = next((a for a in screen.areas if a.type == "CLIP_EDITOR"), None)
-        if not area:
-            print("[CleanErrorTracks] ❌ Kein CLIP_EDITOR im aktuellen Screen gefunden – Abbruch.")
-            return
-        region = next((r for r in area.regions if r.type == "WINDOW"), None)
-        space = area.spaces.active
-        print(f"[CleanErrorTracks][DBG] Kontext bestätigt → window={window}, area={area}, region={region}, space={space}")
-    
-        for obj, t in candidates:
-            try:
-                # Auswahl auf genau diesen Track setzen
-                for tr in obj.tracks:
-                    tr.select = False
-                t.select = True
-    
-                with bpy.context.temp_override(
-                    window=window,
-                    screen=screen,
-                    area=area,
-                    region=region,
-                    space_data=space,
-                    edit_movieclip=clip
-                ):
-                    print(f"[CleanErrorTracks][DBG] → Lösche '{t.name}' (avg_err={getattr(t,'average_error',0.0):.2f}) via Operator.")
-                    result = bpy.ops.clip.track_delete()
-                    if "FINISHED" in str(result):
-                        deleted += 1
-                        print(f"[CleanErrorTracks][DBG] ✅ Track '{t.name}' entfernt (Result={result}).")
-                    else:
-                        print(f"[CleanErrorTracks][DBG] ⚠️ Operator resultierte in {result} für '{t.name}'.")
-            except Exception as rm_ex:
-                print(f"[CleanErrorTracks][DBG] ❌ Operator-Löschung fehlgeschlagen für '{t.name}': {rm_ex}")
-    
-        remaining = sum(len(obj.tracks) for obj in tracking.objects)
-        print(f"[CleanErrorTracks][DBG] 🧾 Abschlussbericht: {deleted} Tracks gelöscht, verbleibend {remaining}")
-        print(f"[CleanErrorTracks] ⚙️ Fallback abgeschlossen (Operator-Kontext erfolgreich).")
-    
-    except Exception as ex:
-        print(f"[CleanErrorTracks][ERR] Unerwarteter Fallback-Fehler: {ex}")
