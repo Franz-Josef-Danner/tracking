@@ -257,11 +257,10 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         try:
             from ...Helper.track_quality_metrics import compute_track_quality_metrics
             metrics = compute_track_quality_metrics(context)
-            summary = (f"Alle={metrics['anzahl_alle_tracks']} | <25f={metrics['anzahl_unter_25']} | "
-                       f"Lang={metrics['anzahl_lange_tracks']} | Spikes={metrics['anzahl_spike_tracks']} | "
-                       f"Sauber={metrics['saubere_tracks']} | %={metrics['prozent']:.1f}")
-            print(f"[Kaiserlich Tracker][QualityBackwards] {summary}")
-            context.scene.kaiserlich_quality_summary = summary
+            percent = f"{int(round(metrics['prozent']))}%"
+            context.scene.kaiserlich_quality_percent = percent
+            print(f"[Kaiserlich Tracker][QualityBackwards] {percent}")
+
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == 'CLIP_EDITOR':
@@ -269,7 +268,8 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                             if region.type == 'UI':
                                 region.tag_redraw()
         except Exception as e:
-            print(f"[Kaiserlich Tracker][QualityBackwards] ⚠️ Analysefehler: {e}")
+            print(f"[Kaiserlich Tracker][QualityBackwards] ⚠️ Fehler beim Schreiben des Prozentwertes: {e}")
+
         # --------------------------------------------------------
         # Kontextübergabe an Forward-Tracking (Master Track Cycle)
         # --------------------------------------------------------
