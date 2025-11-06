@@ -1,186 +1,148 @@
-# Operator/Master/master_clean_error_operator.py
+# kaiserlich_list_tracks_by_solve_error.py
 import bpy
-import traceback
-from bpy.types import Operator, Context
+from bpy.types import Operator
+from bpy.props import FloatProperty, BoolProperty, EnumProperty
 
-LOG_PREFIX = "[CleanError-Diag]"
-
-# ---------------------------------------------------------------------
-# Hilfsfunktionen
-# ---------------------------------------------------------------------
-
-def _log(msg):
-    print(f"{LOG_PREFIX} {msg}")
-
-def _safe_get(obj, attr, default=None):
-    return getattr(obj, attr, default) if hasattr(obj, attr) else default
-
-def _find_clip_editor_override():
-    wm = bpy.context.window_manager
-    for window in wm.windows:
-        screen = window.screen
-        _log(f"→ Prüfe Screen '{screen.name}' in Window {window.as_pointer()}")
-        for area in screen.areas:
-            _log(f"   • Area={area.type}")
-            if area.type != 'CLIP_EDITOR':
-                continue
-            space = area.spaces.active
-            _log(f"     ↳ Space={space}, Clip={_safe_get(space,'clip',None)}")
-            if not (space and space.clip):
-                continue
-            region_window = next((r for r in area.regions if r.type == 'WINDOW'), None)
-            if not region_window:
-                _log("     ⚠️ Keine WINDOW-Region gefunden – überspringe")
-                continue
-            override = {
-                "window": window,
-                "screen": screen,
-                "area": area,
-                "region": region_window,
-                "space_data": space,
-                "edit_movieclip": space.clip,
-            }
-            dbg = (f"win={window.as_pointer()}, scr='{screen.name}', "
-                   f"area='{area.type}', region='WINDOW', clip='{space.clip.name}'")
-            _log(f"✅ Gültiger Clip-Kontext gefunden: {dbg}")
-            return override, space.clip, dbg
-    _log("❌ Kein Clip-Editor-Kontext gefunden!")
-    return None, None, "kein CLIP_EDITOR mit aktivem Clip gefunden"
-
-
-def _snapshot_tracks(clip):
-    data = {}
-    for t in clip.tracking.tracks:
-        markers = [m.frame for m in t.markers]
-        seg_len = (max(markers)-min(markers)+1) if markers else 0
-        data[t.name] = {
-            "muted": bool(getattr(t, "is_muted", False)),
-            "markers": len(markers),
-            "first": markers[0] if markers else None,
-            "last": markers[-1] if markers else None,
-            "seg_len": seg_len,
-        }
-    return data
-
-
-def _diff(before, after):
-    before_names, after_names = set(before), set(after)
-    deleted = sorted(before_names - after_names)
-    new = sorted(after_names - before_names)
-    changed = []
-    for n in sorted(before_names & after_names):
-        b, a = before[n], after[n]
-        if a["markers"] != b["markers"] or a["seg_len"] != b["seg_len"] or a["muted"] != b["muted"]:
-            changed.append(n)
-    return deleted, new, changed
-
-
-def _print_dict_sample(title, dct, limit=10):
-    _log(f"{title}: {len(dct)} Einträge")
-    for i, (k, v) in enumerate(dct.items()):
-        if i >= limit:
-            _log(f"  … (+{len(dct)-limit} weitere)")
-            break
-        _log(f"  {k}: {v}")
-
-
-# ---------------------------------------------------------------------
-# Operator
-# ---------------------------------------------------------------------
+def _find_active_clip(context: bpy.types.Context):
+    """Sucht zuerst Clip im Clip-Editor, fallback auf active strip (Sequencer)."""
+    clip = None
+    for win in context.window_manager.windows:
+        for area in win.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                space = area.spaces.active
+                if space and getattr(space, "clip", None):
+                    return space.clip
+    # fallback: sequencer active strip (wenn vorhanden)
+    scene = context.scene
+    if hasattr(scene, "sequence_editor_active_strip"):
+        strip = scene.sequence_editor_active_strip
+        if strip and getattr(strip, "clip", None):
+            return strip.clip
+    return None
 
 class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
-    """Führt bpy.ops.clip.clean_error() mit umfangreichem Logging aus"""
-    bl_idname = "kaiserlich_tracker.clean_error_operator"
-    bl_label = "Clean Error (Diagnostic)"
-    bl_options = {'REGISTER', 'UNDO'}
+    """Listet alle Tracks und deren Solve/Error-Werte und schreibt ein Log"""
+    bl_idname = "kaiserlich_tracker.list_tracks_by_solve_error"
+    bl_label = "Kaiserlich: List Tracks by Solve Error"
+    bl_options = {'REGISTER', 'INTERNAL'}
 
-    threshold: bpy.props.FloatProperty(default=20.0, min=0.0, soft_max=100.0)
-    action: bpy.props.EnumProperty(
+    threshold: FloatProperty(
+        name="Threshold",
+        description="Nur Tracks mit Error >= Threshold zeigen (0 = alle)",
+        default=0.0,
+        precision=4
+    )
+    filter_mode: EnumProperty(
+        name="Filter Mode",
+        description="Wie Threshold angewendet wird",
         items=[
-            ('SELECT', "Select", ""),
-            ('DELETE_TRACK', "Delete Track", ""),
-            ('DELETE_SEGMENTS', "Delete Segments", ""),
+            ('NONE', "Keine Filterung", "Alle Tracks zeigen"),
+            ('ABOVE', ">= Threshold", "Nur Tracks mit Error >= Threshold"),
+            ('BELOW', "<= Threshold", "Nur Tracks mit Error <= Threshold"),
         ],
-        default='DELETE_TRACK'
+        default='NONE'
+    )
+    sort_desc: BoolProperty(
+        name="Sort descending",
+        description="Sortiere absteigend nach Error (höchste zuerst)",
+        default=True
     )
 
-    def execute(self, context: Context):
-        _log("──────────────────────────────────────────────────────────────")
-        _log(f"Starte Diagnose für CleanError | Threshold={self.threshold:.2f}, Action={self.action}")
-        _log(f"Current context: area={_safe_get(context,'area',None)}, space={_safe_get(context,'space_data',None)}")
+    def _get_track_error(self, track) -> float | None:
+        """
+        Versucht mehrere mögliche Quellen für einen 'solve error' zu lesen.
+        Falls kein direkter Wert vorhanden ist, werden Marker-errors gemittelt (falls vorhanden).
+        Wenn nichts gefunden wird, None zurückgeben.
+        """
+        # mögliche Property-Namen prüfen (häufige Bezeichnungen / Fallbacks)
+        candidates = ("average_error", "error", "solve_error", "reprojection_error")
+        for name in candidates:
+            val = getattr(track, name, None)
+            if val is not None:
+                try:
+                    return float(val)
+                except Exception:
+                    pass
 
-        override, clip, dbg = _find_clip_editor_override()
-        if not clip:
-            self.report({'ERROR'}, "Kein gültiger Clip im Clip-Editor.")
-            return {'CANCELLED'}
-
-        # --- Tracking Settings prüfen ---
-        settings = clip.tracking.settings
-        _log(f"Tracking Settings vor dem Clean:")
-        _log(f"  clean_action={settings.clean_action}")
-        _log(f"  clean_error={settings.clean_error}")
-        _log(f"  use_default_red_channel={_safe_get(settings,'use_default_red_channel')}")
-        _log(f"  use_default_refine={_safe_get(settings,'use_default_refine')}")
-
-        # --- Snapshot vor dem Clean ---
-        before = _snapshot_tracks(clip)
-        _print_dict_sample("Vorher Snapshot", before, 5)
-
-        # --- Parameter setzen ---
-        settings.clean_action = self.action
-        settings.clean_error = self.threshold
-        _log(f"→ Setze settings.clean_action='{self.action}', settings.clean_error={self.threshold}")
-
-        # --- API-Verfügbarkeit prüfen ---
-        if not hasattr(bpy.ops.clip, "clean_error"):
-            _log("❌ bpy.ops.clip.clean_error existiert nicht – möglicherweise kein CLIP-Kontext")
-            self.report({'ERROR'}, "Operator bpy.ops.clip.clean_error nicht vorhanden.")
-            return {'CANCELLED'}
-        _log("✅ bpy.ops.clip.clean_error ist im bpy.ops.clip verfügbar.")
-
-        # --- Operator ausführen ---
+        # Fallback: Mittelwert über marker-Fehler (falls Marker.error existiert)
         try:
-            _log("→ Primärversuch: bpy.ops.clip.clean_error(override)")
-            result = bpy.ops.clip.clean_error(override)
-            _log(f"   Ergebnis: {result}")
-        except Exception as e1:
-            _log(f"⚠️ Exception beim Primärversuch: {e1}")
-            _log(traceback.format_exc())
-            try:
-                _log("→ Zweitversuch: bpy.ops.clip.clean_error('EXEC_DEFAULT')")
-                result = bpy.ops.clip.clean_error('EXEC_DEFAULT')
-                _log(f"   Ergebnis: {result}")
-            except Exception as e2:
-                _log(f"❌ Auch Zweitversuch fehlgeschlagen: {e2}")
-                _log(traceback.format_exc())
-                self.report({'ERROR'}, f"Clean Error fehlgeschlagen: {e2}")
-                return {'CANCELLED'}
+            markers = getattr(track, "markers", None)
+            if markers and len(markers) > 0:
+                vals = []
+                for m in markers:
+                    v = getattr(m, "error", None)
+                    if v is not None:
+                        try:
+                            vals.append(float(v))
+                        except Exception:
+                            pass
+                if vals:
+                    return sum(vals) / len(vals)
+        except Exception:
+            pass
 
-        # --- Snapshot nach dem Clean ---
-        after = _snapshot_tracks(clip)
-        deleted, new, changed = _diff(before, after)
-        _log(f"→ Diff: deleted={len(deleted)}, new={len(new)}, changed={len(changed)}")
-        _print_dict_sample("Nachher Snapshot", after, 5)
+        return None
 
-        if deleted:
-            _log(f"Gelöschte Tracks ({len(deleted)}): {deleted[:15]}{' …' if len(deleted)>15 else ''}")
-        if new:
-            _log(f"Neue Tracks ({len(new)}): {new}")
-        if changed:
-            _log(f"Geänderte Tracks ({len(changed)}): {changed[:15]}{' …' if len(changed)>15 else ''}")
+    def _write_blender_textlog(self, lines: list[str]):
+        name = "Kaiserlich_SolveError_Log"
+        txt = bpy.data.texts.get(name)
+        if txt is None:
+            txt = bpy.data.texts.new(name)
+        # Clear existing content
+        txt.clear()
+        for ln in lines:
+            txt.write(ln + "\n")
 
-        # --- Abschluss ---
-        _log(f"✅ CleanError erfolgreich (Action={self.action}, Threshold={self.threshold:.2f})")
-        _log("──────────────────────────────────────────────────────────────")
-        self.report({'INFO'}, f"CleanError abgeschlossen ({len(deleted)} gelöscht, {len(changed)} geändert)")
+    def execute(self, context):
+        clip = _find_active_clip(context)
+        if clip is None:
+            self.report({'ERROR'}, "Kein Clip gefunden (Clip Editor oder Sequencer).")
+            return {'CANCELLED'}
+
+        tracks = getattr(clip.tracking, "tracks", None)
+        if not tracks:
+            self.report({'ERROR'}, "Clip enthält keine Tracking-Tracks.")
+            return {'CANCELLED'}
+
+        results = []
+        for t in tracks:
+            err = self._get_track_error(t)
+            length = len(getattr(t, "markers", []))
+            results.append({
+                "name": t.name,
+                "error": err,
+                "length": length,
+                "track": t
+            })
+
+        # Filter nach Threshold
+        if self.filter_mode == 'ABOVE':
+            results = [r for r in results if r["error"] is not None and r["error"] >= self.threshold]
+        elif self.filter_mode == 'BELOW':
+            results = [r for r in results if r["error"] is not None and r["error"] <= self.threshold]
+
+        # Sortieren (Tracks mit None-Error an Ende)
+        results.sort(key=lambda r: (r["error"] is None, -r["error"] if r["error"] is not None else 0.0) if self.sort_desc else (r["error"] is None, r["error"] if r["error"] is not None else 0.0))
+
+        # Log-Ausgabe (Konsole + Report + Blender Textblock)
+        lines = []
+        header = f"[Kaiserlich][ListTracksBySolveError] Clip='{clip.name}' — Tracks: {len(results)} (Total in Clip: {len(tracks)})"
+        lines.append(header)
+        print(header)
+        for r in results:
+            name = r["name"]
+            length = r["length"]
+            err = r["error"]
+            if err is None:
+                line = f"[SolveError] {name:40s} len={length:4d} avg_err= <n/a>"
+            else:
+                line = f"[SolveError] {name:40s} len={length:4d} avg_err={err:8.4f}"
+            lines.append(line)
+            print(line)
+
+        # Schreibe in Blender Text-Editor zur Persistenz
+        self._write_blender_textlog(lines)
+
+        # Kurze Rückmeldung im UI
+        self.report({'INFO'}, f"Tracks geloggt ({len(results)}) — Text: Kaiserlich_SolveError_Log")
         return {'FINISHED'}
-
-
-def register():
-    bpy.utils.register_class(KAISERLICHTRACKER_OT_clean_error_operator)
-
-def unregister():
-    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_clean_error_operator)
-
-if __name__ == "__main__":
-    register()
