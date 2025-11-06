@@ -262,7 +262,8 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
                 self.log("Fallback 1: Direkter Filter mit avg_err")
                 print(f"[Resolve][Fallback1] 🔧 Clean-Start mit Threshold={avg_err:.3f}")
                 _check_and_filter(context, avg_err)
-                print(f"[Resolve][Fallback1] ✅ Clean abgeschlossen")                if _find_and_dispatch_cycle(context):
+                print(f"[Resolve][Fallback1] ✅ Clean abgeschlossen")
+                if _find_and_dispatch_cycle(context):
                     self.report({'INFO'}, "Master-Cycle gestartet (nach Fallback 1).")
                     return {'FINISHED'}
 
