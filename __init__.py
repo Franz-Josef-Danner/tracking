@@ -20,7 +20,7 @@ from .Operator.Master.master_detect_adapt_operator import KAISERLICHTRACKER_OT_m
 from .Operator.Master.master_track_operator_backwards import KAISERLICHTRACKER_OT_master_track_cycle_backwards
 from .Operator.Master.master_cycle_operator import KAISERLICHTRACKER_OT_master_cycle_operator
 from .Operator.Master.master_resolve_operator import KAISERLICHTRACKER_OT_master_resolve_operator, KAISERLICHTRACKER_OT_master_solve_modal
-from .Helper.clean_error_tracks_modal import KAISERLICHTRACKER_OT_clean_error_modal
+from .Helper.clean_error_tracks_modal_operator import KAISERLICHTRACKER_OT_clean_error_modal
 
 # ---- Klassenliste ----------------------------------------------------------
 classes = (
