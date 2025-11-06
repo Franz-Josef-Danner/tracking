@@ -1,3 +1,4 @@
+# Helper/frame_track_progress.py
 import bpy
 
 def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -> tuple[int, float]:
