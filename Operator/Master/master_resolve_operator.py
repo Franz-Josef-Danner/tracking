@@ -14,7 +14,13 @@ try:
         refine_intrinsics_radial_distortion_on,
     )
     from ...Helper.get_average_error import get_average_error
-    from ...Helper.clean_error_tracks import clean_error_tracks
+    # Fallback: verwende clean_error_tracks_modal, falls clean_error_tracks fehlt
+    try:
+        from ...Helper.clean_error_tracks import clean_error_tracks
+    except ImportError:
+        from ...Helper.clean_error_tracks_modal import KAISERLICHTRACKER_OT_clean_error_modal
+        clean_error_tracks = None
+
     from ...Helper.low_marker_frame import find_first_weak_frame
 except Exception as e:
     raise ImportError(f"[master_resolve_operator] Fehlende oder fehlerhafte Add-on-Module: {e}")
