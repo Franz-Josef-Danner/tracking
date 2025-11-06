@@ -63,8 +63,26 @@ class KAISERLICHTRACKER_OT_clean_error_modal(Operator):
             except Exception as e:
                 self.report({'ERROR'}, f"Clean Error fehlgeschlagen: {e}")
 
-            return self._finish(context)
+            # Nach erfolgreichem Clean → Master-Cycle aufrufen (asynchron)
+            try:
+                self.report({'INFO'}, "[CleanError] Starte Master-Cycle nach erfolgreichem Clean …")
 
+                # Sicherheit: Prüfen, ob Operator vorhanden
+                op_id = "kaiserlich_tracker.master_cycle_operator"
+                if hasattr(bpy.ops.kaiserlich_tracker, "master_cycle_operator"):
+                    # Asynchroner Aufruf (non-blocking)
+                    bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
+                    self.report({'INFO'}, "[CleanError] Übergabe an Master-Cycle erfolgreich.")
+                else:
+                    self.report({'WARNING'},
+                                f"[CleanError] Operator '{op_id}' nicht gefunden oder nicht registriert.")
+
+            except Exception as handoff_err:
+                self.report({'ERROR'},
+                            f"[CleanError] Fehler bei Übergabe an Master-Cycle: {handoff_err}")
+
+            # Operator selbst beenden
+            return self._finish(context)
         return {'RUNNING_MODAL'}
 
     def _finish(self, context, cancelled=False):
