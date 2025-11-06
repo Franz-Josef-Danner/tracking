@@ -68,26 +68,41 @@ def clean_error_tracks(
 
     # --- Operator sicher ausführen ---
     try:
-        override = bpy.context.copy()
-        override["window"] = bpy.context.window
-        override["screen"] = bpy.context.window.screen
-        override["area"] = area
-        override["region"] = region
-        override["space_data"] = space
+        # Log: Vorbereitungsprüfung
+        print(f"[CleanErrorTracks] 🔍 Vorbereitungen: area={area}, region={region}, space={space}")
 
-        with bpy.context.temp_override(area=area, region=region, space_data=space):
+        clip = getattr(space, "clip", None)
+        if clip is None:
+            print("[CleanErrorTracks] ❌ Kein aktiver Clip im Space – clean_error kann nicht ausgeführt werden.")
+            raise RuntimeError("Kein aktiver Clip im Space")
+
+        # Log: Clipname und Track-Anzahl vor Ausführung
+        if hasattr(clip, "tracking") and hasattr(clip.tracking, "tracks"):
+            print(f"[CleanErrorTracks] 🎞️ Clip '{clip.name}' enthält {len(clip.tracking.tracks)} Tracks vor dem Clean.")
+
+        # Sichere Context-Übergabe inkl. edit_movieclip
+        with bpy.context.temp_override(area=area, region=region, space_data=space, edit_movieclip=clip):
             print(f"[CleanErrorTracks] 🧹 clean_error(threshold={thr:.4f}, action={action}) …")
-            bpy.ops.clip.clean_error(clean_error=thr, action=action)
-            print(f"[CleanErrorTracks] ✅ abgeschlossen (Clip={clip.name}).")
+            result = bpy.ops.clip.clean_error(clean_error=thr, action=action)
+            print(f"[CleanErrorTracks] ✅ Operator ausgeführt (Result={result}, Clip={clip.name}).")
+
+        # Log: Anzahl Tracks nach erfolgreichem Operator
+        if hasattr(clip, "tracking") and hasattr(clip.tracking, "tracks"):
+            print(f"[CleanErrorTracks] 📊 Tracks nach clean_error: {len(clip.tracking.tracks)}")
 
     except Exception as e:
         print(f"[CleanErrorTracks] ❌ Fehler bei clean_error: {e}")
+
         if hasattr(clip, "tracking"):
             tracks = clip.tracking.tracks
             to_delete = [t for t in tracks if getattr(t, "average_error", 0.0) > thr]
+            print(f"[CleanErrorTracks] ⚙️ Fallback aktiviert → {len(to_delete)} Tracks über Threshold={thr:.2f}.")
+
             for t in to_delete:
                 try:
                     tracks.remove(t)
-                except Exception:
-                    pass
-            print(f"[CleanErrorTracks] ⚙️ Fallback: {len(to_delete)} Tracks über Threshold={thr:.2f} gelöscht.")
+                    print(f"[CleanErrorTracks] 🗑️ Track '{t.name}' entfernt (avg_err={getattr(t, 'average_error', 0.0):.2f}).")
+                except Exception as ex:
+                    print(f"[CleanErrorTracks] ⚠️ Fehler beim Entfernen von '{t.name}': {ex}")
+
+            print(f"[CleanErrorTracks] ⚙️ Fallback abgeschlossen: {len(to_delete)} Tracks gelöscht.")
