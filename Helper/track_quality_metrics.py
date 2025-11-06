@@ -59,9 +59,27 @@ def compute_track_quality_metrics(
     - Nur aktive (nicht gemutete) Marker werden berücksichtigt.
     - Segmentlänge = max(frame) - min(frame) + 1 (aus aktiven Markern)
     - Tracks unter 25 Frames gelten als "kurz".
+    - Schwelle für "kurz" wird dynamisch aus scene.max_error_value genommen (Fallback 25).
     - Tracks mit >3 Spikes gelten als instabil.
     - Prozent = Anteil sauberer, langer Tracks an allen Tracks.
     """
+    # --- Dynamische Mindestlänge aus Szene holen ---------------------------------
+    # Quelle: col.prop(scene, "max_error_value", text="Max error Value")
+    # Logik: float -> floor -> min. 1; Fallback: 25
+    try:
+        scene = context.scene
+        dyn_val = getattr(scene, "max_error_value", None)
+        if dyn_val is None:
+            raise ValueError("scene.max_error_value fehlt")
+        dyn_float = float(dyn_val)
+        if not math.isfinite(dyn_float) or dyn_float <= 0:
+            raise ValueError("scene.max_error_value ungültig")
+        # Frameschwelle als ganze Zahl interpretieren (Floor), mind. 1
+        min_len_for_long = max(1, int(math.floor(dyn_float)))
+    except Exception:
+        # Fallback: bestehender Default (25)
+        min_len_for_long = max(1, int(math.floor(min_len_for_long)))
+
     clip = getattr(context, "edit_movieclip", None) or (
         context.space_data.clip if context.space_data and context.space_data.type == "CLIP_EDITOR" else None
     )
@@ -90,13 +108,13 @@ def compute_track_quality_metrics(
             unter_25.append(t)
 
     anzahl_unter_25 = len(unter_25)
-    print(f"[Quality] 🟡 Unter 25 Frames: {anzahl_unter_25}")
+    print(f"[Quality] 🟡 Unter {min_len_for_long} Frames: {anzahl_unter_25}")
 
     # ------------------------------------------------------------
     # 3. Lange Tracks
     # ------------------------------------------------------------
     anzahl_lange_tracks = max(0, anzahl_alle_tracks - anzahl_unter_25)
-    print(f"[Quality] 🔵 Lange Tracks: {anzahl_lange_tracks}")
+    print(f"[Quality] 🔵 Lange Tracks (≥ {min_len_for_long}): {anzahl_lange_tracks}")
 
     # ------------------------------------------------------------
     # 4. Spike-Erkennung (mehr als 3 Spikes)
