@@ -1,5 +1,5 @@
 # Helper/clean_error_tracks.py
-# Zweck: Sichere Hülle um bpy.ops.clip.clean_error mit zuverlässigem Fallback:
+# Zweck: Sichere Hülle um bpy.ops.clip.clean_error mit zuverlässigem Fallback.
 #        Wenn kein gültiger Schwellenwert ermittelt werden kann -> threshold = 20.0
 
 import math
@@ -66,73 +66,73 @@ def clean_error_tracks(
         print("[CleanErrorTracks] ❌ Kein aktiver MovieClip im Space vorhanden.")
         return
 
-    # --- Operator sicher ausführen ---
+    # --- Operator sicher ausführen (wenn registriert) ---
     try:
-        # Log: Vorbereitungsprüfung
         print(f"[CleanErrorTracks] 🔍 Vorbereitungen: area={area}, region={region}, space={space}")
+        if hasattr(clip, "tracking") and hasattr(clip.tracking, "objects"):
+            # Vorher-Status
+            total_tracks = sum(len(obj.tracks) for obj in clip.tracking.objects)
+            print(f"[CleanErrorTracks] 🎞️ Clip '{clip.name}' enthält {total_tracks} Tracks vor dem Clean.")
 
-        clip = getattr(space, "clip", None)
-        if clip is None:
-            print("[CleanErrorTracks] ❌ Kein aktiver Clip im Space – clean_error kann nicht ausgeführt werden.")
-            raise RuntimeError("Kein aktiver Clip im Space")
-
-        # Log: Clipname und Track-Anzahl vor Ausführung
-        if hasattr(clip, "tracking") and hasattr(clip.tracking, "tracks"):
-            print(f"[CleanErrorTracks] 🎞️ Clip '{clip.name}' enthält {len(clip.tracking.tracks)} Tracks vor dem Clean.")
-
-        # Sichere Context-Übergabe inkl. edit_movieclip
+        # Versuch über Operator (falls verfügbar)
         with bpy.context.temp_override(area=area, region=region, space_data=space, edit_movieclip=clip):
             print(f"[CleanErrorTracks] 🧹 clean_error(threshold={thr:.4f}, action={action}) …")
-            result = bpy.ops.clip.clean_error(clean_error=thr, action=action)
+            result = bpy.ops.clip.clean_error(clean_error=thr, action=action)  # kann „could not be found“ werfen
             print(f"[CleanErrorTracks] ✅ Operator ausgeführt (Result={result}, Clip={clip.name}).")
 
-        # Log: Anzahl Tracks nach erfolgreichem Operator
-        if hasattr(clip, "tracking") and hasattr(clip.tracking, "tracks"):
-            print(f"[CleanErrorTracks] 📊 Tracks nach clean_error: {len(clip.tracking.tracks)}")
+        # Nachher-Status
+        if hasattr(clip, "tracking") and hasattr(clip.tracking, "objects"):
+            total_tracks_after = sum(len(obj.tracks) for obj in clip.tracking.objects)
+            print(f"[CleanErrorTracks] 📊 Tracks nach clean_error: {total_tracks_after}")
+        return
 
     except Exception as e:
         print(f"[CleanErrorTracks] ❌ Fehler bei clean_error: {e}")
+        # -> Fallback aktivieren
+        pass
 
-        if hasattr(clip, "tracking"):
-            tracks = clip.tracking.tracks
-            to_delete = [t for t in tracks if getattr(t, "average_error", 0.0) > thr]
-            print(f"[CleanErrorTracks] ⚙️ Fallback aktiviert → {len(to_delete)} Tracks über Threshold={thr:.2f}.")
+    # --- Fallback: API-basiertes Löschen ohne Operator-Kontext ---
+    try:
+        tracking = getattr(clip, "tracking", None)
+        if tracking is None or not hasattr(tracking, "objects") or not tracking.objects:
+            print("[CleanErrorTracks] ⚠️ Fallback: Keine Tracking-Objekte gefunden.")
+            return
 
-            area = None
-            region = None
-            space = None
-            for a in bpy.context.screen.areas:
-                if a.type == "CLIP_EDITOR":
-                    area = a
-                    region = next((r for r in a.regions if r.type == "WINDOW"), None)
-                    space = a.spaces.active
-                    break
+        # Alle betroffenen Tracks über alle Tracking-Objekte einsammeln
+        candidates = []
+        for obj in tracking.objects:
+            try:
+                for t in obj.tracks:
+                    if getattr(t, "average_error", 0.0) > thr:
+                        candidates.append((obj, t))
+            except Exception as scan_ex:
+                print(f"[CleanErrorTracks][DBG] ⚠️ Scan-Fehler in Objekt '{getattr(obj, 'name', '?')}': {scan_ex}")
 
-            deleted = 0
-            for t in to_delete:
-                    print(f"[CleanErrorTracks][DBG] → Starte API-basierte Löschung von '{t.name}' (avg_err={getattr(t, 'average_error', 0.0):.2f})")
+        print(f"[CleanErrorTracks] ⚙️ Fallback aktiviert → {len(candidates)} Tracks über Threshold={thr:.2f}.")
 
-                    tracking_obj = clip.tracking.objects.active
-                    if not tracking_obj:
-                        print("[CleanErrorTracks][DBG] ⚠️ Kein aktives Tracking-Objekt gefunden – überspringe.")
-                        continue
+        deleted = 0
+        for obj, t in candidates:
+            try:
+                tracks_collection = obj.tracks
+                total_before = len(tracks_collection)
+                print(f"[CleanErrorTracks][DBG] → Lösche '{t.name}' in Objekt '{obj.name}' "
+                      f"(avg_err={getattr(t, 'average_error', 0.0):.2f}, vorher={total_before})")
 
-                    tracks_collection = tracking_obj.tracks
-                    total_before = len(tracks_collection)
-                    print(f"[CleanErrorTracks][DBG] Aktives Tracking-Objekt: {tracking_obj.name}, Tracks gesamt vor Entfernen={total_before}")
+                # Direkte API-Entfernung
+                tracks_collection.remove(t)
 
-                    # Manuelle, Low-Level Entfernung
-                    try:
-                        tracks_collection.remove(t)
-                        deleted += 1
-                        total_after = len(tracks_collection)
-                        print(f"[CleanErrorTracks][DBG] ✅ Track '{t.name}' entfernt (vorher={total_before}, nachher={total_after}).")
-                    except Exception as rm_ex:
-                        print(f"[CleanErrorTracks][DBG] ❌ API-Remove fehlgeschlagen für '{t.name}': {rm_ex}")
+                total_after = len(tracks_collection)
+                deleted += 1
+                print(f"[CleanErrorTracks][DBG] ✅ Track '{t.name}' entfernt (nachher={total_after}).")
 
-                except Exception as ex:
-                    print(f"[CleanErrorTracks][ERR] Ausnahme beim Entfernen von '{t.name}': {ex}")
+            except Exception as rm_ex:
+                print(f"[CleanErrorTracks][DBG] ❌ API-Remove fehlgeschlagen für '{t.name}' "
+                      f"in Objekt '{getattr(obj, 'name', '?')}': {rm_ex}")
 
-            remaining = len(clip.tracking.objects.active.tracks) if clip.tracking.objects.active else -1
-            print(f"[CleanErrorTracks][DBG] 🧾 Abschlussbericht: {deleted} Tracks gelöscht, verbleibend {remaining}")
-            print(f"[CleanErrorTracks] ⚙️ Fallback abgeschlossen (API-basiert).")
+        # Abschlussstatus
+        remaining = sum(len(obj.tracks) for obj in tracking.objects)
+        print(f"[CleanErrorTracks][DBG] 🧾 Abschlussbericht: {deleted} Tracks gelöscht, verbleibend {remaining}")
+        print(f"[CleanErrorTracks] ⚙️ Fallback abgeschlossen (API-basiert).")
+
+    except Exception as ex:
+        print(f"[CleanErrorTracks][ERR] Unerwarteter Fallback-Fehler: {ex}")
