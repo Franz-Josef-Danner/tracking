@@ -121,65 +121,31 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
             lines.append(f"[Summary] ⛔ Durchschnitt {avg_error:.4f} > Max {max_error_value:.4f}")
             lines.append(f"[Summary] Löschgrenze = Durchschnitt * 2 = {limit:.4f}")
            
+            # --- Verwendung des bestehenden Helpers delete_track_by_name ---
+            try:
+                from ...Helper.delete import delete_track_by_name
+            except Exception as e:
+                self.report({'ERROR'}, f"Helper delete_track_by_name konnte nicht importiert werden: {e}")
+                return {'CANCELLED'}
+
             delete_count = 0
-
-            # --- Über aktives Tracking-Objekt löschen (objektgebundene Tracks) ---
-            tracking = getattr(clip, "tracking", None)
-            if tracking is None:
-                self.report({'ERROR'}, "clip.tracking nicht verfügbar.")
-                return {'CANCELLED'}
-
-            # aktives Tracking-Objekt (Fallback: erstes Objekt)
-            active_obj = tracking.objects.active if hasattr(tracking.objects, "active") else None
-            if active_obj is None and len(tracking.objects) > 0:
-                active_obj = tracking.objects[0]
-            if active_obj is None:
-                self.report({'ERROR'}, "Kein Tracking-Objekt vorhanden.")
-                return {'CANCELLED'}
-
-            obj_tracks = getattr(active_obj, "tracks", None)
-            has_delete = hasattr(obj_tracks, "delete")
-            # Optionaler Fallback auf Operator, falls delete() nicht existiert
-            # (nur wenn wir einen gültigen CLIP_EDITOR-Kontext finden)
-            clip_area = None
-            clip_space = None
-            if not has_delete:
-                for window in context.window_manager.windows:
-                    for area in window.screen.areas:
-                        if area.type == 'CLIP_EDITOR':
-                            clip_area = area
-                            clip_space = area.spaces.active
-                            break
-                    if clip_area:
-                        break
-
             for r in results:
                 if r["error"] is not None and r["error"] > limit:
+                    ok = False
                     try:
-                        if has_delete and r["track"] in obj_tracks:
-                            # Direkter API-Weg
-                            obj_tracks.delete(r["track"])
-                            delete_count += 1
-                            msg = f"[Delete] ❌ {r['name']} (Error {r['error']:.4f} > {limit:.4f})"
-                            lines.append(msg)
-                            print(msg)
-                        elif not has_delete and clip_area is not None:
-                            # Fallback über Operator im gültigen Kontext
-                            for t in obj_tracks:
-                                t.select = False
-                            r["track"].select = True
-                            with bpy.context.temp_override(area=clip_area, space_data=clip_space, edit_clip=clip):
-                                bpy.ops.clip.track_delete()
-                            delete_count += 1
-                            msg = f"[Delete(OP)] ❌ {r['name']} (Error {r['error']:.4f} > {limit:.4f})"
-                            lines.append(msg)
-                            print(msg)
-                        else:
-                            msg = f"[Delete][SKIP] {r['name']} – weder delete() verfügbar noch CLIP_EDITOR-Kontext."
-                            lines.append(msg)
-                            print(msg)
+                        ok = delete_track_by_name(context, r["name"])
                     except Exception as e:
                         msg = f"[Delete][ERROR] {r['name']} → {e}"
+                        lines.append(msg)
+                        print(msg)
+
+                    if ok:
+                        delete_count += 1
+                        msg = f"[Delete] ❌ {r['name']} (Error {r['error']:.4f} > {limit:.4f})"
+                        lines.append(msg)
+                        print(msg)
+                    else:
+                        msg = f"[Delete][SKIP] {r['name']} konnte nicht gelöscht werden."
                         lines.append(msg)
                         print(msg)
 
