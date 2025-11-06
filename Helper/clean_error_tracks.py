@@ -111,26 +111,39 @@ def clean_error_tracks(
             deleted = 0
             for t in to_delete:
                 try:
-                    # Zugriff über das aktive Tracking-Objekt herstellen
-                    tracking_obj = clip.tracking.objects.active
-                    tracks_collection = tracking_obj.tracks
+                    # Diagnoseebene 1: Strukturvalidierung
+                    print(f"[CleanErrorTracks][DBG] → Starte Löschung von '{t.name}' (avg_err={getattr(t, 'average_error', 0.0):.2f})")
 
-                    # Track-Selektion vorbereiten
+                    tracking_obj = clip.tracking.objects.active
+                    if not tracking_obj:
+                        print("[CleanErrorTracks][DBG] ⚠️ Kein aktives Tracking-Objekt gefunden, breche diesen Track ab.")
+                        continue
+
+                    tracks_collection = tracking_obj.tracks
+                    print(f"[CleanErrorTracks][DBG] Aktives Tracking-Objekt: {tracking_obj.name}, Tracks gesamt={len(tracks_collection)}")
+
+                    # Alle Selektionen zurücksetzen
                     for tr in tracks_collection:
                         tr.select = False
                     t.select = True
 
-                    # Aktiven Track setzen
-                    tracking_obj.active_track = t
+                    # Diagnoseebene 2: Auswahlstatus prüfen
+                    sel_state = sum(1 for tr in tracks_collection if tr.select)
+                    print(f"[CleanErrorTracks][DBG] Selektion gesetzt → {sel_state} Track(s) selektiert.")
 
-                    # Operator im CLIP_EDITOR-Kontext ausführen
+                    # Operator-Aufruf mit Kontext
                     with bpy.context.temp_override(area=area, region=region, space_data=space, edit_movieclip=clip):
-                        result = bpy.ops.clip.track_delete()
-                        deleted += 1
-                        print(f"[CleanErrorTracks] 🗑️ Track '{t.name}' entfernt (avg_err={getattr(t, 'average_error', 0.0):.2f}, result={result}).")
+                        try:
+                            result = bpy.ops.clip.track_delete()
+                            deleted += 1
+                            print(f"[CleanErrorTracks] 🗑️ Track '{t.name}' entfernt (Result={result}).")
+                        except Exception as op_ex:
+                            print(f"[CleanErrorTracks][DBG] ❌ track_delete() fehlgeschlagen für '{t.name}': {op_ex}")
 
                 except Exception as ex:
-                    print(f"[CleanErrorTracks] ⚠️ Fehler beim Entfernen von '{t.name}': {ex}")
+                    print(f"[CleanErrorTracks][ERR] Ausnahme beim Entfernen von '{t.name}': {ex}")
 
-            print(f"[CleanErrorTracks] 📊 Verbleibende Tracks nach Fallback: {len(clip.tracking.objects.active.tracks)}")
-            print(f"[CleanErrorTracks] ⚙️ Fallback abgeschlossen: {deleted} Tracks gelöscht.")
+            # Diagnoseebene 3: Abschlussstatus
+            remaining = len(clip.tracking.objects.active.tracks) if clip.tracking.objects.active else -1
+            print(f"[CleanErrorTracks] 📊 Verbleibende Tracks nach Fallback: {remaining}")
+            print(f"[CleanErrorTracks] ⚙️ Fallback abgeschlossen: {deleted} Tracks erfolgreich gelöscht.")
