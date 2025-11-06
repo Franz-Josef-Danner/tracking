@@ -129,34 +129,53 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
                 self.report({'ERROR'}, "clip.tracking nicht verfügbar.")
                 return {'CANCELLED'}
 
-            # aktives Objekt bestimmen (Fallback: erstes Objekt)
-            obj = getattr(tracking, "objects", None)
-            active_obj = getattr(tracking, "objects", None)
+            # aktives Tracking-Objekt (Fallback: erstes Objekt)
             active_obj = tracking.objects.active if hasattr(tracking.objects, "active") else None
-            if active_obj is None:
-                active_obj = tracking.objects[0] if len(tracking.objects) > 0 else None
+            if active_obj is None and len(tracking.objects) > 0:
+                active_obj = tracking.objects[0]
             if active_obj is None:
                 self.report({'ERROR'}, "Kein Tracking-Objekt vorhanden.")
                 return {'CANCELLED'}
 
             obj_tracks = getattr(active_obj, "tracks", None)
-            if not hasattr(obj_tracks, "remove"):
-                self.report({'ERROR'}, "active_obj.tracks.remove() nicht verfügbar.")
-                return {'CANCELLED'}
+            has_delete = hasattr(obj_tracks, "delete")
+            # Optionaler Fallback auf Operator, falls delete() nicht existiert
+            # (nur wenn wir einen gültigen CLIP_EDITOR-Kontext finden)
+            clip_area = None
+            clip_space = None
+            if not has_delete:
+                for window in context.window_manager.windows:
+                    for area in window.screen.areas:
+                        if area.type == 'CLIP_EDITOR':
+                            clip_area = area
+                            clip_space = area.spaces.active
+                            break
+                    if clip_area:
+                        break
 
-            # --- Tracks direkt entfernen ---
             for r in results:
                 if r["error"] is not None and r["error"] > limit:
                     try:
-                        # Safety: Track gehört ggf. nicht zum aktiven Objekt → überspringen
-                        if r["track"] in obj_tracks:
-                            obj_tracks.remove(r["track"])
+                        if has_delete and r["track"] in obj_tracks:
+                            # Direkter API-Weg
+                            obj_tracks.delete(r["track"])
                             delete_count += 1
                             msg = f"[Delete] ❌ {r['name']} (Error {r['error']:.4f} > {limit:.4f})"
                             lines.append(msg)
                             print(msg)
+                        elif not has_delete and clip_area is not None:
+                            # Fallback über Operator im gültigen Kontext
+                            for t in obj_tracks:
+                                t.select = False
+                            r["track"].select = True
+                            with bpy.context.temp_override(area=clip_area, space_data=clip_space, edit_clip=clip):
+                                bpy.ops.clip.track_delete()
+                            delete_count += 1
+                            msg = f"[Delete(OP)] ❌ {r['name']} (Error {r['error']:.4f} > {limit:.4f})"
+                            lines.append(msg)
+                            print(msg)
                         else:
-                            msg = f"[Delete][SKIP] {r['name']} gehört nicht zum aktiven Objekt."
+                            msg = f"[Delete][SKIP] {r['name']} – weder delete() verfügbar noch CLIP_EDITOR-Kontext."
                             lines.append(msg)
                             print(msg)
                     except Exception as e:
