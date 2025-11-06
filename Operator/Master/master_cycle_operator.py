@@ -258,7 +258,29 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             self.report({'WARNING'}, f"Fehler beim Start des ShortTest: {ex}")
 
         # ------------------------------------------------------------------
-        # 🧮 Abschluss: Marker-Fortschritt berechnen und in Szene-Properties schreiben
+        # 🧮 Abschluss: ZUERST Track-Qualität berechnen
+        # ------------------------------------------------------------------
+        try:
+            from ...Helper.track_quality_metrics import compute_track_quality_metrics
+            metrics = compute_track_quality_metrics(context)
+            quality_percent = float(metrics.get("prozent", 100.0))
+            context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
+            print(f"[Kaiserlich Tracker][MasterCycle] 🎯 Track Quality: {quality_percent:.1f}%")
+
+            # UI-Refresh forcieren
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == 'CLIP_EDITOR':
+                        for region in area.regions:
+                            if region.type == 'UI':
+                                region.tag_redraw()
+
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][MasterCycle] ⚠️ Fehler bei Qualitätsanalyse: {e}")
+            quality_percent = 100.0
+
+        # ------------------------------------------------------------------
+        # 🧩 Danach Marker-Fortschritt berechnen (nutzt Qualität mit)
         # ------------------------------------------------------------------
         try:
             from ...Helper.frame_track_progress import compute_marker_progress
@@ -271,28 +293,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         except Exception as progress_err:
             print(f"[Kaiserlich Tracker][MasterCycle] ⚠️ Fehler bei compute_marker_progress: {progress_err!r}")
             self.report({'WARNING'}, f"Fortschrittsberechnung fehlgeschlagen: {progress_err}")
-
-        # Abschlussmeldung
-        print("[Kaiserlich Tracker][MasterCycle] ✅ Vorgang vollständig abgeschlossen.")
-        # ------------------------------------------------------------------
-        # Track-Qualitätsbewertung (Prozentwert in UI schreiben)
-        # ------------------------------------------------------------------
-        try:
-            from ...Helper.track_quality_metrics import compute_track_quality_metrics
-            metrics = compute_track_quality_metrics(context)
-            percent = f"{int(round(metrics['prozent']))}%"
-            context.scene.kaiserlich_quality_percent = percent
-            print(f"[Kaiserlich Tracker][MasterCycle] 🎯 Track Quality: {percent}")
-
-            # UI-Refresh forcieren
-            for window in bpy.context.window_manager.windows:
-                for area in window.screen.areas:
-                    if area.type == 'CLIP_EDITOR':
-                        for region in area.regions:
-                            if region.type == 'UI':
-                                region.tag_redraw()
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][MasterCycle] ⚠️ Fehler bei Qualitätsanalyse: {e}")
 
         return {'FINISHED'}
     
