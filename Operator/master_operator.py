@@ -73,7 +73,7 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         # 🧮 Abschluss: Marker-Fortschritt berechnen und in Szene-Properties schreiben
         # ------------------------------------------------------------------
         try:
-            from ...Helper.frame_track_progress import compute_marker_progress
+            from ..Helper.frame_track_progress import compute_marker_progress
             value, perc = compute_marker_progress(context.scene, update_ui=True)
             print(f"[Kaiserlich Tracker][MasterCycle] 📊 Marker-Fortschritt berechnet: {value} Marker ({perc:.2f}%)")
 
@@ -90,7 +90,7 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         # Track-Qualitätsbewertung (Prozentwert in UI schreiben)
         # ------------------------------------------------------------------
         try:
-            from ...Helper.track_quality_metrics import compute_track_quality_metrics
+            from ..Helper.track_quality_metrics import compute_track_quality_metrics
             metrics = compute_track_quality_metrics(context)
             percent = f"{int(round(metrics['prozent']))}%"
             context.scene.kaiserlich_quality_percent = percent
