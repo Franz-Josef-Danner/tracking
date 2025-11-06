@@ -14,13 +14,7 @@ try:
         refine_intrinsics_radial_distortion_on,
     )
     from ...Helper.get_average_error import get_average_error
-    # Fallback: verwende clean_error_tracks_modal, falls clean_error_tracks fehlt
-    try:
-        from ...Helper.clean_error_tracks import clean_error_tracks
-    except ImportError:
-        from ...Helper.clean_error_tracks_modal import KAISERLICHTRACKER_OT_clean_error_modal
-        clean_error_tracks = None
-
+    from ...Helper.clean_error_tracks import clean_error_tracks
     from ...Helper.low_marker_frame import find_first_weak_frame
 except Exception as e:
     raise ImportError(f"[master_resolve_operator] Fehlende oder fehlerhafte Add-on-Module: {e}")
@@ -94,29 +88,20 @@ def _check_and_filter(context: bpy.types.Context, avg_err: float) -> float:
     # NaN/<=0 → Fallback Filter 20.0
     if val <= 0.0 or not (val == val):
         try:
-            # Asynchroner Aufruf über modal Operator, verhindert UI-Freeze
-            bpy.ops.kaiserlich_tracker.clean_error_modal(
-                'INVOKE_DEFAULT',
-                threshold=20.0,
-                action='DELETE_TRACK'
-            )
-        except Exception as e:
-            print(f"[Resolve][AsyncClean] Fehler beim Start des Clean-Operators: {e}")
+            clean_error_tracks(context, 20.0)
+        except Exception:
+            pass
         return 20.0
 
     # Nur wenn überschritten, filtern (Faktor 2 laut Vorgabe)
     if val > max_err:
         threshold = val * 2.0
-        if threshold <= 0.0 or threshold == float('inf'):
+        if threshold <= 0.0 or threshold == float("inf"):
             threshold = 20.0
         try:
-            bpy.ops.kaiserlich_tracker.clean_error_modal(
-                'INVOKE_DEFAULT',
-                threshold=threshold,
-                action='DELETE_TRACK'
-            )
-        except Exception as e:
-            print(f"[Resolve][AsyncClean] Fehler beim Start des Clean-Operators: {e}")
+            clean_error_tracks(context, threshold)
+        except Exception:
+            pass
 
     return val
 
@@ -305,7 +290,6 @@ class KAISERLICHTRACKER_OT_master_solve_modal(bpy.types.Operator):
 classes = (
     KAISERLICHTRACKER_OT_master_resolve_operator,
     KAISERLICHTRACKER_OT_master_solve_modal,
-    KAISERLICHTRACKER_OT_clean_error_modal,
 )
 
 def register():
