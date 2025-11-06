@@ -19,7 +19,7 @@ except Exception as e:
 
 
 class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
-    """Gestufter Kamera-Solve mit Intrinsics-Eskalation und Fehlerprüfung + kontinuierlichem Fortschritt."""
+    """Gestufter Kamera-Solve mit Intrinsics-Eskalation und String-Fortschritt."""
     bl_idname = "kaiserlich_tracker.master_resolve_operator"
     bl_label = "Kaiserlich: Resolve Master (gestuft)"
     bl_options = {'REGISTER', 'UNDO'}
@@ -35,7 +35,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
     _avg_error = None
     _area = _region = _space = None
 
-    MAX_STAGES = 4  # 4 definierte Solve-Stufen
+    MAX_STAGES = 4  # Solve-Stufen
 
     # ---------------- Lifecycle ----------------
     def invoke(self, context, event):
@@ -75,7 +75,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             self._run_solve_stage(context, self._stage)
             self._phase = 2
             self._elapsed = 0.0
-            # Nach Start der Solve-Stufe – Anfangspunkt des Fortschritts setzen
+            # Anfangspunkt für Stufe
             base_progress = (self._stage - 1) / self.MAX_STAGES * 100.0
             self._update_progress(context, base_progress)
             return {'RUNNING_MODAL'}
@@ -87,7 +87,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             err_val = self._safe_avg_error(clip)
             max_err = getattr(context.scene, "max_error_value", 20.0)
 
-            # Kontinuierliche Fortschrittsinterpolation innerhalb dieser Stufe
+            # Fortlaufende lineare Fortschrittsinterpolation
             base = (self._stage - 1) / self.MAX_STAGES * 100.0
             local = min(self._elapsed / self.timeout_seconds, 1.0) * (100.0 / self.MAX_STAGES)
             percent = base + local
@@ -101,12 +101,13 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
                     self._update_progress(context, 100.0)
                     return self._finish(context)
 
-                # Wenn zu hoch → nächste Stufe
+                # Zu hoher Fehler → nächste Stufe
                 self._stage += 1
                 self._phase = 1
                 self._log_info(f"[Resolve] → Eskalation zu Stufe {self._stage}")
                 return {'RUNNING_MODAL'}
 
+            # Timeout erreicht → nächste Stufe
             if self._elapsed >= self.timeout_seconds:
                 self._log_warn(f"[Resolve][Stage{self._stage}] Timeout ohne gültigen Fehlerwert.")
                 self._stage += 1
@@ -122,10 +123,8 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         """Führt den Solve mit definierten Intrinsics-Settings aus."""
         refine_intrinsics_reset(context)
 
-        # Stage-Konfiguration
         if stage == 1:
-            # Focal=False, Principal=False, Dist=False
-            pass
+            pass  # Focal=False, Principal=False, Dist=False
         elif stage == 2:
             refine_intrinsics_focal_length_on(context)
         elif stage == 3:
@@ -138,7 +137,6 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
         self._log_info(f"[Resolve][Stage{stage}] Solve gestartet (Focal={stage>1}, Principal={stage>2}, Dist={stage>3})")
 
-        # Ausführung Solve
         try:
             buf_out, buf_err = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
@@ -163,10 +161,12 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             return None
 
     def _update_progress(self, context, value: float):
-        """Aktualisiert den UI-Fortschritt (0–100 %) in scene.kaiserlich_progress_title."""
+        """Aktualisiert den UI-Fortschritt als Text (z. B. '42.3%')."""
         scene = context.scene
+        percent_str = f"{round(min(value, 100.0), 1):.1f}%"
         if hasattr(scene, "kaiserlich_progress_title"):
-            scene.kaiserlich_progress_title = round(min(value, 100.0), 1)
+            scene.kaiserlich_progress_title = percent_str
+            # UI-Refresh
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == 'CLIP_EDITOR':
