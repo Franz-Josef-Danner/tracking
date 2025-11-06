@@ -40,7 +40,6 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    register_class(KAISERLICHTRACKER_OT_clean_error_modal)
 
     # Property für Eingabefeld
     bpy.types.Scene.kaiserlich_markers_per_frame = bpy.props.IntProperty(
@@ -79,7 +78,6 @@ def register():
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    unregister_class(KAISERLICHTRACKER_OT_clean_error_modal)
 
     # Property entfernen
     if hasattr(bpy.types.Scene, "kaiserlich_markers_per_frame"):
