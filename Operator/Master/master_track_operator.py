@@ -215,34 +215,40 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             "[Kaiserlich Tracker][Modal] ❌ Zyklus abgebrochen."
         )
 
-        # Letzter Fortschritts-Refresh bei Abschluss
-        try:
-            _, perc = compute_marker_progress(context.scene, update_ui=True)
-            context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Progress] ⚠️ Abschluss-Update fehlgeschlagen: {e}")
         # ------------------------------------------------------------------
-        # Prozentwert in Szene schreiben
+        # 1️⃣ Zuerst: Qualitätsmetrik berechnen
         # ------------------------------------------------------------------
         try:
             from ...Helper.track_quality_metrics import compute_track_quality_metrics
             metrics = compute_track_quality_metrics(context)
-            percent = f"{int(round(metrics['prozent']))}%"
-            context.scene.kaiserlich_quality_percent = percent
-            print(f"[Kaiserlich Tracker][Quality] {percent}")
+            quality_percent = float(metrics.get("prozent", 100.0))
+            context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
+            print(f"[Kaiserlich Tracker][Quality] 🎯 {quality_percent:.1f}%")
 
-            # UI-Refresh
+            # UI Refresh erzwingen
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
-                    if area.type == 'CLIP_EDITOR':
+                    if area.type == "CLIP_EDITOR":
                         for region in area.regions:
-                            if region.type == 'UI':
+                            if region.type == "UI":
                                 region.tag_redraw()
         except Exception as e:
-            print(f"[Kaiserlich Tracker][Quality] ⚠️ Fehler beim Schreiben des Prozentwertes: {e}")
+            print(f"[Kaiserlich Tracker][Quality] ⚠️ Fehler bei Qualitätsberechnung: {e}")
+            quality_percent = 100.0  # Fallback, wenn Qualität fehlschlägt
 
         # ------------------------------------------------------------------
-        # Nach Abschluss: Übergabe an Master-Cycle-Operator
+        # 2️⃣ Danach: Fortschritt berechnen (inkl. Qualitätsfaktor)
+        # ------------------------------------------------------------------
+        try:
+            from ...Helper.frame_track_progress import compute_marker_progress
+            value, perc = compute_marker_progress(context.scene, update_ui=True)
+            context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
+            print(f"[Kaiserlich Tracker][Progress] 📊 Marker: {value} | Effektiv: {perc:.1f}%")
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][Progress] ⚠️ Abschluss-Update fehlgeschlagen: {e}")
+
+        # ------------------------------------------------------------------
+        # 3️⃣ Nach Abschluss: Übergabe an Master-Cycle-Operator
         # ------------------------------------------------------------------
         if not cancelled:
             try:
