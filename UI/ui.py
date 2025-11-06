@@ -41,7 +41,7 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 
         row = col.row(align=True)
         row.operator("kaiserlich_tracker.master_resolve_operator", text="solve camera", icon="OUTLINER_OB_CAMERA")
-        row.operator("kaiserlich_tracker.clean_error_operator", text="delet error track", icon="ERROR")
+        row.operator("kaiserlichtracker.clean_error_operator", text="delet error track", icon="ERROR")
       
         layout.separator()
 
