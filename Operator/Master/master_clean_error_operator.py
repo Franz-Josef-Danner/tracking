@@ -28,7 +28,8 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
     )
 
     def execute(self, context: Context):
-        # Aktiven Clip ermitteln
+        # --- Gültigen Clip Editor finden ---
+        override = None
         clip = None
         for window in bpy.context.window_manager.windows:
             for area in window.screen.areas:
@@ -48,18 +49,21 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
             if clip:
                 break
 
-        if not clip:
-            self.report({'ERROR'}, "Kein aktiver Clip im Clip-Editor gefunden.")
+        if not clip or not override:
+            self.report({'ERROR'}, "Kein aktiver Movie Clip im Clip Editor gefunden.")
             return {'CANCELLED'}
 
-        # Tracking-Einstellungen anpassen
+        # --- Parameter setzen ---
         settings = clip.tracking.settings
         settings.clean_action = self.action
         settings.clean_error = self.threshold
 
-        # Sicheren Operator-Aufruf ausführen
+        # --- Operator mit Keyword-Parametern korrekt ausführen ---
         try:
-            bpy.ops.clip.clean_error(override, 'EXEC_DEFAULT')
+            bpy.ops.clip.clean_error(
+                override,
+                execution_context='EXEC_DEFAULT'
+            )
         except Exception as e:
             self.report({'ERROR'}, f"Clean Error fehlgeschlagen: {e}")
             return {'CANCELLED'}
