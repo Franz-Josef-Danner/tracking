@@ -119,7 +119,7 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
 
         # Vergleich + ggf. Löschung
         if avg_error > max_error_value:
-            limit = avg_error * 2.0
+            limit = avg_error * 1.5
             lines.append(f"[Summary] ⛔ Durchschnitt {avg_error:.4f} > Max {max_error_value:.4f}")
             lines.append(f"[Summary] Löschgrenze = Durchschnitt * 2 = {limit:.4f}")
            
