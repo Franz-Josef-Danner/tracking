@@ -305,10 +305,7 @@ class KAISERLICHTRACKER_OT_master_solve_modal(bpy.types.Operator):
 classes = (
     KAISERLICHTRACKER_OT_master_resolve_operator,
     KAISERLICHTRACKER_OT_master_solve_modal,
-    # auch den Clean-Operator hier registrieren
-    getattr(__import__('...Helper.clean_error_tracks_modal',
-                       fromlist=['KAISERLICHTRACKER_OT_clean_error_modal']),
-            'KAISERLICHTRACKER_OT_clean_error_modal'),
+    KAISERLICHTRACKER_OT_clean_error_modal,
 )
 
 def register():
