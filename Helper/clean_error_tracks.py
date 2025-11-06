@@ -91,48 +91,62 @@ def clean_error_tracks(
         # -> Fallback aktivieren
         pass
 
-    # --- Fallback: API-basiertes Löschen ohne Operator-Kontext ---
+    # --- Fallback: Operator-basiert im echten Clip-Editor-Kontext ---
     try:
         tracking = getattr(clip, "tracking", None)
         if tracking is None or not hasattr(tracking, "objects") or not tracking.objects:
             print("[CleanErrorTracks] ⚠️ Fallback: Keine Tracking-Objekte gefunden.")
             return
-
-        # Alle betroffenen Tracks über alle Tracking-Objekte einsammeln
+    
         candidates = []
         for obj in tracking.objects:
-            try:
-                for t in obj.tracks:
-                    if getattr(t, "average_error", 0.0) > thr:
-                        candidates.append((obj, t))
-            except Exception as scan_ex:
-                print(f"[CleanErrorTracks][DBG] ⚠️ Scan-Fehler in Objekt '{getattr(obj, 'name', '?')}': {scan_ex}")
-
+            for t in obj.tracks:
+                if getattr(t, "average_error", 0.0) > thr:
+                    candidates.append((obj, t))
+    
         print(f"[CleanErrorTracks] ⚙️ Fallback aktiviert → {len(candidates)} Tracks über Threshold={thr:.2f}.")
-
+    
         deleted = 0
+    
+        # Vollständiger UI-Kontext finden
+        window = bpy.context.window
+        screen = window.screen
+        area = next((a for a in screen.areas if a.type == "CLIP_EDITOR"), None)
+        if not area:
+            print("[CleanErrorTracks] ❌ Kein CLIP_EDITOR im aktuellen Screen gefunden – Abbruch.")
+            return
+        region = next((r for r in area.regions if r.type == "WINDOW"), None)
+        space = area.spaces.active
+        print(f"[CleanErrorTracks][DBG] Kontext bestätigt → window={window}, area={area}, region={region}, space={space}")
+    
         for obj, t in candidates:
             try:
-                tracks_collection = obj.tracks
-                total_before = len(tracks_collection)
-                print(f"[CleanErrorTracks][DBG] → Lösche '{t.name}' in Objekt '{obj.name}' "
-                      f"(avg_err={getattr(t, 'average_error', 0.0):.2f}, vorher={total_before})")
-
-                # Direkte API-Entfernung
-                tracks_collection.remove(t)
-
-                total_after = len(tracks_collection)
-                deleted += 1
-                print(f"[CleanErrorTracks][DBG] ✅ Track '{t.name}' entfernt (nachher={total_after}).")
-
+                # Auswahl auf genau diesen Track setzen
+                for tr in obj.tracks:
+                    tr.select = False
+                t.select = True
+    
+                with bpy.context.temp_override(
+                    window=window,
+                    screen=screen,
+                    area=area,
+                    region=region,
+                    space_data=space,
+                    edit_movieclip=clip
+                ):
+                    print(f"[CleanErrorTracks][DBG] → Lösche '{t.name}' (avg_err={getattr(t,'average_error',0.0):.2f}) via Operator.")
+                    result = bpy.ops.clip.track_delete()
+                    if "FINISHED" in str(result):
+                        deleted += 1
+                        print(f"[CleanErrorTracks][DBG] ✅ Track '{t.name}' entfernt (Result={result}).")
+                    else:
+                        print(f"[CleanErrorTracks][DBG] ⚠️ Operator resultierte in {result} für '{t.name}'.")
             except Exception as rm_ex:
-                print(f"[CleanErrorTracks][DBG] ❌ API-Remove fehlgeschlagen für '{t.name}' "
-                      f"in Objekt '{getattr(obj, 'name', '?')}': {rm_ex}")
-
-        # Abschlussstatus
+                print(f"[CleanErrorTracks][DBG] ❌ Operator-Löschung fehlgeschlagen für '{t.name}': {rm_ex}")
+    
         remaining = sum(len(obj.tracks) for obj in tracking.objects)
         print(f"[CleanErrorTracks][DBG] 🧾 Abschlussbericht: {deleted} Tracks gelöscht, verbleibend {remaining}")
-        print(f"[CleanErrorTracks] ⚙️ Fallback abgeschlossen (API-basiert).")
-
+        print(f"[CleanErrorTracks] ⚙️ Fallback abgeschlossen (Operator-Kontext erfolgreich).")
+    
     except Exception as ex:
         print(f"[CleanErrorTracks][ERR] Unerwarteter Fallback-Fehler: {ex}")
