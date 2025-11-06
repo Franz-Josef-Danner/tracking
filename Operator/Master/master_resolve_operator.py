@@ -1,3 +1,4 @@
+# Operator/Master/master_resolve_operator.py
 from __future__ import annotations
 import bpy
 from bpy.types import Operator
@@ -9,6 +10,7 @@ try:
     from ...Helper.get_average_error import get_average_error
 except Exception as e:
     raise ImportError(f"[master_resolve_operator_modal] Fehlende Add-on-Module: {e}")
+
 
 class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
     """Modaler Solve → Polling auf average_error → CleanError (mit Logs)."""
@@ -62,7 +64,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
 
-        # Phase 0: Kontext
+        # Phase 0: Kontext finden
         if self._phase == 0:
             self._area, self._region, self._space = self._find_clip_context()
             if not (self._area and self._region and self._space and getattr(self._space, "clip", None)):
@@ -73,7 +75,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             self._phase = 1
             return {'RUNNING_MODAL'}
 
-        # Phase 1: Solve (stdout/stderr unterdrücken)
+        # Phase 1: Solve
         if self._phase == 1:
             try:
                 self._log_info("[Resolve][Phase1] Solve aufgerufen (Logs stumm).")
@@ -81,7 +83,6 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
                 with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
                     with bpy.context.temp_override(area=self._area, region=self._region, space_data=self._space):
                         bpy.ops.clip.solve_camera('EXEC_DEFAULT')
-                # Optional: interne Solve-Ausgabe inspizierbar machen
                 if self.log_verbose:
                     out_len = len(buf_out.getvalue())
                     err_len = len(buf_err.getvalue())
@@ -121,20 +122,16 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
                 self._phase = 3
                 return {'RUNNING_MODAL'}
 
-            # weiter pollen
             prog = min(70, 40 + (self._elapsed / max(0.001, self.timeout_seconds)) * 30)
             self._update_ui(context, "Warte auf average_error …", prog)
             return {'RUNNING_MODAL'}
 
-        # Phase 3: CleanError INVOKE (nicht blockierend)
+        # Phase 3: CleanError-Übergabe
         if self._phase == 3:
             try:
-                self._log_info(f"[Resolve][Phase3] CleanError start (thr={self.threshold:.3f}, action={self.action}).")
-                bpy.ops.kaiserlich_tracker.clean_error_operator(
-                    'INVOKE_DEFAULT',
-                    threshold=self.threshold,
-                    action=self.action
-                )
+                self._log_info(f"[Resolve][Phase3] CleanError start …")
+                bpy.ops.kaiserlich_tracker.clean_error_operator('INVOKE_DEFAULT')
+                self._log_info("[Resolve][Phase3] Übergabe an CleanError ok.")
             except Exception as e:
                 self._log_error(f"[Resolve][Phase3] CleanError Start fehlgeschlagen: {e}")
                 return self._finish(context, cancelled=True)
@@ -142,7 +139,6 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             if isinstance(self._avg_error, (int, float)):
                 self._report_info(f"[Resolve] Durchschnittsfehler: {self._avg_error:.4f}")
             self._update_ui(context, "Fertig.", 100)
-            self._log_info("[Resolve][Phase3] Übergabe an CleanError ok. Beende modal.")
             return self._finish(context)
 
         return {'RUNNING_MODAL'}
@@ -210,6 +206,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
     def _log_dbg(self, msg: str):
         if self.log_verbose:
             print(msg)
+
 
 # --------- Registration ----------
 def register():
