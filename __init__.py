@@ -45,15 +45,17 @@ def register():
         name="Marker per Frame",
         description="Zielanzahl Marker pro Frame",
         default=25,
-        min=1,
-        soft_min=1,
+        min=10,
+        soft_min=10,
+        soft_max=100,
     )
     bpy.types.Scene.kaiserlich_frames_per_track = bpy.props.IntProperty(
         name="Frames per Track",
         description="Mindestanzahl an Frames, die ein Track haben muss, um beim Cleanup nicht gelöscht zu werden",
         default=25,
-        min=0,
-        soft_min=0,
+        min=12,
+        soft_min=12,
+        soft_max=200,
     )
     bpy.types.Scene.max_error_value = bpy.props.FloatProperty(
         name="Max Error Value",
@@ -61,8 +63,9 @@ def register():
         default=2.0,
         min=0.5,
         soft_min=1.0,
-        step=0.1,
-        precision=3,
+        soft_max=100,
+        step=0.01,
+        precision=2,
     )
 
     try:
