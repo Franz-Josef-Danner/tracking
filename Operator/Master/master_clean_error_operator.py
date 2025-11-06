@@ -120,18 +120,32 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
             limit = avg_error * 2.0
             lines.append(f"[Summary] ⛔ Durchschnitt {avg_error:.4f} > Max {max_error_value:.4f}")
             lines.append(f"[Summary] Löschgrenze = Durchschnitt * 2 = {limit:.4f}")
-
+        
             delete_count = 0
             for r in results:
                 if r["error"] is not None and r["error"] > limit:
-                    clip.tracking.tracks.remove(r["track"])
-                    delete_count += 1
-                    msg = f"[Delete] ❌ {r['name']} (Error {r['error']:.4f} > {limit:.4f})"
-                    lines.append(msg)
-                    print(msg)
-
+                    # Sicheren Kontext für CLIP_EDITOR finden
+                    for area in context.screen.areas:
+                        if area.type == 'CLIP_EDITOR':
+                            override = context.copy()
+                            override['area'] = area
+                            override['space_data'] = area.spaces.active
+                            override['edit_clip'] = clip
+        
+                            # Track selektieren und löschen
+                            for t in clip.tracking.tracks:
+                                t.select = False
+                            r["track"].select = True
+                            bpy.ops.clip.track_delete(override)
+                            delete_count += 1
+                            msg = f"[Delete] ❌ {r['name']} (Error {r['error']:.4f} > {limit:.4f})"
+                            lines.append(msg)
+                            print(msg)
+                            break
+        
             lines.append(f"[Summary] → {delete_count} Tracks gelöscht.")
             print(f"[Summary] → {delete_count} Tracks gelöscht.")
+
         else:
             lines.append(f"[Summary] ✅ Durchschnitt {avg_error:.4f} ≤ Max {max_error_value:.4f}")
             lines.append("[Summary] Keine Tracks gelöscht.")
