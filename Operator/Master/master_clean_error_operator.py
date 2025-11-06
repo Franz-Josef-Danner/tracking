@@ -22,7 +22,7 @@ def _find_active_clip(context: bpy.types.Context):
 
 class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
     """Listet alle Tracks und deren Solve/Error-Werte und schreibt ein Log"""
-    bl_idname = "kaiserlich_tracker.list_tracks_by_solve_error"
+    bl_idname = "kaiserlich_tracker.clean_error_operator"
     bl_label = "Kaiserlich: List Tracks by Solve Error"
     bl_options = {'REGISTER', 'INTERNAL'}
 
