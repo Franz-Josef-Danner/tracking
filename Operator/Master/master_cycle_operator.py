@@ -257,8 +257,26 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             print(f"[Kaiserlich Tracker][Master] ⚠️ Fehler beim Starten des ShortTest: {ex!r}")
             self.report({'WARNING'}, f"Fehler beim Start des ShortTest: {ex}")
 
-        return {'FINISHED'}
+        # ------------------------------------------------------------------
+        # 🧮 Abschluss: Marker-Fortschritt berechnen und in Szene-Properties schreiben
+        # ------------------------------------------------------------------
+        try:
+            from ...Helper.frame_track_progress import compute_marker_progress
+            value, perc = compute_marker_progress(context.scene, update_ui=True)
+            print(f"[Kaiserlich Tracker][MasterCycle] 📊 Marker-Fortschritt berechnet: {value} Marker ({perc:.2f}%)")
 
+            # Fortschritt als Report ausgeben
+            self.report({'INFO'}, f"[Progress] Marker gesamt: {value}, Fortschritt: {perc:.1f}%")
+
+        except Exception as progress_err:
+            print(f"[Kaiserlich Tracker][MasterCycle] ⚠️ Fehler bei compute_marker_progress: {progress_err!r}")
+            self.report({'WARNING'}, f"Fortschrittsberechnung fehlgeschlagen: {progress_err}")
+
+        # Abschlussmeldung
+        print("[Kaiserlich Tracker][MasterCycle] ✅ Vorgang vollständig abgeschlossen.")
+
+        return {'FINISHED'}
+    
 # ---- Registrierung ----------------------------------------------------------
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_master_cycle_operator)
