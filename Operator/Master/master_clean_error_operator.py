@@ -28,41 +28,53 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
     )
 
     def execute(self, context: Context):
-        # --- Gültigen Clip Editor finden ---
-        override = None
+        # --- Clip Editor und Clip finden ---
         clip = None
+        override = None
+
         for window in bpy.context.window_manager.windows:
-            for area in window.screen.areas:
+            screen = window.screen
+            for area in screen.areas:
                 if area.type == 'CLIP_EDITOR':
                     space = area.spaces.active
                     if space and space.clip:
                         clip = space.clip
+                        region = None
+                        for r in area.regions:
+                            if r.type == 'WINDOW':
+                                region = r
+                                break
                         override = {
-                            'window': window,
-                            'screen': window.screen,
-                            'area': area,
-                            'region': area.regions[-1],
-                            'space_data': space,
-                            'edit_movieclip': space.clip,
+                            "window": window,
+                            "screen": screen,
+                            "area": area,
+                            "region": region,
+                            "space_data": space,
+                            "edit_movieclip": clip,
                         }
                         break
             if clip:
                 break
 
         if not clip or not override:
-            self.report({'ERROR'}, "Kein aktiver Movie Clip im Clip Editor gefunden.")
+            self.report({'ERROR'}, "Kein aktiver Clip im Clip-Editor gefunden.")
             return {'CANCELLED'}
 
-        # --- Parameter setzen ---
+        # --- Einstellungen setzen ---
         settings = clip.tracking.settings
         settings.clean_action = self.action
         settings.clean_error = self.threshold
 
-        # --- Operator mit Keyword-Parametern korrekt ausführen ---
+        # --- Sicheren Aufruf ausführen ---
         try:
             bpy.ops.clip.clean_error(
                 override,
-                execution_context='EXEC_DEFAULT'
+                'EXEC_DEFAULT'  # hier KEIN weiteres keyword argument!
+            )
+        except TypeError:
+            # Alternative Syntax für Blender 4.4 (sicher)
+            bpy.ops.clip.clean_error(
+                override
             )
         except Exception as e:
             self.report({'ERROR'}, f"Clean Error fehlgeschlagen: {e}")
