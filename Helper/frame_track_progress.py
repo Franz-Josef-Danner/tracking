@@ -28,9 +28,20 @@ def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -
     if clip is None:
         raise RuntimeError("[Kaiserlich Tracker] Kein aktiver Movie Clip gefunden.")
 
-    tracks = clip.tracking.tracks
-    if not tracks:
-        return 0, 0.0
+    # --- Sicherstellen, dass überhaupt Tracks existieren ---
+    tracks = getattr(clip.tracking, "tracks", [])
+    if not tracks or len(tracks) == 0:
+        # Keine Tracks vorhanden → Fortschritt 0%
+        if hasattr(scene, "kaiserlich_marker_progress"):
+            scene.kaiserlich_marker_progress = "0%"
+        if update_ui:
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == "CLIP_EDITOR":
+                        for region in area.regions:
+                            if region.type == "UI":
+                                region.tag_redraw()
+        return (0, 0.0)
 
     # --- Eingangsparameter & Zielgröße ---
     frame_start = int(scene.frame_start)
