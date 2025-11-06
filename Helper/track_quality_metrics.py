@@ -1,13 +1,12 @@
 import bpy
 import math
 
-
 def _count_spikes_for_track(track, velocity_thresh=0.008, accel_thresh=0.020):
-    """Zählt Bewegungsspitzen (Spikes) im Track basierend auf Markerpositionen."""
+    """Gibt rohe Bewegungsdaten (Velocity/Accel) pro Frame aus – Schwellen nur informativ."""
     ms = sorted([m for m in track.markers if not m.mute], key=lambda m: m.frame)
     if len(ms) < 3:
         print(f"[Spikes] ⚪ Track '{track.name}' zu kurz ({len(ms)} Marker) – übersprungen.")
-        return 0, 0, 0  # (spikes, vel_spikes, acc_spikes)
+        return 0, 0, 0
 
     spikes = 0
     vel_spikes = 0
@@ -17,37 +16,45 @@ def _count_spikes_for_track(track, velocity_thresh=0.008, accel_thresh=0.020):
         return (b.co[0] - a.co[0], b.co[1] - a.co[1])
 
     prev_v = None
+    print(f"\n[Spikes][{track.name}] ───── Rohdatenanalyse ─────")
+    print(f"   • Velocity Threshold (log only): {velocity_thresh:.6f}")
+    print(f"   • Accel Threshold    (log only): {accel_thresh:.6f}")
+    print("──────────────────────────────────────────────")
+
     for i in range(1, len(ms)):
         v = vec(ms[i - 1], ms[i])
         v_len = math.hypot(*v)
 
-        # Velocity Spike
+        # Immer loggen
+        msg = f"Frame {ms[i].frame:4d} | ΔV={v_len:.6f}"
         if v_len > velocity_thresh:
-            spikes += 1
             vel_spikes += 1
-            print(f"[Spikes][{track.name}] 🚀 Velocity Spike bei Frame {ms[i].frame}: Δ={v_len:.4f}")
+            spikes += 1
+            msg += "  🚀 >VEL"
+        print(msg)
 
-        # Acceleration Spike
+        # Acceleration immer berechnen
         if prev_v is not None:
             a_vec = (v[0] - prev_v[0], v[1] - prev_v[1])
             a_len = math.hypot(*a_vec)
+            msg_a = f"         ΔA={a_len:.6f}"
             if a_len > accel_thresh:
-                spikes += 1
                 acc_spikes += 1
-                print(f"[Spikes][{track.name}] 💥 Accel Spike bei Frame {ms[i].frame}: Δ={a_len:.4f}")
+                spikes += 1
+                msg_a += "  💥 >ACC"
+            print(msg_a)
 
         prev_v = v
 
-    # --- Finale Printausgabe für den Track ---
+    # --- Abschließende Übersicht ---
     print(f"[Spikes][{track.name}] 🔹 Gesamtübersicht:")
     print(f"    • Velocity-Spikes : {vel_spikes}")
     print(f"    • Accel-Spikes    : {acc_spikes}")
     print(f"    • Gesamt-Spikes   : {spikes}")
     print(f"    • Aktive Marker   : {len(ms)}")
-    print("──────────────────────────────────────────────────────")
+    print("──────────────────────────────────────────────")
 
     return spikes, vel_spikes, acc_spikes
-
 
 def compute_track_quality_metrics(
     context: bpy.types.Context,
