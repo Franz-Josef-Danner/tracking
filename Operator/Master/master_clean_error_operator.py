@@ -123,20 +123,42 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
            
             delete_count = 0
 
-            # --- Tracks direkt über API löschen ---
-            tracks = getattr(clip.tracking, "tracks", None)
-            if not hasattr(tracks, "remove"):
-                self.report({'ERROR'}, "clip.tracking.tracks.remove() nicht verfügbar.")
+            # --- Über aktives Tracking-Objekt löschen (objektgebundene Tracks) ---
+            tracking = getattr(clip, "tracking", None)
+            if tracking is None:
+                self.report({'ERROR'}, "clip.tracking nicht verfügbar.")
                 return {'CANCELLED'}
 
+            # aktives Objekt bestimmen (Fallback: erstes Objekt)
+            obj = getattr(tracking, "objects", None)
+            active_obj = getattr(tracking, "objects", None)
+            active_obj = tracking.objects.active if hasattr(tracking.objects, "active") else None
+            if active_obj is None:
+                active_obj = tracking.objects[0] if len(tracking.objects) > 0 else None
+            if active_obj is None:
+                self.report({'ERROR'}, "Kein Tracking-Objekt vorhanden.")
+                return {'CANCELLED'}
+
+            obj_tracks = getattr(active_obj, "tracks", None)
+            if not hasattr(obj_tracks, "remove"):
+                self.report({'ERROR'}, "active_obj.tracks.remove() nicht verfügbar.")
+                return {'CANCELLED'}
+
+            # --- Tracks direkt entfernen ---
             for r in results:
                 if r["error"] is not None and r["error"] > limit:
                     try:
-                        tracks.remove(r["track"])
-                        delete_count += 1
-                        msg = f"[Delete] ❌ {r['name']} (Error {r['error']:.4f} > {limit:.4f})"
-                        lines.append(msg)
-                        print(msg)
+                        # Safety: Track gehört ggf. nicht zum aktiven Objekt → überspringen
+                        if r["track"] in obj_tracks:
+                            obj_tracks.remove(r["track"])
+                            delete_count += 1
+                            msg = f"[Delete] ❌ {r['name']} (Error {r['error']:.4f} > {limit:.4f})"
+                            lines.append(msg)
+                            print(msg)
+                        else:
+                            msg = f"[Delete][SKIP] {r['name']} gehört nicht zum aktiven Objekt."
+                            lines.append(msg)
+                            print(msg)
                     except Exception as e:
                         msg = f"[Delete][ERROR] {r['name']} → {e}"
                         lines.append(msg)
@@ -144,7 +166,6 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
 
             lines.append(f"[Summary] → {delete_count} Tracks gelöscht.")
             print(f"[Summary] → {delete_count} Tracks gelöscht.")
-
 
         else:
             lines.append(f"[Summary] ✅ Durchschnitt {avg_error:.4f} ≤ Max {max_error_value:.4f}")
