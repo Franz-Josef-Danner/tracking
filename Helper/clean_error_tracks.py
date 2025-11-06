@@ -100,9 +100,12 @@ def clean_error_tracks(
 
             for t in to_delete:
                 try:
-                    tracks.remove(t)
+                    # Korrekte Methode zum Entfernen einzelner Tracks:
+                    clip.tracking.tracks.remove(track=t)
                     print(f"[CleanErrorTracks] 🗑️ Track '{t.name}' entfernt (avg_err={getattr(t, 'average_error', 0.0):.2f}).")
                 except Exception as ex:
                     print(f"[CleanErrorTracks] ⚠️ Fehler beim Entfernen von '{t.name}': {ex}")
 
+            # Nach dem Clean aktuellen Stand ausgeben
+            print(f"[CleanErrorTracks] 📊 Verbleibende Tracks: {len(clip.tracking.tracks)}")
             print(f"[CleanErrorTracks] ⚙️ Fallback abgeschlossen: {len(to_delete)} Tracks gelöscht.")
