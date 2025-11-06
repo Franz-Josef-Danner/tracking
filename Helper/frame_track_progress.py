@@ -48,7 +48,7 @@ def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -
 
     # --- Pro-Frame-Zählung (robust & effizient) ---
     # Sammeln der Marker-Anzahlen je Frame in einem Durchlauf über alle Marker
-    per_frame_counts = {f: 0 for f in range(frame_start, frame_end)}
+    per_frame_counts = {f: 0 for f in range(frame_start, frame_end + 1)}
     for tr in tracks:
         # Falls nur „aktive/gültige“ Marker zählen sollen, hier optional filtern (mk.mute, tr.mute, etc.)
         for mk in tr.markers:
@@ -60,15 +60,22 @@ def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -
 
     # --- Aggregation mit Cap pro Frame ---
     value = 0
-    for f in range(frame_start, frame_end):
+    for f in range(frame_start, frame_end + 1):
         # per_frame_counts[f] ist bereits auf multi gekappt
         value += per_frame_counts[f]
-
-    perc = (100.0 * value / goal) if goal > 0 else 0.0
+    # Prozentwert strikt nach unten runden; 100 % nur bei value >= goal
+    if goal > 0:
+        perc_raw = 100.0 * value / goal
+        perc = float(int(perc_raw))  # floor via int()
+        if value < goal and perc >= 100.0:
+            perc = 99.0
+    else:
+        perc = 0.0
 
     # --- UI/Properties (Kommunikation unverändert) ---
     if hasattr(scene, "kaiserlich_marker_progress"):
-        scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
+        # UI zeigt denselben strikt abgerundeten Wert
+        scene.kaiserlich_marker_progress = f"{int(perc)}%"
 
     if update_ui:
         for window in bpy.context.window_manager.windows:
