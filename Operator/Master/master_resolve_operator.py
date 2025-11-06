@@ -88,20 +88,29 @@ def _check_and_filter(context: bpy.types.Context, avg_err: float) -> float:
     # NaN/<=0 → Fallback Filter 20.0
     if val <= 0.0 or not (val == val):
         try:
-            clean_error_tracks(context, 20.0)
-        except Exception:
-            pass
+            # Asynchroner Aufruf über modal Operator, verhindert UI-Freeze
+            bpy.ops.kaiserlich_tracker.clean_error_modal(
+                'INVOKE_DEFAULT',
+                threshold=20.0,
+                action='DELETE_TRACK'
+            )
+        except Exception as e:
+            print(f"[Resolve][AsyncClean] Fehler beim Start des Clean-Operators: {e}")
         return 20.0
 
     # Nur wenn überschritten, filtern (Faktor 2 laut Vorgabe)
     if val > max_err:
         threshold = val * 2.0
-        if threshold <= 0.0 or threshold == float("inf"):
+        if threshold <= 0.0 or threshold == float('inf'):
             threshold = 20.0
         try:
-            clean_error_tracks(context, threshold)
-        except Exception:
-            pass
+            bpy.ops.kaiserlich_tracker.clean_error_modal(
+                'INVOKE_DEFAULT',
+                threshold=threshold,
+                action='DELETE_TRACK'
+            )
+        except Exception as e:
+            print(f"[Resolve][AsyncClean] Fehler beim Start des Clean-Operators: {e}")
 
     return val
 
