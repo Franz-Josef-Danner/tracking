@@ -33,7 +33,6 @@ classes = (
     KAISERLICHTRACKER_OT_master_cycle_operator,
     KAISERLICHTRACKER_OT_master_operator,
     KAISERLICHTRACKER_OT_master_resolve_operator,
-    KAISERLICHTRACKER_OT_master_solve_modal,
 )
 
 # ---- Register / Unregister -------------------------------------------------
