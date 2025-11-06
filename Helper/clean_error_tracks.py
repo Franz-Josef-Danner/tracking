@@ -111,18 +111,26 @@ def clean_error_tracks(
             deleted = 0
             for t in to_delete:
                 try:
-                    # Track selektieren und aktiv setzen
-                    for tr in clip.tracking.tracks:
+                    # Zugriff über das aktive Tracking-Objekt herstellen
+                    tracking_obj = clip.tracking.objects.active
+                    tracks_collection = tracking_obj.tracks
+
+                    # Track-Selektion vorbereiten
+                    for tr in tracks_collection:
                         tr.select = False
                     t.select = True
-                    clip.tracking.active_track = t
 
+                    # Aktiven Track setzen
+                    tracking_obj.active_track = t
+
+                    # Operator im CLIP_EDITOR-Kontext ausführen
                     with bpy.context.temp_override(area=area, region=region, space_data=space, edit_movieclip=clip):
-                        bpy.ops.clip.track_delete()
+                        result = bpy.ops.clip.track_delete()
                         deleted += 1
-                        print(f"[CleanErrorTracks] 🗑️ Track '{t.name}' entfernt (avg_err={getattr(t, 'average_error', 0.0):.2f}).")
+                        print(f"[CleanErrorTracks] 🗑️ Track '{t.name}' entfernt (avg_err={getattr(t, 'average_error', 0.0):.2f}, result={result}).")
+
                 except Exception as ex:
                     print(f"[CleanErrorTracks] ⚠️ Fehler beim Entfernen von '{t.name}': {ex}")
 
-            print(f"[CleanErrorTracks] 📊 Verbleibende Tracks nach Fallback: {len(clip.tracking.tracks)}")
+            print(f"[CleanErrorTracks] 📊 Verbleibende Tracks nach Fallback: {len(clip.tracking.objects.active.tracks)}")
             print(f"[CleanErrorTracks] ⚙️ Fallback abgeschlossen: {deleted} Tracks gelöscht.")
