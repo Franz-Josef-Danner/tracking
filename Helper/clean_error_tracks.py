@@ -98,14 +98,31 @@ def clean_error_tracks(
             to_delete = [t for t in tracks if getattr(t, "average_error", 0.0) > thr]
             print(f"[CleanErrorTracks] ⚙️ Fallback aktiviert → {len(to_delete)} Tracks über Threshold={thr:.2f}.")
 
+            area = None
+            region = None
+            space = None
+            for a in bpy.context.screen.areas:
+                if a.type == "CLIP_EDITOR":
+                    area = a
+                    region = next((r for r in a.regions if r.type == "WINDOW"), None)
+                    space = a.spaces.active
+                    break
+
+            deleted = 0
             for t in to_delete:
                 try:
-                    # Korrekte Methode zum Entfernen einzelner Tracks:
-                    clip.tracking.tracks.remove(track=t)
-                    print(f"[CleanErrorTracks] 🗑️ Track '{t.name}' entfernt (avg_err={getattr(t, 'average_error', 0.0):.2f}).")
+                    # Track selektieren und aktiv setzen
+                    for tr in clip.tracking.tracks:
+                        tr.select = False
+                    t.select = True
+                    clip.tracking.active_track = t
+
+                    with bpy.context.temp_override(area=area, region=region, space_data=space, edit_movieclip=clip):
+                        bpy.ops.clip.track_delete()
+                        deleted += 1
+                        print(f"[CleanErrorTracks] 🗑️ Track '{t.name}' entfernt (avg_err={getattr(t, 'average_error', 0.0):.2f}).")
                 except Exception as ex:
                     print(f"[CleanErrorTracks] ⚠️ Fehler beim Entfernen von '{t.name}': {ex}")
 
-            # Nach dem Clean aktuellen Stand ausgeben
-            print(f"[CleanErrorTracks] 📊 Verbleibende Tracks: {len(clip.tracking.tracks)}")
-            print(f"[CleanErrorTracks] ⚙️ Fallback abgeschlossen: {len(to_delete)} Tracks gelöscht.")
+            print(f"[CleanErrorTracks] 📊 Verbleibende Tracks nach Fallback: {len(clip.tracking.tracks)}")
+            print(f"[CleanErrorTracks] ⚙️ Fallback abgeschlossen: {deleted} Tracks gelöscht.")
