@@ -8,7 +8,7 @@ class KAISERLICHTRACKER_OT_clean_error_modal(Operator):
     bl_label = "Clean Error (modal async)"
     bl_options = {'REGISTER', 'INTERNAL'}
 
-    threshold: bpy.props.FloatProperty(default=20.0)
+    threshold: bpy.props.FloatProperty(default=10.0)
     action: bpy.props.EnumProperty(
         items=[
             ('DELETE_TRACK', "Delete Track", ""),
