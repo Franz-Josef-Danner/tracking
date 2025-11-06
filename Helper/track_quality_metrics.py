@@ -93,10 +93,22 @@ def compute_track_quality_metrics(context: bpy.types.Context,
     anzahl_spike_tracks = len(spike_tracks)
     saubere_tracks = max(0, anzahl_lange_tracks - anzahl_spike_tracks)
 
-    if anzahl_alle_tracks > 0:
-        prozent = (100.0 / anzahl_alle_tracks) * saubere_tracks
-    else:
+    # ------------------------------------------------------------
+    # Ursprungslogik mit klarer Null- und Randfallbehandlung
+    # ------------------------------------------------------------
+    if anzahl_alle_tracks == 0:
         prozent = 0.0
+    else:
+        # Prozentwert nach Ursprungsformel
+        prozent = (100.0 / anzahl_alle_tracks) * saubere_tracks
+        # Wenn keine sauberen langen Tracks existieren → 0 %
+        if saubere_tracks == 0:
+            prozent = 0.0
+        # Wenn keine langen Tracks existieren → 0 % (egal ob kurze vorhanden)
+        elif anzahl_lange_tracks == 0:
+            prozent = 0.0
+        # Auf sinnvollen Bereich clampen
+        prozent = max(0.0, min(100.0, prozent))
 
     return {
         "alle_tracks": alle_tracks,
