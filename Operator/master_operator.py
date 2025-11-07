@@ -8,12 +8,11 @@ from ..Helper.bootstrap import run_bootstrap  # <--- Import Bootstrap helper
 
 
 class KAISERLICHTRACKER_OT_master_operator(Operator):
-    """Master Operator – initializes the bootstrap, finds the weakest frame, and triggers the DeepTest sequence."""
+    """Starts a sequence of all functions to perform an optimized process for generating an ideal camera solve (time-consuming)."""
     bl_idname = "kaiserlich_tracker.master_operator"
     bl_label = "Master Operator"
     bl_description = (
-        "Initializes base parameters via bootstrap, sets the playhead to the weakest frame, "
-        "and launches the DeepTest operator to begin the full tracking and analysis pipeline."
+        "Starts a sequence of all functions to perform an optimized process for generating an ideal camera solve (time-consuming)."
     )
     bl_options = {'REGISTER', 'UNDO'}
 
