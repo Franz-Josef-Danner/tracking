@@ -40,9 +40,9 @@ def compute_track_quality_metrics(
     context: bpy.types.Context,
     *,
     min_len_for_long=25,
-    velocity_thresh=0.004,
-    accel_thresh=0.003,
-    spike_density_threshold=5.0,  # Spikes pro 100 Frames
+    velocity_thresh=0.008,
+    accel_thresh=0.006,
+    spike_density_threshold=5.0,
 ):
     """
     Bewertet die Trackingqualität (ohne Log-Ausgaben):
