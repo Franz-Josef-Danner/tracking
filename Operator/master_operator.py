@@ -2,20 +2,24 @@
 import bpy
 from bpy.types import Operator, Context
 
-# ---- Helper-Importe ---------------------------------------------------------
+# ---- Helper Imports ---------------------------------------------------------
 from ..Helper.low_marker_frame import find_first_weak_frame
-from ..Helper.bootstrap import run_bootstrap  # <--- Bootstrap importieren
+from ..Helper.bootstrap import run_bootstrap  # <--- Import Bootstrap helper
+
 
 class KAISERLICHTRACKER_OT_master_operator(Operator):
-    """Master Operator – setzt Playhead auf Frame mit den wenigsten aktiven Markern"""
+    """Master Operator – initializes the bootstrap, finds the weakest frame, and triggers the DeepTest sequence."""
     bl_idname = "kaiserlich_tracker.master_operator"
     bl_label = "Master Operator"
-    bl_description = "Every unit advances, every command ignites. The operation begins — total mobilization of the entire emperors army"
+    bl_description = (
+        "Initializes base parameters via bootstrap, sets the playhead to the weakest frame, "
+        "and launches the DeepTest operator to begin the full tracking and analysis pipeline."
+    )
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context: Context):
         # ------------------------------------------------------------------
-        # Bootstrap ausführen, um Startparameter zu berechnen
+        # Run bootstrap to calculate initial parameters
         # ------------------------------------------------------------------
         scene = context.scene
         ef_target = int(getattr(scene, "kaiserlich_markers_per_frame", 25))
@@ -23,18 +27,20 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         if params:
             scene["bootstrap_params"] = params
 
+        # ------------------------------------------------------------------
+        # Determine the first frame with the lowest marker count
+        # ------------------------------------------------------------------
         frame = find_first_weak_frame(context)
 
         # ------------------------------------------------------------------
-        # Wenn kein Frame gefunden wurde → regulär beenden
+        # If no frame is found → finish normally
         # ------------------------------------------------------------------
         if frame is None:
             return {'FINISHED'}
 
         # ------------------------------------------------------------------
-        # Wenn ein Frame gefunden wurde → Playhead setzen und DeepTest starten
+        # If a frame is found → move the playhead and start DeepTest
         # ------------------------------------------------------------------
-        scene = context.scene
         scene.frame_current = frame
         try:
             space = getattr(context, "space_data", None)
@@ -43,32 +49,34 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         except Exception:
             pass
 
-        # Operator-Aufruf (vollständiger DeepTest)
-        # Erwartete ID: bl_idname = "kaiserlich_tracker.master_deep_test_operator"
+        # ------------------------------------------------------------------
+        # Execute DeepTest operator
+        # Expected ID: bl_idname = "kaiserlich_tracker.master_deep_test_operator"
+        # ------------------------------------------------------------------
         op_id = "kaiserlich_tracker.master_deep_test_operator"
         try:
-            # Sanity-Check: Ist der Operator registriert?
+            # Sanity check: is the operator registered?
             op_cls = bpy.ops
             if not hasattr(op_cls, "kaiserlich_tracker") or not hasattr(op_cls.kaiserlich_tracker, "master_deep_test_operator"):
-                msg = f"Operator '{op_id}' nicht registriert. Prüfe bl_idname in Operator/Master/master_deep_test_operator.py"
+                msg = f"Operator '{op_id}' not registered. Check bl_idname in Operator/Master/master_deep_test_operator.py"
                 return {'CANCELLED'}
 
-            # Start
+            # Start DeepTest
             bpy.ops.kaiserlichtracker.master_deep_test_operator('INVOKE_DEFAULT')
         except Exception as ex:
             pass
+
         # ------------------------------------------------------------------
-        # 🧮 Abschluss: Marker-Fortschritt berechnen und in Szene-Properties schreiben
+        # 🧮 Final: compute marker progress and store result in scene properties
         # ------------------------------------------------------------------
         try:
             from ..Helper.frame_track_progress import compute_marker_progress
             value, perc = compute_marker_progress(context.scene, update_ui=True)
-
         except Exception as progress_err:
             pass
 
         # ------------------------------------------------------------------
-        # Track-Qualitätsbewertung (Prozentwert in UI schreiben)
+        # Compute track quality metrics and update UI percentage value
         # ------------------------------------------------------------------
         try:
             from ..Helper.track_quality_metrics import compute_track_quality_metrics
@@ -76,20 +84,23 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
             percent = f"{int(round(metrics['prozent']))}%"
             context.scene.kaiserlich_quality_percent = percent
 
-            # UI-Refresh forcieren
+            # Force UI refresh
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == 'CLIP_EDITOR':
                         for region in area.regions:
                             if region.type == 'UI':
                                 region.tag_redraw()
-        except Exception as e:
+        except Exception:
             pass
+
         return {'FINISHED'}
 
-# ---- Registrierung ----------------------------------------------------------
+
+# ---- Registration -----------------------------------------------------------
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_master_operator)
+
 
 def unregister():
     bpy.utils.unregister_class(KAISERLICHTRACKER_OT_master_operator)
