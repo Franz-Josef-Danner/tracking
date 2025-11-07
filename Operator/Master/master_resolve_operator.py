@@ -23,6 +23,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
     bl_label = "Kaiserlich: Resolve Master (gestuft)"
     bl_discription = "Survey what was gained, and what was lost."
     bl_options = {'REGISTER', 'UNDO'}
+    
     poll_interval: bpy.props.FloatProperty(default=0.25)
     timeout_seconds: bpy.props.FloatProperty(default=8.0)
 

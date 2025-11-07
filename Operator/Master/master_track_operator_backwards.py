@@ -20,7 +20,6 @@ from ...Helper.frame_track_progress import compute_marker_progress
 # ------------------------------------------------------------
 
 class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
-    """Frame-by-Frame Tracking rückwärts mit sichtbarem Fortschritt (nicht blockierend)."""
     bl_idname = "kaiserlich_tracker.master_track_cycle_backwards"
     bl_label = "Track Zyklus Rückwärts (Modal)"
     bl_description = "reclaim lost ground."
