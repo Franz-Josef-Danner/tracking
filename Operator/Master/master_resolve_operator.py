@@ -19,7 +19,6 @@ except Exception as e:
 
 
 class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
-    """Gestufter Kamera-Solve mit Intrinsics-Eskalation, Fehlerprüfung und String-Fortschritt."""
     bl_idname = "kaiserlich_tracker.master_resolve_operator"
     bl_label = "Kaiserlich: Resolve Master (gestuft)"
     bl_discription = "Survey what was gained, and what was lost."
