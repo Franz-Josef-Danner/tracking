@@ -2,7 +2,6 @@
 import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
-
 # ------------------------------------------------------------
 # Helper-Importe
 # ------------------------------------------------------------
@@ -105,9 +104,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         self._space.clip_user.frame_current = self._current_frame
         scene.frame_current = self._current_frame
 
-        print(f"[Kaiserlich Tracker][ModalBackwards] Init start={self._start_frame}, "
-              f"end={self._end_frame}, current={self._current_frame}")
-
         # Historien initialisieren
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
 
@@ -121,7 +117,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
 
-        print("[Kaiserlich Tracker][ModalBackwards] Tracking-Zyklus rückwärts gestartet...")
         return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
@@ -131,7 +126,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
     def modal(self, context, event):
         # ESC = Abbruch
         if event.type == 'ESC':
-            print("[Kaiserlich Tracker][ModalBackwards] ❌ Vom Benutzer abgebrochen.")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
@@ -159,7 +153,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception as e:
-            print(f"[Kaiserlich Tracker][ModalBackwards] ⚠️ apply_formula Fehler: {e}")
+            pass
 
         # Tracking-Schritt über Helper (rückwärts)
         success = track_markers_with_override(
@@ -168,7 +162,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         )
 
         if not success:
-            print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Tracking-Fehler, breche ab.")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
@@ -181,12 +174,10 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         # Beendigungskriterien (vor Step prüfen)
         # ----------------------------------------------------
         if not self._processing_names:
-            print("[Kaiserlich Tracker][ModalBackwards] ✅ Keine aktiven Tracks mehr.")
             self._finish(context)
             return {"FINISHED"}
 
         if self.max_frames > 0 and self._frames_processed >= self.max_frames:
-            print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Sicherheitslimit erreicht.")
             self._finish(context)
             return {"FINISHED"}
 
@@ -211,7 +202,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         # Nach dem Step: Szenenstart erreicht?
         # (<= bedeutet: beim ersten Frame unterhalb/gleich Start stoppen)
         if self._current_frame <= self._start_frame:
-            print("[Kaiserlich Tracker][ModalBackwards] ✅ Szenenanfang erreicht.")
             self._finish(context)
             return {"FINISHED"}
 
@@ -237,13 +227,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         try:
             reset_to_frame(context, self._reset_frame)
         except Exception as e:
-            print(f"[Kaiserlich Tracker][ModalBackwards] ⚠️ Fehler beim Frame-Reset: {e}")
-
-        print(
-            "[Kaiserlich Tracker][ModalBackwards] ✅ Rückwärts-Zyklus beendet."
-            if not cancelled else
-            "[Kaiserlich Tracker][ModalBackwards] ❌ Rückwärts-Zyklus abgebrochen."
-        )
+            pass
 
         # ------------------------------------------------------------------
         # 1️⃣ Zuerst: Qualitätsmetrik berechnen
@@ -253,7 +237,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             metrics = compute_track_quality_metrics(context)
             quality_percent = float(metrics.get("prozent", 100.0))
             context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
-            print(f"[Kaiserlich Tracker][QualityBackwards] 🎯 {quality_percent:.1f}%")
 
             # UI sofort aktualisieren
             for window in bpy.context.window_manager.windows:
@@ -263,7 +246,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                             if region.type == "UI":
                                 region.tag_redraw()
         except Exception as e:
-            print(f"[Kaiserlich Tracker][QualityBackwards] ⚠️ Qualitätsberechnung fehlgeschlagen: {e}")
             quality_percent = 100.0  # Fallback für Fortschritt
 
         # ------------------------------------------------------------------
@@ -273,33 +255,27 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             from ...Helper.frame_track_progress import compute_marker_progress
             value, perc = compute_marker_progress(context.scene, update_ui=True)
             context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
-            print(f"[Kaiserlich Tracker][ProgressBackwards] 📊 Marker: {value} | Effektiv: {perc:.1f}%")
         except Exception as e:
-            print(f"[Kaiserlich Tracker][ProgressBackwards] ⚠️ Abschluss-Update fehlgeschlagen: {e}")
+            pass
 
         # --------------------------------------------------------
         # 3️⃣ Kontextübergabe an Forward-Tracking (Master Track Cycle)
         # --------------------------------------------------------
         if not cancelled:
             try:
-                print("[Kaiserlich Tracker][ModalBackwards] ➜ Übergabe an Master Track Cycle (vorwärts)...")
-
                 clip = getattr(context.space_data, "clip", None)
                 if clip is None:
-                    print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Kein aktiver Clip – Übergabe übersprungen.")
                     return
 
                 window, area, region, space = find_clip_editor_area(clip)
                 if not window:
-                    print("[Kaiserlich Tracker][ModalBackwards] ⚠️ Keine CLIP_EDITOR Area – Übergabe übersprungen.")
                     return
 
                 with context.temp_override(window=window, area=area, region=region, space_data=space):
                     bpy.ops.kaiserlich_tracker.master_track_cycle()
-
-                print("[Kaiserlich Tracker][ModalBackwards] ✅ Übergabe erfolgreich gestartet (temp_override).")
+                    
             except Exception as e:
-                print(f"[Kaiserlich Tracker][ModalBackwards] ❌ Fehler bei Übergabe via temp_override: {e}")
+                pass
 
 # ------------------------------------------------------------
 # Register
