@@ -1,4 +1,3 @@
-# Helper/frame_value_cache.py
 import bpy
 import math
 from typing import Dict, Optional, Tuple, List
@@ -63,9 +62,6 @@ def save_frame_values(scene: bpy.types.Scene, frame: int, values: Dict[str, floa
             cache[str(f)] = interp
 
     scene[CACHE_KEY] = cache
-    print(f"[FrameCache] 💾 Werte für Frame {frame} gespeichert (Keys={list(values.keys())})")
-    if neighbor_before and neighbor_after:
-        print(f"[FrameCache] 🔄 Interpolation von Frame {neighbor_before} → {neighbor_after} durchgeführt.")
 
 
 def get_frame_values(scene: bpy.types.Scene, frame: int) -> Optional[Dict[str, float]]:
@@ -104,5 +100,4 @@ def apply_cached_values(scene: bpy.types.Scene, frame: int) -> bool:
         props["kaiserlich_perspective_thresh"] = data["perspective"]
 
     set_scene_props(scene, **props)
-    print(f"[FrameCache] ♻️ Frame {frame}: Werte aus Cache angewendet ({list(data.keys())})")
     return True
