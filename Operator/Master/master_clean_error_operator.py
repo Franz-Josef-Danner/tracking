@@ -5,7 +5,7 @@ from bpy.props import BoolProperty
 
 
 def _find_active_clip(context: bpy.types.Context):
-    """Sucht zuerst Clip im Clip-Editor, fallback auf active strip (Sequencer)."""
+    """First try to find a clip in the Clip Editor, fallback to the active strip (Sequencer)."""
     clip = None
     for win in context.window_manager.windows:
         for area in win.screen.areas:
@@ -24,17 +24,17 @@ def _find_active_clip(context: bpy.types.Context):
 class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
     bl_idname = "kaiserlich_tracker.clean_error_operator"
     bl_label = "Kaiserlich: Clean Error (silent)"
-    bl_description = ""
+    bl_description = "Scan tracks, compute average error, and delete outliers if the average exceeds the scene threshold."
     bl_options = {'REGISTER', 'INTERNAL'}
 
     sort_desc: BoolProperty(
         name="Sort descending",
-        description="Sortiere absteigend nach Error (höchste zuerst)",
+        description="Sort by error in descending order (highest first)",
         default=True
     )
 
     def _get_track_error(self, track) -> float | None:
-        """Ermittelt Solve Error oder mittleren Markerfehler."""
+        """Retrieve solve error or mean per-marker reprojection error."""
         for name in ("average_error", "error", "solve_error", "reprojection_error"):
             val = getattr(track, name, None)
             if val is not None:
@@ -78,9 +78,11 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
         avg_error = sum(valid) / len(valid) if valid else None
         max_error_value = getattr(scene, "max_error_value", None)
 
+        # If either the average or the threshold is missing, finish silently.
         if avg_error is None or max_error_value is None:
             return {'FINISHED'}
 
+        # If the average exceeds the scene threshold, delete tracks above avg_error * 2.0.
         if avg_error > max_error_value:
             limit = avg_error * 2.0
             try:
@@ -95,6 +97,7 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
                     except Exception:
                         pass
 
+        # Kick off next process step, if available.
         try:
             bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
         except Exception:
