@@ -100,8 +100,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
-
-        print("[Kaiserlich Tracker][Modal] Tracking-Zyklus gestartet...")
         return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
@@ -111,7 +109,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     def modal(self, context, event):
         # ESC = Abbruch
         if event.type == 'ESC':
-            print("[Kaiserlich Tracker][Modal] ❌ Vom Benutzer abgebrochen.")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
@@ -138,8 +135,8 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # Formel anwenden (z. B. für Optimierungen)
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Modal] ⚠️ apply_formula Fehler: {e}")
+        except Exception:
+            pass
 
         # Tracking-Schritt über Helper
         success = track_markers_with_override(
@@ -148,7 +145,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         )
 
         if not success:
-            print("[Kaiserlich Tracker][Modal] ⚠️ Tracking-Fehler, breche ab.")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
@@ -172,17 +168,14 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # Beendigungskriterien
         # ----------------------------------------------------
         if self._current_frame >= self._end_frame:
-            print("[Kaiserlich Tracker][Modal] ✅ Szenenende erreicht.")
             self._finish(context)
             return {"FINISHED"}
 
         if not self._processing_names:
-            print("[Kaiserlich Tracker][Modal] ✅ Keine aktiven Tracks mehr.")
             self._finish(context)
             return {"FINISHED"}
 
         if self.max_frames > 0 and self._frames_processed >= self.max_frames:
-            print("[Kaiserlich Tracker][Modal] ⚠️ Sicherheitslimit erreicht.")
             self._finish(context)
             return {"FINISHED"}
 
@@ -206,14 +199,8 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
         try:
             reset_to_frame(context, self._start_frame)
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Modal] ⚠️ Fehler beim Frame-Reset: {e}")
-
-        print(
-            "[Kaiserlich Tracker][Modal] ✅ Zyklus beendet."
-            if not cancelled else
-            "[Kaiserlich Tracker][Modal] ❌ Zyklus abgebrochen."
-        )
+        except Exception:
+            pass
 
         # ------------------------------------------------------------------
         # 1️⃣ Zuerst: Qualitätsmetrik berechnen
@@ -224,7 +211,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             quality_percent = float(metrics.get("prozent", 100.0))
             context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
             print(f"[Kaiserlich Tracker][Quality] 🎯 {quality_percent:.1f}%")
-
             # UI Refresh erzwingen
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
@@ -232,8 +218,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                         for region in area.regions:
                             if region.type == "UI":
                                 region.tag_redraw()
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Quality] ⚠️ Fehler bei Qualitätsberechnung: {e}")
+        except Exception:
             quality_percent = 100.0  # Fallback, wenn Qualität fehlschlägt
 
         # ------------------------------------------------------------------
@@ -243,21 +228,17 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             from ...Helper.frame_track_progress import compute_marker_progress
             value, perc = compute_marker_progress(context.scene, update_ui=True)
             context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
-            print(f"[Kaiserlich Tracker][Progress] 📊 Marker: {value} | Effektiv: {perc:.1f}%")
-        except Exception as e:
-            print(f"[Kaiserlich Tracker][Progress] ⚠️ Abschluss-Update fehlgeschlagen: {e}")
+        except Exception:
+            pass
 
         # ------------------------------------------------------------------
         # 3️⃣ Nach Abschluss: Übergabe an Master-Cycle-Operator
         # ------------------------------------------------------------------
         if not cancelled:
             try:
-                print("[Kaiserlich Tracker][MasterTrack] ➜ Übergabe an Master-Cycle-Operator ...")
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
-            except Exception as e:
-                print(f"[Kaiserlich Tracker][MasterTrack] ⚠️ Fehler bei Übergabe an Master-Cycle-Operator: {e}")
-        else:
-            print("[Kaiserlich Tracker][MasterTrack] Übergabe an Master-Cycle-Operator übersprungen (abgebrochen).")
+            except Exception:
+                pass
 
 # ------------------------------------------------------------
 # Register
