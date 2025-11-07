@@ -44,7 +44,7 @@ def compute_new_sizes(old_pattern: int) -> Tuple[int, int]:
     - new_search  = clamp(new_pattern * 2)
     """
     new_pattern = _clamp(round(old_pattern * 1.1))
-    new_search = _clamp(new_pattern * 2)
+    new_search = (new_pattern * 2)
     return new_pattern, new_search
 
 def update_default_sizes(context: bpy.types.Context) -> Tuple[int, int, int, int]:
