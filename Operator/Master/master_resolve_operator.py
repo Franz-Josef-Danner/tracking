@@ -23,8 +23,6 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
     bl_idname = "kaiserlich_tracker.master_resolve_operator"
     bl_label = "Kaiserlich: Resolve Master (gestuft)"
     bl_options = {'REGISTER', 'UNDO'}
-
-    log_verbose: bpy.props.BoolProperty(default=True)
     poll_interval: bpy.props.FloatProperty(default=0.25)
     timeout_seconds: bpy.props.FloatProperty(default=8.0)
 
@@ -46,7 +44,6 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         self._stage = 0
         self._elapsed = 0.0
         self._update_progress(context, 0)
-        self._log_info("[Resolve] Gestufter Solve gestartet.")
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
@@ -57,9 +54,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         if self._phase == 0:
             self._area, self._region, self._space = self._find_clip_context()
             if not (self._space and getattr(self._space, "clip", None)):
-                self._log_error("[Resolve][Phase0] Kein gültiger CLIP_EDITOR gefunden.")
                 return self._finish(context, cancelled=True)
-            self._log_info("[Resolve][Phase0] Kontext gefunden → Starte Solve-Stufe 1.")
             self._phase = 1
             self._stage = 1
             return {'RUNNING_MODAL'}
@@ -67,7 +62,6 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         # --- PHASE 1: Solve-Sequenz --------------------------------------
         if self._phase == 1:
             if self._stage > self.MAX_STAGES:
-                self._log_warn("[Resolve] Alle Solve-Stufen erfolglos → CleanError folgt.")
                 bpy.ops.kaiserlich_tracker.clean_error_operator('INVOKE_DEFAULT')
                 self._update_progress(context, 100)
                 return self._finish(context)
@@ -88,9 +82,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
             if err_val is not None:
                 self._avg_error = err_val
-                self._log_info(f"[Resolve][Stage{self._stage}] AvgError={err_val:.4f} | Max={max_err:.4f}")
                 if err_val <= max_err:
-                    self._log_info(f"[Resolve] Erfolg in Stufe {self._stage} (AvgError={err_val:.4f} ≤ {max_err:.4f})")
                     self._update_progress(context, 100)
                     return self._finish(context)
 
@@ -99,11 +91,9 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
                 self._phase = 1
                 progress = int((self._stage - 1) / self.MAX_STAGES * 100)
                 self._update_progress(context, progress)
-                self._log_info(f"[Resolve] → Eskalation zu Stufe {self._stage}")
                 return {'RUNNING_MODAL'}
 
             if self._elapsed >= self.timeout_seconds:
-                self._log_warn(f"[Resolve][Stage{self._stage}] Timeout ohne gültigen Fehlerwert.")
                 self._stage += 1
                 self._phase = 1
                 progress = int((self._stage - 1) / self.MAX_STAGES * 100)
@@ -132,16 +122,14 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             refine_intrinsics_principal_point_on(context)
             refine_intrinsics_radial_distortion_on(context)
 
-        self._log_info(f"[Resolve][Stage{stage}] Solve gestartet (Focal={stage>1}, Principal={stage>2}, Dist={stage>3})")
-
         # Ausführung Solve
         try:
             buf_out, buf_err = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
                 with bpy.context.temp_override(area=self._area, region=self._region, space_data=self._space):
                     bpy.ops.clip.solve_camera('EXEC_DEFAULT')
-        except Exception as e:
-            self._log_error(f"[Resolve][Stage{stage}] Solve fehlgeschlagen: {e}")
+        except Exception:
+            pass
 
     # ---------------- Helpers ----------------
     def _find_clip_context(self):
@@ -173,24 +161,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         wm = context.window_manager
         if self._timer:
             wm.event_timer_remove(self._timer)
-        self._log_info("[Resolve] Vorgang " + ("abgebrochen." if cancelled else "abgeschlossen."))
         return {'CANCELLED'} if cancelled else {'FINISHED'}
-
-    # ---------------- Logging ----------------
-    def _log_info(self, msg: str):
-        if self.log_verbose:
-            print(msg)
-        self.report({'INFO'}, msg)
-
-    def _log_warn(self, msg: str):
-        if self.log_verbose:
-            print(msg)
-        self.report({'WARNING'}, msg)
-
-    def _log_error(self, msg: str):
-        print(msg)
-        self.report({'ERROR'}, msg)
-
 
 # --------- Registration ----------
 def register():
