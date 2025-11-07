@@ -1,8 +1,7 @@
-# Operator/Master/master_cycle_operator.py
 import bpy
 from bpy.types import Operator, Context
 
-# ---- Helper-Importe ---------------------------------------------------------
+# ---- Helper Imports ---------------------------------------------------------
 from ...Helper.low_marker_frame import find_first_weak_frame
 from ...Helper.filter_all_tracks import filter_and_delete_all_tracks
 from ...Helper.filter_tracks import filter_problematic_tracks
@@ -10,30 +9,30 @@ from ...Helper.update_default_sizes import update_default_sizes
 from ...Helper.find_clip_editor_area import find_clip_editor_area
 
 class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
-    """Master Operator – setzt Playhead auf Frame mit den wenigsten aktiven Markern"""
+    """Master Operator – Sets the playhead to the frame with the fewest active markers"""
     bl_idname = "kaiserlich_tracker.master_cycle_operator"
     bl_label = "Master Operator"
-    bl_description = "Setzt den Playhead auf den ersten Frame mit der geringsten Markeranzahl"
+    bl_description = "Sets the playhead to the first frame with the lowest number of active markers"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context: Context):
         frame = find_first_weak_frame(context)
 
         # ------------------------------------------------------------------
-        # Wenn kein Frame gefunden wurde → regulär beenden
+        # If no weak frame is found → perform cleanup and proceed
         # ------------------------------------------------------------------
         if frame is None:
             try:
                 # ----------------------------------------------------------
-                # Sicheren CLIP_EDITOR-Kontext herstellen
+                # Ensure a valid CLIP_EDITOR context
                 # ----------------------------------------------------------
                 window, area, region, space = find_clip_editor_area(getattr(getattr(context, "space_data", None), "clip", None))
                 if window is None or area is None or region is None or space is None:
-                    raise RuntimeError("Keine CLIP_EDITOR Area gefunden – filter_tracks benötigt gültigen Kontext.")
+                    raise RuntimeError("No CLIP_EDITOR area found – filter_tracks requires a valid context.")
 
                 clip_ref = getattr(getattr(context, "space_data", None), "clip", None)
 
-                # Sicherstellen, dass space.clip korrekt gesetzt ist
+                # Make sure space.clip is properly set
                 if getattr(space, "clip", None) is None and clip_ref:
                     try:
                         space.clip = clip_ref
@@ -42,10 +41,10 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
                 clip_obj = getattr(space, "clip", None)
                 if clip_obj is None:
-                    raise RuntimeError("Kein aktiver Clip im Kontext vorhanden.")
+                    raise RuntimeError("No active clip in the current context.")
 
                 # ------------------------------------------------------------------
-                # Filter Tracks (problematische markieren & löschen)
+                # Stage 1: Filter and delete problematic tracks
                 # ------------------------------------------------------------------
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                     res = bpy.ops.clip.filter_tracks(track_threshold=30.0)
@@ -56,22 +55,24 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         _ = delete_tracks_by_names(bpy.context, flagged_names)
 
                 # ------------------------------------------------------------------
-                # Zweite Filterstufe
+                # Stage 2: Secondary filtering step
                 # ------------------------------------------------------------------
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                     try:
                         filter_problematic_tracks(context, threshold=10.0)
-                    except Exception as ftrack_err:
+                    except Exception:
                         pass
-                # 3) Erneuter Versuch, einen schwachen Frame zu finden
+
+                # ------------------------------------------------------------------
+                # Retry finding a weak frame
+                # ------------------------------------------------------------------
                 frame = find_first_weak_frame(context)
                 if frame is None:
                     try:
                         op_id_resolve = "kaiserlich_tracker.master_resolve_operator"
-                        # Prüfen, ob der Operator registriert ist
                         op_cls = bpy.ops
                         if not hasattr(op_cls, "kaiserlich_tracker") or not hasattr(op_cls.kaiserlich_tracker, "master_resolve_operator"):
-                            msg = f"Operator '{op_id_resolve}' nicht registriert. Prüfe bl_idname in Operator/Master/master_resolve_operator.py"
+                            msg = f"Operator '{op_id_resolve}' not registered. Check bl_idname in Operator/Master/master_resolve_operator.py"
                             self.report({'ERROR'}, msg)
                             return {'CANCELLED'}
 
@@ -79,20 +80,20 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         return {'FINISHED'}
 
                     except Exception as resolve_err:
-                        self.report({'ERROR'}, f"Fehler beim Starten des Resolve-Operators: {resolve_err}")
+                        self.report({'ERROR'}, f"Error while starting the resolve operator: {resolve_err}")
                         return {'CANCELLED'}
 
                 try:
                     op, os, np, ns = update_default_sizes(context)
 
-                    # Reset interner Cache-Werte
+                    # Reset internal caches
                     scene = context.scene
                     reset_keys = ["frame_value_cache", "min_distance_values", "kaiserlich_best_thresholds"]
                     for k in reset_keys:
                         if k in scene:
                             del scene[k]
 
-                    # Threshold-Props zurücksetzen
+                    # Reset threshold properties
                     from ...Helper.util_scene import set_scene_props
                     set_scene_props(
                         scene,
@@ -104,15 +105,15 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         kaiserlich_rot_scale_thresh_scale=1.0,
                         kaiserlich_perspective_thresh=1.0
                     )
-                except ValueError as e:
+                except ValueError:
                     pass
                     
             except Exception as ex:
-                self.report({'ERROR'}, f"Fehler bei Filterprozess: {ex}")
+                self.report({'ERROR'}, f"Error during filter process: {ex}")
                 return {'CANCELLED'}
 
         # ------------------------------------------------------------------
-        # Wenn ein Frame gefunden wurde → Playhead setzen
+        # If a weak frame was found → set playhead to that frame
         # ------------------------------------------------------------------
         scene = context.scene
         scene.frame_current = frame
@@ -123,21 +124,23 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         except Exception:
             pass
 
-        # Operator-Aufruf
+        # ------------------------------------------------------------------
+        # Trigger next operator (Deep Test)
+        # ------------------------------------------------------------------
         op_id = "kaiserlichtracker.master_deep_test_operator"
         try:
             op_cls = bpy.ops
             if not hasattr(op_cls, "kaiserlich_tracker") or not hasattr(op_cls.kaiserlich_tracker, "master_deep_test_operator"):
-                msg = f"Operator '{op_id}' nicht registriert. Prüfe bl_idname in Operator/Master/master_deep_test_operator.py"
+                msg = f"Operator '{op_id}' not registered. Check bl_idname in Operator/Master/master_deep_test_operator.py"
                 self.report({'ERROR'}, msg)
                 return {'CANCELLED'}
 
             bpy.ops.kaiserlichtracker.master_deep_test_operator('INVOKE_DEFAULT')
-        except Exception as ex:
+        except Exception:
             pass
 
         # ------------------------------------------------------------------
-        # 🧮 Track-Qualität berechnen
+        # Compute and update track quality metrics
         # ------------------------------------------------------------------
         try:
             from ...Helper.track_quality_metrics import compute_track_quality_metrics
@@ -145,7 +148,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             quality_percent = float(metrics.get("prozent", 100.0))
             context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
 
-            # UI Refresh
+            # Refresh the UI
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == 'CLIP_EDITOR':
@@ -157,18 +160,18 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             quality_percent = 100.0
 
         # ------------------------------------------------------------------
-        # 🧩 Marker-Fortschritt berechnen
+        # Compute marker progress
         # ------------------------------------------------------------------
         try:
             from ...Helper.frame_track_progress import compute_marker_progress
             value, perc = compute_marker_progress(context.scene, update_ui=True)
-        except Exception as progress_err:
+        except Exception:
             pass
 
         return {'FINISHED'}
     
 
-# ---- Registrierung ----------------------------------------------------------
+# ---- Registration ----------------------------------------------------------
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_master_cycle_operator)
 
