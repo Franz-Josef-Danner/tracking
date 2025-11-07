@@ -1,4 +1,3 @@
-# Operator/Master/master_resolve_operator.py
 from __future__ import annotations
 import bpy
 from bpy.types import Operator
@@ -15,14 +14,14 @@ try:
         refine_intrinsics_radial_distortion_on,
     )
 except Exception as e:
-    raise ImportError(f"[master_resolve_operator] Fehlende Add-on-Module: {e}")
+    raise ImportError(f"[master_resolve_operator] Missing add-on modules: {e}")
 
 
 class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
-    """Survey what was gained, and what was lost."""
+    """Multi-Stage Camera Solve Operator with Intrinsics Escalation"""
     bl_idname = "kaiserlich_tracker.master_resolve_operator"
-    bl_label = "Kaiserlich: Resolve Master (gestuft)"
-    bl_discription = "Survey what was gained, and what was lost."
+    bl_label = "Kaiserlich: Resolve Master (staged)"
+    bl_description = "Executes the camera solve in multiple escalating refinement stages"
     bl_options = {'REGISTER', 'UNDO'}
     
     poll_interval: bpy.props.FloatProperty(default=0.25)
@@ -35,7 +34,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
     _avg_error = None
     _area = _region = _space = None
 
-    MAX_STAGES = 4  # Anzahl der Solve-Stufen
+    MAX_STAGES = 4  # Number of solve refinement stages
 
     # ---------------- Lifecycle ----------------
     def invoke(self, context, event):
@@ -52,7 +51,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
 
-        # --- PHASE 0: Clip-Editor finden ----------------------------------
+        # --- PHASE 0: Locate Clip Editor ----------------------------------
         if self._phase == 0:
             self._area, self._region, self._space = self._find_clip_context()
             if not (self._space and getattr(self._space, "clip", None)):
@@ -61,7 +60,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             self._stage = 1
             return {'RUNNING_MODAL'}
 
-        # --- PHASE 1: Solve-Sequenz --------------------------------------
+        # --- PHASE 1: Solve Sequence --------------------------------------
         if self._phase == 1:
             if self._stage > self.MAX_STAGES:
                 bpy.ops.kaiserlich_tracker.clean_error_operator('INVOKE_DEFAULT')
@@ -75,7 +74,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             self._update_progress(context, progress)
             return {'RUNNING_MODAL'}
 
-        # --- PHASE 2: Polling nach Solve ---------------------------------
+        # --- PHASE 2: Polling after Solve ---------------------------------
         if self._phase == 2:
             self._elapsed += self.poll_interval
             clip = getattr(self._space, "clip", None)
@@ -88,7 +87,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
                     self._update_progress(context, 100)
                     return self._finish(context)
 
-                # Wenn zu hoch → nächste Stufe
+                # If error too high → escalate to next stage
                 self._stage += 1
                 self._phase = 1
                 progress = int((self._stage - 1) / self.MAX_STAGES * 100)
@@ -108,10 +107,10 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
     # ---------------- Solve Logic ----------------
     def _run_solve_stage(self, context, stage: int):
-        """Führt den Solve mit definierten Intrinsics-Settings aus."""
+        """Executes a solve with predefined intrinsic refinement settings."""
         refine_intrinsics_reset(context)
 
-        # Stage-Konfiguration
+        # Stage configuration
         if stage == 1:
             pass  # Focal=False, Principal=False, Dist=False
         elif stage == 2:
@@ -124,7 +123,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             refine_intrinsics_principal_point_on(context)
             refine_intrinsics_radial_distortion_on(context)
 
-        # Ausführung Solve
+        # Perform solve
         try:
             buf_out, buf_err = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
@@ -149,7 +148,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             return None
 
     def _update_progress(self, context, value: int):
-        """Aktualisiert String-UI-Property für Fortschritt (z. B. '75 %')."""
+        """Updates the string-based UI property for progress (e.g., '75 %')."""
         scene = context.scene
         percent_str = f"{value} %"
         if hasattr(scene, "kaiserlich_progress_title"):
@@ -164,6 +163,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         if self._timer:
             wm.event_timer_remove(self._timer)
         return {'CANCELLED'} if cancelled else {'FINISHED'}
+
 
 # --------- Registration ----------
 def register():
