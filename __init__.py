@@ -14,7 +14,6 @@ import bpy
 from .UI.ui import KAISERLICHTRACKER_PT_panel
 from .Operator.master_operator import KAISERLICHTRACKER_OT_master_operator
 from .Operator.Master.master_track_operator import KAISERLICHTRACKER_OT_master_track_cycle
-from .Operator.Master.master_shorttest_operator import KAISERLICHTRACKER_OT_master_shorttest_operator
 from .Operator.Master.master_deep_test_operator import KAISERLICHTRACKER_OT_master_deep_test_operator
 from .Operator.Master.master_detect_adapt_operator import KAISERLICHTRACKER_OT_master_detect_adapt
 from .Operator.Master.master_track_operator_backwards import KAISERLICHTRACKER_OT_master_track_cycle_backwards
@@ -26,7 +25,6 @@ from .Operator.Master.master_clean_error_operator import KAISERLICHTRACKER_OT_cl
 classes = (
     KAISERLICHTRACKER_PT_panel,
     KAISERLICHTRACKER_OT_master_track_cycle,
-    KAISERLICHTRACKER_OT_master_shorttest_operator,
     KAISERLICHTRACKER_OT_master_deep_test_operator,
     KAISERLICHTRACKER_OT_master_detect_adapt,
     KAISERLICHTRACKER_OT_master_track_cycle_backwards,
