@@ -60,9 +60,9 @@ def compute_track_quality_metrics(
     context: bpy.types.Context,
     *,
     min_len_for_long=25,
-    spike_threshold=0.012,
-    velocity_thresh=0.020,
-    accel_thresh=0.050,
+    velocity_thresh=0.004,
+    accel_thresh=0.003,
+    spike_density_threshold=5.0,  # Spikes pro 100 Frames
 ):
     """
     Bewertet die Trackingqualität:
@@ -130,12 +130,26 @@ def compute_track_quality_metrics(
         spikes, vel_spikes, acc_spikes = _count_spikes_for_track(
             t, velocity_thresh=velocity_thresh, accel_thresh=accel_thresh
         )
-        if spikes > spike_threshold:
+        active_frames = [m.frame for m in t.markers if not m.mute]
+        if active_frames:
+            seg_len = (max(active_frames) - min(active_frames)) + 1
+        else:
+            seg_len = 0
+
+        if seg_len > 0:
+            spike_density = (spikes / seg_len) * 100.0
+        else:
+            spike_density = 0.0
+
+        print(f"[Quality][{t.name}] 📈 Spike-Dichte: {spike_density:.2f} /100f "
+              f"(Spikes={spikes}, Len={seg_len}, Vthr={velocity_thresh:.4f}, Athr={accel_thresh:.4f})")
+
+        if spike_density >= spike_density_threshold:
             spike_tracks.append(t)
-            print(f"[Quality] ⚠️ SpikeTrack '{t.name}' mit {spikes} Spikes (>{spike_threshold})")
+            print(f"[Quality][{t.name}] ⚠️ Markiert als instabil (Dichte ≥ {spike_density_threshold:.2f}/100f)")
 
     anzahl_spike_tracks = len(spike_tracks)
-    print(f"[Quality] 🧨 Tracks mit >{spike_threshold} Spikes: {anzahl_spike_tracks}")
+    print(f"[Quality] 🧨 Tracks mit Dichte ≥ {spike_density_threshold:.2f}/100f: {anzahl_spike_tracks}")
 
     # ------------------------------------------------------------
     # 5. Saubere Tracks & Prozent
@@ -149,7 +163,11 @@ def compute_track_quality_metrics(
     print(f"[Quality] 🧩 Saubere Tracks: {saubere_tracks}")
     print(f"[Quality] 🎯 Endergebnis: {prozent:.2f}%")
     print("══════════════════════════════════════════════════════")
-
+    print(f"[Quality] 📊 Zusammenfassung:")
+    print(f"  • Spike-Dichte-Grenze : {spike_density_threshold:.2f} /100f")
+    print(f"  • Velocity/Accel Thr. : {velocity_thresh:.4f} / {accel_thresh:.4f}")
+    print(f"  • Markierte SpikeTracks: {anzahl_spike_tracks} von {anzahl_alle_tracks}")
+    print("══════════════════════════════════════════════════════")
     return {
         "anzahl_alle_tracks": anzahl_alle_tracks,
         "anzahl_unter_25": anzahl_unter_25,
