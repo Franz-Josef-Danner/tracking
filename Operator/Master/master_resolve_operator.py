@@ -19,30 +19,7 @@ except Exception as e:
 
 
 class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
-    """
-    A Blender operator that performs staged camera solving with progressive intrinsic refinement.
-    This operator implements a multi-stage camera solving process that gradually refines
-    camera intrinsics parameters to achieve optimal tracking results. It runs through
-    up to 4 stages, each with different intrinsic parameter configurations:
-    Stage 1: Basic solve (no intrinsic refinement)
-    Stage 2: Focal length refinement enabled
-    Stage 3: Focal length + principal point refinement
-    Stage 4: Full refinement (focal length + principal point + radial distortion)
-    The operator automatically progresses through stages until either:
-    - The average tracking error falls below the threshold (max_error_value)
-    - All stages have been completed
-    - A timeout occurs for any stage
-    Attributes:
-        poll_interval (float): Time interval between modal updates in seconds (default: 0.25)
-        timeout_seconds (float): Maximum time to wait for each solve stage (default: 8.0)
-    Usage:
-        Run this operator from the Clip Editor to perform automatic staged camera solving.
-        The operator will find tracking data, execute progressive solve stages, and clean
-        up errors upon completion.
-    Note:
-        Requires an active clip in the Clip Editor with tracking markers.
-        Progress is displayed via the kaiserlich_progress_title scene property.
-    """
+    """Survey what was gained, and what was lost."""
     bl_idname = "kaiserlich_tracker.master_resolve_operator"
     bl_label = "Kaiserlich: Resolve Master (gestuft)"
     bl_discription = "Survey what was gained, and what was lost."
