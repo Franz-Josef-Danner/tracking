@@ -16,13 +16,13 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
-        # Property-Layout: Label links, Feld rechts – ohne dunklen Box-Hintergrund
+        # Property layout: Label on the left, field on the right – without dark box background
         col = layout.column(align=True)
         col.use_property_split = True
         col.use_property_decorate = False
-        col.prop(scene, "kaiserlich_markers_per_frame", text="Marker per Frame")
+        col.prop(scene, "kaiserlich_markers_per_frame", text="Markers per Frame")
         col.prop(scene, "kaiserlich_frames_per_track", text="Frames per Track")
-        col.prop(scene, "max_error_value", text="Max error Value")
+        col.prop(scene, "max_error_value", text="Max Error Value")
 
         # ▶️ Buttons
         col = layout.column(align=True)
@@ -38,7 +38,7 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 
         row = col.row(align=True)
         row.operator("kaiserlich_tracker.master_resolve_operator", text="camera solve", icon="OUTLINER_OB_CAMERA")
-        row.operator("kaiserlich_tracker.clean_error_operator", text="error cleaneup", icon="ERROR")
+        row.operator("kaiserlich_tracker.clean_error_operator", text="error cleanup", icon="ERROR")
       
         layout.separator()
 
@@ -47,8 +47,8 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col = layout.column(align=True)
         col.use_property_split = True
         col.use_property_decorate = False
-        col.prop(scene, "kaiserlich_rot_thresh_x", text="ΔX-Threshold")
-        col.prop(scene, "kaiserlich_rot_thresh_y", text="ΔY-Threshold")
+        col.prop(scene, "kaiserlich_rot_thresh_x", text="ΔX Threshold")
+        col.prop(scene, "kaiserlich_rot_thresh_y", text="ΔY Threshold")
 
         layout.separator()
 
@@ -81,19 +81,20 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 
         layout.separator()
         layout.label(text="Status")
-        # Fortschrittsanzeigen mit Property-Bindung
+        # Progress indicators with property binding
         layout.prop(scene, "kaiserlich_progress_title", text="Single Tests")
         layout.prop(scene, "kaiserlich_progress_step", text="Complete Test")
         layout.prop(scene, "kaiserlich_quality_percent", text="Track Quality")
         layout.prop(scene, "kaiserlich_marker_progress", text="Track Progress")
+
 # ==========================================================
-# Registrierung der UI-Properties
+# Registration of UI Properties
 # ==========================================================
 
 def register():
     bpy.types.Scene.kaiserlich_rot_thresh_x = bpy.props.FloatProperty(
         name="ΔX Threshold",
-        description="Minimaler ΔX-Unterschied zur Erkennung von Rotation",
+        description="Minimum ΔX difference required to detect rotation",
         default=1,
         min=0.00001,
         soft_min=0.00001,
@@ -103,7 +104,7 @@ def register():
     )
     bpy.types.Scene.kaiserlich_rot_thresh_y = bpy.props.FloatProperty(
         name="ΔY Threshold",
-        description="Minimaler ΔY-Unterschied zur Erkennung von Rotation",
+        description="Minimum ΔY difference required to detect rotation",
         default=1,
         min=0.00001,
         soft_max=1,
@@ -112,7 +113,7 @@ def register():
     )
     bpy.types.Scene.kaiserlich_scale_thresh_min = bpy.props.FloatProperty(
         name="Min Scale Δ",
-        description="Minimale Abstandsänderung zur Erkennung von Skalierung",
+        description="Minimum distance change required to detect scaling",
         default=1,
         min=0.00001,
         soft_min=0.00001,
@@ -122,7 +123,7 @@ def register():
     )
     bpy.types.Scene.kaiserlich_scale_thresh_max = bpy.props.FloatProperty(
         name="Max Scale Δ",
-        description="Maximale Abstandsänderung, bevor Skalierung als instabil gilt",
+        description="Maximum distance change before scaling is considered unstable",
         default=1,
         min=0.00001,
         soft_min=0.00001,
@@ -132,7 +133,7 @@ def register():
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_rot = bpy.props.FloatProperty(
         name="Rot+Scale ΔRot",
-        description="Empfindlichkeit für kombinierte Rotation und Skalierung (Rotationsteil)",
+        description="Sensitivity for combined rotation and scaling (rotation component)",
         default=1,
         min=0.00001,
         soft_min=0.00001,
@@ -142,7 +143,7 @@ def register():
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_scale = bpy.props.FloatProperty(
         name="Rot+Scale ΔScale",
-        description="Empfindlichkeit für kombinierte Rotation und Skalierung (Skalierungsteil)",
+        description="Sensitivity for combined rotation and scaling (scale component)",
         default=1,
         min=0.00001,
         soft_min=0.00001,
@@ -152,7 +153,7 @@ def register():
     )
     bpy.types.Scene.kaiserlich_perspective_thresh = bpy.props.FloatProperty(
         name="Perspective Δ",
-        description="Empfindlichkeit für perspektivische Abweichung (Tiefe/Parallaxe)",
+        description="Sensitivity for perspective deviation (depth/parallax)",
         default=1,
         min=0.00001,
         soft_min=0.00001,
@@ -160,40 +161,40 @@ def register():
         precision=5,
         subtype='FACTOR',
     )
-    # --- Fortschrittsanzeige ---
+    # --- Progress Display ---
     bpy.types.Scene.kaiserlich_progress_value = bpy.props.FloatProperty(
         name="Progress",
-        description="Aktueller Fortschritt in Prozent (0–100)",
+        description="Current progress in percent (0–100)",
         default=1,
         min=0.00001,
         max=100.0,
         soft_min=0.00001,
         soft_max=1,
         precision=5,
-        subtype='NONE',  # ⬅️ nicht 'FACTOR', sonst hart auf 0..1 begrenzt
+        subtype='NONE',  # ⬅️ not 'FACTOR', otherwise clamped to 0..1
     )
 
     bpy.types.Scene.kaiserlich_progress_title = bpy.props.StringProperty(
         name="Status",
-        description="Aktueller Verarbeitungsschritt oder Titel",
+        description="Current processing step or title",
         default="",
     )
 
     bpy.types.Scene.kaiserlich_progress_step = bpy.props.StringProperty(
         name="Step",
-        description="Aktueller Step-Titel (zweite Zeile)",
+        description="Current step title (second line)",
         default="",
     )
-    # --- Zusammenfassung Qualitätsanalyse (String für UI) ---
+    # --- Summary of Quality Analysis (String for UI) ---
     bpy.types.Scene.kaiserlich_quality_percent = bpy.props.StringProperty(
         name="Track Quality",
-        description="Reine Prozentzahl der sauberen Tracks (z. B. '51%')",
+        description="Pure percentage value of clean tracks (e.g. '51%')",
         default="",
     )
-    # --- Marker Tracking Fortschritt (global, für beide Operator) ---
+    # --- Marker Tracking Progress (global, for both operators) ---
     bpy.types.Scene.kaiserlich_marker_progress = bpy.props.StringProperty(
         name="Marker Progress",
-        description="Prozentualer Fortschritt (Marker pro Frame über Szene hinweg)",
+        description="Percentage of progress (markers per frame across scene)",
         default="",
     )
 
