@@ -107,9 +107,7 @@ def filter_and_delete_tracks(
                 region=region,
                 space_data=space,
             ):
-                result = bpy.ops.clip.filter_tracks(track_threshold=float(threshold))
-                if result != {'FINISHED'}:
-                    print(f"[Helper][FilterDelete] ⚠️ bpy.ops.clip.filter_tracks result={result}")
+                bpy.ops.clip.filter_tracks(track_threshold=float(threshold))
         except Exception as ex:
             raise RuntimeError(f"clip.filter_tracks Context-Fehler: {ex!r}")
 
