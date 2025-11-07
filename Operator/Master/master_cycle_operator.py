@@ -42,28 +42,18 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
                 clip_obj = getattr(space, "clip", None)
                 if clip_obj is None:
-                    raise RuntimeError("[MasterCycle] Kein aktiver Clip im Kontext vorhanden.")
+                    raise RuntimeError("Kein aktiver Clip im Kontext vorhanden.")
 
                 # ------------------------------------------------------------------
                 # Filter Tracks (problematische markieren & löschen)
                 # ------------------------------------------------------------------
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                     res = bpy.ops.clip.filter_tracks(track_threshold=30.0)
-
                     tracking = clip_obj.tracking
                     flagged_names = [t.name for t in tracking.tracks if t.select]
-
                     if flagged_names:
                         from ...Helper.delete import delete_tracks_by_names
-                        deleted_count_all = delete_tracks_by_names(bpy.context, flagged_names)
-
-                        # 🟡 LOG: Ausgabe der gelöschten Tracks
-                        print(f"[MasterCycle][Delete] 🧹 {deleted_count_all} Tracks gelöscht:")
-                        for name in flagged_names:
-                            print(f"   └─ {name}")
-                    else:
-                        deleted_count_all = 0
-                        print("[MasterCycle][Delete] Keine selektierten Tracks zum Löschen gefunden.")
+                        _ = delete_tracks_by_names(bpy.context, flagged_names)
 
                 # ------------------------------------------------------------------
                 # Zweite Filterstufe
@@ -72,14 +62,12 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     try:
                         filter_problematic_tracks(context, threshold=10.0)
                     except Exception as ftrack_err:
-                        print(f"[MasterCycle][Delete] ⚠️ Fehler beim zweiten Filterdurchlauf: {ftrack_err}")
-
+                        pass
                 # 3) Erneuter Versuch, einen schwachen Frame zu finden
                 frame = find_first_weak_frame(context)
                 if frame is None:
                     try:
                         op_id_resolve = "kaiserlich_tracker.master_resolve_operator"
-
                         # Prüfen, ob der Operator registriert ist
                         op_cls = bpy.ops
                         if not hasattr(op_cls, "kaiserlich_tracker") or not hasattr(op_cls.kaiserlich_tracker, "master_resolve_operator"):
@@ -88,7 +76,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                             return {'CANCELLED'}
 
                         bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
-                        self.report({'INFO'}, "[MasterCycle] Kein schwacher Frame – Resolve-Prozess gestartet.")
                         return {'FINISHED'}
 
                     except Exception as resolve_err:
@@ -97,7 +84,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
                 try:
                     op, os, np, ns = update_default_sizes(context)
-                    self.report({'INFO'}, f"[Defaults] pattern {op}->{np}, search {os}->{ns}")
 
                     # Reset interner Cache-Werte
                     scene = context.scene
@@ -119,7 +105,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         kaiserlich_perspective_thresh=1.0
                     )
                 except ValueError as e:
-                    self.report({'WARNING'}, str(e))
+                    pass
                     
             except Exception as ex:
                 self.report({'ERROR'}, f"Fehler bei Filterprozess: {ex}")
@@ -137,8 +123,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         except Exception:
             pass
 
-        self.report({'INFO'}, f"[Master] Playhead auf Frame {frame} gesetzt – ShortTest wird gestartet.")
-
         # Operator-Aufruf
         op_id = "kaiserlichtracker.master_deep_test_operator"
         try:
@@ -150,7 +134,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
             bpy.ops.kaiserlichtracker.master_deep_test_operator('INVOKE_DEFAULT')
         except Exception as ex:
-            self.report({'WARNING'}, f"Fehler beim Start des ShortTest: {ex}")
+            pass
 
         # ------------------------------------------------------------------
         # 🧮 Track-Qualität berechnen
@@ -178,9 +162,8 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         try:
             from ...Helper.frame_track_progress import compute_marker_progress
             value, perc = compute_marker_progress(context.scene, update_ui=True)
-            self.report({'INFO'}, f"[Progress] Marker gesamt: {value}, Fortschritt: {perc:.1f}%")
         except Exception as progress_err:
-            self.report({'WARNING'}, f"Fortschrittsberechnung fehlgeschlagen: {progress_err}")
+            pass
 
         return {'FINISHED'}
     
