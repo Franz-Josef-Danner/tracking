@@ -28,10 +28,7 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
         col = layout.column(align=True)
         col.operator("kaiserlich_tracker.master_operator", text="Master", icon="SYSTEM")
 
-        # Zwei Buttons nebeneinander
-        row = col.row(align=True)
-        row.operator("kaiserlich_tracker.master_shorttest_operator", text="Short Test Thresholds", icon="VIEWZOOM")
-        row.operator("kaiserlichtracker.master_deep_test_operator", text="Deep Test Thresholds", icon="ZOOM_IN")
+        col.operator("kaiserlichtracker.master_deep_test_operator", text="Deep Test Thresholds", icon="ZOOM_IN")
 
         col.operator("kaiserlich_tracker.master_detect_adapt", text="Run Detect Adapt", icon="STICKY_UVS_DISABLE")
         
