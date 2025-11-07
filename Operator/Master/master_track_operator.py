@@ -4,7 +4,7 @@ from typing import List, Tuple, Dict, Deque
 from collections import deque
 
 # ------------------------------------------------------------
-# Helper-Importe
+# Helper Imports
 # ------------------------------------------------------------
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
@@ -22,8 +22,8 @@ from ...Helper.frame_track_progress import compute_marker_progress
 
 class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     bl_idname = "kaiserlich_tracker.master_track_cycle"
-    bl_label = "Track Zyklus (Modal)"
-    bl_description = "advance the front line."
+    bl_label = "Track Cycle (Modal)"
+    bl_description = "Performs a non-blocking forward tracking cycle for all selected markers"
     bl_options = {"REGISTER", "INTERNAL"}
 
     max_frames: bpy.props.IntProperty(  # type: ignore
@@ -31,7 +31,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         default=0,
         min=0,
         soft_max=100000,
-        description="Sicherheitslimit (0 = kein Limit)"
+        description="Safety limit (0 = no limit)"
     )
 
     _timer = None
@@ -49,66 +49,66 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     _frames_processed = 0
 
     # --------------------------------------------------------
-    # Initialisierung
+    # Initialization
     # --------------------------------------------------------
 
     def execute(self, context):
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
-            self.report({'ERROR'}, "Kein aktiver Clip.")
+            self.report({'ERROR'}, "No active clip found.")
             return {"CANCELLED"}
 
-        # Start- und Endframes holen
+        # Get start and end frames
         self._start_frame = ph_get_start_frame(context)
         self._end_frame = get_end_frame(context)
         if self._end_frame < self._start_frame:
             self._end_frame = self._start_frame
 
-        # Selektion erfassen
+        # Collect current track selection
         self._original_selected = collect_selected_track_names(context)
         if not self._original_selected:
-            self.report({'WARNING'}, "Keine Tracks selektiert.")
+            self.report({'WARNING'}, "No tracks selected.")
             return {"CANCELLED"}
 
         self._processing_names = list(self._original_selected)
 
-        # CLIP_EDITOR Bereich holen
+        # Find CLIP_EDITOR area
         self._window, self._area, self._region, self._space = find_clip_editor_area(clip)
         if not self._window:
-            self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
+            self.report({'ERROR'}, "No CLIP_EDITOR area found.")
             return {"CANCELLED"}
 
-        # Startframe setzen
+        # Set starting frame
         self._current_frame = max(self._start_frame, int(scene.frame_current))
         self._space.clip_user.frame_current = self._current_frame
         scene.frame_current = self._current_frame
 
-        # Historien initialisieren
+        # Initialize histories for each track
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
 
-        # Selektion fixieren
+        # Lock current selection
         tracking = clip.tracking
         for tr in tracking.tracks:
             tr.select = (tr.name in self._original_selected)
 
-        # Timer aktivieren
+        # Activate timer
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
         return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
-    # Modal-Loop
+    # Modal Loop
     # --------------------------------------------------------
 
     def modal(self, context, event):
-        # ESC = Abbruch
+        # ESC = cancel
         if event.type == 'ESC':
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
-        # Nur TIMER-Events verarbeiten
+        # Only process TIMER events
         if event.type != 'TIMER':
             return {"PASS_THROUGH"}
 
@@ -119,7 +119,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
         tracking = clip.tracking
 
-        # Historien aktualisieren
+        # Update histories
         for name in list(self._processing_names):
             tr = tracking.tracks.get(name)
             if not tr:
@@ -128,13 +128,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             if mk:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
 
-        # Formel anwenden (z. B. für Optimierungen)
+        # Apply adaptive formula
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception:
             pass
 
-        # Tracking-Schritt über Helper
+        # Perform tracking step
         success = track_markers_with_override(
             self._window, self._area, self._region, self._space,
             backwards=False, sequence=False
@@ -144,7 +144,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
-        # Frame fortsetzen
+        # Advance frame
         scene = context.scene
         if self._space.clip_user.frame_current == self._current_frame:
             self._space.clip_user.frame_current += 1
@@ -155,14 +155,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         self._current_frame = self._space.clip_user.frame_current
         self._frames_processed += 1
 
-        # Aktive Tracks prüfen
+        # Filter active tracks
         self._processing_names, _ = filter_active_tracks_at_frame(
             context, self._processing_names, self._current_frame
         )
 
-        # ----------------------------------------------------
-        # Beendigungskriterien
-        # ----------------------------------------------------
+        # Termination conditions
         if self._current_frame >= self._end_frame:
             self._finish(context)
             return {"FINISHED"}
@@ -178,7 +176,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
-    # Abschluss / Cleanup
+    # Finalization / Cleanup
     # --------------------------------------------------------
 
     def _finish(self, context, cancelled: bool = False):
@@ -187,7 +185,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             wm.event_timer_remove(self._timer)
         self._timer = None
 
-        # Ursprüngliche Selektion wiederherstellen
+        # Restore original selection
         clip = getattr(context.space_data, "clip", None)
         if clip and hasattr(clip, "tracking"):
             for tr in clip.tracking.tracks:
@@ -198,16 +196,14 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         except Exception:
             pass
 
-        # ------------------------------------------------------------------
-        # 1️⃣ Zuerst: Qualitätsmetrik berechnen
-        # ------------------------------------------------------------------
+        # 1️⃣ Compute quality metrics
         try:
             from ...Helper.track_quality_metrics import compute_track_quality_metrics
             metrics = compute_track_quality_metrics(context)
             quality_percent = float(metrics.get("prozent", 100.0))
             context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
             print(f"[Kaiserlich Tracker][Quality] 🎯 {quality_percent:.1f}%")
-            # UI Refresh erzwingen
+            # Force UI refresh
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == "CLIP_EDITOR":
@@ -215,11 +211,9 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                             if region.type == "UI":
                                 region.tag_redraw()
         except Exception:
-            quality_percent = 100.0  # Fallback, wenn Qualität fehlschlägt
+            quality_percent = 100.0
 
-        # ------------------------------------------------------------------
-        # 2️⃣ Danach: Fortschritt berechnen (inkl. Qualitätsfaktor)
-        # ------------------------------------------------------------------
+        # 2️⃣ Compute progress (including quality factor)
         try:
             from ...Helper.frame_track_progress import compute_marker_progress
             value, perc = compute_marker_progress(context.scene, update_ui=True)
@@ -227,14 +221,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         except Exception:
             pass
 
-        # ------------------------------------------------------------------
-        # 3️⃣ Nach Abschluss: Übergabe an Master-Cycle-Operator
-        # ------------------------------------------------------------------
+        # 3️⃣ Continue with the next operator
         if not cancelled:
             try:
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
             except Exception:
                 pass
+
 
 # ------------------------------------------------------------
 # Register
