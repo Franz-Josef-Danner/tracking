@@ -65,7 +65,4 @@ def update_default_sizes(context: bpy.types.Context) -> Tuple[int, int, int, int
     settings.default_pattern_size = new_pattern
     settings.default_search_size  = new_search
 
-    print(f"[Kaiserlich Tracker][Defaults] pattern: {old_pattern} -> {new_pattern} | "
-          f"search: {old_search} -> {new_search}")
-
     return old_pattern, old_search, new_pattern, new_search
