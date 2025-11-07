@@ -5,7 +5,7 @@
 import bpy
 from typing import Optional, Tuple
 
-_MIN, _MAX = 5, 1000
+_MIN, _MAX = 30, 100
 
 def _clamp(val: int, lo: int = _MIN, hi: int = _MAX) -> int:
     return max(lo, min(hi, int(val)))
