@@ -46,6 +46,7 @@ class DeepTestState:
 class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     bl_idname = "kaiserlichtracker.master_deep_test_operator"
     bl_label = "Kaiserlich Tracker: Deep Test"
+    bl_description = "locate the flaw that will turn the tide."
     bl_options = {'REGISTER', 'UNDO'}
 
     _timer = None

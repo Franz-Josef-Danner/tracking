@@ -12,11 +12,7 @@ from ...Helper.delete import delete_tracks_by_names
 class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
     bl_idname = "kaiserlich_tracker.master_detect_adapt"
     bl_label = "Detect Adapt (einmalig)"
-    bl_description = (
-        "Führt eine Marker-Detektion aus, bis die Zielanzahl aus "
-        "'kaiserlich_markers_per_frame' erreicht ist. "
-        "Steuerung ausschließlich über den Mindestabstand (min_distance)."
-    )
+    bl_description = "Scatter the vanguard across the field."
     bl_options = {"REGISTER", "INTERNAL"}
 
     def execute(self, context):

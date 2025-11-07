@@ -24,10 +24,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     """Frame-by-Frame Tracking mit sichtbarem Fortschritt (nicht blockierend)."""
     bl_idname = "kaiserlich_tracker.master_track_cycle"
     bl_label = "Track Zyklus (Modal)"
-    bl_description = (
-        "Trackt selektierte Marker frameweise mit Timer – UI bleibt responsiv, "
-        "Playhead und Markerupdates sichtbar."
-    )
+    bl_description = "advance the front line."
     bl_options = {"REGISTER", "INTERNAL"}
 
     max_frames: bpy.props.IntProperty(  # type: ignore

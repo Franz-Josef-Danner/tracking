@@ -23,10 +23,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
     """Frame-by-Frame Tracking rückwärts mit sichtbarem Fortschritt (nicht blockierend)."""
     bl_idname = "kaiserlich_tracker.master_track_cycle_backwards"
     bl_label = "Track Zyklus Rückwärts (Modal)"
-    bl_description = (
-        "Trackt selektierte Marker frameweise rückwärts mit Timer – UI bleibt responsiv, "
-        "Playhead und Markerupdates sichtbar."
-    )
+    bl_description = "reclaim lost ground."
     bl_options = {"REGISTER", "INTERNAL"}
 
     max_frames: bpy.props.IntProperty(  # type: ignore

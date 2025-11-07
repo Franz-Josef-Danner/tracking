@@ -25,6 +25,7 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
     """Ermittelt Solve/Error-Werte; löscht Tracks oberhalb Schwelle (silent)."""
     bl_idname = "kaiserlich_tracker.clean_error_operator"
     bl_label = "Kaiserlich: Clean Error (silent)"
+    bl_description = "Only those who endure return to the ranks."
     bl_options = {'REGISTER', 'INTERNAL'}
 
     sort_desc: BoolProperty(
