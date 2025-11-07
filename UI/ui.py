@@ -26,19 +26,19 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 
         # ▶️ Buttons
         col = layout.column(align=True)
-        col.operator("kaiserlich_tracker.master_operator", text="send everyone", icon="SYSTEM")
+        col.operator("kaiserlich_tracker.master_operator", text="master", icon="SYSTEM")
 
-        col.operator("kaiserlichtracker.master_deep_test_operator", text="find their weakness", icon="ZOOM_IN")
+        col.operator("kaiserlichtracker.master_deep_test_operator", text="motion model test", icon="ZOOM_IN")
 
-        col.operator("kaiserlich_tracker.master_detect_adapt", text="deploy troops", icon="STICKY_UVS_DISABLE")
+        col.operator("kaiserlich_tracker.master_detect_adapt", text="detect features", icon="STICKY_UVS_DISABLE")
         
         row = col.row(align=True)
-        row.operator("kaiserlich_tracker.master_track_cycle_backwards", text="<-- Att(r)ack", icon="TRACKING_BACKWARDS")
-        row.operator("kaiserlich_tracker.master_track_cycle", text="Att(r)ack →", icon="TRACKING_FORWARDS")
+        row.operator("kaiserlich_tracker.master_track_cycle_backwards", text="track", icon="TRACKING_BACKWARDS")
+        row.operator("kaiserlich_tracker.master_track_cycle", text="track", icon="TRACKING_FORWARDS")
 
         row = col.row(align=True)
-        row.operator("kaiserlich_tracker.master_resolve_operator", text="Survey the Field", icon="OUTLINER_OB_CAMERA")
-        row.operator("kaiserlich_tracker.clean_error_operator", text="Purge the Fallen", icon="ERROR")
+        row.operator("kaiserlich_tracker.master_resolve_operator", text="camera solve", icon="OUTLINER_OB_CAMERA")
+        row.operator("kaiserlich_tracker.clean_error_operator", text="error cleaneup", icon="ERROR")
       
         layout.separator()
 
