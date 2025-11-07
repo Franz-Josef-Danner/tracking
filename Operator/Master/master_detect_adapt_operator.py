@@ -10,9 +10,10 @@ from ...Helper.delete import delete_tracks_by_names
 
 
 class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
+    """Adaptive Feature Detection – Iteratively adjusts detection distance until target marker count is reached."""
     bl_idname = "kaiserlich_tracker.master_detect_adapt"
-    bl_label = "Detect Adapt (einmalig)"
-    bl_description = "Scatter the vanguard across the field."
+    bl_label = "Detect Adapt (single run)"
+    bl_description = "Performs adaptive feature detection by iteratively refining detection parameters to reach the target number of markers per frame."
     bl_options = {"REGISTER", "INTERNAL"}
 
     def execute(self, context):
@@ -22,6 +23,9 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
         import math
         params = scene.get("bootstrap_params", None)
 
+        # ------------------------------------------------------------------
+        # Parameter initialization: use bootstrap if available, else fallback
+        # ------------------------------------------------------------------
         if params:
             md = float(params.get('md', 100))
             ma = int(round(float(params.get('ma', 100)) * 1.1))
@@ -33,7 +37,7 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
         else:
             clip = getattr(context.space_data, "clip", None)
             if clip is None:
-                self.report({'ERROR'}, "Kein aktiver Clip verfügbar (Fallback fehlgeschlagen).")
+                self.report({'ERROR'}, "No active clip available (fallback failed).")
                 return {'CANCELLED'}
 
             hz = clip.size[0]
@@ -53,6 +57,9 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             og = math.ceil(za * 1.1)
             ug = math.floor(za * 0.9)
 
+        # ------------------------------------------------------------------
+        # Snapshot current state of markers before detection
+        # ------------------------------------------------------------------
         pre_snapshot = snapshot_active_markers(context)
         clip = getattr(context.space_data, "clip", None)
         tracking = getattr(clip, "tracking", None) if clip else None
@@ -65,6 +72,9 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
         final_new_marker_count = 0
         frame_num = scene.frame_current
 
+        # ------------------------------------------------------------------
+        # Retrieve or interpolate previous min_distance value for this frame
+        # ------------------------------------------------------------------
         if "min_distance_values" in scene:
             md_dict = scene["min_distance_values"]
             if str(frame_num) in md_dict:
@@ -90,6 +100,9 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
 
         deleted_old = 0
 
+        # ------------------------------------------------------------------
+        # Main adaptive detection loop
+        # ------------------------------------------------------------------
         while loop < max_loops:
             loop += 1
 
@@ -101,6 +114,7 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                 min_distance=int(max(1, round(last_md)))
             )
 
+            # Deselect all markers
             clip = getattr(context.space_data, 'clip', None)
             if clip and getattr(clip, 'tracking', None):
                 for trk in clip.tracking.tracks:
@@ -109,12 +123,14 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                     except Exception:
                         pass
 
+            # Classify old/new markers
             post_snapshot = snapshot_active_markers(context)
             alte_marker, neue_marker = classify_markers(pre_snapshot, post_snapshot)
 
             am = len(neue_marker)
             final_new_marker_count = am
 
+            # Cleanup phase – remove markers too close to existing ones
             cleaned_new, deleted_old = cleanup_new_markers(
                 context,
                 alte_marker,
@@ -128,6 +144,7 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             remaining = len(neue_marker)
             final_new_marker_count = remaining
 
+            # Ensure data synchronization with Blender tracking list
             post_cleanup_snapshot = snapshot_active_markers(context)
             post_cleanup_names = {m['track'] for m in post_cleanup_snapshot}
             deleted_old_names = [m['track'] for m in alte_marker if m['track'] not in post_cleanup_names]
@@ -139,6 +156,9 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                 remaining = len(neue_marker)
                 final_new_marker_count = remaining
 
+            # ------------------------------------------------------------------
+            # Check if target number of markers reached (within 10% tolerance)
+            # ------------------------------------------------------------------
             diff = remaining - ef_target
             tolerance = ef_target * 0.10
 
@@ -147,6 +167,7 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             elif abs(diff) <= tolerance and remaining > 0:
                 break
 
+            # Adjust detection distance dynamically
             if remaining == 0:
                 last_md = max(2.0, last_md * 0.8)
             else:
@@ -156,12 +177,16 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                 new_md = min(max(new_md, 2.0), hz * 0.25)
                 last_md = new_md
 
+            # Cleanup before next iteration
             if loop < max_loops:
                 cleaned_names = [m['track'] for m in neue_marker]
                 if cleaned_names:
                     delete_tracks_by_names(context, cleaned_names)
                 time.sleep(0.1)
 
+        # ------------------------------------------------------------------
+        # Highlight newly created tracks
+        # ------------------------------------------------------------------
         clip = getattr(context.space_data, 'clip', None)
         if clip and getattr(clip, 'tracking', None):
             tracking = clip.tracking
@@ -174,6 +199,9 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             except Exception:
                 pass
 
+        # ------------------------------------------------------------------
+        # Store and interpolate min_distance for this frame
+        # ------------------------------------------------------------------
         frame_num = scene.frame_current
         md_value = float(last_md)
         if "min_distance_values" not in scene:
@@ -199,6 +227,9 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                     interp_val = v_start + (v_end - v_start) * t
                     md_dict[str(f)] = interp_val
 
+        # ------------------------------------------------------------------
+        # Automatically trigger backward tracking cycle
+        # ------------------------------------------------------------------
         try:
             area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
             if area:
