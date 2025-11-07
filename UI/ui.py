@@ -26,19 +26,19 @@ class KAISERLICHTRACKER_PT_panel(bpy.types.Panel):
 
         # ▶️ Buttons
         col = layout.column(align=True)
-        col.operator("kaiserlich_tracker.master_operator", text="Master", icon="SYSTEM")
+        col.operator("kaiserlich_tracker.master_operator", text="send everyone", description="Every unit advances, every command ignites. The operation begins — total mobilization of the entire emperors army", icon="SYSTEM")
 
-        col.operator("kaiserlichtracker.master_deep_test_operator", text="Deep Test Thresholds", icon="ZOOM_IN")
+        col.operator("kaiserlichtracker.master_deep_test_operator", text="find their weakness", description="locate the flaw that will turn the tide.", icon="ZOOM_IN")
 
-        col.operator("kaiserlich_tracker.master_detect_adapt", text="Run Detect Adapt", icon="STICKY_UVS_DISABLE")
+        col.operator("kaiserlich_tracker.master_detect_adapt", text="deploy troops", description="Scatter the vanguard across the field.", icon="STICKY_UVS_DISABLE")
         
         row = col.row(align=True)
-        row.operator("kaiserlich_tracker.master_track_cycle_backwards", text="Track Cycle (Backwards)", icon="TRACKING_BACKWARDS")
-        row.operator("kaiserlich_tracker.master_track_cycle", text="Track Cycle (Forward)", icon="TRACKING_FORWARDS")
+        row.operator("kaiserlich_tracker.master_track_cycle_backwards", text="<-- Att(r)ack", description="reclaim lost ground.", icon="TRACKING_BACKWARDS")
+        row.operator("kaiserlich_tracker.master_track_cycle", text="Att(r)ack -->", description="Drive the offensive forward.", icon="TRACKING_FORWARDS")
 
         row = col.row(align=True)
-        row.operator("kaiserlich_tracker.master_resolve_operator", text="solve camera", icon="OUTLINER_OB_CAMERA")
-        row.operator("kaiserlich_tracker.clean_error_operator", text="delet error track", icon="ERROR")
+        row.operator("kaiserlich_tracker.master_resolve_operator", text="Survey the Field", description="Survey what was gained, and what was lost.", icon="OUTLINER_OB_CAMERA")
+        row.operator("kaiserlich_tracker.clean_error_operator", text="Purge the Fallen", description="Only those who endure return to the ranks.", icon="ERROR")
       
         layout.separator()
 
