@@ -3,7 +3,6 @@ from __future__ import annotations
 import bpy
 from typing import List, Tuple
 import math
-import traceback
 
 from .marker_positions_helper import get_positions
 from .motion_model_helper import apply_motion_model
@@ -111,8 +110,6 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
         per_marker_dev[name] = abs(mv_i - mvth)
 
     max_dev = max(per_marker_dev.values()) if per_marker_dev else 0.0
-
-    # Kein Logging hier – nur Rückgabe; geloggt wird erst bei Anwendung des Modells.
     return center_marker, max_dev, per_marker_dev
 
 
@@ -130,7 +127,6 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     if clip is None:
         return
 
-    scene = context.scene
     selected_tracks = [t for t in clip.tracking.tracks if t.select]
     if not selected_tracks:
         active_track = clip.tracking.tracks.active
@@ -138,7 +134,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             selected_tracks = [active_track]
     if not selected_tracks:
         return
-
+    scene = context.scene
     current_frame = scene.frame_current
 
     # --- Markerpositionen sammeln ---
@@ -205,6 +201,5 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             # Die lineare Regression und das Logging werden entfernt, da sie nicht funktionsnotwendig sind.
             apply_motion_model(track, positions, motion_model=motion_model)
 
-    except Exception as e:
-        print(f"[FormulaHelper] Fehler: {e}")
-        print(traceback.format_exc())
+    except Exception:
+        pass
