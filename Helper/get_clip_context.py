@@ -42,5 +42,4 @@ def get_clip_context() -> Optional[Dict[str, Any]]:
                     }
 
     # 3. Kein gültiger Clip-Editor gefunden
-    print("[Kaiserlich Tracker][get_clip_context] ⚠️ Kein Clip-Editor gefunden.")
     return None
