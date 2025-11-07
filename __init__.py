@@ -11,7 +11,6 @@ bl_info = {
 
 import bpy
 # ---- Operator & UI Imports -------------------------------------------------
-from .UI.ui import KAISERLICHTRACKER_PT_panel
 from .Operator.master_operator import KAISERLICHTRACKER_OT_master_operator
 from .Operator.Master.master_track_operator import KAISERLICHTRACKER_OT_master_track_cycle
 from .Operator.Master.master_deep_test_operator import KAISERLICHTRACKER_OT_master_deep_test_operator
@@ -20,6 +19,7 @@ from .Operator.Master.master_track_operator_backwards import KAISERLICHTRACKER_O
 from .Operator.Master.master_cycle_operator import KAISERLICHTRACKER_OT_master_cycle_operator
 from .Operator.Master.master_resolve_operator import KAISERLICHTRACKER_OT_master_resolve_operator
 from .Operator.Master.master_clean_error_operator import KAISERLICHTRACKER_OT_clean_error_operator
+from .UI.ui import KAISERLICHTRACKER_PT_panel
 
 # ---- Klassenliste ----------------------------------------------------------
 classes = (
