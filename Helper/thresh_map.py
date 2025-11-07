@@ -196,7 +196,6 @@ def should_use_cached_thresholds(context: bpy.types.Context, frame: int) -> bool
         vals = get_thresholds_for_frame(scene, frame)
         if vals:
             _apply_thresholds_to_scene(scene, vals)
-            print(f"[Kaiserlich Tracker][ThreshMap] Frame {frame}: gespeicherte Thresholds angewendet (exakt).")
             return True
 
     # 2) Nachbarn + Interpolation
@@ -214,7 +213,6 @@ def should_use_cached_thresholds(context: bpy.types.Context, frame: int) -> bool
                 _apply_thresholds_to_scene(scene, interp)
                 # Cache für diesen Frame setzen
                 store_thresholds_for_frame(scene, frame, interp)
-                print(f"[Kaiserlich Tracker][ThreshMap] Frame {frame}: interpolierte Thresholds angewendet (Anker {left}<->{right}, gap={gap}).")
                 return True
 
     return False
