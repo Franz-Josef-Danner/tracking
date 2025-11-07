@@ -73,7 +73,6 @@ def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -
         quality_data = compute_track_quality_metrics(bpy.context)
         qual = quality_data.get("prozent", 100.0)
     except Exception as e:
-        print(f"[Kaiserlich Tracker][Quality] ⚠️ Qualitätsberechnung fehlgeschlagen: {e}")
         qual = 100.0
 
     perc_effektiv = round(perc * (qual / 100.0), 1)
@@ -84,8 +83,6 @@ def compute_marker_progress(scene: bpy.types.Scene, *, update_ui: bool = True) -
 
     if update_ui:
         _refresh_ui()
-
-    print(f"[Kaiserlich Tracker] Fortschritt: {perc:.1f}%, Qualität: {qual:.1f}%, Effektiv: {perc_effektiv:.1f}%")
 
     return value, perc_effektiv
 
