@@ -7,6 +7,7 @@ from ...Helper.filter_all_tracks import filter_and_delete_all_tracks
 from ...Helper.filter_tracks import filter_problematic_tracks
 from ...Helper.update_default_sizes import update_default_sizes
 from ...Helper.find_clip_editor_area import find_clip_editor_area
+from ...Helper.save_copy_helper import save_copy_to_project_backup  # <--- Backup-Helper
 
 class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
     """Master Operator – Sets the playhead to the frame with the fewest active markers"""
@@ -19,14 +20,16 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         frame = find_first_weak_frame(context)
 
         # ------------------------------------------------------------------
-        # If no weak frame is found → perform cleanup and proceed
+        # If no weak frame is found → cleanup, then trigger Resolve
         # ------------------------------------------------------------------
         if frame is None:
             try:
                 # ----------------------------------------------------------
                 # Ensure a valid CLIP_EDITOR context
                 # ----------------------------------------------------------
-                window, area, region, space = find_clip_editor_area(getattr(getattr(context, "space_data", None), "clip", None))
+                window, area, region, space = find_clip_editor_area(
+                    getattr(getattr(context, "space_data", None), "clip", None)
+                )
                 if window is None or area is None or region is None or space is None:
                     raise RuntimeError("No CLIP_EDITOR area found – filter_tracks requires a valid context.")
 
@@ -69,6 +72,18 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 frame = find_first_weak_frame(context)
                 if frame is None:
                     try:
+                        # ----------------------------------------------------------
+                        # Backup auslösen → direkt vor Resolve
+                        # ----------------------------------------------------------
+                        try:
+                            backup_path = save_copy_to_project_backup()
+                            self.report({'INFO'}, f"Kaiserlich Tracker: Backup gespeichert → {backup_path}")
+                        except Exception as backup_err:
+                            self.report({'WARNING'}, f"Backup konnte nicht erstellt werden: {backup_err}")
+
+                        # ----------------------------------------------------------
+                        # Start Resolve Operator
+                        # ----------------------------------------------------------
                         op_id_resolve = "kaiserlich_tracker.master_resolve_operator"
                         op_cls = bpy.ops
                         if not hasattr(op_cls, "kaiserlich_tracker") or not hasattr(op_cls.kaiserlich_tracker, "master_resolve_operator"):
@@ -83,17 +98,18 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         self.report({'ERROR'}, f"Error while starting the resolve operator: {resolve_err}")
                         return {'CANCELLED'}
 
+                # ------------------------------------------------------------------
+                # Stage 3: Reset default sizes and scene caches
+                # ------------------------------------------------------------------
                 try:
                     op, os, np, ns = update_default_sizes(context)
-
-                    # Reset internal caches
                     scene = context.scene
                     reset_keys = ["frame_value_cache", "min_distance_values", "kaiserlich_best_thresholds"]
                     for k in reset_keys:
                         if k in scene:
                             del scene[k]
 
-                    # Reset threshold properties
+                    # Reset thresholds
                     from ...Helper.util_scene import set_scene_props
                     set_scene_props(
                         scene,
@@ -107,7 +123,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     )
                 except ValueError:
                     pass
-                    
+
             except Exception as ex:
                 self.report({'ERROR'}, f"Error during filter process: {ex}")
                 return {'CANCELLED'}
@@ -148,7 +164,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             quality_percent = float(metrics.get("prozent", 100.0))
             context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
 
-            # Refresh the UI
+            # Refresh UI
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == 'CLIP_EDITOR':
@@ -169,7 +185,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             pass
 
         return {'FINISHED'}
-    
+
 
 # ---- Registration ----------------------------------------------------------
 def register():
