@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 from .bootstrap import run_bootstrap  # Bootstrap aufrufen, wenn Pattern = _MAX erreicht
 
 # --- Konstante Grenzen -------------------------------------------------------
-_MIN, _MAX = 30, 150
+_MIN, _MAX = 30, 125
 
 
 # -----------------------------------------------------------------------------
