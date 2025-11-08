@@ -1,9 +1,6 @@
-
-
 import bpy
 from bpy.types import Operator, Context
 
----- Helper Imports ---------------------------------------------------------
 
 from ...Helper.low_marker_frame import find_first_weak_frame
 from ...Helper.filter_all_tracks import filter_and_delete_all_tracks
