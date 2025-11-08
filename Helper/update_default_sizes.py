@@ -42,7 +42,7 @@ def _get_tracking_settings(context: bpy.types.Context) -> Optional[bpy.types.Mov
 def compute_new_sizes(old_pattern: int) -> Tuple[int, int]:
     """Berechnet neue Größen, clamped auf [_MIN, _MAX]."""
     new_pattern = _clamp(round(old_pattern * 1.1))
-    new_search = _clamp(new_pattern * 2)
+    new_search = (new_pattern * 2)
     return new_pattern, new_search
 
 
