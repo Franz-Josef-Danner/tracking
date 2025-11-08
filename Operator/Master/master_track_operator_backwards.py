@@ -2,8 +2,9 @@
 import bpy
 from typing import List, Tuple, Dict, Deque
 from collections import deque
+
 # ------------------------------------------------------------
-# Helper-Importe
+# Helper Imports
 # ------------------------------------------------------------
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.playhead_helper import reset_to_frame
@@ -20,9 +21,10 @@ from ...Helper.frame_track_progress import compute_marker_progress
 # ------------------------------------------------------------
 
 class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
+    """Frame-by-frame backward tracking with visible progress (non-blocking)."""
     bl_idname = "kaiserlich_tracker.master_track_cycle_backwards"
-    bl_label = "Track Zyklus Rückwärts (Modal)"
-    bl_description = "reclaim lost ground."
+    bl_label = "Track Cycle Backwards (Modal)"
+    bl_description = "Frame-by-frame backward tracking with visible progress (non-blocking)."
     bl_options = {"REGISTER", "INTERNAL"}
 
     max_frames: bpy.props.IntProperty(  # type: ignore
@@ -30,7 +32,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         default=0,
         min=0,
         soft_max=100000,
-        description="Sicherheitslimit (0 = kein Limit)"
+        description="Safety limit (0 = no limit)"
     )
 
     _timer = None
@@ -41,53 +43,45 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
     _area = None
     _region = None
     _space = None
-    _start_frame = 0     # Szenenstart
-    _end_frame = 0       # Szenenende
-    _reset_frame = 0     # ursprünglicher Playhead
-    _current_frame = 0   # Laufzeit-Playhead
+    _start_frame = 0
+    _end_frame = 0
+    _reset_frame = 0
+    _current_frame = 0
     _frames_processed = 0
 
     # --------------------------------------------------------
-    # Initialisierung
+    # Initialization
     # --------------------------------------------------------
 
     def execute(self, context):
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
-            self.report({'ERROR'}, "Kein aktiver Clip.")
+            self.report({'ERROR'}, "No active clip.")
             return {"CANCELLED"}
 
-        # ------------------------------------------
-        # Szenen-Start und -Ende bestimmen
-        # ------------------------------------------
-        # _start_frame = Szenenanfang (nicht Playhead-Position)
+        # Determine scene start and end
         self._start_frame = scene_get_start_frame(context)
         self._end_frame = get_end_frame(context)
         if self._end_frame < self._start_frame:
             self._end_frame = self._start_frame
 
-        # Selektion erfassen
+        # Capture selection
         self._original_selected = collect_selected_track_names(context)
         if not self._original_selected:
-            self.report({'WARNING'}, "Keine Tracks selektiert.")
+            self.report({'WARNING'}, "No tracks selected.")
             return {"CANCELLED"}
 
         self._processing_names = list(self._original_selected)
 
-        # CLIP_EDITOR-Bereich holen
+        # Find CLIP_EDITOR area
         self._window, self._area, self._region, self._space = find_clip_editor_area(clip)
         if not self._window:
-            self.report({'ERROR'}, "Keine CLIP_EDITOR Area gefunden.")
+            self.report({'ERROR'}, "No CLIP_EDITOR area found.")
             return {"CANCELLED"}
 
-        # ------------------------------------------
-        # Playhead-Startposition bestimmen
-        # ------------------------------------------
-        # Ursprüngliche Playhead-Position merken (für Reset)
+        # Determine playhead start position
         self._reset_frame = int(scene.frame_current)
-
-        # Initialer Laufzeit-Frame = aktuelle Playhead-Position, auf Range geklemmt
         scene_current = self._reset_frame
         if scene_current < self._start_frame:
             self._current_frame = self._start_frame
@@ -96,19 +90,19 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         else:
             self._current_frame = scene_current
 
-        # Playhead setzen
+        # Set playhead
         self._space.clip_user.frame_current = self._current_frame
         scene.frame_current = self._current_frame
 
-        # Historien initialisieren
+        # Initialize histories
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
 
-        # Selektion fixieren
+        # Fix selection
         tracking = clip.tracking
         for tr in tracking.tracks:
             tr.select = (tr.name in self._original_selected)
 
-        # Timer aktivieren
+        # Activate timer
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
@@ -116,16 +110,14 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
-    # Modal-Loop
+    # Modal Loop
     # --------------------------------------------------------
 
     def modal(self, context, event):
-        # ESC = Abbruch
         if event.type == 'ESC':
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
-        # Nur TIMER-Events verarbeiten
         if event.type != 'TIMER':
             return {"PASS_THROUGH"}
 
@@ -136,7 +128,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         tracking = clip.tracking
 
-        # Historien aktualisieren
+        # Update histories
         for name in list(self._processing_names):
             tr = tracking.tracks.get(name)
             if not tr:
@@ -145,13 +137,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             if mk:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
 
-        # Formel anwenden (z. B. für Optimierungen)
+        # Apply optional optimization formula
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
-        except Exception as e:
+        except Exception:
             pass
 
-        # Tracking-Schritt über Helper (rückwärts)
+        # Perform backward tracking step
         success = track_markers_with_override(
             self._window, self._area, self._region, self._space,
             backwards=True, sequence=False
@@ -161,14 +153,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
-        # Aktive Tracks prüfen
+        # Filter active tracks
         self._processing_names, _ = filter_active_tracks_at_frame(
             context, self._processing_names, self._current_frame
         )
 
-        # ----------------------------------------------------
-        # Beendigungskriterien (vor Step prüfen)
-        # ----------------------------------------------------
+        # Exit conditions
         if not self._processing_names:
             self._finish(context)
             return {"FINISHED"}
@@ -177,26 +167,18 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             self._finish(context)
             return {"FINISHED"}
 
-        # ----------------------------------------------------
-        # Frame rückwärts fortsetzen (analog zu Forward)
-        # ----------------------------------------------------
+        # Step backward
         scene = context.scene
-
-        # Wenn der Helper den Frame NICHT verändert hat, mache den Step selbst
         if self._space.clip_user.frame_current == self._current_frame:
             self._space.clip_user.frame_current -= 1
 
-        # Clamp: nicht unter Szenenstart fallen
         if self._space.clip_user.frame_current < self._start_frame:
             self._space.clip_user.frame_current = self._start_frame
 
-        # Sichtbar übernehmen
         scene.frame_current = self._space.clip_user.frame_current
         self._current_frame = self._space.clip_user.frame_current
         self._frames_processed += 1
 
-        # Nach dem Step: Szenenstart erreicht?
-        # (<= bedeutet: beim ersten Frame unterhalb/gleich Start stoppen)
         if self._current_frame <= self._start_frame:
             self._finish(context)
             return {"FINISHED"}
@@ -204,7 +186,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
-    # Abschluss / Cleanup
+    # Finalization / Cleanup
     # --------------------------------------------------------
 
     def _finish(self, context, cancelled: bool = False):
@@ -213,50 +195,43 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             wm.event_timer_remove(self._timer)
         self._timer = None
 
-        # Ursprüngliche Selektion wiederherstellen
+        # Restore selection
         clip = getattr(context.space_data, "clip", None)
         if clip and hasattr(clip, "tracking"):
             for tr in clip.tracking.tracks:
                 tr.select = (tr.name in self._original_selected)
 
-        # Playhead auf ursprüngliche Position zurücksetzen
+        # Reset playhead
         try:
             reset_to_frame(context, self._reset_frame)
-        except Exception as e:
+        except Exception:
             pass
 
-        # ------------------------------------------------------------------
-        # 1️⃣ Zuerst: Qualitätsmetrik berechnen
-        # ------------------------------------------------------------------
+        # Compute quality metrics
         try:
             from ...Helper.track_quality_metrics import compute_track_quality_metrics
             metrics = compute_track_quality_metrics(context)
             quality_percent = float(metrics.get("prozent", 100.0))
             context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
 
-            # UI sofort aktualisieren
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == "CLIP_EDITOR":
                         for region in area.regions:
                             if region.type == "UI":
                                 region.tag_redraw()
-        except Exception as e:
-            quality_percent = 100.0  # Fallback für Fortschritt
+        except Exception:
+            quality_percent = 100.0
 
-        # ------------------------------------------------------------------
-        # 2️⃣ Danach: Fortschritt (mit Qualitätsfaktor)
-        # ------------------------------------------------------------------
+        # Compute marker progress
         try:
             from ...Helper.frame_track_progress import compute_marker_progress
             value, perc = compute_marker_progress(context.scene, update_ui=True)
             context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
-        except Exception as e:
+        except Exception:
             pass
 
-        # --------------------------------------------------------
-        # 3️⃣ Kontextübergabe an Forward-Tracking (Master Track Cycle)
-        # --------------------------------------------------------
+        # Hand over control to forward tracking operator
         if not cancelled:
             try:
                 clip = getattr(context.space_data, "clip", None)
@@ -269,13 +244,9 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
                 with context.temp_override(window=window, area=area, region=region, space_data=space):
                     bpy.ops.kaiserlich_tracker.master_track_cycle()
-                    
-            except Exception as e:
+            except Exception:
                 pass
 
-# ------------------------------------------------------------
-# Register
-# ------------------------------------------------------------
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_master_track_cycle_backwards)
