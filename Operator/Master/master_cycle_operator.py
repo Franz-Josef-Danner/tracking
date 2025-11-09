@@ -84,17 +84,40 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         self.report({'ERROR'}, f"Error while starting the resolve operator: {resolve_err}")
                         return {'CANCELLED'}
 
+                # ------------------------------------------------------------------
+                # If a new weak frame was found after cleanup
+                # ------------------------------------------------------------------
                 try:
                     op, os, np, ns = update_default_sizes(context)
 
-                    # Reset internal caches
+                    # --------------------------------------------------------------
+                    # Reset internal caches (min_distance_values bleibt erhalten)
+                    # --------------------------------------------------------------
                     scene = context.scene
-                    reset_keys = ["frame_value_cache", "min_distance_values", "kaiserlich_best_thresholds"]
+                    reset_keys = ["frame_value_cache", "kaiserlich_best_thresholds"]
                     for k in reset_keys:
                         if k in scene:
                             del scene[k]
 
+                    # --------------------------------------------------------------
+                    # Store all current track names in scene["good_tracks"]
+                    # --------------------------------------------------------------
+                    try:
+                        if "good_tracks" in scene:
+                            del scene["good_tracks"]
+
+                        clip = getattr(context.space_data, "clip", None)
+                        if clip and hasattr(clip, "tracking"):
+                            track_names = [t.name for t in clip.tracking.tracks]
+                            scene["good_tracks"] = track_names
+                        else:
+                            scene["good_tracks"] = []
+                    except Exception as e:
+                        self.report({'WARNING'}, f"Could not store track names: {e}")
+
+                    # --------------------------------------------------------------
                     # Reset threshold properties
+                    # --------------------------------------------------------------
                     from ...Helper.util_scene import set_scene_props
                     set_scene_props(
                         scene,
