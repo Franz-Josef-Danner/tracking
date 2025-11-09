@@ -1,0 +1,11 @@
+(Selektierter_marker_x_position
++
+(((String_marker_i_Position
+*
+string_marker_i_Abstand_zu_Selektierter_marjer_x_position)
++
+(String_marker_i_Position X string_marker_i_Abstand_zu_Selektierter_marker_x_position))
+/
+(Abstand + Abstand)))
+/
+2
