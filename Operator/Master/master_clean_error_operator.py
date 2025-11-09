@@ -78,11 +78,10 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
         avg_error = sum(valid) / len(valid) if valid else None
         max_error_value = getattr(scene, "max_error_value", None)
 
-        # If either the average or the threshold is missing, finish silently.
+        # --- Prüflogik ----------------------------------------------------
         if avg_error is None or max_error_value is None:
             return {'FINISHED'}
 
-        # If the average exceeds the scene threshold, delete tracks above avg_error * 2.0.
         if avg_error > max_error_value:
             limit = avg_error * 2.0
             try:
@@ -97,7 +96,16 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
                     except Exception:
                         pass
 
-        # Kick off next process step, if available.
+        # --- Alle Track-Namen in Scene-String speichern -------------------
+        try:
+            all_track_names = [t.name for t in clip.tracking.tracks]
+            if "best_tracks" in scene:
+                del scene["best_tracks"]
+            scene["best_tracks"] = ";".join(all_track_names)
+        except Exception as e:
+            print(f"[Kaiserlich Tracker][CleanError] Failed to store track names: {e}")
+
+        # --- Nächsten Operator starten ------------------------------------
         try:
             bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
         except Exception:
