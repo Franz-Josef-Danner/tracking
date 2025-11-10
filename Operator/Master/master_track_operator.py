@@ -1,10 +1,10 @@
 # Operator/Master/master_track_operator.py
 import bpy
-from typing import List, Tuple, Dict, Deque
+from typing import List, Tuple, Dict, Deque, Optional
 from collections import deque
 
 # ------------------------------------------------------------
-# Helper Imports
+# Helper Imports (bestehend)
 # ------------------------------------------------------------
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
@@ -15,10 +15,13 @@ from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
 
-
 # ------------------------------------------------------------
-# Operator
+# Neuer Korrektur-Helper
 # ------------------------------------------------------------
+from ...Helper.marker_position_forward_calibration import (
+    correct_marker_positions,
+    marker_exists,  # optional nützlich für Guards
+)
 
 class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     bl_idname = "kaiserlich_tracker.master_track_cycle"
@@ -35,7 +38,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     )
 
     _timer = None
-    _context_cache = None
     _processing_names: List[str]
     _original_selected: List[str]
     _histories: Dict[str, Deque[Tuple[int, float, float]]]
@@ -103,12 +105,10 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     # --------------------------------------------------------
 
     def modal(self, context, event):
-        # ESC = cancel
         if event.type == 'ESC':
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
-        # Only process TIMER events
         if event.type != 'TIMER':
             return {"PASS_THROUGH"}
 
@@ -125,21 +125,45 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             if not tr:
                 continue
             mk = tr.markers.find_frame(self._current_frame)
-            if mk:
+            if mk and not mk.mute:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
 
-        # Apply adaptive formula
+        # ---------------------------
+        # 1) Positions-Stabilisierung
+        # ---------------------------
+        # Frames: a = current, b = previous, c = prev-1, d = prev-2 (falls vorhanden)
+        a = int(self._current_frame)
+        b = max(self._start_frame, a - 1)
+        c = b - 1 if (b - 1) >= self._start_frame else None
+        d = (c - 1) if (c is not None and c - 1 >= self._start_frame) else None
+
+        # Selektierte Tracks als Objekte
+        selected_tracks = [tracking.tracks.get(nm) for nm in self._processing_names]
+        selected_tracks = [t for t in selected_tracks if t is not None]
+
+        try:
+            # Korrigiert Marker nur, wenn Basisframes existieren
+            if a > self._start_frame and marker_exists(selected_tracks[0], b) if selected_tracks else False:
+                correct_marker_positions(context, selected_tracks, a, b, c, d)
+        except Exception:
+            # Defensive: Korrekturfehler sollen den Trackingzyklus nicht stoppen
+            pass
+
+        # ---------------------------
+        # 2) Adaptive Formel (deine Logik)
+        # ---------------------------
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception:
             pass
 
-        # Perform tracking step
+        # ---------------------------
+        # 3) Tracking-Step
+        # ---------------------------
         success = track_markers_with_override(
             self._window, self._area, self._region, self._space,
             backwards=False, sequence=False
         )
-
         if not success:
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
@@ -191,43 +215,37 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             for tr in clip.tracking.tracks:
                 tr.select = (tr.name in self._original_selected)
 
+        # Optional: Reset zum Startframe, damit der Folge-Operator konsistent beginnt
         try:
             reset_to_frame(context, self._start_frame)
         except Exception:
             pass
 
-        # 1️⃣ Compute quality metrics
+        # Progress/QoS aktualisieren (defensiv gekapselt)
         try:
-            from ...Helper.track_quality_metrics import compute_track_quality_metrics
-            metrics = compute_track_quality_metrics(context)
-            quality_percent = float(metrics.get("prozent", 100.0))
-            context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
-            print(f"[Kaiserlich Tracker][Quality] 🎯 {quality_percent:.1f}%")
-            # Force UI refresh
-            for window in bpy.context.window_manager.windows:
-                for area in window.screen.areas:
-                    if area.type == "CLIP_EDITOR":
-                        for region in area.regions:
-                            if region.type == "UI":
-                                region.tag_redraw()
-        except Exception:
-            quality_percent = 100.0
+            metrics = None
+            try:
+                from ...Helper.track_quality_metrics import compute_track_quality_metrics
+                metrics = compute_track_quality_metrics(context)
+                quality_percent = float(metrics.get("prozent", 100.0))
+                context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
+            except Exception:
+                pass
 
-        # 2️⃣ Compute progress (including quality factor)
-        try:
-            from ...Helper.frame_track_progress import compute_marker_progress
-            value, perc = compute_marker_progress(context.scene, update_ui=True)
-            context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
+            try:
+                _, perc = compute_marker_progress(context.scene, update_ui=True)
+                context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
+            except Exception:
+                pass
         except Exception:
             pass
 
-        # 3️⃣ Continue with the next operator
+        # Chain to next operator (nur wenn nicht abgebrochen)
         if not cancelled:
             try:
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
             except Exception:
                 pass
-
 
 # ------------------------------------------------------------
 # Register
@@ -235,7 +253,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_master_track_cycle)
-
 
 def unregister():
     bpy.utils.unregister_class(KAISERLICHTRACKER_OT_master_track_cycle)
