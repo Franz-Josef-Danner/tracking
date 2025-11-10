@@ -1,4 +1,4 @@
-min = scene, "kaiserlich_markers_per_frame"
+min = scene, "kaiserlich_markers_per_frame" / 2
 fa = playhead Frame
 fb = playhead Frame - 1
 fc = playhead Frame - 2
@@ -10,26 +10,22 @@ fb_tm = aktiv tracks in playhead Frame - 1
 fc_tm = aktiv tracks in playhead Frame - 2
 fd_tm = aktiv tracks in playhead Frame - 3
 
+string muss existieren
+mindestens die Hälfte der marker per Frame auf mindestens 2 Frames
+
 if good_marker = True
-    tm = good_marker tracks separated
-    fa_tm = aktiv tm tracks in playhead Frame
-    fb_tm = aktiv tm tracks in playhead Frame - 1
-    
-    
-    if tm_fafb = True (fa_tm, fb_tm)
+    fa = playhead frame
+    fb = playhead frame - 1
+    fb = playhead frame - 2
+    fb = playhead frame - 3
+    fa_tm = aktive marker auf fa
+    fb_tm = aktive marker auf fb
+    fc_tm = aktive marker auf fc
+    fd_tm = aktive marker auf fd
+    gm_fa_tm = good_marker == fa_tm
+    gm_fb_tm = good_marker == fb_tm
+    gm_fc_tm = good_marker == fc_tm
+    gm_fd_tm = good_marker == fd_tm
+    a_gfm = anzahl gm_fa_tm
+    if a_gfm >= min
         
-
-
-
-
-(Selektierter_marker_x_position
-+
-(((String_marker_i_Position
-*
-string_marker_i_Abstand_zu_Selektierter_marjer_x_position)
-+
-(String_marker_i_Position X string_marker_i_Abstand_zu_Selektierter_marker_x_position))
-/
-(Abstand + Abstand)))
-/
-2
