@@ -16,6 +16,30 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
     bl_description = "Sets the playhead to the first frame with the lowest number of active markers"
     bl_options = {'REGISTER', 'UNDO'}
 
+    # ------------------------------------------------------------
+    # Lokaler Helper: erstellt/erneuert den good_tracks String
+    # ------------------------------------------------------------
+    def _rebuild_good_tracks(self, context: Context, reason: str = ""):
+        scene = context.scene
+        for key in ("good_tracks", "best_tracks"):
+            if key in scene:
+                del scene[key]
+                print(f"[MASTER CYCLE] {reason} – deleted existing '{key}'")
+
+        clip = getattr(getattr(context, "space_data", None), "clip", None)
+        if clip and hasattr(clip, "tracking"):
+            track_names = [t.name for t in clip.tracking.tracks]
+            scene["good_tracks"] = track_names
+            print(f"[MASTER CYCLE] {reason} – rebuilt 'good_tracks' with {len(track_names)} tracks")
+            for n in track_names:
+                print(f"   • {n}")
+        else:
+            scene["good_tracks"] = []
+            print(f"[MASTER CYCLE] {reason} – WARNING: no clip/tracking; 'good_tracks' empty")
+
+    # ------------------------------------------------------------
+    # Hauptausführung
+    # ------------------------------------------------------------
     def execute(self, context: Context):
         print("\n[MASTER CYCLE] --------------------------------------------")
         print("[MASTER CYCLE] Operator started")
@@ -24,21 +48,20 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         scene = context.scene
 
         # ------------------------------------------------------------------
-        # If no weak frame is found → perform cleanup and proceed
+        # CLEANUP-ZWEIG – wenn kein schwacher Frame gefunden wird
         # ------------------------------------------------------------------
         if frame is None:
-            print("[MASTER CYCLE] No weak frame found – starting cleanup and good_tracks generation")
+            print("[MASTER CYCLE] No weak frame found – starting cleanup")
 
             try:
                 # ----------------------------------------------------------
-                # Ensure a valid CLIP_EDITOR context
+                # Ensure valid CLIP_EDITOR context
                 # ----------------------------------------------------------
                 window, area, region, space = find_clip_editor_area(getattr(getattr(context, "space_data", None), "clip", None))
                 if not all((window, area, region, space)):
                     raise RuntimeError("No CLIP_EDITOR area found – filter_tracks requires a valid context.")
 
                 clip_ref = getattr(getattr(context, "space_data", None), "clip", None)
-
                 if getattr(space, "clip", None) is None and clip_ref:
                     space.clip = clip_ref
 
@@ -46,79 +69,65 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 if clip_obj is None:
                     raise RuntimeError("No active clip in the current context.")
 
-                print("[MASTER CYCLE] Stage 1: Running filter_tracks (threshold=30.0)")
+                # ------------------------------------------------------------------
+                # Stage 1: Grobfilterung und Löschung
+                # ------------------------------------------------------------------
+                print("[MASTER CYCLE] Stage 1: filter_tracks (threshold=30.0)")
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                     res = bpy.ops.clip.filter_tracks(track_threshold=30.0)
                     tracking = clip_obj.tracking
                     flagged_names = [t.name for t in tracking.tracks if t.select]
-                    print(f"[MASTER CYCLE] Stage 1: {len(flagged_names)} tracks flagged for deletion")
-
+                    print(f"[MASTER CYCLE] Stage 1: {len(flagged_names)} tracks flagged")
                     if flagged_names:
                         from ...Helper.delete import delete_tracks_by_names
                         delete_tracks_by_names(bpy.context, flagged_names)
-                        print("[MASTER CYCLE] Stage 1: Flagged tracks deleted successfully")
+                        print("[MASTER CYCLE] Stage 1: flagged tracks deleted")
 
-                print("[MASTER CYCLE] Stage 2: Running filter_problematic_tracks (threshold=10.0)")
+                # -> good_tracks nach Stage1
+                self._rebuild_good_tracks(context, reason="Post-Stage1 cleanup")
+
+                # ------------------------------------------------------------------
+                # Stage 2: Feinkorrektur-Filter
+                # ------------------------------------------------------------------
+                print("[MASTER CYCLE] Stage 2: filter_problematic_tracks (threshold=10.0)")
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                     try:
                         filter_problematic_tracks(context, threshold=10.0)
                     except Exception as e:
                         print(f"[MASTER CYCLE] Stage 2 WARNING: {e}")
 
+                # -> good_tracks nach Stage2
+                self._rebuild_good_tracks(context, reason="Post-Stage2 cleanup")
+
                 # ------------------------------------------------------------------
-                # Retry finding a weak frame
+                # Versuch erneut, schwachen Frame zu finden
                 # ------------------------------------------------------------------
                 frame = find_first_weak_frame(context)
                 if frame is None:
-                    print("[MASTER CYCLE] No weak frame found after filtering – starting resolve operator")
-                    try:
-                        bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
-                        return {'FINISHED'}
-                    except Exception as resolve_err:
-                        self.report({'ERROR'}, f"Error while starting the resolve operator: {resolve_err}")
-                        return {'CANCELLED'}
+                    # -> good_tracks auch vor Resolve
+                    self._rebuild_good_tracks(context, reason="Pre-resolve cleanup checkpoint")
+                    print("[MASTER CYCLE] No weak frame after cleanup – starting resolve")
+                    bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
+                    return {'FINISHED'}
 
                 # ------------------------------------------------------------------
-                # Update sizes, reset caches, and create track strings
+                # Update default sizes, Cache-Reset
                 # ------------------------------------------------------------------
-                print("[MASTER CYCLE] Stage 3: Updating default sizes")
+                print("[MASTER CYCLE] Stage 3: update_default_sizes and cache reset")
                 op, os, np, ns = update_default_sizes(context)
 
-                # Reset caches
                 reset_keys = ["frame_value_cache", "kaiserlich_best_thresholds"]
                 for k in reset_keys:
                     if k in scene:
                         del scene[k]
-                        print(f"[MASTER CYCLE] Cleared scene cache: {k}")
+                        print(f"[MASTER CYCLE] Cleared cache: {k}")
 
-                # --------------------------------------------------------------
-                # Manage 'good_tracks' and 'best_tracks'
-                # --------------------------------------------------------------
-                print("[MASTER CYCLE] Stage 4: Preparing to store 'good_tracks'")
-                for key in ("good_tracks", "best_tracks"):
-                    if key in scene:
-                        del scene[key]
-                        print(f"[MASTER CYCLE] Existing '{key}' string deleted")
+                # -> good_tracks nach Cache-Reset
+                self._rebuild_good_tracks(context, reason="Post-cache-reset cleanup")
 
-                try:
-                    clip = getattr(context.space_data, "clip", None)
-                    if clip and hasattr(clip, "tracking"):
-                        track_names = [t.name for t in clip.tracking.tracks]
-                        scene["good_tracks"] = track_names
-                        print(f"[MASTER CYCLE] 'good_tracks' created with {len(track_names)} track names:")
-                        for name in track_names:
-                            print(f"   • {name}")
-                    else:
-                        scene["good_tracks"] = []
-                        print("[MASTER CYCLE] WARNING: No clip or tracking data found – 'good_tracks' is empty")
-
-                except Exception as e:
-                    print(f"[MASTER CYCLE] ERROR while storing 'good_tracks': {e}")
-                    self.report({'WARNING'}, f"Could not store track names: {e}")
-
-                # --------------------------------------------------------------
-                # Reset threshold properties
-                # --------------------------------------------------------------
+                # ------------------------------------------------------------------
+                # Reset Threshold Properties
+                # ------------------------------------------------------------------
                 from ...Helper.util_scene import set_scene_props
                 set_scene_props(
                     scene,
@@ -130,7 +139,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     kaiserlich_rot_scale_thresh_scale=1.0,
                     kaiserlich_perspective_thresh=1.0
                 )
-                print("[MASTER CYCLE] Threshold properties reset successfully")
+                print("[MASTER CYCLE] Threshold properties reset")
 
             except Exception as ex:
                 print(f"[MASTER CYCLE] ERROR during cleanup: {ex}")
@@ -138,7 +147,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 return {'CANCELLED'}
 
         # ------------------------------------------------------------------
-        # If a weak frame was found → set playhead
+        # NORMALZWEIG – wenn schwacher Frame gefunden wurde
         # ------------------------------------------------------------------
         print(f"[MASTER CYCLE] Weak frame found: {frame}")
         scene.frame_current = frame
@@ -150,7 +159,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             pass
 
         # ------------------------------------------------------------------
-        # Trigger next operator (Deep Test)
+        # Trigger Deep Test Operator
         # ------------------------------------------------------------------
         try:
             print("[MASTER CYCLE] Triggering Deep Test Operator...")
