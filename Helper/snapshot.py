@@ -1,21 +1,20 @@
-import bpy
+# Helper/snapshot.py
+# ---------------------------------------------------------------------
+# Erweiterte Snapshot-Version mit persistenter UUID-Vergabe
+# Kompatibel mit Marker-Kalibrierung (UUID-basiert)
+# ---------------------------------------------------------------------
+
+import bpy, uuid
 from typing import List, Dict, Any, Optional
 
-# ---------------------------------------------------------------------
-# Datentyp für Marker-Snapshots
-# ---------------------------------------------------------------------
 MarkerSnapshot = Dict[str, Any]
 
-# ---------------------------------------------------------------------
-# Aktive Marker im aktuellen Frame erfassen
-# ---------------------------------------------------------------------
+
+# ============================================================
+# Aktive Marker im aktuellen Frame
+# ============================================================
 def snapshot_active_markers(context) -> List[MarkerSnapshot]:
-    """Erfasst alle **aktiven** (Track nicht gemutet, Marker nicht gemutet)
-    Marker im aktuellen Frame. Rückgabe:
-    [{ 'track': str, 'frame': int, 'co': (x, y), 'is_keyed': bool }]
-    """
     try:
-        area_type = getattr(getattr(context, "area", None), "type", None)
         space = getattr(context, "space_data", None)
         clip_ui = getattr(space, "clip", None) if space else None
         clip_edit = getattr(context, "edit_movieclip", None)
@@ -27,79 +26,44 @@ def snapshot_active_markers(context) -> List[MarkerSnapshot]:
 
     tracking = clip.tracking
     current_frame = int(getattr(context.scene, "frame_current", 0))
-
     out: List[MarkerSnapshot] = []
 
     for track in tracking.tracks:
         if getattr(track, "mute", False):
             continue
-
         marker = track.markers.find_frame(current_frame)
         if marker is None or getattr(marker, "mute", False):
             continue
-
         out.append({
             "track": track.name,
             "frame": int(marker.frame),
             "co": (float(marker.co[0]), float(marker.co[1])),
             "is_keyed": bool(getattr(marker, "is_keyed", False)),
         })
-
     return out
 
 
-# ---------------------------------------------------------------------
-# Erweiterte Varianten: Tracks statt Marker
-# ---------------------------------------------------------------------
+# ============================================================
+# Hilfsfunktionen
+# ============================================================
 def _get_active_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
-    """Hilfsfunktion: Liefert aktiven Clip aus Clip Editor oder Edit MovieClip."""
     space = getattr(context, "space_data", None)
     clip_ui = getattr(space, "clip", None) if space else None
     clip_edit = getattr(context, "edit_movieclip", None)
     return clip_ui or clip_edit
 
 
-def snapshot_all_tracks_ids(context: bpy.types.Context, *, include_muted: bool = True) -> List[str]:
-    """
-    Gibt **alle Track-IDs** (als Strings) des aktiven Clips zurück.
-    Optional: include_muted=False, um gemutete Tracks auszuschließen.
-    """
-    clip = _get_active_clip(context)
-    if not clip or not getattr(clip, "tracking", None):
-        return []
-
-    tracks = clip.tracking.tracks
-    if not include_muted:
-        tracks = [t for t in tracks if not getattr(t, "mute", False)]
-
-    return [str(id(t)) for t in tracks]
+def _ensure_uuid(track: bpy.types.MovieTrackingTrack) -> str:
+    """Vergibt persistente UUID, falls noch nicht vorhanden."""
+    if "kt_uid" not in track:
+        track["kt_uid"] = str(uuid.uuid4())
+    return track["kt_uid"]
 
 
-def snapshot_all_tracks_names(context: bpy.types.Context, *, include_muted: bool = True) -> List[str]:
-    """
-    Gibt **alle Track-Namen** des aktiven Clips zurück.
-    Optional: include_muted=False, um gemutete Tracks auszuschließen.
-    """
-    clip = _get_active_clip(context)
-    if not clip or not getattr(clip, "tracking", None):
-        return []
-
-    tracks = clip.tracking.tracks
-    if not include_muted:
-        tracks = [t for t in tracks if not getattr(t, "mute", False)]
-
-    return [t.name for t in tracks]
-
-
+# ============================================================
+# Snapshots aller Tracks
+# ============================================================
 def snapshot_all_tracks(context: bpy.types.Context, *, include_muted: bool = True) -> List[Dict[str, Any]]:
-    """
-    Gibt eine Liste aller Tracks zurück (Name, ID, Mutestatus, Markeranzahl).
-    Beispielausgabe:
-    [
-        { 'name': 'Track001', 'id': '1234567890', 'muted': False, 'marker_count': 24 },
-        ...
-    ]
-    """
     clip = _get_active_clip(context)
     if not clip or not getattr(clip, "tracking", None):
         return []
@@ -110,31 +74,59 @@ def snapshot_all_tracks(context: bpy.types.Context, *, include_muted: bool = Tru
             continue
         out.append({
             "name": t.name,
-            "id": str(id(t)),
+            "uuid": _ensure_uuid(t),
             "muted": bool(getattr(t, "mute", False)),
             "marker_count": len(getattr(t, "markers", [])),
         })
     return out
 
 
-# ---------------------------------------------------------------------
-# Utility-Funktion: Direkter Write in Szene
-# ---------------------------------------------------------------------
+# ============================================================
+# Store in Szene (UUID-basiert)
+# ============================================================
 def store_tracks_in_scene(scene: bpy.types.Scene, context: bpy.types.Context, key: str = "good_tracks"):
     """
-    Nimmt alle Tracks des aktiven Clips und speichert deren IDs unter scene[key].
-    Existierende Schlüssel 'good_tracks', 'good_track_ids', 'best_tracks'
-    werden vorher gelöscht, um Konflikte zu vermeiden.
+    Erstellt einen vollständigen, persistenten Snapshot aller Tracks des aktiven Clips:
+      - scene['good_tracks'] = [UUIDs]
+      - scene['good_tracks_names'] = [Namen]
+      - scene['good_tracks_uuid_map'] = "{uuid: name, ...}"
+    Alte Einträge werden vorher entfernt.
     """
-    for k in ("good_tracks", "good_track_ids", "best_tracks"):
+    for k in ("good_tracks", "good_tracks_names", "good_tracks_uuid_map",
+              "best_tracks", "best_tracks_names", "best_tracks_uuid_map"):
         if k in scene:
             del scene[k]
 
-    ids = snapshot_all_tracks_ids(context)
-    if not ids:
-        print(f"[SNAPSHOT] Keine Tracks gefunden – scene['{key}'] bleibt leer.")
+    clip = _get_active_clip(context)
+    if not clip or not getattr(clip, "tracking", None):
+        print("[store_tracks_in_scene] ❌ Kein aktiver Clip gefunden – Abbruch.")
         return
 
-    scene[key] = ids
-    scene["good_track_ids"] = ids  # Alias für Rückwärtskompatibilität
-    print(f"[SNAPSHOT] {len(ids)} Tracks gespeichert unter scene['{key}'].")
+    all_tracks = list(clip.tracking.tracks)
+    if not all_tracks:
+        print("[store_tracks_in_scene] ⚠️ Keine Tracks im Clip – Szene bleibt leer.")
+        return
+
+    # UUID-Registrierung und Mapping
+    uuid_map: Dict[str, str] = {}
+    uuids: List[str] = []
+    names: List[str] = []
+
+    for t in all_tracks:
+        if getattr(t, "mute", False):
+            continue
+        uid = _ensure_uuid(t)
+        uuid_map[uid] = t.name
+        uuids.append(uid)
+        names.append(t.name)
+
+    scene[key] = uuids
+    scene[f"{key}_names"] = names
+    scene[f"{key}_uuid_map"] = str(uuid_map)
+
+    print(f"[store_tracks_in_scene] Clip '{clip.name}' – {len(uuids)} Tracks erfasst")
+    print(f"[store_tracks_in_scene] Gespeichert: {len(uuids)} UUIDs, {len(names)} Namen")
+    if uuids:
+        print(f"[store_tracks_in_scene] Beispiele UUIDs: {uuids[:5]}")
+        print(f"[store_tracks_in_scene] Beispiele Namen: {names[:5]}")
+    print(f"[store_tracks_in_scene] Szene Keys: {[k for k in scene.keys() if 'good' in k or 'best' in k]}")

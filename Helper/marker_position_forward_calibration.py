@@ -21,8 +21,10 @@ def _find_marker_at_frame(track, frame: int):
     except Exception:
         return None
 
+
 def marker_exists(track, frame: int) -> bool:
     return _find_marker_at_frame(track, frame) is not None
+
 
 def get_marker_position(track, frame: int) -> Tuple[float, float]:
     mk = _find_marker_at_frame(track, frame)
@@ -31,15 +33,18 @@ def get_marker_position(track, frame: int) -> Tuple[float, float]:
     head = track.markers[0] if track.markers else None
     return (float(head.co[0]), float(head.co[1])) if head else (0.0, 0.0)
 
+
 def set_marker_position(track, frame: int, x: float, y: float):
     mk = _find_marker_at_frame(track, frame)
     if mk:
         mk.co[0] = float(x)
         mk.co[1] = float(y)
 
+
 def _active_clip(context):
     space = getattr(context, "space_data", None)
     return getattr(space, "clip", None) if space else None
+
 
 def _iter_active_tracks_at_frame(context, frame: int):
     clip = _active_clip(context)
@@ -48,6 +53,7 @@ def _iter_active_tracks_at_frame(context, frame: int):
     for tr in clip.tracking.tracks:
         if tr.select and marker_exists(tr, frame):
             yield tr
+
 
 def get_active_markers(context, frame: Optional[int]):
     if frame is None:
@@ -100,6 +106,15 @@ def _select_good_set(scene):
 
     print(f"[MarkerCalib] ✅ Verwende '{key}'-Set "
           f"({len(raw)} Einträge, {'UUID' if is_uuid_based else 'Name'}-basiert)")
+
+    # 🔍 Neue Debug-Ausgabe: Zeigt vorhandene Namen im Referenzset
+    if is_uuid_based and name_to_uuid:
+        keys_preview = list(name_to_uuid.keys())[:10]
+        print(f"[MarkerCalib] Referenz-Namensmenge ({len(name_to_uuid)}): Beispiele → {keys_preview}")
+    else:
+        preview = raw[:10]
+        print(f"[MarkerCalib] Referenz-Namensliste ({len(raw)}): Beispiele → {preview}")
+
     return raw, is_uuid_based, name_to_uuid
 
 
@@ -121,8 +136,10 @@ def _robust_average(points: List[Tuple[float, float]]) -> Optional[Tuple[float, 
     ys = [p[1] for p in points]
     # Trim nur, wenn genug Punkte
     if len(points) >= 3:
-        sx = sorted(xs); sy = sorted(ys)
-        sx = sx[1:-1]; sy = sy[1:-1]
+        sx = sorted(xs)
+        sy = sorted(ys)
+        sx = sx[1:-1]
+        sy = sy[1:-1]
         if not sx or not sy:
             sx, sy = xs, ys
     else:
@@ -172,7 +189,7 @@ def correct_marker_positions(context, selected_tracks, frame_a, frame_b, frame_c
     if uuid_based and name_to_uuid:
         sel_uids = [name_to_uuid.get(n) for n in sel_names]
         intersect = [uid for uid in sel_uids if uid and uid in good_set]
-        diff = [uid for uid in sel_uids if (uid is None) or (uid not in good_set)]
+        diff = [n for n in sel_names if (name_to_uuid.get(n) not in good_set)]
     else:
         # Fallback: Namen vergleichen
         intersect = [n for n in sel_names if n in good_set]
@@ -262,7 +279,6 @@ def correct_marker_positions(context, selected_tracks, frame_a, frame_b, frame_c
         dx = tgt[0] - before[0]
         dy = tgt[1] - before[1]
 
-        # Nur loggen, wenn es eine sichtbare Abweichung gibt
         print(f"[MarkerCalib][APPLY] '{tr_name}': "
               f"A_before=({before[0]:.6f}, {before[1]:.6f}) → "
               f"A_target=({tgt[0]:.6f}, {tgt[1]:.6f})  Δ=({dx:.6f}, {dy:.6f})")
