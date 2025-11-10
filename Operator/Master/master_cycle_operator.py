@@ -7,6 +7,7 @@ from ...Helper.filter_all_tracks import filter_and_delete_all_tracks
 from ...Helper.filter_tracks import filter_problematic_tracks
 from ...Helper.update_default_sizes import update_default_sizes
 from ...Helper.find_clip_editor_area import find_clip_editor_area
+from ...Helper.snapshot import store_tracks_in_scene  # ✅ Neuer Import
 
 
 class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
@@ -60,7 +61,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             print(f"[MASTER CYCLE][REFRESH] WARNING select_all: {e}")
 
     # ------------------------------------------------------------
-    # Lokaler Helper: erstellt/erneuert den good_tracks String (ID-basiert)
+    # Lokaler Helper: erstellt/erneuert den good_tracks String via Snapshot
     # ------------------------------------------------------------
     def _rebuild_good_tracks(self, context: Context, reason: str = ""):
         print(f"[MASTER CYCLE] --- Rebuild good_tracks START ({reason}) ---")
@@ -81,28 +82,13 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
         self._force_clip_refresh(context, clip)
 
-        tracking = clip.tracking
-        all_tracks = list(tracking.tracks)
         print(f"[MASTER CYCLE] Aktiver Clip: {clip.name} (id={id(clip)})")
-        print(f"[MASTER CYCLE] Anzahl Tracks laut Clip: {len(all_tracks)}")
+        print(f"[MASTER CYCLE] Anzahl Tracks laut Clip: {len(list(clip.tracking.tracks))}")
 
-        for key in ("good_tracks", "good_track_ids", "best_tracks"):
-            if key in scene:
-                print(f"[MASTER CYCLE] Lösche bestehenden Scene-Key: {key}")
-                del scene[key]
+        # ✅ Neue zentrale Methode
+        store_tracks_in_scene(scene, context, key="good_tracks")
 
-        # IDs als Strings speichern
-        id_list = [str(id(t)) for t in all_tracks]
-        print(f"[MASTER CYCLE] Gesammelte Track-IDs: {len(id_list)}")
-        if id_list:
-            print(f"[MASTER CYCLE] Beispiel-IDs: {id_list[:10]}{' ...' if len(id_list) > 10 else ''}")
-
-        scene["good_track_ids"] = id_list
-        scene["good_tracks"] = id_list  # Kompatibilitätsalias
-
-        scene_keys_after = list(scene.keys())
-        print(f"[MASTER CYCLE] Scene keys after rebuild: {scene_keys_after}")
-        print(f"[MASTER CYCLE] good_track_ids gespeichert: {len(id_list)}")
+        print(f"[MASTER CYCLE] Scene keys after rebuild: {list(scene.keys())}")
         print(f"[MASTER CYCLE] --- Rebuild good_tracks END ---")
 
     # ------------------------------------------------------------
@@ -238,7 +224,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
 
 # ---- Registration ----------------------------------------------------------
-
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_master_cycle_operator)
 
