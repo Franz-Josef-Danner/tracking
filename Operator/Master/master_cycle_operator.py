@@ -23,16 +23,49 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         print(f"[MASTER CYCLE] --- Rebuild good_tracks START ({reason}) ---")
         scene = context.scene
 
-        clip = getattr(getattr(context, "space_data", None), "clip", None)
+        # ------------------------------------------------------------
+        # Zusätzliche Diagnose: Clip-Herkunft prüfen
+        # ------------------------------------------------------------
+        clip_from_space = getattr(getattr(context, "space_data", None), "clip", None)
+        clip_from_edit = getattr(context, "edit_movieclip", None)
+        clip_from_tracking = getattr(getattr(context.scene, "tracking", None), "active", None)
+
+        print(f"[MASTER CYCLE][CLIP CHECK] clip_from_space:   {clip_from_space.name if clip_from_space else None}")
+        print(f"[MASTER CYCLE][CLIP CHECK] clip_from_edit:    {clip_from_edit.name if clip_from_edit else None}")
+        print(f"[MASTER CYCLE][CLIP CHECK] clip_from_tracking: {clip_from_tracking.name if clip_from_tracking else None}")
+
+        # Priorität: space_data.clip > edit_movieclip > scene.tracking.active
+        clip = clip_from_space or clip_from_edit or clip_from_tracking
         if not clip or not hasattr(clip, "tracking") or not hasattr(clip.tracking, "tracks"):
             print("[MASTER CYCLE] ❌ Kein gültiger Clip gefunden – Abbruch des Rebuilds")
             return
 
         tracking = clip.tracking
         before_names = [t.name for t in tracking.tracks]
-        print(f"[MASTER CYCLE] Vorher existierende Tracknamen ({len(before_names)}): {before_names[:15]}{' ...' if len(before_names)>15 else ''}")
+        print(f"[MASTER CYCLE] Aktiver Clip: {clip.name}")
+        print(f"[MASTER CYCLE] Anzahl Tracks laut Clip: {len(before_names)}")
+        print(f"[MASTER CYCLE] Vorher existierende Tracknamen ({len(before_names)}): "
+              f"{before_names[:15]}{' ...' if len(before_names)>15 else ''}")
 
+        # ------------------------------------------------------------
+        # Zusätzliche Gegenprüfung: Szene-Tracking
+        # ------------------------------------------------------------
+        try:
+            scene_tracks = getattr(scene.tracking, "tracks", None)
+            if scene_tracks:
+                scene_names = [t.name for t in scene_tracks]
+                print(f"[MASTER CYCLE][CHECK] Szene.tracking.tracks: {len(scene_names)} Namen, Beispiel: {scene_names[:10]}")
+                diff = set(before_names) ^ set(scene_names)
+                if diff:
+                    print(f"[MASTER CYCLE][CHECK] ⚠️ Unterschied zwischen Clip.tracking und Scene.tracking ({len(diff)} Einträge)")
+                else:
+                    print("[MASTER CYCLE][CHECK] ✅ Clip.tracking und Scene.tracking identisch")
+        except Exception as e:
+            print(f"[MASTER CYCLE][CHECK] Fehler bei Scene-Track-Abgleich: {e}")
+
+        # ------------------------------------------------------------
         # Szene vor Cleanup protokollieren
+        # ------------------------------------------------------------
         existing_scene_keys = list(scene.keys())
         print(f"[MASTER CYCLE] Scene keys before rebuild: {existing_scene_keys}")
 
@@ -45,8 +78,11 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         # Alle aktuellen Tracks auslesen
         all_tracks = list(tracking.tracks)
         all_names = [t.name for t in all_tracks]
-
         print(f"[MASTER CYCLE] Nach Löschvorgängen existierende Tracks: {len(all_tracks)}")
+
+        # ------------------------------------------------------------
+        # Vergleich zu vorherigem Stand
+        # ------------------------------------------------------------
         if len(all_tracks) < len(before_names):
             removed = set(before_names) - set(all_names)
             print(f"[MASTER CYCLE] 🔻 {len(removed)} Tracks wurden entfernt: {list(removed)[:10]}{' ...' if len(removed)>10 else ''}")
@@ -56,12 +92,15 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         else:
             print("[MASTER CYCLE] ↔️ Anzahl der Tracks unverändert")
 
-        # Szene-String setzen
+        # ------------------------------------------------------------
+        # Speicherung und Ergebnis
+        # ------------------------------------------------------------
         scene["good_tracks"] = all_names
         scene_keys_after = list(scene.keys())
         print(f"[MASTER CYCLE] Scene keys after rebuild: {scene_keys_after}")
         print(f"[MASTER CYCLE] Gespeicherte good_tracks-Beispiele: {all_names[:10]}{' ...' if len(all_names)>10 else ''}")
         print(f"[MASTER CYCLE] --- Rebuild good_tracks END ---")
+
 
 
     # ------------------------------------------------------------
