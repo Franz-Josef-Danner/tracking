@@ -30,7 +30,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         except Exception as e:
             print(f"[MASTER CYCLE][REFRESH] WARNING find_clip_editor_area: {e}")
 
-        # Clip im Space neu setzen (RNA/Depsgraph Update)
         try:
             if space:
                 space.clip = clip
@@ -38,14 +37,12 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         except Exception as e:
             print(f"[MASTER CYCLE][REFRESH] WARNING rebind space.clip: {e}")
 
-        # View-Layer aktualisieren
         try:
             context.view_layer.update()
             print("[MASTER CYCLE][REFRESH] view_layer.update() done")
         except Exception as e:
             print(f"[MASTER CYCLE][REFRESH] WARNING view_layer.update: {e}")
 
-        # UI-Redraw-Impuls
         try:
             if all((window, area, region, space)):
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
@@ -54,7 +51,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         except Exception as e:
             print(f"[MASTER CYCLE][REFRESH] WARNING redraw_timer: {e}")
 
-        # Mini-Selection-Toggle (touch/refresh der Tracking-Collections)
         try:
             if all((window, area, region, space)):
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
@@ -64,15 +60,12 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             print(f"[MASTER CYCLE][REFRESH] WARNING select_all: {e}")
 
     # ------------------------------------------------------------
-    # Lokaler Helper: erstellt/erneuert den good_tracks String
+    # Lokaler Helper: erstellt/erneuert den good_tracks String (ID-basiert)
     # ------------------------------------------------------------
     def _rebuild_good_tracks(self, context: Context, reason: str = ""):
         print(f"[MASTER CYCLE] --- Rebuild good_tracks START ({reason}) ---")
         scene = context.scene
 
-        # ------------------------------------------------------------
-        # Zusätzliche Diagnose: Clip-Herkunft prüfen
-        # ------------------------------------------------------------
         clip_from_space = getattr(getattr(context, "space_data", None), "clip", None)
         clip_from_edit = getattr(context, "edit_movieclip", None)
         clip_from_tracking = getattr(getattr(context.scene, "tracking", None), "active", None)
@@ -81,101 +74,35 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         print(f"[MASTER CYCLE][CLIP CHECK] clip_from_edit:    {clip_from_edit.name if clip_from_edit else None}")
         print(f"[MASTER CYCLE][CLIP CHECK] clip_from_tracking: {getattr(clip_from_tracking, 'name', None) if clip_from_tracking else None}")
 
-        # Objekt-IDs und Pointer vergleichen
-        print("[MASTER CYCLE][CLIP ID CHECK] space_clip_id:", id(clip_from_space))
-        print("[MASTER CYCLE][CLIP ID CHECK] edit_clip_id:", id(clip_from_edit))
-        print("[MASTER CYCLE][CLIP ID CHECK] tracking_clip_id:", id(clip_from_tracking))
-        print("[MASTER CYCLE][CLIP ID CHECK] bpy.data.movieclips:", [c.name for c in bpy.data.movieclips])
-        for c in bpy.data.movieclips:
-            try:
-                print(f"    -> {c.name} id={id(c)} tracking={len(c.tracking.tracks)} tracks")
-            except Exception:
-                print(f"    -> {c.name} id={id(c)} tracking=? (error)")
-
-        # ------------------------------------------------------------
-        # Clip auswählen nach Priorität
-        # ------------------------------------------------------------
         clip = clip_from_space or clip_from_edit or clip_from_tracking
         if not clip or not hasattr(clip, "tracking") or not hasattr(clip.tracking, "tracks"):
             print("[MASTER CYCLE] ❌ Kein gültiger Clip gefunden – Abbruch des Rebuilds")
             return
 
-        # >>> NEU: harter Refresh vor Auslesen, um stale Namen zu vermeiden
         self._force_clip_refresh(context, clip)
 
         tracking = clip.tracking
-        before_names = [t.name for t in tracking.tracks]
+        all_tracks = list(tracking.tracks)
         print(f"[MASTER CYCLE] Aktiver Clip: {clip.name} (id={id(clip)})")
-        print(f"[MASTER CYCLE] Anzahl Tracks laut Clip: {len(before_names)}")
-        print(f"[MASTER CYCLE] Vorher existierende Tracknamen ({len(before_names)}): "
-              f"{before_names[:15]}{' ...' if len(before_names)>15 else ''}")
+        print(f"[MASTER CYCLE] Anzahl Tracks laut Clip: {len(all_tracks)}")
 
-        # ------------------------------------------------------------
-        # Zusätzliche Gegenprüfung: Szene-Tracking
-        # ------------------------------------------------------------
-        try:
-            scene_tracks = getattr(scene, "tracking", None)
-            if scene_tracks and hasattr(scene_tracks, "tracks"):
-                scene_names = [t.name for t in scene_tracks.tracks]
-                print(f"[MASTER CYCLE][CHECK] Szene.tracking.tracks: {len(scene_names)} Namen, Beispiel: {scene_names[:10]}")
-                diff = set(before_names) ^ set(scene_names)
-                if diff:
-                    print(f"[MASTER CYCLE][CHECK] ⚠️ Unterschied zwischen Clip.tracking und Scene.tracking ({len(diff)} Einträge)")
-                else:
-                    print("[MASTER CYCLE][CHECK] ✅ Clip.tracking und Scene.tracking identisch")
-            else:
-                print("[MASTER CYCLE][CHECK] Szene.tracking.tracks: None oder leer")
-        except Exception as e:
-            print(f"[MASTER CYCLE][CHECK] Fehler bei Scene-Track-Abgleich: {e}")
-
-        # ------------------------------------------------------------
-        # Zusätzliche Diagnose: Vergleich anderer MovieClips
-        # ------------------------------------------------------------
-        try:
-            for c in bpy.data.movieclips:
-                same_name = c.name == clip.name
-                same_id = (id(c) == id(clip))
-                print(f"[MASTER CYCLE][COMPARE] Clip {c.name}: "
-                      f"same_name={same_name}, same_id={same_id}, tracks={len(c.tracking.tracks)}")
-        except Exception as e:
-            print(f"[MASTER CYCLE][COMPARE] Fehler beim Clip-Vergleich: {e}")
-
-        # ------------------------------------------------------------
-        # Szene vor Cleanup protokollieren
-        # ------------------------------------------------------------
-        existing_scene_keys = list(scene.keys())
-        print(f"[MASTER CYCLE] Scene keys before rebuild: {existing_scene_keys}")
-
-        # Alte Strings löschen
-        for key in ("good_tracks", "best_tracks"):
+        for key in ("good_tracks", "good_track_ids", "best_tracks"):
             if key in scene:
                 print(f"[MASTER CYCLE] Lösche bestehenden Scene-Key: {key}")
                 del scene[key]
 
-        # Alle aktuellen Tracks auslesen (nach erzwungenem Refresh)
-        all_tracks = list(tracking.tracks)
-        all_names = [t.name for t in all_tracks]
-        print(f"[MASTER CYCLE] Nach Löschvorgängen existierende Tracks: {len(all_tracks)}")
+        # IDs speichern
+        id_list = [id(t) for t in all_tracks]
+        print(f"[MASTER CYCLE] Gesammelte Track-IDs: {len(id_list)}")
+        if id_list:
+            print(f"[MASTER CYCLE] Beispiel-IDs: {id_list[:10]}{' ...' if len(id_list) > 10 else ''}")
 
-        # ------------------------------------------------------------
-        # Vergleich zu vorherigem Stand
-        # ------------------------------------------------------------
-        if len(all_tracks) < len(before_names):
-            removed = set(before_names) - set(all_names)
-            print(f"[MASTER CYCLE] 🔻 {len(removed)} Tracks wurden entfernt: {list(removed)[:10]}{' ...' if len(removed)>10 else ''}")
-        elif len(all_tracks) > len(before_names):
-            added = set(all_names) - set(before_names)
-            print(f"[MASTER CYCLE] 🆕 {len(added)} neue Tracks hinzugekommen: {list(added)[:10]}{' ...' if len(added)>10 else ''}")
-        else:
-            print("[MASTER CYCLE] ↔️ Anzahl der Tracks unverändert")
+        scene["good_track_ids"] = id_list
+        scene["good_tracks"] = id_list  # Kompatibilitätsalias
 
-        # ------------------------------------------------------------
-        # Speicherung und Ergebnis
-        # ------------------------------------------------------------
-        scene["good_tracks"] = all_names
         scene_keys_after = list(scene.keys())
         print(f"[MASTER CYCLE] Scene keys after rebuild: {scene_keys_after}")
-        print(f"[MASTER CYCLE] Gespeicherte good_tracks-Beispiele: {all_names[:10]}{' ...' if len(all_names)>10 else ''}")
+        print(f"[MASTER CYCLE] good_track_ids gespeichert: {len(id_list)}")
         print(f"[MASTER CYCLE] --- Rebuild good_tracks END ---")
 
     # ------------------------------------------------------------
@@ -190,9 +117,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         frame = find_first_weak_frame(context)
         print(f"[MASTER CYCLE] find_first_weak_frame result: {frame}")
 
-        # ------------------------------------------------------------------
-        # CLEANUP-ZWEIG – wenn kein schwacher Frame gefunden wird
-        # ------------------------------------------------------------------
         if frame is None:
             print("[MASTER CYCLE] No weak frame found – entering CLEANUP branch")
 
@@ -208,8 +132,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     raise RuntimeError("No CLIP_EDITOR area found – cannot continue cleanup")
 
                 clip_ref = getattr(getattr(context, "space_data", None), "clip", None)
-                print(f"[MASTER CYCLE] clip_ref = {clip_ref}")
-
                 if getattr(space, "clip", None) is None and clip_ref:
                     space.clip = clip_ref
                     print(f"[MASTER CYCLE] Assigned clip_ref to space.clip")
@@ -220,9 +142,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 else:
                     print(f"[MASTER CYCLE] Active clip in context: {clip_obj.name}")
 
-                # ------------------------------------------------------------------
-                # Stage 1: Grobfilterung und Löschung
-                # ------------------------------------------------------------------
                 print("[MASTER CYCLE] Stage 1: filter_tracks (threshold=30.0)")
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                     res = bpy.ops.clip.filter_tracks(track_threshold=30.0)
@@ -239,9 +158,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
                 self._rebuild_good_tracks(context, reason="Post-Stage1 cleanup")
 
-                # ------------------------------------------------------------------
-                # Stage 2: Feinkorrektur-Filter
-                # ------------------------------------------------------------------
                 print("[MASTER CYCLE] Stage 2: filter_problematic_tracks (threshold=10.0)")
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                     try:
@@ -252,9 +168,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
                 self._rebuild_good_tracks(context, reason="Post-Stage2 cleanup")
 
-                # ------------------------------------------------------------------
-                # Versuch erneut, schwachen Frame zu finden
-                # ------------------------------------------------------------------
                 print("[MASTER CYCLE] Searching again for weak frame after cleanup...")
                 frame = find_first_weak_frame(context)
                 print(f"[MASTER CYCLE] New find_first_weak_frame result: {frame}")
@@ -265,9 +178,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     print("[MASTER CYCLE] Resolve triggered, exiting operator")
                     return {'FINISHED'}
 
-                # ------------------------------------------------------------------
-                # Update default sizes, Cache-Reset
-                # ------------------------------------------------------------------
                 print("[MASTER CYCLE] Stage 3: update_default_sizes + cache reset")
                 op, os, np, ns = update_default_sizes(context)
                 print(f"[MASTER CYCLE] update_default_sizes returned: op={op}, os={os}, np={np}, ns={ns}")
@@ -282,9 +192,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
                 self._rebuild_good_tracks(context, reason="Post-cache-reset cleanup")
 
-                # ------------------------------------------------------------------
-                # Reset Threshold Properties
-                # ------------------------------------------------------------------
                 print("[MASTER CYCLE] Resetting scene threshold properties ...")
                 from ...Helper.util_scene import set_scene_props
                 set_scene_props(
@@ -304,9 +211,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 self.report({'ERROR'}, f"Error during filter process: {ex}")
                 return {'CANCELLED'}
 
-        # ------------------------------------------------------------------
-        # NORMALZWEIG – wenn schwacher Frame gefunden wurde
-        # ------------------------------------------------------------------
         print(f"[MASTER CYCLE] Weak frame found: {frame}")
         scene.frame_current = frame
         try:
@@ -319,12 +223,8 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         except Exception as e:
             print(f"[MASTER CYCLE] ERROR while setting frame_current: {e}")
 
-        # -> good_tracks im Normalpfad für Diagnose (mit Refresh in _rebuild_good_tracks)
         self._rebuild_good_tracks(context, reason="Normal path (weak frame found)")
 
-        # ------------------------------------------------------------------
-        # Trigger Deep Test Operator
-        # ------------------------------------------------------------------
         try:
             print("[MASTER CYCLE] Triggering Deep Test Operator...")
             bpy.ops.kaiserlichtracker.master_deep_test_operator('INVOKE_DEFAULT')
