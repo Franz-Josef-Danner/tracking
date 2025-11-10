@@ -17,6 +17,53 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     # ------------------------------------------------------------
+    # Interner Helper: Erzwingt einen Refresh des Clip-Kontexts
+    # ------------------------------------------------------------
+    def _force_clip_refresh(self, context: Context, clip) -> None:
+        window, area, region, space = None, None, None, None
+        try:
+            window, area, region, space = find_clip_editor_area(
+                getattr(getattr(context, "space_data", None), "clip", None) or clip
+            )
+            print(f"[MASTER CYCLE][REFRESH] find_clip_editor_area -> "
+                  f"window={bool(window)}, area={bool(area)}, region={bool(region)}, space={bool(space)}")
+        except Exception as e:
+            print(f"[MASTER CYCLE][REFRESH] WARNING find_clip_editor_area: {e}")
+
+        # Clip im Space neu setzen (RNA/Depsgraph Update)
+        try:
+            if space:
+                space.clip = clip
+                print("[MASTER CYCLE][REFRESH] space.clip re-bound to active clip")
+        except Exception as e:
+            print(f"[MASTER CYCLE][REFRESH] WARNING rebind space.clip: {e}")
+
+        # View-Layer aktualisieren
+        try:
+            context.view_layer.update()
+            print("[MASTER CYCLE][REFRESH] view_layer.update() done")
+        except Exception as e:
+            print(f"[MASTER CYCLE][REFRESH] WARNING view_layer.update: {e}")
+
+        # UI-Redraw-Impuls
+        try:
+            if all((window, area, region, space)):
+                with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+                    bpy.ops.wm.redraw_timer(type='DRAW_WIN', iterations=1)
+                print("[MASTER CYCLE][REFRESH] redraw_timer executed")
+        except Exception as e:
+            print(f"[MASTER CYCLE][REFRESH] WARNING redraw_timer: {e}")
+
+        # Mini-Selection-Toggle (touch/refresh der Tracking-Collections)
+        try:
+            if all((window, area, region, space)):
+                with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+                    bpy.ops.clip.select_all(action='DESELECT')
+                print("[MASTER CYCLE][REFRESH] clip.select_all(DESELECT) executed")
+        except Exception as e:
+            print(f"[MASTER CYCLE][REFRESH] WARNING select_all: {e}")
+
+    # ------------------------------------------------------------
     # Lokaler Helper: erstellt/erneuert den good_tracks String
     # ------------------------------------------------------------
     def _rebuild_good_tracks(self, context: Context, reason: str = ""):
@@ -32,7 +79,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
         print(f"[MASTER CYCLE][CLIP CHECK] clip_from_space:   {clip_from_space.name if clip_from_space else None}")
         print(f"[MASTER CYCLE][CLIP CHECK] clip_from_edit:    {clip_from_edit.name if clip_from_edit else None}")
-        print(f"[MASTER CYCLE][CLIP CHECK] clip_from_tracking: {clip_from_tracking.name if clip_from_tracking else None}")
+        print(f"[MASTER CYCLE][CLIP CHECK] clip_from_tracking: {getattr(clip_from_tracking, 'name', None) if clip_from_tracking else None}")
 
         # Objekt-IDs und Pointer vergleichen
         print("[MASTER CYCLE][CLIP ID CHECK] space_clip_id:", id(clip_from_space))
@@ -40,7 +87,10 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         print("[MASTER CYCLE][CLIP ID CHECK] tracking_clip_id:", id(clip_from_tracking))
         print("[MASTER CYCLE][CLIP ID CHECK] bpy.data.movieclips:", [c.name for c in bpy.data.movieclips])
         for c in bpy.data.movieclips:
-            print(f"    -> {c.name} id={id(c)} tracking={len(c.tracking.tracks)} tracks")
+            try:
+                print(f"    -> {c.name} id={id(c)} tracking={len(c.tracking.tracks)} tracks")
+            except Exception:
+                print(f"    -> {c.name} id={id(c)} tracking=? (error)")
 
         # ------------------------------------------------------------
         # Clip auswählen nach Priorität
@@ -49,6 +99,9 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         if not clip or not hasattr(clip, "tracking") or not hasattr(clip.tracking, "tracks"):
             print("[MASTER CYCLE] ❌ Kein gültiger Clip gefunden – Abbruch des Rebuilds")
             return
+
+        # >>> NEU: harter Refresh vor Auslesen, um stale Namen zu vermeiden
+        self._force_clip_refresh(context, clip)
 
         tracking = clip.tracking
         before_names = [t.name for t in tracking.tracks]
@@ -61,9 +114,9 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         # Zusätzliche Gegenprüfung: Szene-Tracking
         # ------------------------------------------------------------
         try:
-            scene_tracks = getattr(scene.tracking, "tracks", None)
-            if scene_tracks:
-                scene_names = [t.name for t in scene_tracks]
+            scene_tracks = getattr(scene, "tracking", None)
+            if scene_tracks and hasattr(scene_tracks, "tracks"):
+                scene_names = [t.name for t in scene_tracks.tracks]
                 print(f"[MASTER CYCLE][CHECK] Szene.tracking.tracks: {len(scene_names)} Namen, Beispiel: {scene_names[:10]}")
                 diff = set(before_names) ^ set(scene_names)
                 if diff:
@@ -99,7 +152,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 print(f"[MASTER CYCLE] Lösche bestehenden Scene-Key: {key}")
                 del scene[key]
 
-        # Alle aktuellen Tracks auslesen
+        # Alle aktuellen Tracks auslesen (nach erzwungenem Refresh)
         all_tracks = list(tracking.tracks)
         all_names = [t.name for t in all_tracks]
         print(f"[MASTER CYCLE] Nach Löschvorgängen existierende Tracks: {len(all_tracks)}")
@@ -148,7 +201,8 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 window, area, region, space = find_clip_editor_area(
                     getattr(getattr(context, "space_data", None), "clip", None)
                 )
-                print(f"[MASTER CYCLE] find_clip_editor_area returned -> window={bool(window)}, area={bool(area)}, region={bool(region)}, space={bool(space)}")
+                print(f"[MASTER CYCLE] find_clip_editor_area returned -> "
+                      f"window={bool(window)}, area={bool(area)}, region={bool(region)}, space={bool(space)}")
 
                 if not all((window, area, region, space)):
                     raise RuntimeError("No CLIP_EDITOR area found – cannot continue cleanup")
@@ -265,7 +319,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         except Exception as e:
             print(f"[MASTER CYCLE] ERROR while setting frame_current: {e}")
 
-        # -> good_tracks im Normalpfad für Diagnose
+        # -> good_tracks im Normalpfad für Diagnose (mit Refresh in _rebuild_good_tracks)
         self._rebuild_good_tracks(context, reason="Normal path (weak frame found)")
 
         # ------------------------------------------------------------------
