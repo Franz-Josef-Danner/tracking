@@ -21,9 +21,6 @@ from dataclasses import dataclass, field
 from typing import Set
 import time, math
 
-# -------------------------------------------------------------------------------------------------
-# Helper Imports
-# -------------------------------------------------------------------------------------------------
 from ...Helper.snapshot import snapshot_active_markers
 from ...Helper.detect_adapt_helper import run_detect_adapt
 from ...Helper.util_clip import get_active_clip
@@ -33,16 +30,17 @@ from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.track_length_helper import get_total_track_length
 from ...Helper.delete import delete_tracks_by_names
 from ...Helper.get_clip_context import get_clip_context
-from ...Helper.ui_progress import set_progress
-
+from ...Helper.ui_progress import set_progress  # progress helper (kept as imported)
 
 # -------------------------------------------------------------------------------------------------
-# Dataclass – Deep Test Runtime State
+# Runtime State
 # -------------------------------------------------------------------------------------------------
 @dataclass
 class DeepTestState:
+    """Encapsulates all runtime data of the Deep Test process."""
     counter: int = 0
     stop_flag: bool = False
+
     base_value: float = 0.0
     reference_value: float = 0.0
     start: float = 0.0
@@ -63,33 +61,34 @@ class DeepTestState:
     new_tracks: Set[str] = field(default_factory=set)
     all_tracks: Set[str] = field(default_factory=set)
 
+    # Modal state machine:
+    # INIT -> STEP_START -> STEP_TEST_HIGH -> STEP_TEST_LOW -> STEP_MID
+    # -> DECIDE -> ADJUST_PLUS / ADJUST_MINUS -> NEXT_STEP -> DONE
     phase: str = "INIT"
-    substep: int = 0
-    yield_flag: bool = False
-
+    substep: int = 0          # fine-grained steps inside a phase (if needed)
+    yield_flag: bool = False  # UI yield control
 
 # -------------------------------------------------------------------------------------------------
-# Operator Class
+# Operator
 # -------------------------------------------------------------------------------------------------
 class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
-    """Kaiserlich Tracker: Deep Test"""
     bl_idname = "kaiserlichtracker.master_deep_test_operator"
     bl_label = "Kaiserlich Tracker: Deep Test"
-    bl_description = "Performs iterative threshold calibration for all categories"
     bl_options = {'REGISTER', 'UNDO'}
 
     _timer = None
 
+    # UI-visible converter value
     converter: bpy.props.FloatProperty(
         name="Converter",
-        description="Intermediate progress calculation value",
+        description="Intermediate value for progress display",
         default=0.0,
         min=0.0,
         max=1.0
     )
 
     # ---------------------------------------------------------------------------------------------
-    # Execute (Entry)
+    # Execute
     # ---------------------------------------------------------------------------------------------
     def execute(self, context: Context):
         self.state = DeepTestState()
@@ -99,7 +98,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         return {'RUNNING_MODAL'}
 
     # ---------------------------------------------------------------------------------------------
-    # Modal Loop
+    # Modal
     # ---------------------------------------------------------------------------------------------
     def modal(self, context, event):
         if event.type == 'ESC':
@@ -107,12 +106,16 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return {'CANCELLED'}
 
         if event.type == 'TIMER':
+            # per-tick progress/UI refresh (non-blocking)
             self._ui_progress(context)
             try:
+                # finalize & handover when done
                 if self.state.stop_flag or self.state.phase == "DONE":
                     self._finalize(context)
                     self.cancel(context)
                     return {'FINISHED'}
+
+                # otherwise proceed with next atomic step
                 self._process_step_incremental(context)
             except Exception:
                 self.cancel(context)
@@ -121,7 +124,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         return {'PASS_THROUGH'}
 
     # ---------------------------------------------------------------------------------------------
-    # Cancel / Timer Cleanup
+    # Cancel
     # ---------------------------------------------------------------------------------------------
     def cancel(self, context):
         wm = context.window_manager
@@ -130,7 +133,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             self._timer = None
 
     # ---------------------------------------------------------------------------------------------
-    # Incremental Step Processor
+    # Incremental step processing (tick-wise, non-blocking)
     # ---------------------------------------------------------------------------------------------
     def _process_step_incremental(self, context: Context):
         s = self.state
@@ -140,20 +143,23 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return
 
         if s.phase == "STEP_START":
+            # set current step threshold at val (initially 0)
             self._set_step_threshold(context)
             if s.stop_flag:
                 return
+            # high-end test value
             s.next_val = 1.0
-            self._set_step_threshold(context)
+            self._set_step_threshold(context)  # High
             s.phase = "STEP_TEST_HIGH"
             return
 
         if s.phase == "STEP_TEST_HIGH":
+            # one blocking tracking cycle per tick
             self._track(context)
             s.base_value = s.reference_value
             s.start = s.next_val
             s.next_val = 0.00001
-            self._set_step_threshold(context)
+            self._set_step_threshold(context)  # Low
             s.lower_limit = s.next_val
             s.phase = "STEP_TEST_LOW"
             return
@@ -161,21 +167,25 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if s.phase == "STEP_TEST_LOW":
             self._track(context)
             if s.reference_value <= s.base_value:
+                # no improvement → advance to next step
                 s.next_val = 1
                 self._set_step_threshold(context)
                 s.step += 1
                 if s.step >= 5:
+                    # write final threshold for step >= 5 and stop
                     self._set_step_threshold(context)
                     s.phase = "DONE"
                     s.stop_flag = True
                 else:
                     s.phase = "INIT"
                 return
+
+            # improvement: compute mid value
             s.base_value = s.reference_value
             s.converter = abs(s.start - s.lower_limit) / 2.0
             self.converter = s.converter
             s.next_val = s.next_val + s.converter
-            self._set_step_threshold(context)
+            self._set_step_threshold(context)  # Mid
             s.phase = "STEP_MID"
             return
 
@@ -191,6 +201,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return
 
         if s.phase == "ADJUST_PLUS":
+            # one increment in plus direction
             s.lower_limit = s.next_val
             conv = abs(s.start - s.lower_limit) / 2.0
             if conv > 0.00001:
@@ -200,6 +211,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self._set_step_threshold(context)
                 s.phase = "ADJUST_PLUS_TRACK"
             else:
+                # step-size too small → next category step
                 s.step += 1
                 s.phase = "INIT" if s.step < 5 else "DONE"
                 s.stop_flag = (s.phase == "DONE")
@@ -227,8 +239,10 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self._set_step_threshold(context)
                 s.phase = "ADJUST_MINUS_TRACK"
             else:
+                # step-size too small → next category step
                 s.step += 1
                 if s.step >= 5:
+                    # final write on >=5
                     self._set_step_threshold(context)
                     s.phase = "DONE"
                     s.stop_flag = True
@@ -253,7 +267,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return
 
     # ---------------------------------------------------------------------------------------------
-    # Threshold Setting and Progress Calculation
+    # Threshold mapping + progress UI updates
     # ---------------------------------------------------------------------------------------------
     def _set_step_threshold(self, context: Context) -> None:
         clip = get_active_clip(context)
@@ -262,6 +276,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         val = self.state.next_val
         converter = self.state.converter
 
+        # progress mapping (kept as-is)
         vale = min(100.0, 100.0 - (((math.log10(max(0.00001, converter) * 100000.0) - 0.205) * 1.03) * 20.0))
         if vale < 100:
             total = max(0, min(100, (((step * 1.24) + 1) * 17) - ((100 - (vale - 1)) / 6)))
@@ -270,6 +285,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
         try:
             scene.kaiserlich_converter = converter
+            # targeted UI refresh
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == 'CLIP_EDITOR':
@@ -279,19 +295,20 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         except Exception:
             pass
 
-        # Step-specific threshold assignment
-        if step == 0 and clip:
-            width, height = clip.size
-            y_val = min(1.0, val * (width / height if width else 1.0))
-            scene.kaiserlich_rot_thresh_x = float(val)
-            scene.kaiserlich_rot_thresh_y = float(y_val)
-            self.state.rot_thresh_x = float(val)
-            self.state.rot_thresh_y = float(y_val)
-            scene.kaiserlich_scale_thresh_min = 1
-            scene.kaiserlich_scale_thresh_max = 1
-            scene.kaiserlich_rot_scale_thresh_rot = 1
-            scene.kaiserlich_rot_scale_thresh_scale = 1
-            scene.kaiserlich_perspective_thresh = 1
+        # step-specific thresholds (exclusive per category as in the original)
+        if step == 0:
+            if clip:
+                width, height = clip.size
+                y_val = min(1.0, val * (width / height if width else 1.0))
+                scene.kaiserlich_rot_thresh_x = float(val)
+                scene.kaiserlich_rot_thresh_y = float(y_val)
+                self.state.rot_thresh_x = float(val)
+                self.state.rot_thresh_y = float(y_val)
+                scene.kaiserlich_scale_thresh_min = 1
+                scene.kaiserlich_scale_thresh_max = 1
+                scene.kaiserlich_rot_scale_thresh_rot = 1
+                scene.kaiserlich_rot_scale_thresh_scale = 1
+                scene.kaiserlich_perspective_thresh = 1
             return
 
         elif step == 1:
@@ -307,21 +324,40 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return
 
         elif step == 2:
+            scene.kaiserlich_rot_thresh_x = 1
+            scene.kaiserlich_rot_thresh_y = 1
+            scene.kaiserlich_scale_thresh_min = 1
+            scene.kaiserlich_scale_thresh_max = 1
             scene.kaiserlich_rot_scale_thresh_rot = float(val)
+            scene.kaiserlich_rot_scale_thresh_scale = 0.0
             self.state.rot_scale_thresh_rot = float(val)
+            scene.kaiserlich_perspective_thresh = 1
             return
 
         elif step == 3:
+            scene.kaiserlich_rot_thresh_x = 1
+            scene.kaiserlich_rot_thresh_y = 1
+            scene.kaiserlich_scale_thresh_min = 1
+            scene.kaiserlich_scale_thresh_max = 1
+            scene.kaiserlich_rot_scale_thresh_rot = 0.0
             scene.kaiserlich_rot_scale_thresh_scale = float(val)
             self.state.rot_scale_thresh_scale = float(val)
+            scene.kaiserlich_perspective_thresh = 1
             return
 
         elif step == 4:
+            scene.kaiserlich_rot_thresh_x = 1
+            scene.kaiserlich_rot_thresh_y = 1
+            scene.kaiserlich_scale_thresh_min = 1
+            scene.kaiserlich_scale_thresh_max = 1
+            scene.kaiserlich_rot_scale_thresh_rot = 1
+            scene.kaiserlich_rot_scale_thresh_scale = 1
             scene.kaiserlich_perspective_thresh = float(val)
             self.state.perspective_thresh = float(val)
             return
 
         elif step >= 5:
+            # write back best known values and finish
             scene.kaiserlich_rot_thresh_x = self.state.rot_thresh_x
             scene.kaiserlich_rot_thresh_y = self.state.rot_thresh_y
             scene.kaiserlich_scale_thresh_min = self.state.scale_thresh_min
@@ -334,24 +370,30 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             return
 
     # ---------------------------------------------------------------------------------------------
-    # Tracking Procedure
+    # Tracking (snapshot → detect_adapt → measure → cleanup)
     # ---------------------------------------------------------------------------------------------
     def _track(self, context: Context):
         clip = get_active_clip(context)
         if not clip:
             return
+
         scene = context.scene
+
+        # playhead boundary logic
         frame_playhead = int(scene.frame_current)
         frame_end = int(scene.frame_end)
         frame_max = max(scene.frame_start, frame_end - 50)
         restore_playhead = None
 
+        # only correct if current frame is too close to the end
         if frame_playhead > frame_max:
             restore_playhead = frame_playhead
             reset_to_frame(context, frame_max)
             scene.frame_current = frame_max
 
+        # normal tracking routine
         old_data = snapshot_active_markers(context)
+
         try:
             run_detect_adapt(context)
         except Exception:
@@ -361,6 +403,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         bpy.context.view_layer.update()
 
         all_data = snapshot_active_markers(context)
+
         old_names = {d["track"] for d in old_data if isinstance(d, dict) and "track" in d}
         all_names = {d["track"] for d in all_data if isinstance(d, dict) and "track" in d}
 
@@ -371,28 +414,35 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         self._track_forward_with_limits(context)
 
         self.state.reference_value = get_total_track_length(
-            context, start_frame=scene.frame_start, include_names=self.state.new_tracks
+            context,
+            start_frame=scene.frame_start,
+            include_names=self.state.new_tracks
         )
 
         if self.state.new_tracks:
             delete_tracks_by_names(context, track_names=self.state.new_tracks)
 
+        # restore original playhead
         if restore_playhead is not None:
             reset_to_frame(context, restore_playhead)
             scene.frame_current = restore_playhead
 
     # ---------------------------------------------------------------------------------------------
-    # Finalization / Handover
+    # Finalization + handover to next stage
     # ---------------------------------------------------------------------------------------------
     def _finalize(self, context: Context):
+        # finalize progress display + UI refresh
         for window in bpy.context.window_manager.windows:
             for area in window.screen.areas:
                 if area.type == 'CLIP_EDITOR':
                     area.tag_redraw()
         self.state.stop_flag = True
+
+        # handover to master_detect_adapt
         self._invoke_master_detect_adapt(context)
 
     def _invoke_master_detect_adapt(self, context: Context) -> None:
+        """Invoke 'kaiserlich_tracker.master_detect_adapt' on the CLIP_EDITOR area."""
         try:
             area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
             if not area:
@@ -406,7 +456,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             pass
 
     # ---------------------------------------------------------------------------------------------
-    # UI Refresh
+    # Central, non-blocking redraw per timer tick
     # ---------------------------------------------------------------------------------------------
     def _ui_progress(self, context: Context):
         try:
@@ -417,7 +467,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             pass
 
     # ---------------------------------------------------------------------------------------------
-    # Internal Plus/Minus Recursive Loops (unchanged logic)
+    # Plus/Minus adjustment loops (unchanged logic, no logs)
     # ---------------------------------------------------------------------------------------------
     def _plus_thresh(self, context: Context) -> None:
         while True:
@@ -427,6 +477,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self.state.next_val = self.state.next_val + converter
                 self._set_step_threshold(context)
                 self._track(context)
+
                 if self.state.reference_value >= self.state.base_value:
                     if self.state.reference_value > self.state.base_value:
                         self.state.base_value = self.state.reference_value
@@ -436,7 +487,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 else:
                     self._minus_thresh(context)
             else:
-                self.state.step += 1
+                self.state.step = self.state.step + 1
                 return
 
     def _minus_thresh(self, context: Context) -> None:
@@ -447,6 +498,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 self.state.next_val = self.state.next_val - converter
                 self._set_step_threshold(context)
                 self._track(context)
+
                 if self.state.reference_value < self.state.base_value:
                     continue
                 else:
@@ -456,11 +508,11 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     else:
                         self._plus_thresh(context)
             else:
-                self.state.step += 1
+                self.state.step = self.state.step + 1
                 return
 
     # ---------------------------------------------------------------------------------------------
-    # Tracking Forward (Limited Range)
+    # Frame-limited forward tracking (unchanged logic)
     # ---------------------------------------------------------------------------------------------
     def _track_forward_with_limits(
         self,
@@ -508,7 +560,26 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
             except Exception:
                 pass
 
-            current_frame += 1
+            with bpy.context.temp_override(**ctx_override):
+                result = bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False)
+            if 'CANCELLED' in str(result):
+                break
+
             frames_tracked += 1
+            current_frame += 1
+            scene.frame_current = current_frame
+
+            # keep clip user playhead in sync if present
+            try:
+                context.space_data.clip_user.frame_current = current_frame
+            except Exception:
+                pass
+
+        # restore original playhead
+        try:
+            reset_to_frame(context, original_frame)
+            scene.frame_current = original_frame
+        except Exception:
+            pass
 
         return frames_tracked
