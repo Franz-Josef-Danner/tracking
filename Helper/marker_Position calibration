@@ -26,6 +26,9 @@ if good_marker = True
     gm_fb_tm = good_marker == fb_tm
     gm_fc_tm = good_marker == fc_tm
     gm_fd_tm = good_marker == fd_tm
-    a_gfm = anzahl gm_fa_tm
-    if a_gfm >= min
-        
+    a_gfam = anzahl gm_fa_tm
+    if a_gfam >= min
+        gm_fafb_tm = gm_fb_tm == gm_fa_tm
+        a_gfbm = anzahl gm_fafb_tm
+        if a_gfbm >= min
+            
