@@ -1,11 +1,10 @@
 # Helper/marker_position_forward_calibration.py
 # ---------------------------------------------------------------------
-# DIAGNOSE-LOG-Version – erweitert um Detailstatistik zu Matching-Fehlern
+# ID-basierte Version – kompatibel mit "good_track_ids" / "best_track_ids"
 # ---------------------------------------------------------------------
 
 from typing import Iterable, List, Optional, Tuple
 import bpy
-
 
 # ----------------------------
 # Low-level Marker Utilities
@@ -53,25 +52,32 @@ def get_active_markers(context, frame):
 
 
 # ----------------------------
-# Core Correction
+# Core Correction (ID-basiert)
 # ----------------------------
 
 def _select_good_set(scene):
+    """Wählt das aktive Set aus der Szene und erkennt automatisch ID- oder Namenlisten."""
     has_good = "good_tracks" in scene
     has_best = "best_tracks" in scene
     if has_good and has_best:
         print("[MarkerCalib] ❌ Konflikt: Sowohl 'good_tracks' als auch 'best_tracks' vorhanden.")
-        return None
+        return None, None
+
+    key = None
     if has_good:
-        names = list(scene["good_tracks"])
-        print(f"[MarkerCalib] ✅ Verwende 'good_tracks'-Set ({len(names)} Namen)")
-        return names
-    if has_best:
-        names = list(scene["best_tracks"])
-        print(f"[MarkerCalib] ✅ Verwende 'best_tracks'-Set ({len(names)} Namen)")
-        return names
-    print("[MarkerCalib] ⚠️ Kein gültiges Referenzset vorhanden")
-    return None
+        key = "good_tracks"
+    elif has_best:
+        key = "best_tracks"
+
+    if key is None:
+        print("[MarkerCalib] ⚠️ Kein gültiges Referenzset vorhanden")
+        return None, None
+
+    raw = list(scene[key])
+    # Erkennen: enthält IDs (Strings mit nur Ziffern) oder Namen
+    is_id_based = all(isinstance(v, str) and v.isdigit() for v in raw)
+    print(f"[MarkerCalib] ✅ Verwende '{key}'-Set ({len(raw)} Einträge, {'ID' if is_id_based else 'Name'}-basiert)")
+    return raw, is_id_based
 
 
 def correct_marker_positions(context, selected_tracks, frame_a, frame_b, frame_c=None, frame_d=None):
@@ -86,33 +92,46 @@ def correct_marker_positions(context, selected_tracks, frame_a, frame_b, frame_c
         return
 
     print(f"[MarkerCalib] Aktiver Clip: {clip.name}")
-    good_names = _select_good_set(scene)
-    if not good_names:
+    good_values, id_based = _select_good_set(scene)
+    if not good_values:
         print("[MarkerCalib] ❌ Abbruch – kein valider Referenzsatz.")
         return
 
-    # Namen -> Track Objekt
-    name_to_track = {t.name: t for t in clip.tracking.tracks}
-    good_tracks = [name_to_track[n] for n in good_names if n in name_to_track]
-    missing = [n for n in good_names if n not in name_to_track]
-    print(f"[MarkerCalib] Aufgelöste Tracks: {len(good_tracks)}  Fehlende Namen: {len(missing)}")
+    # --- Aufbau des Referenzsets ---
+    all_tracks = list(clip.tracking.tracks)
+
+    if id_based:
+        good_tracks = [t for t in all_tracks if str(id(t)) in good_values]
+        missing = [gid for gid in good_values if gid not in [str(id(t)) for t in good_tracks]]
+    else:
+        name_to_track = {t.name: t for t in all_tracks}
+        good_tracks = [name_to_track[n] for n in good_values if n in name_to_track]
+        missing = [n for n in good_values if n not in name_to_track]
+
+    print(f"[MarkerCalib] Aufgelöste Tracks: {len(good_tracks)}  Fehlende: {len(missing)}")
     if missing:
         print(f"[MarkerCalib] Fehlende Beispiele: {missing[:5]}")
 
-    # Debug: Vergleich aktiver Marker vs good_names
+    # --- Diagnose zu Selektion ---
     all_sel_names = [t.name for t in selected_tracks]
-    intersect_names = [n for n in all_sel_names if n in good_names]
-    diff_names = [n for n in all_sel_names if n not in good_names]
-    print(f"[MarkerCalib] Vergleich Selektierte vs Good:")
-    print(f"   - Selektiert: {len(all_sel_names)}")
-    print(f"   - Im Good-Set: {len(intersect_names)}")
-    print(f"   - Nicht im Good-Set: {len(diff_names)}")
-    if intersect_names:
-        print(f"   - Beispiel im Schnitt: {intersect_names[:5]}")
-    if diff_names:
-        print(f"   - Beispiel außerhalb: {diff_names[:5]}")
+    if id_based:
+        sel_ids = [str(id(t)) for t in selected_tracks]
+        intersect = [sid for sid in sel_ids if sid in good_values]
+        diff = [sid for sid in sel_ids if sid not in good_values]
+    else:
+        intersect = [n for n in all_sel_names if n in good_values]
+        diff = [n for n in all_sel_names if n not in good_values]
 
-    # Frameweise Marker prüfen
+    print(f"[MarkerCalib] Vergleich Selektierte vs Referenz:")
+    print(f"   - Selektiert: {len(selected_tracks)}")
+    print(f"   - Im Referenz-Set: {len(intersect)}")
+    print(f"   - Nicht im Referenz-Set: {len(diff)}")
+    if intersect:
+        print(f"   - Beispiele im Schnitt: {intersect[:5]}")
+    if diff:
+        print(f"   - Beispiele außerhalb: {diff[:5]}")
+
+    # --- Frameweise Markerprüfung ---
     frames = [frame_a, frame_b, frame_c, frame_d]
     labels = ["A", "B", "C", "D"]
     for lbl, f in zip(labels, frames):
@@ -124,46 +143,61 @@ def correct_marker_positions(context, selected_tracks, frame_a, frame_b, frame_c
             print("   → Namen:", [t.name for t in frame_tracks][:10])
         else:
             print("   → Keine aktiven Marker")
-        # Check: wie viele davon im good_names
-        in_good = [t for t in frame_tracks if t.name in good_names]
-        print(f"   → {len(in_good)} dieser Marker auch in good_tracks")
+        # Überprüfung im good_set
+        if id_based:
+            in_good = [t for t in frame_tracks if str(id(t)) in good_values]
+        else:
+            in_good = [t for t in frame_tracks if t.name in good_values]
+        print(f"   → {len(in_good)} dieser Marker auch im Referenzset")
 
     # Existierende Marker im Referenzset (unabhängig von Auswahl)
     def _count_exist(tracks, f): return sum(1 for t in tracks if marker_exists(t, f))
     for lbl, f in zip(labels, frames):
-        if f is None: continue
+        if f is None:
+            continue
         cnt = _count_exist(good_tracks, f)
         print(f"[MarkerCalib] Existierende Referenzmarker @ {lbl}({f}): {cnt}")
 
-    # Normaler Logikteil bleibt unverändert bis gute Marker:
+    # --- Aktive Marker pro Frame ---
     fa_marker = get_active_markers(context, frame_a)
     fb_marker = get_active_markers(context, frame_b)
     fc_marker = get_active_markers(context, frame_c) if frame_c else []
     fd_marker = get_active_markers(context, frame_d) if frame_d else []
 
-    # Diagnose: prüfen, ob Track-Objekte dieselben Instanzen sind
+    # Diagnose: Objekt-Identität prüfen
     if fa_marker and good_tracks:
         overlap = sum(1 for m in fa_marker for g in good_tracks if m is g)
-        print(f"[MarkerCalib] FrameA Objekt-Identität mit good_tracks: {overlap}/{len(fa_marker)}")
+        print(f"[MarkerCalib] FrameA Objekt-Identität mit Referenz: {overlap}/{len(fa_marker)}")
 
-    fa_good = [m for m in fa_marker if m.name in good_names]
-    fb_good = [m for m in fb_marker if m.name in good_names]
-    fc_good = [m for m in fc_marker if m.name in good_names]
-    fd_good = [m for m in fd_marker if m.name in good_names]
+    # Filterung je Frame
+    if id_based:
+        fa_good = [m for m in fa_marker if str(id(m)) in good_values]
+        fb_good = [m for m in fb_marker if str(id(m)) in good_values]
+        fc_good = [m for m in fc_marker if str(id(m)) in good_values]
+        fd_good = [m for m in fd_marker if str(id(m)) in good_values]
+    else:
+        fa_good = [m for m in fa_marker if m.name in good_values]
+        fb_good = [m for m in fb_marker if m.name in good_values]
+        fc_good = [m for m in fc_marker if m.name in good_values]
+        fd_good = [m for m in fd_marker if m.name in good_values]
 
     print(f"[MarkerCalib] Gute Marker je Frame:")
     print(f"   A={len(fa_good)}  B={len(fb_good)}  C={len(fc_good)}  D={len(fd_good)}")
 
-    # Falls 0 → tiefere Analyse:
+    # Diagnose bei leerem Ergebnis
     if sum(len(x) for x in (fa_good, fb_good, fc_good, fd_good)) == 0:
         print("[MarkerCalib][DIAG] Kein Frame mit Übereinstimmung gefunden!")
         if fa_marker:
             example = fa_marker[0]
             print(f"[MarkerCalib][DIAG] Beispielmarker: {example.name}, Typ={type(example)}")
-            print(f"[MarkerCalib][DIAG] Existiert im Good-Set als Name? {example.name in good_names}")
-            print(f"[MarkerCalib][DIAG] Existiert als Objekt-ID im good_tracks? {any(example is t for t in good_tracks)}")
-            print(f"[MarkerCalib][DIAG] Szene-String: {len(scene['good_tracks'])} Namen gespeichert.")
-            print(f"[MarkerCalib][DIAG] Good_Names-Beispiele: {good_names[:10]}")
+            if id_based:
+                exists = str(id(example)) in good_values
+                print(f"[MarkerCalib][DIAG] Existiert im Referenzset (ID)? {exists}")
+                print(f"[MarkerCalib][DIAG] Szene-Liste: {len(good_values)} IDs gespeichert.")
+            else:
+                print(f"[MarkerCalib][DIAG] Existiert im Referenzset (Name)? {example.name in good_values}")
+                print(f"[MarkerCalib][DIAG] Szene-Liste: {len(good_values)} Namen gespeichert.")
+            print(f"[MarkerCalib][DIAG] Beispiele: {good_values[:10]}")
         else:
             print("[MarkerCalib][DIAG] Keine aktiven Marker zur Analyse verfügbar.")
 
