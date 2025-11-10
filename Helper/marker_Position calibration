@@ -1,9 +1,23 @@
-if good_marker = True
-    if good_marker > 
-elif best_marker = true
+min = scene, "kaiserlich_markers_per_frame"
+fa = playhead Frame
+fb = playhead Frame - 1
+fc = playhead Frame - 2
+fd = playhead Frame - 3
 
-else
-    break
+tm = einzelne good_marker tracks
+fa_tm = aktiv tracks in playhead Frame
+fb_tm = aktiv tracks in playhead Frame - 1
+fc_tm = aktiv tracks in playhead Frame - 2
+fd_tm = aktiv tracks in playhead Frame - 3
+
+if good_marker = True
+    tm = good_marker tracks separated
+    fa_tm = aktiv tm tracks in playhead Frame
+    fb_tm = aktiv tm tracks in playhead Frame - 1
+    
+    
+    if tm_fafb = True (fa_tm, fb_tm)
+        
 
 
 
