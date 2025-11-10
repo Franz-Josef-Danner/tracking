@@ -1,9 +1,9 @@
 # Helper/marker_position_forward_calibration.py
 # ---------------------------------------------------------------------
+# Erweiterte Log-Version für tiefgehendes Debugging
 # Marker-Korrektur über bis zu 4 Frames mit dynamischem Rückfall-System,
 # robuster Mittelung (Trimming) und radialer Gewichtung.
 # Automatische Wahl zwischen scene["good_tracks"] und scene["best_tracks"].
-# Stellt sicher, dass selektierte Marker in allen relevanten Frames existieren.
 # ---------------------------------------------------------------------
 
 from typing import Iterable, List, Optional, Tuple
@@ -64,11 +64,13 @@ def _select_good_set(scene: bpy.types.Scene) -> Optional[List[bpy.types.MovieTra
         print("[MarkerCalib] ❌ Konflikt: Sowohl 'good_tracks' als auch 'best_tracks' vorhanden.")
         return None
     if has_good:
-        print("[MarkerCalib] ✅ Verwende 'good_tracks'-Set")
-        return list(scene["good_tracks"])
+        names = list(scene["good_tracks"])
+        print(f"[MarkerCalib] ✅ Verwende 'good_tracks'-Set ({len(names)} Namen)")
+        return names
     if has_best:
-        print("[MarkerCalib] ✅ Verwende 'best_tracks'-Set")
-        return list(scene["best_tracks"])
+        names = list(scene["best_tracks"])
+        print(f"[MarkerCalib] ✅ Verwende 'best_tracks'-Set ({len(names)} Namen)")
+        return names
     print("[MarkerCalib] ⚠️ Kein gültiges Referenzset vorhanden")
     return None
 
@@ -85,6 +87,10 @@ def _robust_weighted_mean(values_with_weights: List[Tuple[float, float]]) -> flo
     tw = sum(w for _, w in trimmed)
     return (sum(v * w for v, w in trimmed) / tw) if tw else 0.0
 
+# ----------------------------
+# Hauptfunktion mit erweiterten Logs
+# ----------------------------
+
 def correct_marker_positions(
     context: bpy.types.Context,
     selected_tracks: List[bpy.types.MovieTrackingTrack],
@@ -98,26 +104,50 @@ def correct_marker_positions(
     print(f"[MarkerCalib] Selektierte Marker: {len(selected_tracks)}")
 
     scene = context.scene
-    good_set = _select_good_set(scene)
-    if good_set is None or len(good_set) == 0:
+    clip = _active_clip(context)
+    if not clip:
+        print("[MarkerCalib] ❌ Kein aktiver Clip im Kontext – Abbruch.")
+        return
+
+    print(f"[MarkerCalib] Aktiver Clip: {clip.name}")
+    good_names = _select_good_set(scene)
+    if good_names is None or len(good_names) == 0:
         print("[MarkerCalib] ❌ Abbruch – kein valider Referenzsatz.")
         return
 
+    # Auflösung der Namen zu Tracks
+    name_to_track = {t.name: t for t in clip.tracking.tracks}
+    missing = [n for n in good_names if n not in name_to_track]
+    good_tracks = [name_to_track[n] for n in good_names if n in name_to_track]
+    print(f"[MarkerCalib] Aufgelöste Tracks: {len(good_tracks)}, Fehlende Namen: {len(missing)}")
+    if missing:
+        print(f"[MarkerCalib] ⚠️ Fehlende Beispielnamen: {missing[:5]}")
+
     min_required = float(getattr(scene, "kaiserlich_markers_per_frame", 20)) / 2.0
     print(f"[MarkerCalib] Mindestanzahl Referenzmarker: {min_required}")
+
+    def _count_exist(tracks, f):
+        ex = sum(1 for t in tracks if marker_exists(t, f))
+        return ex
+
+    for lbl, f in (("A", frame_a), ("B", frame_b), ("C", frame_c), ("D", frame_d)):
+        if f is None: continue
+        cnt = _count_exist(good_tracks, f)
+        print(f"[MarkerCalib] Existierende Marker im Referenzset @ Frame {lbl}({f}): {cnt}")
 
     fa_marker = get_active_markers(context, frame_a)
     fb_marker = get_active_markers(context, frame_b)
     fc_marker = get_active_markers(context, frame_c) if frame_c is not None else []
     fd_marker = get_active_markers(context, frame_d) if frame_d is not None else []
 
-    fa_good = [m for m in fa_marker if m in good_set]
-    fb_good = [m for m in fb_marker if m in good_set]
-    fc_good = [m for m in fc_marker if m in good_set]
-    fd_good = [m for m in fd_marker if m in good_set]
+    fa_good = [m for m in fa_marker if m.name in good_names]
+    fb_good = [m for m in fb_marker if m.name in good_names]
+    fc_good = [m for m in fc_marker if m.name in good_names]
+    fd_good = [m for m in fd_marker if m.name in good_names]
 
     print(f"[MarkerCalib] Gute Marker je Frame: A={len(fa_good)} B={len(fb_good)} C={len(fc_good)} D={len(fd_good)}")
 
+    # Auswahl der Quelle
     mode = 0
     source = []
     if frame_d is not None and len(fd_good) >= min_required:
@@ -132,11 +162,14 @@ def correct_marker_positions(
 
     print(f"[MarkerCalib] ✅ Verwende Frame-Set Mode={mode} mit {len(source)} stabilen Referenzmarkern")
 
-    relevant_frames = [frame for frame in (frame_a, frame_b, frame_c, frame_d) if frame is not None]
+    relevant_frames = [f for f in (frame_a, frame_b, frame_c, frame_d) if f is not None]
 
+    # Hauptschleife über alle selektierten Tracks
     for sm in selected_tracks:
-        if not all(marker_exists(sm, f) for f in relevant_frames):
-            print(f"[MarkerCalib] ⚠️ Überspringe {sm.name} – Marker fehlt in einem Frame.")
+        print(f"[MarkerCalib] --- Prüfe {sm.name} ---")
+        missing_frames = [f for f in relevant_frames if not marker_exists(sm, f)]
+        if missing_frames:
+            print(f"[MarkerCalib] ⚠️ Überspringe {sm.name} – keine Marker in Frames {missing_frames}")
             continue
 
         fa_sm_x, fa_sm_y = get_marker_position(sm, frame_a)
@@ -151,29 +184,24 @@ def correct_marker_positions(
 
             fa_gm_x, fa_gm_y = get_marker_position(gm, frame_a)
             fb_gm_x, fb_gm_y = get_marker_position(gm, frame_b)
+            fc_gm_x, fc_gm_y = get_marker_position(gm, frame_c) if frame_c else (0.0, 0.0)
+            fd_gm_x, fd_gm_y = get_marker_position(gm, frame_d) if frame_d else (0.0, 0.0)
 
-            if mode >= 3 and frame_c is not None:
-                fc_gm_x, fc_gm_y = get_marker_position(gm, frame_c)
-            if mode == 4 and frame_d is not None:
-                fd_gm_x, fd_gm_y = get_marker_position(gm, frame_d)
-
-            if mode == 4:
-                v_gm_x = 0.5 * ((fb_gm_x - fc_gm_x) + (fa_gm_x - fb_gm_x))
-                v_gm_y = 0.5 * ((fb_gm_y - fc_gm_y) + (fa_gm_y - fb_gm_y))
-            elif mode == 3:
+            if mode in (3, 4):
                 v_gm_x = 0.5 * ((fb_gm_x - fc_gm_x) + (fa_gm_x - fb_gm_x))
                 v_gm_y = 0.5 * ((fb_gm_y - fc_gm_y) + (fa_gm_y - fb_gm_y))
             elif mode == 2:
-                v_gm_x = (fa_gm_x - fb_gm_x)
-                v_gm_y = (fa_gm_y - fb_gm_y)
+                v_gm_x = fa_gm_x - fb_gm_x
+                v_gm_y = fa_gm_y - fb_gm_y
             else:
-                v_gm_x = 0.0
-                v_gm_y = 0.0
+                v_gm_x = v_gm_y = 0.0
 
             dx = fa_sm_x - fa_gm_x
             dy = fa_sm_y - fa_gm_y
             dist = (dx * dx + dy * dy) ** 0.5
             w = 1.0 / (1e-6 + dist)
+            if dist > 0.5:
+                print(f"[MarkerCalib] Distanz {sm.name}->{gm.name} = {dist:.4f} (Gewicht {w:.4f})")
 
             weighted_vx.append((v_gm_x, w))
             weighted_vy.append((v_gm_y, w))
@@ -184,6 +212,7 @@ def correct_marker_positions(
 
         avg_vx = _robust_weighted_mean(weighted_vx)
         avg_vy = _robust_weighted_mean(weighted_vy)
+        print(f"[MarkerCalib] Mittel Δx={avg_vx:.5f}, Δy={avg_vy:.5f}, Samples={len(weighted_vx)}")
 
         new_x = fb_sm_x + avg_vx
         new_y = fb_sm_y + avg_vy
