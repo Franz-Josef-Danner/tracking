@@ -16,19 +16,30 @@ mindestens die Hälfte der marker per Frame auf mindestens 2 Frames
 if good_marker = True
     fa = playhead frame
     fb = playhead frame - 1
-    fb = playhead frame - 2
-    fb = playhead frame - 3
+    fc = playhead frame - 2
+    fd = playhead frame - 3
     fa_tm = aktive marker auf fa
     fb_tm = aktive marker auf fb
     fc_tm = aktive marker auf fc
     fd_tm = aktive marker auf fd
     gm_fa_tm = good_marker == fa_tm
-    gm_fb_tm = good_marker == fb_tm
-    gm_fc_tm = good_marker == fc_tm
-    gm_fd_tm = good_marker == fd_tm
+    gm_fb_tm = gm_fa_tm == fb_tm
+    gm_fc_tm = gm_fb_tm == fc_tm
+    gm_fd_tm = gm_fc_tm == fd_tm
     a_gfam = anzahl gm_fa_tm
-    if a_gfam >= min
-        gm_fafb_tm = gm_fb_tm == gm_fa_tm
-        a_gfbm = anzahl gm_fafb_tm
-        if a_gfbm >= min
+    a_gfbm = anzahl gm_fb_tm
+    a_gfcm = anzahl gm_fc_tm
+    a_gfdm = anzahl gm_fd_tm
+    if a_gfdm >= min
+        every gm_fd_tm[i]
+            fd_tmx[i] = gm_fd_tm X position auf fd
+            fc_tmx[i] = gm_fd_tm X position auf fc
+            fb_tmx[i] = gm_fd_tm X position auf fb
+            fa_tmx[i] = gm_fd_tm X position auf fa
             
+            
+    elif a_gfcm >= min
+    elif a_gfbm >= min
+    elif a_gfam >= min
+    else
+        break           
