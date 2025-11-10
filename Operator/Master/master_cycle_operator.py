@@ -34,7 +34,17 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         print(f"[MASTER CYCLE][CLIP CHECK] clip_from_edit:    {clip_from_edit.name if clip_from_edit else None}")
         print(f"[MASTER CYCLE][CLIP CHECK] clip_from_tracking: {clip_from_tracking.name if clip_from_tracking else None}")
 
-        # Priorität: space_data.clip > edit_movieclip > scene.tracking.active
+        # Objekt-IDs und Pointer vergleichen
+        print("[MASTER CYCLE][CLIP ID CHECK] space_clip_id:", id(clip_from_space))
+        print("[MASTER CYCLE][CLIP ID CHECK] edit_clip_id:", id(clip_from_edit))
+        print("[MASTER CYCLE][CLIP ID CHECK] tracking_clip_id:", id(clip_from_tracking))
+        print("[MASTER CYCLE][CLIP ID CHECK] bpy.data.movieclips:", [c.name for c in bpy.data.movieclips])
+        for c in bpy.data.movieclips:
+            print(f"    -> {c.name} id={id(c)} tracking={len(c.tracking.tracks)} tracks")
+
+        # ------------------------------------------------------------
+        # Clip auswählen nach Priorität
+        # ------------------------------------------------------------
         clip = clip_from_space or clip_from_edit or clip_from_tracking
         if not clip or not hasattr(clip, "tracking") or not hasattr(clip.tracking, "tracks"):
             print("[MASTER CYCLE] ❌ Kein gültiger Clip gefunden – Abbruch des Rebuilds")
@@ -42,7 +52,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
         tracking = clip.tracking
         before_names = [t.name for t in tracking.tracks]
-        print(f"[MASTER CYCLE] Aktiver Clip: {clip.name}")
+        print(f"[MASTER CYCLE] Aktiver Clip: {clip.name} (id={id(clip)})")
         print(f"[MASTER CYCLE] Anzahl Tracks laut Clip: {len(before_names)}")
         print(f"[MASTER CYCLE] Vorher existierende Tracknamen ({len(before_names)}): "
               f"{before_names[:15]}{' ...' if len(before_names)>15 else ''}")
@@ -60,8 +70,22 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     print(f"[MASTER CYCLE][CHECK] ⚠️ Unterschied zwischen Clip.tracking und Scene.tracking ({len(diff)} Einträge)")
                 else:
                     print("[MASTER CYCLE][CHECK] ✅ Clip.tracking und Scene.tracking identisch")
+            else:
+                print("[MASTER CYCLE][CHECK] Szene.tracking.tracks: None oder leer")
         except Exception as e:
             print(f"[MASTER CYCLE][CHECK] Fehler bei Scene-Track-Abgleich: {e}")
+
+        # ------------------------------------------------------------
+        # Zusätzliche Diagnose: Vergleich anderer MovieClips
+        # ------------------------------------------------------------
+        try:
+            for c in bpy.data.movieclips:
+                same_name = c.name == clip.name
+                same_id = (id(c) == id(clip))
+                print(f"[MASTER CYCLE][COMPARE] Clip {c.name}: "
+                      f"same_name={same_name}, same_id={same_id}, tracks={len(c.tracking.tracks)}")
+        except Exception as e:
+            print(f"[MASTER CYCLE][COMPARE] Fehler beim Clip-Vergleich: {e}")
 
         # ------------------------------------------------------------
         # Szene vor Cleanup protokollieren
@@ -100,8 +124,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         print(f"[MASTER CYCLE] Scene keys after rebuild: {scene_keys_after}")
         print(f"[MASTER CYCLE] Gespeicherte good_tracks-Beispiele: {all_names[:10]}{' ...' if len(all_names)>10 else ''}")
         print(f"[MASTER CYCLE] --- Rebuild good_tracks END ---")
-
-
 
     # ------------------------------------------------------------
     # Hauptausführung
