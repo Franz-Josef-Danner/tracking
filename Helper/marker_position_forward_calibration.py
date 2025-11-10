@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------
 # Marker-Korrektur über bis zu 4 Frames mit dynamischem Rückfall-System,
 # robuster Mittelung (Trimming) und radialer Gewichtung.
-# Automatische Wahl zwischen scene["good_marker"] und scene["best_marker"].
+# Automatische Wahl zwischen scene["good_tracks"] und scene["best_tracks"].
 # Stellt sicher, dass selektierte Marker in allen relevanten Frames existieren.
 # ---------------------------------------------------------------------
 
@@ -58,17 +58,17 @@ def get_active_markers(context: bpy.types.Context, frame: Optional[int]) -> List
 # ----------------------------
 
 def _select_good_set(scene: bpy.types.Scene) -> Optional[List[bpy.types.MovieTrackingTrack]]:
-    has_good = "good_marker" in scene
-    has_best = "best_marker" in scene
+    has_good = "good_tracks" in scene
+    has_best = "best_tracks" in scene
     if has_good and has_best:
-        print("[MarkerCalib] ❌ Konflikt: Sowohl 'good_marker' als auch 'best_marker' vorhanden.")
+        print("[MarkerCalib] ❌ Konflikt: Sowohl 'good_tracks' als auch 'best_tracks' vorhanden.")
         return None
     if has_good:
-        print("[MarkerCalib] ✅ Verwende 'good_marker'-Set")
-        return list(scene["good_marker"])
+        print("[MarkerCalib] ✅ Verwende 'good_tracks'-Set")
+        return list(scene["good_tracks"])
     if has_best:
-        print("[MarkerCalib] ✅ Verwende 'best_marker'-Set")
-        return list(scene["best_marker"])
+        print("[MarkerCalib] ✅ Verwende 'best_tracks'-Set")
+        return list(scene["best_tracks"])
     print("[MarkerCalib] ⚠️ Kein gültiges Referenzset vorhanden")
     return None
 
