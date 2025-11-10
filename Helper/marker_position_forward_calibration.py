@@ -27,7 +27,6 @@ def get_marker_position(track: bpy.types.MovieTrackingTrack, frame: int) -> Tupl
     mk = _find_marker_at_frame(track, frame)
     if mk:
         return float(mk.co[0]), float(mk.co[1])
-    # Fallback: aktuelle Kopfposition, wenn Frame-Marker fehlt (sollte durch marker_exists verhindert werden)
     head = track.markers[0] if track.markers else None
     return (float(head.co[0]), float(head.co[1])) if head else (0.0, 0.0)
 
@@ -59,16 +58,18 @@ def get_active_markers(context: bpy.types.Context, frame: Optional[int]) -> List
 # ----------------------------
 
 def _select_good_set(scene: bpy.types.Scene) -> Optional[List[bpy.types.MovieTrackingTrack]]:
-    # Exakt ein Key darf existieren
     has_good = "good_marker" in scene
     has_best = "best_marker" in scene
     if has_good and has_best:
-        # Konflikt – bewusst abbrechen
+        print("[MarkerCalib] ❌ Konflikt: Sowohl 'good_marker' als auch 'best_marker' vorhanden.")
         return None
     if has_good:
+        print("[MarkerCalib] ✅ Verwende 'good_marker'-Set")
         return list(scene["good_marker"])
     if has_best:
+        print("[MarkerCalib] ✅ Verwende 'best_marker'-Set")
         return list(scene["best_marker"])
+    print("[MarkerCalib] ⚠️ Kein gültiges Referenzset vorhanden")
     return None
 
 def _robust_weighted_mean(values_with_weights: List[Tuple[float, float]]) -> float:
@@ -92,32 +93,31 @@ def correct_marker_positions(
     frame_c: Optional[int] = None,
     frame_d: Optional[int] = None,
 ) -> None:
-    """
-    Stabilisiert selektierte Marker im frame_a basierend auf Bewegungsstatistik
-    stabiler Referenzmarker (good/best) aus bis zu 3 vorherigen Frames.
-    """
+    print(f"\n[MarkerCalib] ---- Starte Marker-Korrektur ----")
+    print(f"[MarkerCalib] Frames: A={frame_a}, B={frame_b}, C={frame_c}, D={frame_d}")
+    print(f"[MarkerCalib] Selektierte Marker: {len(selected_tracks)}")
+
     scene = context.scene
     good_set = _select_good_set(scene)
     if good_set is None or len(good_set) == 0:
-        # Kein valider Referenzsatz – kein Eingriff
+        print("[MarkerCalib] ❌ Abbruch – kein valider Referenzsatz.")
         return
 
-    # Mindestanzahl stabiler Referenzmarker (hälfte des Zielwerts)
     min_required = float(getattr(scene, "kaiserlich_markers_per_frame", 20)) / 2.0
+    print(f"[MarkerCalib] Mindestanzahl Referenzmarker: {min_required}")
 
-    # aktive (nicht gemutete) Marker je Frame
     fa_marker = get_active_markers(context, frame_a)
     fb_marker = get_active_markers(context, frame_b)
     fc_marker = get_active_markers(context, frame_c) if frame_c is not None else []
     fd_marker = get_active_markers(context, frame_d) if frame_d is not None else []
 
-    # Schnittmenge mit good_set
     fa_good = [m for m in fa_marker if m in good_set]
     fb_good = [m for m in fb_marker if m in good_set]
     fc_good = [m for m in fc_marker if m in good_set]
     fd_good = [m for m in fd_marker if m in good_set]
 
-    # Fallback-Kaskade
+    print(f"[MarkerCalib] Gute Marker je Frame: A={len(fa_good)} B={len(fb_good)} C={len(fc_good)} D={len(fd_good)}")
+
     mode = 0
     source = []
     if frame_d is not None and len(fd_good) >= min_required:
@@ -127,15 +127,16 @@ def correct_marker_positions(
     elif len(fb_good) >= min_required:
         source = fb_good; mode = 2
     else:
-        # zu wenige stabile Referenzen oder nur aktueller Frame – keine Korrektur
+        print("[MarkerCalib] ⚠️ Zu wenige stabile Referenzen – keine Korrektur.")
         return
 
-    # Relevante Frames für Existenzprüfung der selektierten Marker
+    print(f"[MarkerCalib] ✅ Verwende Frame-Set Mode={mode} mit {len(source)} stabilen Referenzmarkern")
+
     relevant_frames = [frame for frame in (frame_a, frame_b, frame_c, frame_d) if frame is not None]
 
     for sm in selected_tracks:
-        # Selektierter Marker muss in allen relevanten Frames existieren
         if not all(marker_exists(sm, f) for f in relevant_frames):
+            print(f"[MarkerCalib] ⚠️ Überspringe {sm.name} – Marker fehlt in einem Frame.")
             continue
 
         fa_sm_x, fa_sm_y = get_marker_position(sm, frame_a)
@@ -156,7 +157,6 @@ def correct_marker_positions(
             if mode == 4 and frame_d is not None:
                 fd_gm_x, fd_gm_y = get_marker_position(gm, frame_d)
 
-            # Bewegungsvektoren (symmetrische Schätzung)
             if mode == 4:
                 v_gm_x = 0.5 * ((fb_gm_x - fc_gm_x) + (fa_gm_x - fb_gm_x))
                 v_gm_y = 0.5 * ((fb_gm_y - fc_gm_y) + (fa_gm_y - fb_gm_y))
@@ -170,7 +170,6 @@ def correct_marker_positions(
                 v_gm_x = 0.0
                 v_gm_y = 0.0
 
-            # Radiales Gewicht nach Distanz im Frame A
             dx = fa_sm_x - fa_gm_x
             dy = fa_sm_y - fa_gm_y
             dist = (dx * dx + dy * dy) ** 0.5
@@ -180,12 +179,12 @@ def correct_marker_positions(
             weighted_vy.append((v_gm_y, w))
 
         if not weighted_vx or not weighted_vy:
+            print(f"[MarkerCalib] ⚠️ Keine gewichteten Werte für {sm.name} – übersprungen.")
             continue
 
         avg_vx = _robust_weighted_mean(weighted_vx)
         avg_vy = _robust_weighted_mean(weighted_vy)
 
-        # Sanfte Korrektur mit Dämpfung und Kalibrierung
         new_x = fb_sm_x + avg_vx
         new_y = fb_sm_y + avg_vy
         calib_x = 0.5 * (fa_sm_x + new_x)
@@ -194,3 +193,6 @@ def correct_marker_positions(
         final_y = max(new_y * 0.95, min(new_y * 1.05, calib_y))
 
         set_marker_position(sm, frame_a, final_x, final_y)
+        print(f"[MarkerCalib] ✅ {sm.name} korrigiert: Δx={avg_vx:.5f}, Δy={avg_vy:.5f}, Final=({final_x:.5f}, {final_y:.5f})")
+
+    print("[MarkerCalib] ---- Korrektur abgeschlossen ----\n")
