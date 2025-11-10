@@ -1,41 +1,37 @@
 # Helper/marker_position_forward_calibration.py
 # ---------------------------------------------------------------------
 # UUID-basierte Version – kompatibel mit "good_tracks" / "best_tracks"
-# Persistent über track["kt_uid"], keine volatilen Speicheradressen mehr
+# Persistenz über Scene-Strings: "good_tracks" (UUID-Liste) und
+# "good_tracks_uuid_map" (als String gespeichertes Dict {uuid: name})
+# KEINE IDProperties auf MovieTrackingTrack!
 # ---------------------------------------------------------------------
 
 from typing import Iterable, List, Optional, Tuple
-import bpy, uuid
+import bpy, ast
 
 
 # ============================================================
 # Low-level Marker Utilities
 # ============================================================
 
-def _ensure_uuid(track: bpy.types.MovieTrackingTrack) -> str:
-    """Garantiert, dass jeder Track eine persistente UUID trägt."""
-    if "kt_uid" not in track:
-        track["kt_uid"] = str(uuid.uuid4())
-    return track["kt_uid"]
-
-def _find_marker_at_frame(track, frame):
+def _find_marker_at_frame(track, frame: int):
     try:
-        mk = track.markers.find_frame(frame)
+        mk = track.markers.find_frame(int(frame))
         return mk if mk and not mk.mute else None
     except Exception:
         return None
 
-def marker_exists(track, frame):
+def marker_exists(track, frame: int) -> bool:
     return _find_marker_at_frame(track, frame) is not None
 
-def get_marker_position(track, frame):
+def get_marker_position(track, frame: int) -> Tuple[float, float]:
     mk = _find_marker_at_frame(track, frame)
     if mk:
         return float(mk.co[0]), float(mk.co[1])
     head = track.markers[0] if track.markers else None
     return (float(head.co[0]), float(head.co[1])) if head else (0.0, 0.0)
 
-def set_marker_position(track, frame, x, y):
+def set_marker_position(track, frame: int, x: float, y: float):
     mk = _find_marker_at_frame(track, frame)
     if mk:
         mk.co[0] = float(x)
@@ -45,7 +41,7 @@ def _active_clip(context):
     space = getattr(context, "space_data", None)
     return getattr(space, "clip", None) if space else None
 
-def _iter_active_tracks_at_frame(context, frame):
+def _iter_active_tracks_at_frame(context, frame: int):
     clip = _active_clip(context)
     if not clip:
         return []
@@ -53,42 +49,105 @@ def _iter_active_tracks_at_frame(context, frame):
         if tr.select and marker_exists(tr, frame):
             yield tr
 
-def get_active_markers(context, frame):
+def get_active_markers(context, frame: Optional[int]):
     if frame is None:
         return []
     return list(_iter_active_tracks_at_frame(context, int(frame)))
 
 
 # ============================================================
-# Core Correction (UUID-basiert)
+# Core: Referenz-Set Auswahl & Mapping
 # ============================================================
 
 def _select_good_set(scene):
-    """Wählt das aktive Set aus der Szene und erkennt automatisch UUID- oder Namenlisten."""
+    """
+    Wählt 'good_tracks' oder 'best_tracks'.
+    Ermittelt, ob UUID-basiert (über Szenen-Strings) oder Namen-basiert.
+    """
     has_good = "good_tracks" in scene
     has_best = "best_tracks" in scene
 
     if has_good and has_best:
         print("[MarkerCalib] ❌ Konflikt: Sowohl 'good_tracks' als auch 'best_tracks' vorhanden.")
-        return None, None
+        return None, None, None
 
     key = "good_tracks" if has_good else ("best_tracks" if has_best else None)
     if key is None:
         print("[MarkerCalib] ⚠️ Kein gültiges Referenzset vorhanden")
-        return None, None
+        return None, None, None
 
     raw = list(scene[key])
-    # UUID-Erkennung: typische 36-stellige Zeichenkette mit Bindestrichen
+
+    # UUID-Erkennung: typische Strings mit Bindestrichen, ~36 Zeichen
     def _is_uuid(v: str) -> bool:
-        return isinstance(v, str) and len(v) >= 30 and "-" in v
+        return isinstance(v, str) and "-" in v and len(v) >= 30
 
     is_uuid_based = all(_is_uuid(v) for v in raw)
+
+    name_to_uuid = {}
+    if is_uuid_based:
+        # Versuche, die Mapping-Tabelle (UUID -> Name) zu lesen
+        map_key = f"{key}_uuid_map"
+        if map_key in scene:
+            try:
+                uuid_to_name = ast.literal_eval(scene[map_key])
+                # Rückwärts-Mapping für schnellen Name->UUID Lookup
+                name_to_uuid = {name: uid for uid, name in uuid_to_name.items()}
+            except Exception as e:
+                print(f"[MarkerCalib] ⚠️ UUID-Map konnte nicht gelesen werden: {e}")
+        else:
+            print(f"[MarkerCalib] ⚠️ Kein '{map_key}' im Scene-Storage – Fallback nur über Namen möglich.")
+
     print(f"[MarkerCalib] ✅ Verwende '{key}'-Set "
           f"({len(raw)} Einträge, {'UUID' if is_uuid_based else 'Name'}-basiert)")
-    return raw, is_uuid_based
+    return raw, is_uuid_based, name_to_uuid
+
+
+# ============================================================
+# Korrekturlogik
+# ============================================================
+
+def _robust_average(points: List[Tuple[float, float]]) -> Optional[Tuple[float, float]]:
+    """
+    Einfache robuste Mittelung:
+    - entfernt Ausreißer über Median-Filter (1-Punkt-Trim, falls >=3 Punkte)
+    - berechnet Mittelwert der verbleibenden Punkte
+    """
+    if not points:
+        return None
+    if len(points) == 1:
+        return points[0]
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    # Trim nur, wenn genug Punkte
+    if len(points) >= 3:
+        sx = sorted(xs); sy = sorted(ys)
+        sx = sx[1:-1]; sy = sy[1:-1]
+        if not sx or not sy:
+            sx, sy = xs, ys
+    else:
+        sx, sy = xs, ys
+    avg_x = sum(sx) / len(sx)
+    avg_y = sum(sy) / len(sy)
+    return (avg_x, avg_y)
+
+
+def _collect_prev_positions_for_track(track, frames: List[int]) -> List[Tuple[int, Tuple[float, float]]]:
+    out = []
+    for f in frames:
+        if f is None:
+            continue
+        if marker_exists(track, f):
+            out.append((f, get_marker_position(track, f)))
+    return out
 
 
 def correct_marker_positions(context, selected_tracks, frame_a, frame_b, frame_c=None, frame_d=None):
+    """
+    Korrigiert Marker-Positionen im Frame A anhand der gleichen Tracks in B/C/D.
+    – Verwendet UUID-Referenzmenge ('good_tracks' + Map) falls vorhanden.
+    – Loggt detailliert: verwendete Tracks, vorher/nachher, Delta.
+    """
     print("\n[MarkerCalib] ---- Starte Marker-Korrektur ----")
     print(f"[MarkerCalib] Frames: A={frame_a}, B={frame_b}, C={frame_c}, D={frame_d}")
     print(f"[MarkerCalib] Selektierte Marker (input): {len(selected_tracks)}")
@@ -100,37 +159,24 @@ def correct_marker_positions(context, selected_tracks, frame_a, frame_b, frame_c
         return
 
     print(f"[MarkerCalib] Aktiver Clip: {clip.name}")
-    good_values, uuid_based = _select_good_set(scene)
+    good_values, uuid_based, name_to_uuid = _select_good_set(scene)
     if not good_values:
         print("[MarkerCalib] ❌ Abbruch – kein valider Referenzsatz.")
         return
 
-    # --- Referenzmenge vorbereiten ---
-    all_tracks = list(clip.tracking.tracks)
-    track_map_uuid = { _ensure_uuid(t): t for t in all_tracks }
+    # Referenz-All-Set (für schnelles Membership)
+    good_set = set(good_values)
 
-    if uuid_based:
-        good_tracks = [track_map_uuid[uid] for uid in good_values if uid in track_map_uuid]
-        missing = [uid for uid in good_values if uid not in track_map_uuid]
-    else:
-        name_map = {t.name: t for t in all_tracks}
-        good_tracks = [name_map[n] for n in good_values if n in name_map]
-        missing = [n for n in good_values if n not in name_map]
-
-    print(f"[MarkerCalib] Aufgelöste Tracks: {len(good_tracks)}  Fehlende: {len(missing)}")
-    if missing:
-        print(f"[MarkerCalib] Fehlende Beispiele: {missing[:5]}")
-
-    # --- Vergleich zur aktuellen Auswahl ---
+    # Diagnose: Auswahl vs Referenz
     sel_names = [t.name for t in selected_tracks]
-    sel_uuids = [_ensure_uuid(t) for t in selected_tracks]
-
-    if uuid_based:
-        intersect = [uid for uid in sel_uuids if uid in good_values]
-        diff = [uid for uid in sel_uuids if uid not in good_values]
+    if uuid_based and name_to_uuid:
+        sel_uids = [name_to_uuid.get(n) for n in sel_names]
+        intersect = [uid for uid in sel_uids if uid and uid in good_set]
+        diff = [uid for uid in sel_uids if (uid is None) or (uid not in good_set)]
     else:
-        intersect = [n for n in sel_names if n in good_values]
-        diff = [n for n in sel_names if n not in good_values]
+        # Fallback: Namen vergleichen
+        intersect = [n for n in sel_names if n in good_set]
+        diff = [n for n in sel_names if n not in good_set]
 
     print(f"[MarkerCalib] Vergleich Selektierte vs Referenz:")
     print(f"   - Selektiert: {len(selected_tracks)}")
@@ -141,10 +187,9 @@ def correct_marker_positions(context, selected_tracks, frame_a, frame_b, frame_c
     if diff:
         print(f"   - Beispiele außerhalb: {diff[:5]}")
 
-    # --- Frameweise Analyse ---
+    # Aktive Marker in den Frames sammeln (für Übersicht)
     frames = [frame_a, frame_b, frame_c, frame_d]
     labels = ["A", "B", "C", "D"]
-
     for lbl, f in zip(labels, frames):
         if f is None:
             continue
@@ -152,67 +197,86 @@ def correct_marker_positions(context, selected_tracks, frame_a, frame_b, frame_c
         print(f"[MarkerCalib] Frame {lbl}({f}): {len(frame_tracks)} aktive Marker")
         if frame_tracks:
             print("   → Namen:", [t.name for t in frame_tracks][:10])
+        in_good = []
+        if uuid_based and name_to_uuid:
+            in_good = [t for t in frame_tracks if (name_to_uuid.get(t.name) in good_set)]
         else:
-            print("   → Keine aktiven Marker")
-
-        if uuid_based:
-            in_good = [t for t in frame_tracks if t.get("kt_uid") in good_values]
-        else:
-            in_good = [t for t in frame_tracks if t.name in good_values]
+            in_good = [t for t in frame_tracks if t.name in good_set]
         print(f"   → {len(in_good)} dieser Marker auch im Referenzset")
 
-    # --- Zählen existierender Referenzmarker ---
-    def _count_exist(tracks, f):
-        return sum(1 for t in tracks if marker_exists(t, f))
+    # ===========================
+    # KORREKTUR-PASS
+    # ===========================
+    used = 0
+    corrected = 0
+    skipped = 0
 
-    for lbl, f in zip(labels, frames):
-        if f is None:
-            continue
-        cnt = _count_exist(good_tracks, f)
-        print(f"[MarkerCalib] Existierende Referenzmarker @ {lbl}({f}): {cnt}")
+    prev_frames = [frame_b, frame_c, frame_d]  # B/C/D als Historie für Korrektur
 
-    # --- Aktive Marker pro Frame sammeln ---
-    fa_marker = get_active_markers(context, frame_a)
-    fb_marker = get_active_markers(context, frame_b)
-    fc_marker = get_active_markers(context, frame_c) if frame_c else []
-    fd_marker = get_active_markers(context, frame_d) if frame_d else []
-
-    # Objekt-Identität prüfen
-    if fa_marker and good_tracks:
-        overlap = sum(1 for m in fa_marker for g in good_tracks if m is g)
-        print(f"[MarkerCalib] FrameA Objekt-Identität mit Referenz: {overlap}/{len(fa_marker)}")
-
-    # --- Gute Marker je Frame ---
-    if uuid_based:
-        fa_good = [m for m in fa_marker if m.get("kt_uid") in good_values]
-        fb_good = [m for m in fb_marker if m.get("kt_uid") in good_values]
-        fc_good = [m for m in fc_marker if m.get("kt_uid") in good_values]
-        fd_good = [m for m in fd_marker if m.get("kt_uid") in good_values]
-    else:
-        fa_good = [m for m in fa_marker if m.name in good_values]
-        fb_good = [m for m in fb_marker if m.name in good_values]
-        fc_good = [m for m in fc_marker if m.name in good_values]
-        fd_good = [m for m in fd_marker if m.name in good_values]
-
-    print(f"[MarkerCalib] Gute Marker je Frame:")
-    print(f"   A={len(fa_good)}  B={len(fb_good)}  C={len(fc_good)}  D={len(fd_good)}")
-
-    # --- Diagnose ---
-    if sum(len(x) for x in (fa_good, fb_good, fc_good, fd_good)) == 0:
-        print("[MarkerCalib][DIAG] Kein Frame mit Übereinstimmung gefunden!")
-        if fa_marker:
-            ex = fa_marker[0]
-            print(f"[MarkerCalib][DIAG] Beispielmarker: {ex.name}, Typ={type(ex)}")
-            uid = ex.get("kt_uid")
-            if uuid_based:
-                exists = uid in good_values
-                print(f"[MarkerCalib][DIAG] Existiert im Referenzset (UUID)? {exists}")
-                print(f"[MarkerCalib][DIAG] Szene-Liste: {len(good_values)} UUIDs gespeichert.")
-            else:
-                print(f"[MarkerCalib][DIAG] Existiert im Referenzset (Name)? {ex.name in good_values}")
-                print(f"[MarkerCalib][DIAG] Szene-Liste: {len(good_values)} Namen gespeichert.")
-            print(f"[MarkerCalib][DIAG] Beispiele: {good_values[:10]}")
+    for tr in selected_tracks:
+        tr_name = tr.name
+        # prüfen, ob Track zum Referenz-Set gehört
+        in_set = False
+        if uuid_based and name_to_uuid:
+            uid = name_to_uuid.get(tr_name)
+            in_set = (uid in good_set) if uid else False
         else:
-            print("[MarkerCalib][DIAG] Keine aktiven Marker zur Analyse verfügbar.")
+            in_set = (tr_name in good_set)
 
+        if not in_set:
+            print(f"[MarkerCalib][SKIP] '{tr_name}' nicht im Referenz-Set.")
+            skipped += 1
+            continue
+
+        used += 1
+
+        # Positionssammlung: B/C/D vorhandene Marker
+        prev_pos = _collect_prev_positions_for_track(tr, prev_frames)
+        have_a = marker_exists(tr, frame_a)
+
+        print(f"[MarkerCalib][Track] {tr_name}: in_set={in_set}, "
+              f"prev_markers={len(prev_pos)}, has_A={have_a}")
+
+        if not have_a:
+            print(f"[MarkerCalib][SKIP] '{tr_name}' hat im Frame A({frame_a}) keinen Marker.")
+            skipped += 1
+            continue
+
+        if not prev_pos:
+            print(f"[MarkerCalib][SKIP] '{tr_name}': keine verwertbaren Vorframes (B/C/D).")
+            skipped += 1
+            continue
+
+        # Log Detailliste der Vorframes
+        for f, pos in prev_pos:
+            print(f"   · PrevPos @ {f}: ({pos[0]:.6f}, {pos[1]:.6f})")
+
+        # Zielposition = robuste Mittelung der Vorframes
+        tgt = _robust_average([p for _, p in prev_pos])
+        if tgt is None:
+            print(f"[MarkerCalib][SKIP] '{tr_name}': Robustmittelung fehlgeschlagen.")
+            skipped += 1
+            continue
+
+        before = get_marker_position(tr, frame_a)
+        dx = tgt[0] - before[0]
+        dy = tgt[1] - before[1]
+
+        # Nur loggen, wenn es eine sichtbare Abweichung gibt
+        print(f"[MarkerCalib][APPLY] '{tr_name}': "
+              f"A_before=({before[0]:.6f}, {before[1]:.6f}) → "
+              f"A_target=({tgt[0]:.6f}, {tgt[1]:.6f})  Δ=({dx:.6f}, {dy:.6f})")
+
+        # Anwenden
+        set_marker_position(tr, frame_a, tgt[0], tgt[1])
+        after = get_marker_position(tr, frame_a)
+
+        print(f"[MarkerCalib][OK] '{tr_name}': A_after=({after[0]:.6f}, {after[1]:.6f})")
+        corrected += 1
+
+    # Zusammenfassung
+    print(f"[MarkerCalib] ---- Korrektur-Zusammenfassung ----")
+    print(f"[MarkerCalib]   Verwendet (im Set): {used}")
+    print(f"[MarkerCalib]   Korrigiert:         {corrected}")
+    print(f"[MarkerCalib]   Übersprungen:       {skipped}")
     print("[MarkerCalib] ---- Diagnose-Phase abgeschlossen ----\n")
