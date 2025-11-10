@@ -91,8 +91,8 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 print(f"[MASTER CYCLE] Lösche bestehenden Scene-Key: {key}")
                 del scene[key]
 
-        # IDs speichern
-        id_list = [id(t) for t in all_tracks]
+        # IDs als Strings speichern
+        id_list = [str(id(t)) for t in all_tracks]
         print(f"[MASTER CYCLE] Gesammelte Track-IDs: {len(id_list)}")
         if id_list:
             print(f"[MASTER CYCLE] Beispiel-IDs: {id_list[:10]}{' ...' if len(id_list) > 10 else ''}")
