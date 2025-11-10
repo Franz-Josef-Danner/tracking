@@ -472,43 +472,27 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         clip = get_active_clip(context)
         if not clip or not getattr(clip, "tracking", None):
             return 0
-
         end_frame = int(scene.frame_end)
         current_frame = int(scene.frame_current)
         original_frame = current_frame
         remaining = end_frame - current_frame
-
         if remaining < min_distance_to_end:
             new_start = max(scene.frame_start, end_frame - min_distance_to_end)
             reset_to_frame(context, new_start)
             scene.frame_current = new_start
-
         tracking = clip.tracking
         active_tracks = [t.name for t in tracking.tracks if getattr(t, "select", False)]
         if not active_tracks:
             return 0
-
         ctx_override = get_clip_context()
         if not ctx_override:
             return 0
-
         frames_tracked = 0
         for _ in range(max_frames):
             if current_frame >= end_frame:
                 break
-
             active_tracks, dropped = filter_active_tracks_at_frame(context, active_tracks, current_frame)
             if not active_tracks:
                 break
-
             try:
                 apply_formula_on_selected_tracks(context, max_frames=5)
-            except Exception:
-                # Falls ein Fehler beim Tracking auftritt, einfach weiterfahren
-                pass
-
-            current_frame += 1
-            frames_tracked += 1
-
-        # Nachverfolgung abgeschlossen
-        return frames_tracked
