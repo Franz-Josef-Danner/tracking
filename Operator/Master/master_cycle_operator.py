@@ -1,4 +1,5 @@
 import bpy
+import uuid
 from bpy.types import Operator, Context
 
 # ---- Helper Imports ---------------------------------------------------------
@@ -7,8 +8,53 @@ from ...Helper.filter_all_tracks import filter_and_delete_all_tracks
 from ...Helper.filter_tracks import filter_problematic_tracks
 from ...Helper.update_default_sizes import update_default_sizes
 from ...Helper.find_clip_editor_area import find_clip_editor_area
-from ...Helper.snapshot import store_tracks_in_scene  # ✅ Neuer Import
 
+
+# ===================================================================
+# Zentrale Hilfsfunktion: UUID-basierte Track-Speicherung in Scene
+# ===================================================================
+
+def store_tracks_in_scene(scene, context, key="good_tracks"):
+    """
+    Erfasst alle Tracks des aktiven Clips, versieht sie mit persistenter UUID (track["kt_uid"])
+    und speichert die Liste der UUIDs und Namen im Scene-Storage.
+    """
+    clip = None
+    space = getattr(context, "space_data", None)
+    if space and getattr(space, "clip", None):
+        clip = space.clip
+    if not clip:
+        clip = getattr(context.scene.tracking, "active", None)
+    if not clip:
+        print("[store_tracks_in_scene] ❌ Kein aktiver Clip gefunden.")
+        return
+
+    tracking = clip.tracking
+    all_tracks = list(tracking.tracks)
+    print(f"[store_tracks_in_scene] Clip '{clip.name}' – {len(all_tracks)} Tracks erfasst")
+
+    # Alte Scene-Keys entfernen
+    for k in (key, f"{key}_names"):
+        if k in scene:
+            del scene[k]
+
+    uuid_list, name_list = [], []
+    for t in all_tracks:
+        if "kt_uid" not in t:
+            t["kt_uid"] = str(uuid.uuid4())
+        uuid_list.append(t["kt_uid"])
+        name_list.append(t.name)
+
+    scene[key] = uuid_list
+    scene[f"{key}_names"] = name_list
+
+    print(f"[store_tracks_in_scene] Gespeichert: {len(uuid_list)} UUIDs, {len(name_list)} Namen")
+    print(f"[store_tracks_in_scene] Beispiele UUIDs: {uuid_list[:5]}")
+
+
+# ===================================================================
+# Haupt-Operator
+# ===================================================================
 
 class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
     """Master Operator – Sets the playhead to the frame with the fewest active markers"""
@@ -18,7 +64,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     # ------------------------------------------------------------
-    # Interner Helper: Erzwingt einen Refresh des Clip-Kontexts
+    # Interner Helper: Erzwingt Refresh des Clip-Kontexts
     # ------------------------------------------------------------
     def _force_clip_refresh(self, context: Context, clip) -> None:
         window, area, region, space = None, None, None, None
@@ -61,7 +107,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             print(f"[MASTER CYCLE][REFRESH] WARNING select_all: {e}")
 
     # ------------------------------------------------------------
-    # Lokaler Helper: erstellt/erneuert den good_tracks String via Snapshot
+    # Lokaler Helper: Rebuild good_tracks via store_tracks_in_scene
     # ------------------------------------------------------------
     def _rebuild_good_tracks(self, context: Context, reason: str = ""):
         print(f"[MASTER CYCLE] --- Rebuild good_tracks START ({reason}) ---")
@@ -76,7 +122,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         print(f"[MASTER CYCLE][CLIP CHECK] clip_from_tracking: {getattr(clip_from_tracking, 'name', None) if clip_from_tracking else None}")
 
         clip = clip_from_space or clip_from_edit or clip_from_tracking
-        if not clip or not hasattr(clip, "tracking") or not hasattr(clip.tracking, "tracks"):
+        if not clip or not hasattr(clip, "tracking"):
             print("[MASTER CYCLE] ❌ Kein gültiger Clip gefunden – Abbruch des Rebuilds")
             return
 
@@ -85,7 +131,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         print(f"[MASTER CYCLE] Aktiver Clip: {clip.name} (id={id(clip)})")
         print(f"[MASTER CYCLE] Anzahl Tracks laut Clip: {len(list(clip.tracking.tracks))}")
 
-        # ✅ Neue zentrale Methode
+        # ✅ Persistente Speicherung (UUID-basiert)
         store_tracks_in_scene(scene, context, key="good_tracks")
 
         print(f"[MASTER CYCLE] Scene keys after rebuild: {list(scene.keys())}")
@@ -103,6 +149,9 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         frame = find_first_weak_frame(context)
         print(f"[MASTER CYCLE] find_first_weak_frame result: {frame}")
 
+        # ------------------------------------------------------------------
+        # CLEANUP-ZWEIG
+        # ------------------------------------------------------------------
         if frame is None:
             print("[MASTER CYCLE] No weak frame found – entering CLEANUP branch")
 
@@ -123,10 +172,9 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     print(f"[MASTER CYCLE] Assigned clip_ref to space.clip")
 
                 clip_obj = getattr(space, "clip", None)
-                if clip_obj is None:
+                if not clip_obj:
                     raise RuntimeError("No active clip in current context")
-                else:
-                    print(f"[MASTER CYCLE] Active clip in context: {clip_obj.name}")
+                print(f"[MASTER CYCLE] Active clip in context: {clip_obj.name}")
 
                 print("[MASTER CYCLE] Stage 1: filter_tracks (threshold=30.0)")
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
@@ -168,13 +216,10 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 op, os, np, ns = update_default_sizes(context)
                 print(f"[MASTER CYCLE] update_default_sizes returned: op={op}, os={os}, np={np}, ns={ns}")
 
-                reset_keys = ["frame_value_cache", "kaiserlich_best_thresholds"]
-                for k in reset_keys:
+                for k in ("frame_value_cache", "kaiserlich_best_thresholds"):
                     if k in scene:
                         del scene[k]
                         print(f"[MASTER CYCLE] Cleared scene cache: {k}")
-                    else:
-                        print(f"[MASTER CYCLE] Cache key not found: {k}")
 
                 self._rebuild_good_tracks(context, reason="Post-cache-reset cleanup")
 
@@ -197,6 +242,9 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 self.report({'ERROR'}, f"Error during filter process: {ex}")
                 return {'CANCELLED'}
 
+        # ------------------------------------------------------------------
+        # NORMALZWEIG
+        # ------------------------------------------------------------------
         print(f"[MASTER CYCLE] Weak frame found: {frame}")
         scene.frame_current = frame
         try:
@@ -224,9 +272,9 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
 
 # ---- Registration ----------------------------------------------------------
+
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_master_cycle_operator)
-
 
 def unregister():
     bpy.utils.unregister_class(KAISERLICHTRACKER_OT_master_cycle_operator)
