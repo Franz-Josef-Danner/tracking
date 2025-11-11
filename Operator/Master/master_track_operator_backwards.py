@@ -15,6 +15,11 @@ from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
 
+# ------------------------------------------------------------
+# Neuer Import: MarkerCalibration-Helper
+# ------------------------------------------------------------
+from ...Helper.marker_position_forward_calibration import find_active_tracks_key
+
 
 # ------------------------------------------------------------
 # Interner Helper: Speicherung aktiver Tracks in Scene-String
@@ -175,6 +180,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         # --- Vor jedem Calibration-Step sichern ---
         store_calibrate_tracks_in_scene(context, self._processing_names)
+
+        # --- NEU: Nach dem Speichern den MarkerCalibration-Helper aufrufen ---
+        try:
+            find_active_tracks_key(context.scene)
+        except Exception as e:
+            print(f"[MasterTrackBackwards] Fehler beim Aufruf von find_active_tracks_key: {e}")
 
         # Apply optional optimization formula
         try:
