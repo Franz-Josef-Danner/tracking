@@ -1,6 +1,7 @@
 # Helper/marker_position_forward_calibration.py
 # ---------------------------------------------------------------------
 # Szenen-String-Erkennung für "good_tracks" / "best_tracks" mit Logs
+# + Ausgabe des neuen Strings "calibrate_tracks"
 # Kompatibel mit UUID-Map-Varianten: "<key>" (List/String) und
 # optional "<key>_uuid_map" (Dict-String {uuid: name})
 # ---------------------------------------------------------------------
@@ -24,11 +25,9 @@ def _read_scene_string(scene: bpy.types.Scene, key: str) -> Tuple[Optional[Any],
         try:
             parsed = ast.literal_eval(raw)
         except Exception:
-            # Fallback: Ungeparster String
             parsed = raw
-    # Länge heuristisch bestimmen
     try:
-        length = len(parsed)  # list/dict/tuple
+        length = len(parsed)
     except Exception:
         length = 0
     return parsed, length
@@ -38,12 +37,8 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     """
     Prüft priorisiert auf 'best_tracks', danach auf 'good_tracks'.
     Loggt präzise, was gefunden wurde (inkl. Größen/Map-Status).
-    Rückgabe:
-      - active_key: 'best_tracks' | 'good_tracks' | None
-      - meta: {
-          'best': {'present': bool, 'len': int, 'has_uuid_map': bool, 'map_len': int},
-          'good': {'present': bool, 'len': int, 'has_uuid_map': bool, 'map_len': int}
-        }
+    Zusätzlich wird der Inhalt von 'calibrate_tracks' geloggt,
+    falls vorhanden.
     """
     meta = {
         'best': {'present': False, 'len': 0, 'has_uuid_map': False, 'map_len': 0},
@@ -73,6 +68,35 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     print(f"[MarkerCalibration][SCAN] good_tracks      present={meta['good']['present']} len={meta['good']['len']}")
     print(f"[MarkerCalibration][SCAN] good_tracks_uuid_map present={meta['good']['has_uuid_map']} len={meta['good']['map_len']}")
 
+    # --- CALIBRATE (NEU) ---
+    calibrate_raw = scene.get("calibrate_tracks")
+    if calibrate_raw is not None:
+        try:
+            if isinstance(calibrate_raw, str):
+                try:
+                    calibrate_eval = ast.literal_eval(calibrate_raw)
+                except Exception:
+                    # Kommagetrennt gespeichert -> in Liste umwandeln
+                    calibrate_eval = calibrate_raw.split(",") if "," in calibrate_raw else [calibrate_raw]
+            else:
+                calibrate_eval = calibrate_raw
+
+            if isinstance(calibrate_eval, (list, tuple, set)):
+                preview = list(calibrate_eval)[:10]
+                print(f"[MarkerCalibration][SCAN] calibrate_tracks present=True len={len(calibrate_eval)}")
+                print(f"[MarkerCalibration][DATA] calibrate_tracks Beispiele ({len(calibrate_eval)}): {preview}")
+            elif isinstance(calibrate_eval, dict):
+                preview = list(calibrate_eval.keys())[:10]
+                print(f"[MarkerCalibration][SCAN] calibrate_tracks present=True dict_keys={len(calibrate_eval)}")
+                print(f"[MarkerCalibration][DATA] calibrate_tracks Dict-Keys: {preview}")
+            else:
+                print(f"[MarkerCalibration][SCAN] calibrate_tracks Typ={type(calibrate_eval).__name__} Inhalt={str(calibrate_eval)[:200]}")
+        except Exception as e:
+            print(f"[MarkerCalibration][DATA][ERROR] Konnte Inhalt von 'calibrate_tracks' nicht lesen: {e}")
+    else:
+        print("[MarkerCalibration][SCAN] calibrate_tracks present=False len=0")
+
+    # --- SELECTION ---
     active_key = None
     if meta['best']['present'] and meta['best']['len'] > 0:
         active_key = "best_tracks"
@@ -83,12 +107,11 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     else:
         print("[MarkerCalibration][SELECT] Kein aktiver Key gefunden (weder 'best_tracks' noch 'good_tracks').")
 
-    # --- NEU: Inhalt des aktiven Scene-Strings anzeigen ---
+    # --- Inhalt des aktiven Scene-Strings anzeigen ---
     if active_key:
         try:
             data_raw = scene.get(active_key)
             if isinstance(data_raw, str):
-                import ast
                 try:
                     data_eval = ast.literal_eval(data_raw)
                 except Exception:
@@ -110,7 +133,6 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     return active_key, meta
 
 
-# Beispiel: In Ihrer Korrekturfunktion aufrufen
 def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
     """
     Wrapper zur Ermittlung des aktiven Referenz-Keys mit Log.
