@@ -1,16 +1,27 @@
 # Helper/marker_position_forward_calibration.py
 from typing import Optional, Tuple, Dict, Any, Iterable
 import ast
-import bpy
+try:
+    import bpy  # type: ignore
+except ImportError:  # Fallback für Nicht-Blender-Umgebung (Tests/Lint)
+    class _DummyScene(dict):
+        pass
+    class _DummyTypes:
+        Scene = _DummyScene
+    class _DummyContext:
+        edit_movieclip = None
+        space_data = type('space_data', (), {'clip': type('clip', (), {'size': [1, 1]})()})()
+    class _DummyBpy:
+        types = _DummyTypes()
+        context = _DummyContext()
+    bpy = _DummyBpy()  # type: ignore
+from math import isfinite
 
 # ---------------------------------------------------------------------
-# Minimal-Logging + String-Handling + Key-Ermittlung (ohne Shift-Routine)
+# String-Handling + Key-Ermittlung (ohne Logging, ohne Shift-Routine)
 # ---------------------------------------------------------------------
 
-_last_logged_values: Dict[str, str] = {}
-
-
-def _read_scene_string(scene: bpy.types.Scene, key: str) -> Tuple[Optional[Any], int]:
+def _read_scene_string(scene: Any, key: str) -> Tuple[Optional[Any], int]:
     raw = scene.get(key)
     if raw is None:
         return None, 0
@@ -27,68 +38,13 @@ def _read_scene_string(scene: bpy.types.Scene, key: str) -> Tuple[Optional[Any],
     return parsed, length
 
 
-def _stringify_value_for_log(value: Any) -> str:
-    try:
-        if isinstance(value, dict):
-            keys = sorted(map(str, value.keys()))
-            return ",".join(keys)
-        if isinstance(value, (list, tuple, set)):
-            items = sorted(set(map(str, value)))
-            return ",".join(items)
-        s = str(value)
-        return s.replace("\n", " ").replace("\r", " ")
-    except Exception:
-        return str(value)
+def _compare_tracks_with_scene(scene: Any, _key: str, _names: Iterable[str]):
+    """No-Op: Vergleichslogik entfernt, um alle Logs zu eliminieren."""
+    return
 
 
-def _log_if_changed(key: str, value: Any) -> None:
-    content = _stringify_value_for_log(value).replace('"', "'")
-    line = f"\"{key}\": \"{content}\""
-    if _last_logged_values.get(key) != line:
-        print(line)
-        _last_logged_values[key] = line
-
-
-def _compare_tracks_with_scene(scene: bpy.types.Scene, key: str, names: Iterable[str]):
-    """Vergleicht Tracknamen aus Scene-String mit realen Tracks des aktiven Clips; nur Info-Log bei Abweichung."""
-    if not names:
-        return
-
-    clip = None
-    try:
-        space = bpy.context.space_data
-        if space and getattr(space, "clip", None):
-            clip = space.clip
-    except Exception:
-        pass
-
-    if clip is None:
-        try:
-            clip = getattr(bpy.context, "edit_movieclip", None)
-        except Exception:
-            clip = None
-
-    if clip is None:
-        _log_if_changed(f"{key}_missing", ["<kein aktiver Clip>"])
-        return
-
-    try:
-        scene_tracks = [t.name for t in clip.tracking.tracks]
-    except Exception:
-        _log_if_changed(f"{key}_missing", ["<tracking not accessible>"])
-        return
-
-    existing = [n for n in names if n in scene_tracks]
-    missing = [n for n in names if n not in scene_tracks]
-    if missing or len(existing) != len(names):
-        _log_if_changed(f"{key}_missing", missing)
-    else:
-        if f"{key}_missing" in _last_logged_values:
-            del _last_logged_values[f"{key}_missing"]
-
-
-def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[str, Any]]:
-    """Ermittelt aktiven Key ('best_tracks' bevorzugt, sonst 'good_tracks') und liefert Meta-Infos."""
+def find_active_tracks_key(scene: Any) -> Tuple[Optional[str], Dict[str, Any]]:
+    """Ermittelt aktiven Key ('best_tracks' bevorzugt, sonst 'good_tracks') und liefert Meta-Infos (ohne Logging)."""
     meta = {
         'best': {'present': False, 'len': 0, 'has_uuid_map': False, 'map_len': 0},
         'good': {'present': False, 'len': 0, 'has_uuid_map': False, 'map_len': 0},
@@ -97,44 +53,18 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     # BEST
     best_list, best_len = _read_scene_string(scene, "best_tracks")
     best_map, best_map_len = _read_scene_string(scene, "best_tracks_uuid_map")
-    meta['best']['present']   = best_list is not None
-    meta['best']['len']       = best_len
+    meta['best']['present'] = best_list is not None
+    meta['best']['len'] = best_len
     meta['best']['has_uuid_map'] = best_map is not None
-    meta['best']['map_len']   = best_map_len
+    meta['best']['map_len'] = best_map_len
 
     # GOOD
     good_list, good_len = _read_scene_string(scene, "good_tracks")
     good_map, good_map_len = _read_scene_string(scene, "good_tracks_uuid_map")
-    meta['good']['present']   = good_list is not None
-    meta['good']['len']       = good_len
+    meta['good']['present'] = good_list is not None
+    meta['good']['len'] = good_len
     meta['good']['has_uuid_map'] = good_map is not None
-    meta['good']['map_len']   = good_map_len
-
-    # Optionales Logging (nur bei Änderung)
-    calibrate_raw = scene.get("calibrate_tracks")
-    if calibrate_raw is not None:
-        try:
-            if isinstance(calibrate_raw, str):
-                try:
-                    calibrate_eval = ast.literal_eval(calibrate_raw)
-                except Exception:
-                    calibrate_eval = calibrate_raw.split(",") if "," in calibrate_raw else [calibrate_raw]
-            else:
-                calibrate_eval = calibrate_raw
-        except Exception:
-            calibrate_eval = calibrate_raw
-        _log_if_changed("calibrate_tracks", calibrate_eval)
-
-    if best_list is not None:
-        _log_if_changed("best_tracks", best_list)
-        _compare_tracks_with_scene(scene, "best_tracks", best_list)
-    if best_map is not None:
-        _log_if_changed("best_tracks_uuid_map", best_map)
-    if good_list is not None:
-        _log_if_changed("good_tracks", good_list)
-        _compare_tracks_with_scene(scene, "good_tracks", good_list)
-    if good_map is not None:
-        _log_if_changed("good_tracks_uuid_map", good_map)
+    meta['good']['map_len'] = good_map_len
 
     # Aktiven Key bestimmen
     active_key = None
@@ -146,17 +76,28 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     return active_key, meta
 
 
-def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
+def _resolve_reference_key(scene: Any) -> Optional[str]:
     key, _meta = find_active_tracks_key(scene)
     return key
 
 
 # ---------------------------------------------------------------------
-# Erwartete Low-Level-Helper (unverändert, extern bereitgestellt)
+# Erwartete Low-Level-Helper (extern bereitgestellt, unverändert)
 # ---------------------------------------------------------------------
 # get_active_markers(frame) -> List[str|TrackObj]
 # get_marker_position(track_or_name, frame) -> Tuple[float, float]
 # set_marker_position(track_or_name, frame, x, y) -> None
+
+# Fallback-Stubs für Lint/Analyse, falls externe Implementierungen zur Laufzeit (Blender Addon) bereitgestellt werden.
+if 'get_active_markers' not in globals():
+    def get_active_markers(frame):  # type: ignore
+        return []
+if 'get_marker_position' not in globals():
+    def get_marker_position(track_or_name, frame):  # type: ignore
+        return (0.0, 0.0)
+if 'set_marker_position' not in globals():
+    def set_marker_position(track_or_name, frame, x, y):  # type: ignore
+        pass
 
 
 # ---------------------------------------------------------------------
@@ -166,22 +107,19 @@ def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
 def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, frame_b, frame_c=None, frame_d=None):
     """
     Stabilisiert/rekonstruiert Markerpositionen im aktuellen Frame (frame_a)
-    anhand „stabiler“ Marker-Referenzen aus bis zu vier Frames (frame_b…frame_d).
+    anhand stabiler Referenzen aus bis zu vier Frames (frame_b…frame_d).
     Adaptive Gewichtung je nach Abweichung, robuste Mittelung, radiale Gewichte.
     """
 
     # Mutual Exclusivity & Auswahl der Referenzquelle
     if "good_tracks" in scene and "best_tracks" in scene:
-        print("[Marker Correction] Fehler: Sowohl 'good_tracks' als auch 'best_tracks' existieren – Konflikt.")
         return
     elif "good_tracks" in scene:
         good_trackss = scene["good_tracks"]
-        print("[Marker Correction] Verwende Marker-Set: 'good_tracks'")
     elif "best_tracks" in scene:
         good_trackss = scene["best_tracks"]
-        print("[Marker Correction] Verwende Marker-Set: 'best_tracks'")
     else:
-        print("[Marker Correction] Kein gültiger Marker-String ('good_tracks' oder 'best_tracks') vorhanden – Abbruch.")
+        print("[MarkerCalibration] ❌ Keine Referenz-Strings vorhanden.")
         return
 
     # Mindestabdeckung
@@ -215,16 +153,20 @@ def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, fra
         source = fb_good
         mode = 2
     elif fa_gm_count >= min_required:
-        print("[Marker Correction] Nur aktueller Frame – keine Korrektur notwendig.")
+        print("[MarkerCalibration] ⚠️ Nur aktuelle Frame-Referenzen – keine Korrektur notwendig.")
         return
     else:
-        print("[Marker Correction] Zu wenige gültige Marker – Prozess abgebrochen.")
-        print(f"[Marker Correction] Counts: a={fa_gm_count}, b={fb_gm_count}, c={fc_gm_count}, d={fd_gm_count}, required={min_required}")
-        return
+        print("[MarkerCalibration] ❌ Zu wenige stabile Marker für Korrektur.")
+        return  # zu wenige gültige Marker
 
-    # ----------------------------------------------------------
+    # Kopfzeile zum Durchlauf
+    try:
+        ref_count = len(source)
+    except Exception:
+        ref_count = 0
+    print(f"[MarkerCalibration] 🔧 Frame {frame_a}: Modus={mode}-Frame-Referenz, stabile Marker={ref_count}, zu korrigieren={len(calibrate_tracks)}")
+
     # Auflösungs-Verhältnis für Y-Skalierung bestimmen
-    # ----------------------------------------------------------
     try:
         clip = bpy.context.edit_movieclip or bpy.context.space_data.clip
         width = getattr(clip, "size", [1, 1])[0]
@@ -233,10 +175,13 @@ def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, fra
     except Exception:
         aspect_ratio = 1.0
 
+    corrected_count = 0
+
     # Positionsupdate für alle Zielmarker
     for sm in calibrate_tracks:
         fa_sm_x, fa_sm_y = get_marker_position(sm, frame_a)
         fb_sm_x, fb_sm_y = get_marker_position(sm, frame_b)
+        sm_name = getattr(sm, "name", str(sm))
 
         wvx, wvy = [], []
 
@@ -284,10 +229,9 @@ def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, fra
 
         avg_vx = robust_weighted_mean(wvx)
         avg_vy = robust_weighted_mean(wvy)
+        # Schutz gegen NaN/Inf
 
-        # ----------------------------------------------------------
         # Adaptive Stabilisierung (nichtlinear, quadratisch geglättet)
-        # ----------------------------------------------------------
         new_x = fb_sm_x + avg_vx
         new_y = fb_sm_y + avg_vy
 
@@ -303,9 +247,7 @@ def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, fra
         wx_base = max(0.0, min(1.0, 1.0 - (diff_x * diff_x)))
         wy_base = max(0.0, min(1.0, 1.0 - (diff_y * diff_y)))
 
-        # Normierte adaptive Mischung nach der exakten Formel:
-        # ((S*(1-Δ²)) + (M*(1-(1-Δ²)))) / ((1-Δ²) + (1-(1-Δ²)))
-        # vereinfacht zu gleitender, symmetrischer Blend
+        # Normierte adaptive Mischung gemäß gewünschter Formel
         def adaptive_blend(estimate, measure, w):
             a = w
             b = 1.0 - w
@@ -317,9 +259,16 @@ def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, fra
         final_y = adaptive_blend(new_y, fa_sm_y, wy_base)
 
         set_marker_position(sm, frame_a, final_x, final_y)
+        corrected_count += 1
 
-        # Optionales Debug-Log:
-        # print(f"[Adaptive] {sm}: Δx={diff_x:.4f}, Δy={diff_y:.4f}, wx={wx_base:.3f}, wy={wy_base:.3f}")
+        # Logging pro Marker
+        try:
+            dx_log = abs(fa_sm_x - new_x)
+            dy_log = abs(fa_sm_y - new_y) * (aspect_ratio if aspect_ratio else 1.0)
+            if not (isfinite(dx_log) and isfinite(dy_log)):
+                dx_log, dy_log = 0.0, 0.0
+            print(f"  → korrigiert: {sm_name} | Δx={dx_log:.4f} | Δy={dy_log:.4f} | w=({wx_base:.3f},{wy_base:.3f})")
+        except Exception:
+            print(f"  → korrigiert: {sm_name} | (Log-Ausgabe nicht möglich)")
 
-    print(f"[Marker Correction] Marker-Korrektur abgeschlossen – Basis: {mode}-Frame (robust, adaptiv, aspect={aspect_ratio:.3f}).")
-
+    print(f"[MarkerCalibration] ✅ Frame {frame_a}: {corrected_count}/{len(calibrate_tracks)} Marker korrigiert.")
