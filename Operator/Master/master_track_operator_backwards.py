@@ -34,7 +34,7 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         return
 
     try:
-        # Alte Einträge entfernen
+        # Alte Einträge bereinigen
         for key in ("calibrate_tracks", "calibrate_tracks_uuid_map"):
             if key in scene:
                 del scene[key]
@@ -43,15 +43,21 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         if not clip or not getattr(clip, "tracking", None):
             return
 
-        # UUIDs erzeugen (ohne an Track-Objekte anzuhängen)
+        # UUID-Map erzeugen (keine Attribute an Track-Objekten!)
         import uuid as _uuid
         uuid_map: Dict[str, str] = {}
         for name in track_names:
             uuid_map[str(_uuid.uuid4())] = name
 
-        # Speicherung als Strings (kompatibel mit good/best_tracks)
+        # Speicherung in Szene
         scene["calibrate_tracks"] = ",".join(track_names)
         scene["calibrate_tracks_uuid_map"] = str(uuid_map)
+
+        # Direkt danach MarkerCalibration-Helper aufrufen
+        try:
+            find_active_tracks_key(scene)
+        except Exception as e:
+            print(f"[store_calibrate_tracks_in_scene] Fehler beim find_active_tracks_key: {e}")
 
     except Exception as e:
         print(f"[store_calibrate_tracks_in_scene] Fehler: {e}")
@@ -180,12 +186,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         # --- Vor jedem Calibration-Step sichern ---
         store_calibrate_tracks_in_scene(context, self._processing_names)
-
-        # --- NEU: Nach dem Speichern den MarkerCalibration-Helper aufrufen ---
-        try:
-            find_active_tracks_key(context.scene)
-        except Exception as e:
-            print(f"[MasterTrackBackwards] Fehler beim Aufruf von find_active_tracks_key: {e}")
 
         # Apply optional optimization formula
         try:
