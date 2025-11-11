@@ -9,7 +9,7 @@
 from typing import Iterable, List, Optional, Tuple
 import bpy, ast
 
-from Helper.snapshot import store_tracks_in_scene
+from ..Helper.snapshot import store_tracks_in_scene
 
 
 # ============================================================
