@@ -4,7 +4,7 @@ import ast
 import bpy
 
 # ---------------------------------------------------------------------
-# Minimal-Logging + String-Handling + Key-Ermittlung
+# Minimal-Logging + String-Handling + Key-Ermittlung (ohne Shift-Routine)
 # ---------------------------------------------------------------------
 
 _last_logged_values: Dict[str, str] = {}
@@ -97,18 +97,18 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     # BEST
     best_list, best_len = _read_scene_string(scene, "best_tracks")
     best_map, best_map_len = _read_scene_string(scene, "best_tracks_uuid_map")
-    meta['best']['present'] = best_list is not None
-    meta['best']['len'] = best_len
+    meta['best']['present']   = best_list is not None
+    meta['best']['len']       = best_len
     meta['best']['has_uuid_map'] = best_map is not None
-    meta['best']['map_len'] = best_map_len
+    meta['best']['map_len']   = best_map_len
 
     # GOOD
     good_list, good_len = _read_scene_string(scene, "good_tracks")
     good_map, good_map_len = _read_scene_string(scene, "good_tracks_uuid_map")
-    meta['good']['present'] = good_list is not None
-    meta['good']['len'] = good_len
+    meta['good']['present']   = good_list is not None
+    meta['good']['len']       = good_len
     meta['good']['has_uuid_map'] = good_map is not None
-    meta['good']['map_len'] = good_map_len
+    meta['good']['map_len']   = good_map_len
 
     # Optionales Logging (nur bei Änderung)
     calibrate_raw = scene.get("calibrate_tracks")
@@ -142,12 +142,6 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
         active_key = "best_tracks"
     elif meta['good']['present'] and meta['good']['len'] > 0:
         active_key = "good_tracks"
-
-    # Best-effort Nebenroutine; Fehler dürfen den Hauptfluss nicht stoppen
-    try:
-        shift_calibrate_tracks_down(scene)
-    except Exception:
-        pass
 
     return active_key, meta
 
@@ -299,55 +293,3 @@ def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, fra
         final_y = (new_y * w_y + fa_sm_y * (1.0 - w_y))
 
         set_marker_position(sm, frame_a, final_x, final_y)
-
-    print(f"[Marker Correction] Marker-Korrektur abgeschlossen – Basis: {mode}-Frame (robust, adaptiv).")
-
-
-# ---------------------------------------------------------------------
-# Zusätzliche Routine: Verschiebt alle Calibrate-Tracks um 0.1 nach unten
-# (Best-effort, unverändert vom Aufrufpfad her)
-# ---------------------------------------------------------------------
-def shift_calibrate_tracks_down(scene: bpy.types.Scene) -> None:
-    calibrate_raw = scene.get("calibrate_tracks")
-    if calibrate_raw is None:
-        return
-
-    try:
-        if isinstance(calibrate_raw, str):
-            try:
-                calibrate_names = ast.literal_eval(calibrate_raw)
-            except Exception:
-                calibrate_names = calibrate_raw.split(",") if "," in calibrate_raw else [calibrate_raw]
-        else:
-            calibrate_names = calibrate_raw
-    except Exception:
-        return
-
-    if not calibrate_names:
-        return
-
-    clip = None
-    try:
-        space = bpy.context.space_data
-        if space and getattr(space, "clip", None):
-            clip = space.clip
-    except Exception:
-        pass
-    if clip is None:
-        try:
-            clip = getattr(bpy.context, "edit_movieclip", None)
-        except Exception:
-            clip = None
-
-    if clip is None or not getattr(clip, "tracking", None):
-        return
-
-    tracks = {t.name: t for t in clip.tracking.tracks}
-    for name in calibrate_names:
-        tr = tracks.get(str(name))
-        if not tr:
-            continue
-        for mk in tr.markers:
-            if getattr(mk, "mute", False):
-                continue
-            mk.co[1] = mk.co[1] - 0.1
