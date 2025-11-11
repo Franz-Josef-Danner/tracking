@@ -106,6 +106,29 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
     def execute(self, context: Context):
         scene = context.scene
+
+        # ===============================================================
+        # Vollständige Scene-Bereinigung beim Auslösen des Operators
+        # ===============================================================
+        # Entfernt sämtliche gespeicherten Track-Strings inkl. Varianten
+        # (UUID-Maps, Namenslisten, Kalibrierungsdaten usw.).
+        # Dadurch wird sichergestellt, dass keine alten Datenreste
+        # aus vorigen Tracking-Zyklen verwendet werden.
+        try:
+            keys_to_delete = [
+                "good_tracks", "good_tracks_names", "good_tracks_uuid_map",
+                "best_tracks", "best_tracks_names", "best_tracks_uuid_map",
+                "calibrate_tracks", "calibrate_tracks_names", "calibrate_tracks_uuid_map",
+                "frame_value_cache", "kaiserlich_best_thresholds"
+            ]
+
+            for _k in keys_to_delete:
+                if _k in scene:
+                    del scene[_k]
+
+        except Exception as ex:
+            print(f"[MasterCycle][WARN] Scene cleanup skipped due to error: {ex}")
+
         frame = find_first_weak_frame(context)
 
         if frame is None:
