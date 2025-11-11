@@ -44,10 +44,8 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         scene["calibrate_tracks"] = ",".join(track_names)
 
         # Optionale Debug-Ausgabe zur Kontrolle
-        print(f"[MasterTrackCycle] Scene-String 'calibrate_tracks' gespeichert – {len(track_names)} Tracks.")
     except Exception as e:
-        print(f"[MasterTrackCycle][WARN] Konnte Scene-String 'calibrate_tracks' nicht speichern: {e}")
-
+        pass
 
 # =====================================================================
 # Hauptoperator
@@ -127,7 +125,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # Referenz-Key bestimmen
         # --------------------------------------------------------
         self._active_ref_key = _resolve_reference_key(scene)
-        print(f"[MasterTrackCycle] Initialer Referenz-Key: {self._active_ref_key}")
 
         # --------------------------------------------------------
         # NEU: Aktuell selektierte und aktive Tracks speichern
