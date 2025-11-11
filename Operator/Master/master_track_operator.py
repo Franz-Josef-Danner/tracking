@@ -36,16 +36,34 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         return
 
     try:
-        # Existierende Einträge bereinigen (optional)
-        if "calibrate_tracks" in scene:
-            del scene["calibrate_tracks"]
+        # Alte Einträge bereinigen
+        for key in ("calibrate_tracks", "calibrate_tracks_uuid_map"):
+            if key in scene:
+                del scene[key]
 
-        # Speicherung als kommagetrennter String (kompatibel zu anderen Strings)
+        clip = getattr(context.space_data, "clip", None)
+        if not clip or not getattr(clip, "tracking", None):
+            return
+
+        uuid_map: Dict[str, str] = {}
+
+        # UUIDs generieren (stabil pro Track, ohne IDProperties)
+        import uuid as _uuid
+        for tr in clip.tracking.tracks:
+            if tr.name in track_names:
+                track_uuid = getattr(tr, "kaiserlich_uuid", None)
+                if not track_uuid:
+                    # Erzeuge UUID und merke sie temporär am Track
+                    track_uuid = str(_uuid.uuid4())
+                    setattr(tr, "kaiserlich_uuid", track_uuid)
+                uuid_map[track_uuid] = tr.name
+
+        # Speicherung als Strings
         scene["calibrate_tracks"] = ",".join(track_names)
+        scene["calibrate_tracks_uuid_map"] = str(uuid_map)
 
-        # Optionale Debug-Ausgabe zur Kontrolle
     except Exception as e:
-        pass
+        print(f"[store_calibrate_tracks_in_scene] Fehler: {e}")
 
 # =====================================================================
 # Hauptoperator

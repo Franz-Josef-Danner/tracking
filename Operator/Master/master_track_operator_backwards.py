@@ -17,6 +17,46 @@ from ...Helper.frame_track_progress import compute_marker_progress
 
 
 # ------------------------------------------------------------
+# Interner Helper: Speicherung aktiver Tracks in Scene-String
+# ------------------------------------------------------------
+def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
+    """
+    Speichert die aktuell selektierten und aktiven Tracks
+    im Scene-String 'calibrate_tracks' und 'calibrate_tracks_uuid_map'.
+    """
+    scene = context.scene
+    if not track_names:
+        return
+
+    try:
+        # Alte Einträge entfernen
+        for key in ("calibrate_tracks", "calibrate_tracks_uuid_map"):
+            if key in scene:
+                del scene[key]
+
+        clip = getattr(context.space_data, "clip", None)
+        if not clip or not getattr(clip, "tracking", None):
+            return
+
+        uuid_map: Dict[str, str] = {}
+
+        import uuid as _uuid
+        for tr in clip.tracking.tracks:
+            if tr.name in track_names:
+                track_uuid = getattr(tr, "kaiserlich_uuid", None)
+                if not track_uuid:
+                    track_uuid = str(_uuid.uuid4())
+                    setattr(tr, "kaiserlich_uuid", track_uuid)
+                uuid_map[track_uuid] = tr.name
+
+        scene["calibrate_tracks"] = ",".join(track_names)
+        scene["calibrate_tracks_uuid_map"] = str(uuid_map)
+
+    except Exception as e:
+        print(f"[store_calibrate_tracks_in_scene] Fehler: {e}")
+
+
+# ------------------------------------------------------------
 # Operator
 # ------------------------------------------------------------
 
@@ -136,6 +176,9 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             mk = tr.markers.find_frame(self._current_frame)
             if mk:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
+
+        # --- Vor jedem Calibration-Step sichern ---
+        store_calibrate_tracks_in_scene(context, self._processing_names)
 
         # Apply optional optimization formula
         try:
