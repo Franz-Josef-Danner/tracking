@@ -6,6 +6,7 @@
 
 import bpy, uuid
 from typing import List, Dict, Any, Optional
+import ast
 
 MarkerSnapshot = Dict[str, Any]
 
@@ -90,9 +91,10 @@ def store_tracks_in_scene(scene: bpy.types.Scene, context: bpy.types.Context, ke
     Erstellt einen vollständigen, persistenten Snapshot aller Tracks des aktiven Clips:
       - scene['good_tracks'] = [UUIDs]
       - scene['good_tracks_names'] = [Namen]
-      - scene['good_tracks_uuid_map'] = "{uuid: name, ...}"
+      - scene['good_tracks_uuid_map'] = {uuid: name, ...}
     Alte Einträge werden vorher entfernt.
     """
+    # Vorherige Einträge löschen
     for k in ("good_tracks", "good_tracks_names", "good_tracks_uuid_map",
               "best_tracks", "best_tracks_names", "best_tracks_uuid_map"):
         if k in scene:
@@ -120,4 +122,10 @@ def store_tracks_in_scene(scene: bpy.types.Scene, context: bpy.types.Context, ke
 
     scene[key] = uuids
     scene[f"{key}_names"] = names
-    scene[f"{key}_uuid_map"] = str(uuid_map)
+
+    # Blender kann Dicts in ID-Properties speichern, solange Keys/Values einfache Typen sind
+    try:
+        scene[f"{key}_uuid_map"] = uuid_map
+    except TypeError:
+        # Fallback auf String, falls Blender die Dict-Struktur ablehnt
+        scene[f"{key}_uuid_map"] = str(uuid_map)
