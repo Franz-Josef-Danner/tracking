@@ -4,183 +4,114 @@ Stabilisiert/rekonstruiert Markerpositionen im aktuellen Frame (frame_a) anhand 
 
 Inputs (Signaturen & Erwartungen)
 
-scene: Blender‐Szene, liefert:
-
-Szene-String entweder "good_tracks" oder "best_tracks" (mutual exclusive). Enthält die Menge stabiler Marker (Namen/IDs) als Referenz.
-
-scene.kaiserlich_markers_per_frame (int), wird halbiert, um die Mindestanzahl stabiler Marker je Fall zu bestimmen.
-
-good_trackss (Parameter): wird zu Beginn bewusst überschrieben durch den tatsächlich vorhandenen Szene-String (Robustheit gegen veraltete Aufrufer).
-
-selected_markers: Liste der zu korrigierenden Marker (Namen/IDs/Objekte; abhängig von deinen Helpern).
-
-frame_a: Ziel-Frame (aktuell) – hier werden korrigierte Positionen geschrieben.
-
-frame_b, frame_c, frame_d: historische Frames (rückwärts liegend), optional (c, d).
-
-Externe Helper (erwartete Semantik)
-
-get_active_markers(frame) -> List[Marker]: aktive Marker in einem Frame.
-
-get_marker_position(marker, frame) -> (x, y): 2D-Koordinate eines Markers in einem Frame.
-
-set_marker_position(marker, frame, x, y): schreibt 2D-Koordinate in einen Frame.
+(unverändert)
 
 Vorbedingungen
 
-Genau einer der Szene-Strings existiert: "good_tracks" oder "best_tracks".
-
-Existieren beide → Abbruch (Konsistenzfehler).
-
-Existiert keiner → Abbruch (keine Referenzbasis).
-
-Ausreichend viele stabile Marker pro Fall (siehe nächste Sektion).
+(unverändert)
 
 Kernlogik (Ablauf)
 
 Referenzquellenwahl
-Zu Beginn prüft die Funktion die Szene auf "good_tracks" vs. "best_tracks" und setzt good_trackss entsprechend. Das stellt sicher, dass immer die tatsächlich gepflegte, projektweite Referenzbasis verwendet wird.
+(unverändert)
 
 Aktive Marker je Frame sammeln
-Für frame_a…frame_d werden aktive Marker ermittelt und mit good_trackss geschnitten:
-fa_good, fb_good, fc_good, fd_good.
+(unverändert)
 
 Fallauswahl (4→3→2→0 Frames) nach Mindestabdeckung
-Die Mindestanzahl stabiler Marker ist min_required = scene.kaiserlich_markers_per_frame / 2.
-Die Funktion wählt die höchstmögliche Genauigkeitsstufe:
-
-Fall 1 (4 Frames): fd_good >= min_required → Quelle source = fd_good, mode=4
-
-Fall 2 (3 Frames): fc_good >= min_required → source = fc_good, mode=3
-
-Fall 3 (2 Frames): fb_good >= min_required → source = fb_good, mode=2
-
-Fall 4 (nur a): fa_good >= min_required → keine Korrektur nötig, sofortiger Exit
-
-Sonst: zu wenig stabile Marker → Abbruch
-
-Rationale: Mehr (verifizierte) Rückblick-Frames reduzieren Rauschen und heben die Schätzqualität.
+(unverändert)
 
 Geschätzte Bewegung (Velocity) stabiler Marker
-Für jeden stabilen Referenzmarker gm ∈ source wird eine konsistente Geschwindigkeit geschätzt:
-
-mode=4: Mittel der Differenzen (b−c) und (a−b)
-v_gm = 0.5 * [ (b−c) + (a−b) ]
-→ symmetrische Glättung über drei Zeitschritte.
-
-mode=3: analog, aber ohne d.
-
-mode=2: einfache Differenz (a−b).
-Ergebnis: v_gm_x, v_gm_y.
+(unverändert)
 
 Radiale Gewichtung relativ zum Zielmarker
-Für den zu korrigierenden Marker sm wird pro stabiler Referenz ein Gewicht berechnet:
-w = 1 / (ε + Dist((sm@a) − (gm@a))).
-Nähe im Bildraum erhöht Einfluss lokaler (relevanter) Referenzen, verhindert Dominanz weit entfernter Marker.
+(unverändert)
 
 Robuste gewichtete Mittelung
-Die gewichteten Geschwindigkeiten werden gesammelt ([(v, w), …]) und mittels Trimmed Weighted Mean aggregiert:
+(unverändert)
 
-Wenn <5 Samples: klassisches gewichtetes Mittel.
+Positionsupdate (adaptive Stabilisierung)
 
-Sonst: Sortieren nach v, obere/untere 10 % verwerfen, dann gewichtetes Mittel.
-Effekt: Outlier-Resilienz (gegen Ausreißer/Fehlmessungen).
+Vorhersage aus Vorframe:
+new = fb_sm + avg_v (separat für x, y)
 
-Positionsupdate (sanfte Korrektur)
+Adaptive Gewichtung abhängig von der Abweichung zwischen gemessener Markerposition und Schätzung:
 
-Vorhersage aus Vorframe: new = fb_sm + avg_v (separat für x, y).
+diff = abs(Markerposition − Schätzung)
+w = min(1, diff * 5)
+final = (Schätzung * w + Markerposition * (1 − w))
 
-Kalibrierung: calib = 0.5 * (fa_sm + new) (Mittel zwischen aktueller und vorhergesagter Position).
 
-Dämpfung: clamp von calib in [new*0.95, new*1.05].
-→ begrenzt Korrekturhub, vermeidet Überschwingen und harte Sprünge.
+Das heißt:
+
+Bei kleinen Abweichungen (Marker liegt nahe an der erwarteten Position) bleibt er nahezu unverändert.
+
+Bei größeren Abweichungen (Marker driftet sichtbar) wird er stärker in Richtung der stabilen Schätzung gezogen.
+
+Dadurch entsteht eine kontinuierlich ansteigende Dämpfungskurve, die ohne harte Grenzen auskommt und Überschwingungen vermeidet.
+
+Ergebnis:
+Der Marker wird proportional zu seiner Abweichung sanft an die Bewegung der stabilen Nachbarn angenähert – lokal geglättet, aber nicht „überkorrigiert“.
 
 Schreiben
-set_marker_position(sm, frame_a, final_x, final_y).
+set_marker_position(sm, frame_a, final_x, final_y)
 
 Postbedingungen
 
-Für alle selected_markers wurden (falls genügend Referenzdaten) die Positionen in frame_a glattgezogen, konsistent mit lokaler Bildbewegung der stabilen Marker.
-
-Bei ungenügender Datenlage oder Inkonsistenz (beide/keine Szene-Strings) kein schädlicher Seiteneffekt (früher Exit).
+(unverändert)
 
 Qualitätsmechaniken (Warum das stabil läuft)
 
 Mutual Exclusivity Check: verhindert widersprüchliche Quellen.
-
 Abdeckungs-Gate (min_required): stoppt unsichere Korrekturen bei zu wenig Stützpunkten.
-
 Mehrframe-Priorisierung: nutzt – wo möglich – symmetrische Geschwindigkeitsabschätzung (glatter, weniger Bias).
-
 Radiale Gewichtung: begünstigt lokale Konsistenzfelder.
-
 Trimmed Mean: robust gegen Outlier/Fehltracking einzelner Referenzmarker.
-
-Dämpfung/Clamping: kontrolliert die Amplitude der Korrektur.
+Adaptive Stabilisierung: dynamische Gewichtung zwischen aktueller Markerposition und Schätzung abhängig von der Abweichung; eliminiert starre Clamping-Grenzen und passt die Korrekturstärke automatisch an.
 
 Typische Einsatzszenarien
 
-Nach dem Tracking-Durchlauf, wenn einzelne Marker „wackeln“, während genügend andere im Umfeld sauber laufen.
-
-Vor einem Solve-Schritt als Pre-Clean, um Fehlerraten zu senken.
-
-In iterativen Pipelines als Korrekturpass zwischen Tracking-Zyklen.
+(unverändert)
 
 Grenzfälle & Fehlerszenarien
 
-Beide Strings vorhanden → Abbruch. Ursache: Schreibfehler in vorgelagerten Operatoren (z. B. nicht gelöschter Altzustand).
-→ Maßnahme: Vor Aufruf konsistente Szene-State-Machine sicherstellen (nur einen der Strings schreiben).
-
-Kein String vorhanden → Abbruch.
-→ Maßnahme: Sicherstellen, dass ein vorgelagerter Prozess die stabilen Marker zuvor ermittelt und im passenden String persistiert.
-
-Zu wenig stabile Marker in b/c/d → Fallback auf niedrigere Modi, ggf. frühzeitiger Exit.
-
-Leere selected_markers → No-op (keine Korrektur nötig).
+(unverändert)
 
 Komplexität
 
-Sei S = Anzahl stabiler Referenzmarker im gewählten Modus, K = Anzahl selektierter Marker.
-Pro selektiertem Marker: O(S) Abfragen + sort in robustem Mittel (O(S log S)).
-Gesamt: O(K · S log S). Für typische S im Dutzendbereich performant.
+(unverändert)
 
 Integrationspunkte (Best Practices)
 
-State-Ownership der Szene-Strings: Erzeugung/Deletion zentralisieren (z. B. Master-Operator), damit Mutual Exclusivity gewährleistet bleibt.
-
-Logging: Für Operator-Kontexte self.report({'INFO'|'WARNING'|'ERROR'}, msg) nutzen, um Info-Panel/Statusleiste zu bedienen.
-
-Pipelineschritt: Nach track_cycle und vor resolve einhängen, wenn instabile Einzelmarker sichtbar werden.
-
-Testing:
-
-Unit-ähnlich mit synthetischen Frames (Translation/Rotation/Skalierung) und künstlich verrauschten Einzelmarkern.
-
-Edge-Cases: knapp unter/über min_required, nur wenige Referenzen in Nähe/Ferne, starke Parallaxe.
+(unverändert)
 
 Parameter-Tuning
 
-kaiserlich_markers_per_frame: Setzt de facto die Schwellwerte für die Fallauswahl; konservativer Wert erhöht Robustheit, kann aber Korrekturen verzögern.
+kaiserlich_markers_per_frame: bestimmt Mindestabdeckung; höhere Werte = konservativer.
 
-Trim-Quote (10 %): Für sehr kleine S erhöhen Ausfallrisiko → bleibt deshalb bei <5 Samples deaktiviert.
+Trim-Quote (10 %): bleibt unverändert.
 
-Dämpfung (±5 % um new): Bei starkem Jitter ggf. leicht erhöhen; bei feinen Justierungen reduzieren.
+Adaptive Gewichtung: die Faktor-Skalierung „× 5“ definiert, ab welcher Abweichung die Schätzung vollen Einfluss gewinnt (≈ Differenz ≥ 0.2 → volle Anpassung).
+Kleinere Werte → empfindlicher; größere → träge Reaktion.
 
 Ergebnis
 
-Eine robuste, lokal gewichtete, mehrframe-fähige Marker-Glättung, die auf stabilen Nachbartracks basiert, Ausreißer abschneidet und Korrekturen amplitude-limitiert in den Ziel-Frame zurückschreibt—geeignet als verlässlicher „Stabilisierungs-Pass“ in deiner Tracking-Pipeline.
+Eine robuste, lokal gewichtete, mehrframe-fähige Marker-Glättung mit dynamisch adaptiver Stabilisierung.
+Sie basiert auf stabilen Nachbartracks, schneidet Ausreißer ab, reagiert proportional auf Abweichungen und schreibt die geglätteten Positionen kontrolliert in den Ziel-Frame – ideal als verlässlicher Stabilisierungs-Pass in deiner Tracking-Pipeline.
 
 # ---------------------------------------------------------------------
 # Marker-Korrektur über bis zu 4 Frames mit dynamischem Rückfall-System
 # inkl. robuster Mittelung und radialem Gewicht
 # Automatische Auswahl zwischen 'good_tracks' und 'best_tracks'
+# Jetzt mit adaptiver Stabilisierung statt fixer Dämpfung
 # ---------------------------------------------------------------------
 
-def correct_marker_positions(scene, good_trackss, selected_markers, frame_a, frame_b, frame_c=None, frame_d=None):
+def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, frame_b, frame_c=None, frame_d=None):
     """
     Korrigiert instabile Markerpositionen anhand stabiler Marker
     über bis zu 4 vorherige Frames. Adaptive Gewichtung und Fallback-System.
-    Jetzt mit robuster Mittelung (Trimmen extremer Werte) und radialer Gewichtung.
+    Jetzt mit robuster Mittelung (Trimmen extremer Werte),
+    radialer Gewichtung und dynamischer Stabilisierung (abweichungsabhängige Korrektur).
     Erkennt automatisch, ob 'good_tracks' oder 'best_tracks' in der Szene existiert.
     """
 
@@ -258,12 +189,13 @@ def correct_marker_positions(scene, good_trackss, selected_markers, frame_a, fra
 
     else:
         print("[Marker Correction] Zu wenige gültige Marker – Prozess abgebrochen.")
+        print(f"[Marker Correction] Counts: a={fa_gm_count}, b={fb_gm_count}, c={fc_gm_count}, d={fd_gm_count}, required={min_required}")
         return
 
     # ----------------------------------------------------------
     # Positionskorrektur der selektierten Marker
     # ----------------------------------------------------------
-    for sm in selected_markers:
+    for sm in calibrate_tracks:
         # Startwerte
         fa_sm_x, fa_sm_y = get_marker_position(sm, frame_a)
         fb_sm_x, fb_sm_y = get_marker_position(sm, frame_b)
@@ -333,18 +265,25 @@ def correct_marker_positions(scene, good_trackss, selected_markers, frame_a, fra
         avg_vx = robust_weighted_mean(weighted_velocities_x)
         avg_vy = robust_weighted_mean(weighted_velocities_y)
 
-        # Sanfte Positionskorrektur (additiv)
+        # ----------------------------------------------------------
+        # Adaptive Stabilisierung (abweichungsabhängige Gewichtung)
+        # ----------------------------------------------------------
         new_x = fb_sm_x + avg_vx
         new_y = fb_sm_y + avg_vy
 
-        # Kalibrierung + Dämpfung
-        calib_x = 0.5 * (fa_sm_x + new_x)
-        calib_y = 0.5 * (fa_sm_y + new_y)
+        # Abweichung zwischen aktueller Position und Schätzung
+        diff_x = abs(fa_sm_x - new_x)
+        diff_y = abs(fa_sm_y - new_y)
 
-        final_x = max(new_x * 0.95, min(new_x * 1.05, calib_x))
-        final_y = max(new_y * 0.95, min(new_y * 1.05, calib_y))
+        # Gewichtung: stärkerer Einfluss der Schätzung bei größerer Differenz
+        w_x = min(1.0, diff_x * 5.0)
+        w_y = min(1.0, diff_y * 5.0)
+
+        # Adaptive Glättung
+        final_x = (new_x * w_x + fa_sm_x * (1.0 - w_x))
+        final_y = (new_y * w_y + fa_sm_y * (1.0 - w_y))
 
         # In Szene zurückschreiben
         set_marker_position(sm, frame_a, final_x, final_y)
 
-    print(f"[Marker Correction] Marker-Korrektur abgeschlossen – Basis: {mode}-Frame (robust).")
+    print(f"[Marker Correction] Marker-Korrektur abgeschlossen – Basis: {mode}-Frame (robust, adaptiv).")

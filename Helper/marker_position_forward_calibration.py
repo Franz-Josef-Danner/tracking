@@ -4,7 +4,7 @@ import ast
 import bpy
 
 # ---------------------------------------------------------------------
-# Minimal-Logging + Track-Vergleich zwischen Scene-Strings und Szene.
+# Minimal-Logging + String-Handling + Key-Ermittlung
 # ---------------------------------------------------------------------
 
 _last_logged_values: Dict[str, str] = {}
@@ -49,17 +49,12 @@ def _log_if_changed(key: str, value: Any) -> None:
         _last_logged_values[key] = line
 
 
-# ---------------------------------------------------------------------
-# Track-Vergleich (Existenzprüfung)
-# ---------------------------------------------------------------------
 def _compare_tracks_with_scene(scene: bpy.types.Scene, key: str, names: Iterable[str]):
-    """Vergleicht die im String gespeicherten Tracknamen mit den realen Tracks des aktiven Clips."""
+    """Vergleicht Tracknamen aus Scene-String mit realen Tracks des aktiven Clips; nur Info-Log bei Abweichung."""
     if not names:
         return
 
     clip = None
-
-    # 1️⃣ Versuche, aktiven Clip aus verschiedenen Quellen zu beziehen
     try:
         space = bpy.context.space_data
         if space and getattr(space, "clip", None):
@@ -74,7 +69,6 @@ def _compare_tracks_with_scene(scene: bpy.types.Scene, key: str, names: Iterable
             clip = None
 
     if clip is None:
-        # Kein Clip verfügbar – Log-Ausgabe, kein Absturz
         _log_if_changed(f"{key}_missing", ["<kein aktiver Clip>"])
         return
 
@@ -86,17 +80,15 @@ def _compare_tracks_with_scene(scene: bpy.types.Scene, key: str, names: Iterable
 
     existing = [n for n in names if n in scene_tracks]
     missing = [n for n in names if n not in scene_tracks]
-
     if missing or len(existing) != len(names):
         _log_if_changed(f"{key}_missing", missing)
     else:
         if f"{key}_missing" in _last_logged_values:
             del _last_logged_values[f"{key}_missing"]
 
-# ---------------------------------------------------------------------
-# Kern-Funktion: Ermittlung aktiver Track-Strings
-# ---------------------------------------------------------------------
+
 def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[str, Any]]:
+    """Ermittelt aktiven Key ('best_tracks' bevorzugt, sonst 'good_tracks') und liefert Meta-Infos."""
     meta = {
         'best': {'present': False, 'len': 0, 'has_uuid_map': False, 'map_len': 0},
         'good': {'present': False, 'len': 0, 'has_uuid_map': False, 'map_len': 0},
@@ -118,7 +110,7 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     meta['good']['has_uuid_map'] = good_map is not None
     meta['good']['map_len'] = good_map_len
 
-    # Logs nur bei Änderung
+    # Optionales Logging (nur bei Änderung)
     calibrate_raw = scene.get("calibrate_tracks")
     if calibrate_raw is not None:
         try:
@@ -144,19 +136,19 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     if good_map is not None:
         _log_if_changed("good_tracks_uuid_map", good_map)
 
-    # Aktiven Key ermitteln
+    # Aktiven Key bestimmen
     active_key = None
     if meta['best']['present'] and meta['best']['len'] > 0:
         active_key = "best_tracks"
     elif meta['good']['present'] and meta['good']['len'] > 0:
         active_key = "good_tracks"
 
-    # Automatische Verschiebung aller 'calibrate_tracks' bei jedem Aufruf
+    # Best-effort Nebenroutine; Fehler dürfen den Hauptfluss nicht stoppen
     try:
         shift_calibrate_tracks_down(scene)
-    except Exception as _e:
-        # bewusst nur "best effort" – kein Abbruch der Schlüsselfunktion
+    except Exception:
         pass
+
     return active_key, meta
 
 
@@ -166,63 +158,89 @@ def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------
-# Korrektur-Algorithmus (unverändert)
+# Erwartete Low-Level-Helper (unverändert, extern bereitgestellt)
 # ---------------------------------------------------------------------
-def correct_marker_positions(scene, good_trackss, selected_markers, frame_a, frame_b, frame_c=None, frame_d=None):
+# get_active_markers(frame) -> List[str|TrackObj]
+# get_marker_position(track_or_name, frame) -> Tuple[float, float]
+# set_marker_position(track_or_name, frame, x, y) -> None
+
+
+# ---------------------------------------------------------------------
+# Marker-Korrektur über bis zu 4 Frames (adaptive Stabilisierung)
+# Automatische Auswahl zwischen 'good_tracks' und 'best_tracks'
+# ---------------------------------------------------------------------
+def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, frame_b, frame_c=None, frame_d=None):
+    """
+    Stabilisiert/rekonstruiert Markerpositionen im aktuellen Frame (frame_a)
+    anhand „stabiler“ Marker-Referenzen aus bis zu vier Frames (frame_b…frame_d).
+    Adaptive Gewichtung je nach Abweichung, robuste Mittelung, radiale Gewichte.
+    """
+
+    # Mutual Exclusivity & Auswahl der Referenzquelle
     if "good_tracks" in scene and "best_tracks" in scene:
+        print("[Marker Correction] Fehler: Sowohl 'good_tracks' als auch 'best_tracks' existieren – Konflikt.")
         return
     elif "good_tracks" in scene:
         good_trackss = scene["good_tracks"]
+        print("[Marker Correction] Verwende Marker-Set: 'good_tracks'")
     elif "best_tracks" in scene:
         good_trackss = scene["best_tracks"]
+        print("[Marker Correction] Verwende Marker-Set: 'best_tracks'")
     else:
+        print("[Marker Correction] Kein gültiger Marker-String ('good_tracks' oder 'best_tracks') vorhanden – Abbruch.")
         return
 
+    # Mindestabdeckung
     min_required = getattr(scene, "kaiserlich_markers_per_frame", 20) / 2
 
+    # Aktive Marker je Frame
     fa_marker = get_active_markers(frame_a)
     fb_marker = get_active_markers(frame_b)
     fc_marker = get_active_markers(frame_c) if frame_c else []
     fd_marker = get_active_markers(frame_d) if frame_d else []
 
+    # Schnittmengen mit stabilen Referenzen
     fa_good = [m for m in fa_marker if m in good_trackss]
     fb_good = [m for m in fb_marker if m in good_trackss]
     fc_good = [m for m in fc_marker if m in good_trackss]
     fd_good = [m for m in fd_marker if m in good_trackss]
 
-    fa_gm_count, fb_gm_count = len(fa_good), len(fb_good)
-    fc_gm_count, fd_gm_count = len(fc_good), len(fd_good)
+    fa_gm_count = len(fa_good)
+    fb_gm_count = len(fb_good)
+    fc_gm_count = len(fc_good)
+    fd_gm_count = len(fd_good)
 
+    # Fallauswahl 4→3→2→0
     if fd_gm_count >= min_required:
-        source, mode = fd_good, 4
+        source = fd_good
+        mode = 4
     elif fc_gm_count >= min_required:
-        source, mode = fc_good, 3
+        source = fc_good
+        mode = 3
     elif fb_gm_count >= min_required:
-        source, mode = fb_good, 2
+        source = fb_good
+        mode = 2
     elif fa_gm_count >= min_required:
+        print("[Marker Correction] Nur aktueller Frame – keine Korrektur notwendig.")
         return
     else:
+        print("[Marker Correction] Zu wenige gültige Marker – Prozess abgebrochen.")
+        print(f"[Marker Correction] Counts: a={fa_gm_count}, b={fb_gm_count}, c={fc_gm_count}, d={fd_gm_count}, required={min_required}")
         return
 
-    def robust_weighted_mean(values_with_weights):
-        if len(values_with_weights) < 5:
-            total_w = sum(w for _, w in values_with_weights)
-            return sum(v * w for v, w in values_with_weights) / total_w if total_w else 0.0
-        sorted_vals = sorted(values_with_weights, key=lambda x: x[0])
-        n = len(sorted_vals)
-        cut = max(1, int(0.1 * n))
-        trimmed = sorted_vals[cut:-cut] if n > 2 * cut else sorted_vals
-        total_w = sum(w for _, w in trimmed)
-        return sum(v * w for v, w in trimmed) / total_w if total_w else 0.0
-
-    for sm in selected_markers:
+    # Positionsupdate für alle Zielmarker
+    for sm in calibrate_tracks:
+        # Ist-Positionen
         fa_sm_x, fa_sm_y = get_marker_position(sm, frame_a)
         fb_sm_x, fb_sm_y = get_marker_position(sm, frame_b)
 
         wvx, wvy = [], []
+
+        # Geschätzte Bewegung (Velocity) stabiler Marker + radiale Gewichte
         for gm in source:
             fa_gm_x, fa_gm_y = get_marker_position(gm, frame_a)
             fb_gm_x, fb_gm_y = get_marker_position(gm, frame_b)
+
             if mode >= 3:
                 fc_gm_x, fc_gm_y = get_marker_position(gm, frame_c)
             if mode == 4:
@@ -243,37 +261,57 @@ def correct_marker_positions(scene, good_trackss, selected_markers, frame_a, fra
             dx, dy = (fa_sm_x - fa_gm_x), (fa_sm_y - fa_gm_y)
             dist = (dx * dx + dy * dy) ** 0.5
             w = 1.0 / (1e-6 + dist)
+
             wvx.append((v_gm_x, w))
             wvy.append((v_gm_y, w))
 
         if not wvx or not wvy:
             continue
 
+        # Robuste gewichtete Mittelung (10% Trimm)
+        def robust_weighted_mean(values_with_weights):
+            if len(values_with_weights) < 5:
+                total_w = sum(w for _, w in values_with_weights)
+                return (sum(v * w for v, w in values_with_weights) / total_w) if total_w else 0.0
+            sorted_vals = sorted(values_with_weights, key=lambda x: x[0])
+            n = len(sorted_vals)
+            cut = max(1, int(0.1 * n))
+            trimmed = sorted_vals[cut:-cut] if n > 2 * cut else sorted_vals
+            total_w = sum(w for _, w in trimmed)
+            return (sum(v * w for v, w in trimmed) / total_w) if total_w else 0.0
+
         avg_vx = robust_weighted_mean(wvx)
         avg_vy = robust_weighted_mean(wvy)
 
+        # Vorhersage aus Vorframe
         new_x = fb_sm_x + avg_vx
         new_y = fb_sm_y + avg_vy
-        calib_x = 0.5 * (fa_sm_x + new_x)
-        calib_y = 0.5 * (fa_sm_y + new_y)
-        final_x = max(new_x * 0.95, min(new_x * 1.05, calib_x))
-        final_y = max(new_y * 0.95, min(new_y * 1.05, calib_y))
+
+        # Adaptive Stabilisierung (abweichungsabhängige Gewichtung)
+        diff_x = abs(fa_sm_x - new_x)
+        diff_y = abs(fa_sm_y - new_y)
+
+        # w = min(1, diff * 5) – Faktor definiert Empfindlichkeit (~0.2 → volle Anpassung)
+        w_x = min(1.0, diff_x * 5.0)
+        w_y = min(1.0, diff_y * 5.0)
+
+        final_x = (new_x * w_x + fa_sm_x * (1.0 - w_x))
+        final_y = (new_y * w_y + fa_sm_y * (1.0 - w_y))
+
         set_marker_position(sm, frame_a, final_x, final_y)
+
+    print(f"[Marker Correction] Marker-Korrektur abgeschlossen – Basis: {mode}-Frame (robust, adaptiv).")
+
 
 # ---------------------------------------------------------------------
 # Zusätzliche Routine: Verschiebt alle Calibrate-Tracks um 0.1 nach unten
+# (Best-effort, unverändert vom Aufrufpfad her)
 # ---------------------------------------------------------------------
 def shift_calibrate_tracks_down(scene: bpy.types.Scene) -> None:
-    """
-    Verschiebt alle Marker der in scene['calibrate_tracks'] gelisteten Tracks um 0.1 nach unten.
-    Loggt jede Verschiebung mit Trackname und Marker-Frame.
-    """
     calibrate_raw = scene.get("calibrate_tracks")
     if calibrate_raw is None:
-        print("[CalibrateShift] ❌ Kein 'calibrate_tracks' String vorhanden.")
         return
 
-    # String/Liste/Direktwert in Liste von Namen umwandeln
     try:
         if isinstance(calibrate_raw, str):
             try:
@@ -283,14 +321,11 @@ def shift_calibrate_tracks_down(scene: bpy.types.Scene) -> None:
         else:
             calibrate_names = calibrate_raw
     except Exception:
-        print("[CalibrateShift] ⚠️ Fehler beim Parsen von 'calibrate_tracks'")
         return
 
     if not calibrate_names:
-        print("[CalibrateShift] ⚠️ Keine Tracknamen in 'calibrate_tracks' gefunden.")
         return
 
-    # Aktiven Clip bestimmen
     clip = None
     try:
         space = bpy.context.space_data
@@ -305,26 +340,14 @@ def shift_calibrate_tracks_down(scene: bpy.types.Scene) -> None:
             clip = None
 
     if clip is None or not getattr(clip, "tracking", None):
-        print("[CalibrateShift] ❌ Kein aktiver Clip verfügbar.")
         return
 
     tracks = {t.name: t for t in clip.tracking.tracks}
-
-    moved_count = 0
-    affected_tracks = 0
     for name in calibrate_names:
         tr = tracks.get(str(name))
         if not tr:
-            print(f"[CalibrateShift] ⚠️ Track '{name}' nicht im Clip gefunden.")
             continue
-        affected_tracks += 1
         for mk in tr.markers:
             if getattr(mk, "mute", False):
                 continue
-            old_y = mk.co[1]
-            mk.co[1] = old_y - 0.1
-            new_y = mk.co[1]
-            print(f"[CalibrateShift] Track '{tr.name}' Frame {mk.frame}: y {old_y:.4f} → {new_y:.4f}")
-            moved_count += 1
-
-    print(f"[CalibrateShift] ✅ Gesamt verschobene Marker: {moved_count} in {affected_tracks} Tracks.")
+            mk.co[1] = mk.co[1] - 0.1
