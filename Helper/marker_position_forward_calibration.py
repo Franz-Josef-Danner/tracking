@@ -292,8 +292,8 @@ def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, fra
         diff_y *= w_aspect
 
         # Quadratische Gewichtsfunktion: (1 - diff²)
-        wx_base = max(0.0, min(1.0, 1.0 - (diff_x * diff_x)))
-        wy_base = max(0.0, min(1.0, 1.0 - (diff_y * diff_y)))
+        wx_base = max(0.0, min(1.0, 1.0 - (diff_x ** 6)))
+        wy_base = max(0.0, min(1.0, 1.0 - (diff_y ** 6)))
 
         # Normierte adaptive Mischung nach der exakten Formel:
         # ((S*(1-Δ²)) + (M*(1-(1-Δ²)))) / ((1-Δ²) + (1-(1-Δ²)))
