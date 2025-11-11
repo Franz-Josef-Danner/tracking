@@ -3,12 +3,11 @@ from typing import Optional, Tuple, Dict, Any, Iterable
 import ast
 import bpy
 
-# ---------------------------------------------------------------------
-# Minimal-Logging + Track-Vergleich zwischen Scene-Strings und Szene.
-# ---------------------------------------------------------------------
-
 _last_logged_values: Dict[str, str] = {}
 
+# ============================================================
+# Hilfsfunktionen (unverändert)
+# ============================================================
 
 def _read_scene_string(scene: bpy.types.Scene, key: str) -> Tuple[Optional[Any], int]:
     raw = scene.get(key)
@@ -49,17 +48,12 @@ def _log_if_changed(key: str, value: Any) -> None:
         _last_logged_values[key] = line
 
 
-# ---------------------------------------------------------------------
-# Track-Vergleich (Existenzprüfung)
-# ---------------------------------------------------------------------
 def _compare_tracks_with_scene(scene: bpy.types.Scene, key: str, names: Iterable[str]):
     """Vergleicht die im String gespeicherten Tracknamen mit den realen Tracks des aktiven Clips."""
     if not names:
         return
 
     clip = None
-
-    # 1️⃣ Versuche, aktiven Clip aus verschiedenen Quellen zu beziehen
     try:
         space = bpy.context.space_data
         if space and getattr(space, "clip", None):
@@ -74,7 +68,6 @@ def _compare_tracks_with_scene(scene: bpy.types.Scene, key: str, names: Iterable
             clip = None
 
     if clip is None:
-        # Kein Clip verfügbar – Log-Ausgabe, kein Absturz
         _log_if_changed(f"{key}_missing", ["<kein aktiver Clip>"])
         return
 
@@ -93,16 +86,13 @@ def _compare_tracks_with_scene(scene: bpy.types.Scene, key: str, names: Iterable
         if f"{key}_missing" in _last_logged_values:
             del _last_logged_values[f"{key}_missing"]
 
-# ---------------------------------------------------------------------
-# Kern-Funktion: Ermittlung aktiver Track-Strings
-# ---------------------------------------------------------------------
+
 def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[str, Any]]:
     meta = {
         'best': {'present': False, 'len': 0, 'has_uuid_map': False, 'map_len': 0},
         'good': {'present': False, 'len': 0, 'has_uuid_map': False, 'map_len': 0},
     }
 
-    # BEST
     best_list, best_len = _read_scene_string(scene, "best_tracks")
     best_map, best_map_len = _read_scene_string(scene, "best_tracks_uuid_map")
     meta['best']['present'] = best_list is not None
@@ -110,7 +100,6 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     meta['best']['has_uuid_map'] = best_map is not None
     meta['best']['map_len'] = best_map_len
 
-    # GOOD
     good_list, good_len = _read_scene_string(scene, "good_tracks")
     good_map, good_map_len = _read_scene_string(scene, "good_tracks_uuid_map")
     meta['good']['present'] = good_list is not None
@@ -118,7 +107,6 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     meta['good']['has_uuid_map'] = good_map is not None
     meta['good']['map_len'] = good_map_len
 
-    # Logs nur bei Änderung
     calibrate_raw = scene.get("calibrate_tracks")
     if calibrate_raw is not None:
         try:
@@ -144,7 +132,6 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     if good_map is not None:
         _log_if_changed("good_tracks_uuid_map", good_map)
 
-    # Aktiven Key ermitteln
     active_key = None
     if meta['best']['present'] and meta['best']['len'] > 0:
         active_key = "best_tracks"
@@ -158,11 +145,61 @@ def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
     key, _meta = find_active_tracks_key(scene)
     return key
 
+# ============================================================
+# Hilfsfunktionen zum Zugriff auf Marker
+# ============================================================
 
-# ---------------------------------------------------------------------
-# Korrektur-Algorithmus (unverändert)
-# ---------------------------------------------------------------------
+def _find_marker_at_frame(track, frame: int):
+    try:
+        mk = track.markers.find_frame(int(frame))
+        return mk if mk and not mk.mute else None
+    except Exception:
+        return None
+
+def get_marker_position(track, frame: int):
+    mk = _find_marker_at_frame(track, frame)
+    return (mk.co[0], mk.co[1]) if mk else (0.0, 0.0)
+
+def set_marker_position(track, frame: int, x: float, y: float):
+    mk = _find_marker_at_frame(track, frame)
+    if mk:
+        mk.co[0], mk.co[1] = x, y
+
+def get_active_markers(frame: int):
+    clip = getattr(bpy.context, "edit_movieclip", None)
+    if not clip:
+        return []
+    return [t for t in clip.tracking.tracks if t.markers.find_frame(frame)]
+
+
+# ============================================================
+# Kern-Funktion + Verschiebung der calibrate_tracks
+# ============================================================
+
 def correct_marker_positions(scene, good_trackss, selected_markers, frame_a, frame_b, frame_c=None, frame_d=None):
+    # ------------------------------------------------------------
+    # 1️⃣ Alle Tracker aus "calibrate_tracks" um 0.1 nach unten verschieben
+    # ------------------------------------------------------------
+    calibrate_raw = scene.get("calibrate_tracks")
+    if calibrate_raw:
+        try:
+            if isinstance(calibrate_raw, str):
+                calibrate_tracks = ast.literal_eval(calibrate_raw)
+            else:
+                calibrate_tracks = calibrate_raw
+        except Exception:
+            calibrate_tracks = []
+
+        clip = getattr(bpy.context, "edit_movieclip", None)
+        if clip:
+            for t in clip.tracking.tracks:
+                if t.name in calibrate_tracks:
+                    for mk in t.markers:
+                        mk.co[1] -= 0.1  # nach unten verschieben
+
+    # ------------------------------------------------------------
+    # 2️⃣ Bestehender Korrekturcode (unverändert)
+    # ------------------------------------------------------------
     if "good_tracks" in scene and "best_tracks" in scene:
         return
     elif "good_tracks" in scene:
