@@ -1,4 +1,4 @@
-bitte alle logs raus nehmen: # Helper/marker_position_forward_calibration.py
+# Helper/marker_position_forward_calibration.py
 from typing import Optional, Tuple, Dict, Any, Iterable
 import ast
 import bpy
