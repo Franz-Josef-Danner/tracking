@@ -18,6 +18,7 @@ def store_tracks_in_scene(scene, context, key="good_tracks"):
     """
     Erfasst alle Tracks des aktiven Clips, generiert persistente UUIDs
     und speichert sie im Scene-Storage (keine IDProperties!).
+    Löscht vorab alle vorhandenen good/best-Einträge, um Konflikte zu vermeiden.
     """
     clip = None
     space = getattr(context, "space_data", None)
@@ -33,11 +34,20 @@ def store_tracks_in_scene(scene, context, key="good_tracks"):
     all_tracks = list(tracking.tracks)
     print(f"[store_tracks_in_scene] Clip '{clip.name}' – {len(all_tracks)} Tracks erfasst")
 
-    # Alte Scene-Keys entfernen
-    for k in (key, f"{key}_names", f"{key}_uuid_map"):
+    # ------------------------------------------------------------
+    # Alte Scene-Keys entfernen (good_* und best_*)
+    # ------------------------------------------------------------
+    for k in (
+        "good_tracks", "good_tracks_names", "good_tracks_uuid_map",
+        "best_tracks", "best_tracks_names", "best_tracks_uuid_map"
+    ):
         if k in scene:
             del scene[k]
+    print("[store_tracks_in_scene] Alte Scene-Keys (good/best) bereinigt.")
 
+    # ------------------------------------------------------------
+    # Neue UUID-Listen generieren
+    # ------------------------------------------------------------
     uuid_list, name_list, uuid_map = [], [], {}
 
     # Statt IDProperties: zentrale Mapping-Struktur im Scene-Storage
@@ -49,7 +59,7 @@ def store_tracks_in_scene(scene, context, key="good_tracks"):
 
     scene[key] = uuid_list
     scene[f"{key}_names"] = name_list
-    scene[f"{key}_uuid_map"] = str(uuid_map)  # als JSON-String speichern (dict nicht erlaubt)
+    scene[f"{key}_uuid_map"] = str(uuid_map)  # als String gespeichert (dict nicht erlaubt)
 
     print(f"[store_tracks_in_scene] Gespeichert: {len(uuid_list)} UUIDs, {len(name_list)} Namen")
     print(f"[store_tracks_in_scene] Beispiele UUIDs: {uuid_list[:5]}")
