@@ -83,6 +83,30 @@ def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[
     else:
         print("[MarkerCalibration][SELECT] Kein aktiver Key gefunden (weder 'best_tracks' noch 'good_tracks').")
 
+    # --- NEU: Inhalt des aktiven Scene-Strings anzeigen ---
+    if active_key:
+        try:
+            data_raw = scene.get(active_key)
+            if isinstance(data_raw, str):
+                import ast
+                try:
+                    data_eval = ast.literal_eval(data_raw)
+                except Exception:
+                    data_eval = data_raw
+            else:
+                data_eval = data_raw
+
+            if isinstance(data_eval, (list, tuple, set)):
+                preview = list(data_eval)[:10]
+                print(f"[MarkerCalibration][DATA] Beispiele ({len(data_eval)}): {preview}")
+            elif isinstance(data_eval, dict):
+                preview = list(data_eval.items())[:10]
+                print(f"[MarkerCalibration][DATA] Dict-Keys ({len(data_eval)}): {[k for k, _ in preview]}")
+            else:
+                print(f"[MarkerCalibration][DATA] Typ={type(data_eval).__name__} | Inhalt={str(data_eval)[:200]}")
+        except Exception as e:
+            print(f"[MarkerCalibration][DATA][ERROR] Konnte Inhalt von '{active_key}' nicht lesen: {e}")
+
     return active_key, meta
 
 
