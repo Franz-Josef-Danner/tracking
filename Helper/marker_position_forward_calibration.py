@@ -53,21 +53,45 @@ def _log_if_changed(key: str, value: Any) -> None:
 # Track-Vergleich (Existenzprüfung)
 # ---------------------------------------------------------------------
 def _compare_tracks_with_scene(scene: bpy.types.Scene, key: str, names: Iterable[str]):
-    """Vergleicht die im String gespeicherten Tracknamen mit den realen Tracks der Szene."""
+    """Vergleicht die im String gespeicherten Tracknamen mit den realen Tracks des aktiven Clips."""
     if not names:
         return
 
-    scene_tracks = [t.name for t in scene.tracking.tracks]
+    clip = None
+
+    # 1️⃣ Versuche, aktiven Clip aus verschiedenen Quellen zu beziehen
+    try:
+        space = bpy.context.space_data
+        if space and getattr(space, "clip", None):
+            clip = space.clip
+    except Exception:
+        pass
+
+    if clip is None:
+        try:
+            clip = getattr(bpy.context, "edit_movieclip", None)
+        except Exception:
+            clip = None
+
+    if clip is None:
+        # Kein Clip verfügbar – Log-Ausgabe, kein Absturz
+        _log_if_changed(f"{key}_missing", ["<kein aktiver Clip>"])
+        return
+
+    try:
+        scene_tracks = [t.name for t in clip.tracking.tracks]
+    except Exception:
+        _log_if_changed(f"{key}_missing", ["<tracking not accessible>"])
+        return
+
     existing = [n for n in names if n in scene_tracks]
     missing = [n for n in names if n not in scene_tracks]
 
     if missing or len(existing) != len(names):
         _log_if_changed(f"{key}_missing", missing)
     else:
-        # Falls vorherige Abweichungen jetzt korrigiert wurden → Log löschen
         if f"{key}_missing" in _last_logged_values:
             del _last_logged_values[f"{key}_missing"]
-
 
 # ---------------------------------------------------------------------
 # Kern-Funktion: Ermittlung aktiver Track-Strings
