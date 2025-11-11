@@ -94,6 +94,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         for tr in tracking.tracks:
             tr.select = (tr.name in self._original_selected)
 
+        # --------------------------------------------------------
+        # Referenz-Key nur EINMAL zu Beginn bestimmen
+        # --------------------------------------------------------
+        from ...Helper.marker_position_forward_calibration import _resolve_reference_key
+        self._active_ref_key = _resolve_reference_key(scene)
+        print(f"[MasterTrackCycle] Initialer Referenz-Key: {self._active_ref_key}")
+
         # Activate timer
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.05, window=context.window)
@@ -142,12 +149,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         selected_tracks = [t for t in selected_tracks if t is not None]
 
         try:
-            if a > self._start_frame and selected_tracks:
-                # Aktiven Referenz-Key ermitteln (führt intern Scene-Scan durch)
-                active_key = _resolve_reference_key(context.scene)
-                print(f"[MasterTrackCycle] Aktiver Referenz-Key: {active_key}")
+            if a > self._start_frame and selected_tracks and self._active_ref_key:
+                # Nur noch Logging bei Änderung
+                print(f"[MasterTrackCycle] Nutzung Referenz-Key: {self._active_ref_key}")
+            elif not self._active_ref_key:
+                print("[MasterTrackCycle][WARN] Kein Referenz-Key verfügbar.")
         except Exception as e:
-            print(f"[MasterTrackCycle][WARN] Referenzermittlung fehlgeschlagen: {e}")
+            print(f"[MasterTrackCycle][WARN] Referenzprüfung fehlgeschlagen: {e}")
 
 
         # ---------------------------
