@@ -6,11 +6,11 @@ Inputs (Signaturen & Erwartungen)
 
 scene: Blender‐Szene, liefert:
 
-Szene-String entweder "good_marker" oder "best_marker" (mutual exclusive). Enthält die Menge stabiler Marker (Namen/IDs) als Referenz.
+Szene-String entweder "good_tracks" oder "best_tracks" (mutual exclusive). Enthält die Menge stabiler Marker (Namen/IDs) als Referenz.
 
 scene.kaiserlich_markers_per_frame (int), wird halbiert, um die Mindestanzahl stabiler Marker je Fall zu bestimmen.
 
-good_markers (Parameter): wird zu Beginn bewusst überschrieben durch den tatsächlich vorhandenen Szene-String (Robustheit gegen veraltete Aufrufer).
+good_trackss (Parameter): wird zu Beginn bewusst überschrieben durch den tatsächlich vorhandenen Szene-String (Robustheit gegen veraltete Aufrufer).
 
 selected_markers: Liste der zu korrigierenden Marker (Namen/IDs/Objekte; abhängig von deinen Helpern).
 
@@ -28,7 +28,7 @@ set_marker_position(marker, frame, x, y): schreibt 2D-Koordinate in einen Frame.
 
 Vorbedingungen
 
-Genau einer der Szene-Strings existiert: "good_marker" oder "best_marker".
+Genau einer der Szene-Strings existiert: "good_tracks" oder "best_tracks".
 
 Existieren beide → Abbruch (Konsistenzfehler).
 
@@ -39,10 +39,10 @@ Ausreichend viele stabile Marker pro Fall (siehe nächste Sektion).
 Kernlogik (Ablauf)
 
 Referenzquellenwahl
-Zu Beginn prüft die Funktion die Szene auf "good_marker" vs. "best_marker" und setzt good_markers entsprechend. Das stellt sicher, dass immer die tatsächlich gepflegte, projektweite Referenzbasis verwendet wird.
+Zu Beginn prüft die Funktion die Szene auf "good_tracks" vs. "best_tracks" und setzt good_trackss entsprechend. Das stellt sicher, dass immer die tatsächlich gepflegte, projektweite Referenzbasis verwendet wird.
 
 Aktive Marker je Frame sammeln
-Für frame_a…frame_d werden aktive Marker ermittelt und mit good_markers geschnitten:
+Für frame_a…frame_d werden aktive Marker ermittelt und mit good_trackss geschnitten:
 fa_good, fb_good, fc_good, fd_good.
 
 Fallauswahl (4→3→2→0 Frames) nach Mindestabdeckung
@@ -173,34 +173,34 @@ Eine robuste, lokal gewichtete, mehrframe-fähige Marker-Glättung, die auf stab
 # ---------------------------------------------------------------------
 # Marker-Korrektur über bis zu 4 Frames mit dynamischem Rückfall-System
 # inkl. robuster Mittelung und radialem Gewicht
-# Automatische Auswahl zwischen 'good_marker' und 'best_marker'
+# Automatische Auswahl zwischen 'good_tracks' und 'best_tracks'
 # ---------------------------------------------------------------------
 
-def correct_marker_positions(scene, good_markers, selected_markers, frame_a, frame_b, frame_c=None, frame_d=None):
+def correct_marker_positions(scene, good_trackss, selected_markers, frame_a, frame_b, frame_c=None, frame_d=None):
     """
     Korrigiert instabile Markerpositionen anhand stabiler Marker
     über bis zu 4 vorherige Frames. Adaptive Gewichtung und Fallback-System.
     Jetzt mit robuster Mittelung (Trimmen extremer Werte) und radialer Gewichtung.
-    Erkennt automatisch, ob 'good_marker' oder 'best_marker' in der Szene existiert.
+    Erkennt automatisch, ob 'good_tracks' oder 'best_tracks' in der Szene existiert.
     """
 
     # ----------------------------------------------------------
     # Auswahl des existierenden Marker-Strings
     # ----------------------------------------------------------
-    if "good_marker" in scene and "best_marker" in scene:
-        print("[Marker Correction] Fehler: Sowohl 'good_marker' als auch 'best_marker' existieren – Konflikt.")
+    if "good_tracks" in scene and "best_tracks" in scene:
+        print("[Marker Correction] Fehler: Sowohl 'good_tracks' als auch 'best_tracks' existieren – Konflikt.")
         return
 
-    elif "good_marker" in scene:
-        good_markers = scene["good_marker"]
-        print("[Marker Correction] Verwende Marker-Set: 'good_marker'")
+    elif "good_tracks" in scene:
+        good_trackss = scene["good_tracks"]
+        print("[Marker Correction] Verwende Marker-Set: 'good_tracks'")
 
-    elif "best_marker" in scene:
-        good_markers = scene["best_marker"]
-        print("[Marker Correction] Verwende Marker-Set: 'best_marker'")
+    elif "best_tracks" in scene:
+        good_trackss = scene["best_tracks"]
+        print("[Marker Correction] Verwende Marker-Set: 'best_tracks'")
 
     else:
-        print("[Marker Correction] Kein gültiger Marker-String ('good_marker' oder 'best_marker') vorhanden – Abbruch.")
+        print("[Marker Correction] Kein gültiger Marker-String ('good_tracks' oder 'best_tracks') vorhanden – Abbruch.")
         return
 
     # ----------------------------------------------------------
@@ -215,10 +215,10 @@ def correct_marker_positions(scene, good_markers, selected_markers, frame_a, fra
     fd_marker = get_active_markers(frame_d) if frame_d else []
 
     # Matching der gültigen Marker (Schnittmengenbildung)
-    fa_good = [m for m in fa_marker if m in good_markers]
-    fb_good = [m for m in fb_marker if m in good_markers]
-    fc_good = [m for m in fc_marker if m in good_markers]
-    fd_good = [m for m in fd_marker if m in good_markers]
+    fa_good = [m for m in fa_marker if m in good_trackss]
+    fb_good = [m for m in fb_marker if m in good_trackss]
+    fc_good = [m for m in fc_marker if m in good_trackss]
+    fd_good = [m for m in fd_marker if m in good_trackss]
 
     fa_gm_count = len(fa_good)
     fb_gm_count = len(fb_good)
