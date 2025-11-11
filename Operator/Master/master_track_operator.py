@@ -19,8 +19,8 @@ from ...Helper.frame_track_progress import compute_marker_progress
 # Neuer Korrektur-Helper
 # ------------------------------------------------------------
 from ...Helper.marker_position_forward_calibration import (
-    correct_marker_positions,
-    marker_exists,  # optional nützlich für Guards
+    find_active_tracks_key,   # scannt Scene nach good/best_tracks
+    _resolve_reference_key,   # liefert aktiven Referenz-Key direkt zurück
 )
 
 class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
@@ -144,14 +144,18 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         try:
             # Nur ausführen, wenn mindestens 1 Frame zurückliegt
             if a > self._start_frame and selected_tracks:
-                # Marker-Korrektur-Helfer (mit Szenen-Scan für good/best_tracks)
-                correct_marker_positions(
-                    context.scene,     # -> Szene (liefert Strings & Marker-Mengen)
-                    selected_tracks,   # -> zu korrigierende Markerobjekte
-                    a, b, c, d         # -> aktuelle + bis zu 3 vorherige Frames
-                )
+                # Ermittelt aktiven Referenz-Key in der Szene (good_tracks oder best_tracks)
+                active_key = _resolve_reference_key(context.scene)
+                print(f"[MasterTrackCycle] Aktiver Referenz-Key: {active_key}")
+
+                if active_key:
+                    # Führt vollständigen Scan mit Logging durch
+                    find_active_tracks_key(context.scene)
+                else:
+                    print("[MasterTrackCycle][WARN] Kein gültiger Referenz-Key gefunden.")
+
         except Exception as e:
-            print(f"[MasterTrackCycle][WARN] Marker-Korrektur übersprungen: {e}")
+            print(f"[MasterTrackCycle][WARN] Szene-Scan oder Referenzermittlung fehlgeschlagen: {e}")
 
 
         # ---------------------------
