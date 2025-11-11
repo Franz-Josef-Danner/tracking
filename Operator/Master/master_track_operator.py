@@ -29,7 +29,9 @@ from ...Helper.marker_position_forward_calibration import (
 def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
     """
     Speichert die aktuell selektierten und aktiven Tracks
-    im Scene-String 'calibrate_tracks'.
+    im Scene-String 'calibrate_tracks' und 'calibrate_tracks_uuid_map'.
+    UUIDs werden ausschließlich in einer temporären Map verwaltet,
+    nicht als Attribut an den MovieTrackingTrack-Objekten.
     """
     scene = context.scene
     if not track_names:
@@ -45,20 +47,14 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         if not clip or not getattr(clip, "tracking", None):
             return
 
+        import uuid as _uuid
         uuid_map: Dict[str, str] = {}
 
-        # UUIDs generieren (stabil pro Track, ohne IDProperties)
-        import uuid as _uuid
-        for tr in clip.tracking.tracks:
-            if tr.name in track_names:
-                track_uuid = getattr(tr, "kaiserlich_uuid", None)
-                if not track_uuid:
-                    # Erzeuge UUID und merke sie temporär am Track
-                    track_uuid = str(_uuid.uuid4())
-                    setattr(tr, "kaiserlich_uuid", track_uuid)
-                uuid_map[track_uuid] = tr.name
+        # UUIDs neu erzeugen – keine Attribute am Track selbst
+        for name in track_names:
+            uuid_map[str(_uuid.uuid4())] = name
 
-        # Speicherung als Strings
+        # Speicherung als Scene-Strings
         scene["calibrate_tracks"] = ",".join(track_names)
         scene["calibrate_tracks_uuid_map"] = str(uuid_map)
 
