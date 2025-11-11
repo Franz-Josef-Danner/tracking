@@ -142,20 +142,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         selected_tracks = [t for t in selected_tracks if t is not None]
 
         try:
-            # Nur ausführen, wenn mindestens 1 Frame zurückliegt
             if a > self._start_frame and selected_tracks:
-                # Ermittelt aktiven Referenz-Key in der Szene (good_tracks oder best_tracks)
+                # Aktiven Referenz-Key ermitteln (führt intern Scene-Scan durch)
                 active_key = _resolve_reference_key(context.scene)
                 print(f"[MasterTrackCycle] Aktiver Referenz-Key: {active_key}")
-
-                if active_key:
-                    # Führt vollständigen Scan mit Logging durch
-                    find_active_tracks_key(context.scene)
-                else:
-                    print("[MasterTrackCycle][WARN] Kein gültiger Referenz-Key gefunden.")
-
         except Exception as e:
-            print(f"[MasterTrackCycle][WARN] Szene-Scan oder Referenzermittlung fehlgeschlagen: {e}")
+            print(f"[MasterTrackCycle][WARN] Referenzermittlung fehlgeschlagen: {e}")
 
 
         # ---------------------------
