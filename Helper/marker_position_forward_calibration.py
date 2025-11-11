@@ -222,15 +222,24 @@ def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, fra
         print(f"[Marker Correction] Counts: a={fa_gm_count}, b={fb_gm_count}, c={fc_gm_count}, d={fd_gm_count}, required={min_required}")
         return
 
+    # ----------------------------------------------------------
+    # Auflösungs-Verhältnis für Y-Skalierung bestimmen
+    # ----------------------------------------------------------
+    try:
+        clip = bpy.context.edit_movieclip or bpy.context.space_data.clip
+        width = getattr(clip, "size", [1, 1])[0]
+        height = getattr(clip, "size", [1, 1])[1]
+        aspect_ratio = (width / height) if height != 0 else 1.0
+    except Exception:
+        aspect_ratio = 1.0
+
     # Positionsupdate für alle Zielmarker
     for sm in calibrate_tracks:
-        # Ist-Positionen
         fa_sm_x, fa_sm_y = get_marker_position(sm, frame_a)
         fb_sm_x, fb_sm_y = get_marker_position(sm, frame_b)
 
         wvx, wvy = [], []
 
-        # Geschätzte Bewegung (Velocity) stabiler Marker + radiale Gewichte
         for gm in source:
             fa_gm_x, fa_gm_y = get_marker_position(gm, frame_a)
             fb_gm_x, fb_gm_y = get_marker_position(gm, frame_b)
@@ -262,7 +271,6 @@ def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, fra
         if not wvx or not wvy:
             continue
 
-        # Robuste gewichtete Mittelung (10% Trimm)
         def robust_weighted_mean(values_with_weights):
             if len(values_with_weights) < 5:
                 total_w = sum(w for _, w in values_with_weights)
@@ -285,11 +293,14 @@ def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, fra
         diff_x = abs(fa_sm_x - new_x)
         diff_y = abs(fa_sm_y - new_y)
 
-        # w = min(1, diff * 5) – Faktor definiert Empfindlichkeit (~0.2 → volle Anpassung)
+        # Empfindlichkeit an Bildseitenverhältnis anpassen
         w_x = min(1.0, diff_x * 5.0)
-        w_y = min(1.0, diff_y * 5.0)
+        w_y = min(1.0, diff_y * 5.0 * aspect_ratio)
 
         final_x = (new_x * w_x + fa_sm_x * (1.0 - w_x))
         final_y = (new_y * w_y + fa_sm_y * (1.0 - w_y))
 
         set_marker_position(sm, frame_a, final_x, final_y)
+
+    print(f"[Marker Correction] Marker-Korrektur abgeschlossen – Basis: {mode}-Frame (robust, adaptiv, aspect={aspect_ratio:.3f}).")
+
