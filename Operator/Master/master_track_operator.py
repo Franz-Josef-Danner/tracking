@@ -142,12 +142,17 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         selected_tracks = [t for t in selected_tracks if t is not None]
 
         try:
-            # Korrigiert Marker nur, wenn Basisframes existieren
-            if a > self._start_frame and marker_exists(selected_tracks[0], b) if selected_tracks else False:
-                correct_marker_positions(context, selected_tracks, a, b, c, d)
-        except Exception:
-            # Defensive: Korrekturfehler sollen den Trackingzyklus nicht stoppen
-            pass
+            # Nur ausführen, wenn mindestens 1 Frame zurückliegt
+            if a > self._start_frame and selected_tracks:
+                # Marker-Korrektur-Helfer (mit Szenen-Scan für good/best_tracks)
+                correct_marker_positions(
+                    context.scene,     # -> Szene (liefert Strings & Marker-Mengen)
+                    selected_tracks,   # -> zu korrigierende Markerobjekte
+                    a, b, c, d         # -> aktuelle + bis zu 3 vorherige Frames
+                )
+        except Exception as e:
+            print(f"[MasterTrackCycle][WARN] Marker-Korrektur übersprungen: {e}")
+
 
         # ---------------------------
         # 2) Adaptive Formel (deine Logik)
