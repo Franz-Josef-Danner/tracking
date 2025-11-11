@@ -38,17 +38,13 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         if not clip or not getattr(clip, "tracking", None):
             return
 
-        uuid_map: Dict[str, str] = {}
-
+        # UUIDs erzeugen (ohne an Track-Objekte anzuhängen)
         import uuid as _uuid
-        for tr in clip.tracking.tracks:
-            if tr.name in track_names:
-                track_uuid = getattr(tr, "kaiserlich_uuid", None)
-                if not track_uuid:
-                    track_uuid = str(_uuid.uuid4())
-                    setattr(tr, "kaiserlich_uuid", track_uuid)
-                uuid_map[track_uuid] = tr.name
+        uuid_map: Dict[str, str] = {}
+        for name in track_names:
+            uuid_map[str(_uuid.uuid4())] = name
 
+        # Speicherung als Strings (kompatibel mit good/best_tracks)
         scene["calibrate_tracks"] = ",".join(track_names)
         scene["calibrate_tracks_uuid_map"] = str(uuid_map)
 
