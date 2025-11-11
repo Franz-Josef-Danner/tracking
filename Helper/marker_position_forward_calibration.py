@@ -1,363 +1,194 @@
 # Helper/marker_position_forward_calibration.py
 # ---------------------------------------------------------------------
-# Stabilisierung/Korrektur von Marker-Positionen im aktuellen Frame
+# Stabilisierung/Korrektur von Markerpositionen im aktuellen Frame
 # anhand stabiler Referenzen aus bis zu 4 Rückblick-Frames.
-# Kompatibel mit:
-#   - Szene-String "good_marker" ODER "best_marker" (mutual exclusive)
-#   - Optionalen UUID-Maps: "<key>_uuid_map" als String-Dict {uuid: name}
 #
 # Log-Ausgaben:
-#   [FRAME]   – Aktueller Frame der Korrektur
-#   [TRACK]   – Aktueller Trackname
-#   [FORMULA] – Einzelwerte (Gewicht, Distanz, Velocity)
-#   [TRIM]    – Trimmed Mean (Samples, Ratio, Endmittel)
-#   [RESULT]  – Alte vs neue Markerposition
-#   [WARN]    – Abbruch oder unvollständige Referenzen
-#   [SUMMARY] – Kompakte Statistik pro Aufruf
+#   [INIT]     – erkannte Referenzquelle
+#   [MODE]     – gewählte Frame-Kombination (4/3/2)
+#   [FORMULA]  – Geschätzte Velocity & Gewicht
+#   [RESULT]   – alte → neue Position
+#   [WARN]     – fehlende Voraussetzungen / zu wenig Marker
 # ---------------------------------------------------------------------
 
-from typing import Iterable, List, Optional, Tuple, Dict, Any
-import bpy
-import ast
+from typing import List, Tuple, Optional
 import math
+import bpy
 
 
 # ============================================================
-# Logging-Helper (0=off, 1=summary, 2=normal, 3=verbose)
+# Core marker utilities (Proxy an bestehende Helper)
 # ============================================================
 
-def _dbg(scene: bpy.types.Scene, level: int, msg: str):
-    lvl = int(getattr(scene, "kaiserlich_debug_level", 2) or 2)
-    if lvl >= level:
-        print(msg)
-
-
-# ============================================================
-# Low-level Marker Utilities
-# ============================================================
-
-def _find_marker_at_frame(track, frame: int):
-    """Sicherer Zugriff auf Marker eines Tracks in einem Frame (muted ausgeschlossen)."""
-    try:
-        mk = track.markers.find_frame(int(frame))
-        return mk if mk and not mk.mute else None
-    except Exception:
-        return None
-
-
-def marker_exists(track, frame: int) -> bool:
-    return _find_marker_at_frame(track, frame) is not None
-
-
-def get_marker_position(track, frame: int) -> Tuple[float, float]:
-    mk = _find_marker_at_frame(track, frame)
-    if mk:
-        return float(mk.co[0]), float(mk.co[1])
-    head = track.markers[0] if track.markers else None
-    return (float(head.co[0]), float(head.co[1])) if head else (0.0, 0.0)
-
-
-def set_marker_position(track, frame: int, x: float, y: float):
-    mk = _find_marker_at_frame(track, frame)
-    if mk:
-        mk.co[0] = float(x)
-        mk.co[1] = float(y)
-
-
-def _active_clip(context):
-    """Versucht den aktiven MovieClip aus dem aktuellen Context zu holen (CLIP_EDITOR bevorzugt)."""
-    space = getattr(context, "space_data", None)
-    if space and getattr(space, "clip", None):
-        return space.clip
-
-    wm = getattr(context, "window_manager", None)
-    if not wm:
-        return None
-    for win in wm.windows:
-        scr = getattr(win, "screen", None)
-        if not scr:
-            continue
-        for area in scr.areas:
-            if area.type == 'CLIP_EDITOR':
-                sp = area.spaces.active
-                if sp and getattr(sp, "clip", None):
-                    return sp.clip
-    return None
-
-
-def _iter_active_tracks_at_frame(context, frame: int):
-    """Liefert selektierte und im angegebenen Frame existierende Tracks des aktiven Clips."""
-    clip = _active_clip(context)
+def get_active_markers(frame: int) -> List[bpy.types.MovieTrackingTrack]:
+    """Dummy-Wrapper, erwartet externen Helper im realen Add-on."""
+    ctx = bpy.context
+    clip = getattr(ctx.space_data, "clip", None)
     if not clip:
         return []
-    for tr in clip.tracking.tracks:
-        if tr.select and marker_exists(tr, frame):
-            yield tr
-
-
-def get_active_markers(context, frame: Optional[int]):
-    """API-kompatibler Wrapper: aktive Tracks (selektiert & Marker existiert in frame)."""
-    if frame is None:
-        return []
-    return list(_iter_active_tracks_at_frame(context, int(frame)))
-
-
-# ============================================================
-# Referenzmanagement (good_marker / best_marker)
-# ============================================================
-
-def _read_scene_string(scene: bpy.types.Scene, key: str) -> Optional[List[str]]:
-    """Liest einen Szenen-String robust als Liste von Strings."""
-    if key not in scene:
-        return None
-    raw = list(scene[key])
     out = []
-    for v in raw:
-        if isinstance(v, str):
-            out.append(v)
-        else:
-            try:
-                out.append(str(v))
-            except Exception:
-                pass
+    for t in clip.tracking.tracks:
+        if t.select and t.markers.find_frame(frame):
+            out.append(t)
     return out
 
 
-def _detect_uuid_mode(values: List[str]) -> bool:
-    """Heuristik für UUID-Strings (Bindestrich + Länge ~36)."""
-    if not values:
-        return False
-    def _is_uuid(s: str) -> bool:
-        return isinstance(s, str) and "-" in s and len(s) >= 30
-    return all(_is_uuid(v) for v in values)
+def get_marker_position(track, frame: int) -> Tuple[float, float]:
+    mk = track.markers.find_frame(frame)
+    if mk:
+        return float(mk.co[0]), float(mk.co[1])
+    return 0.0, 0.0
 
 
-def _load_uuid_map(scene: bpy.types.Scene, key: str) -> Dict[str, str]:
-    """
-    Liest optionale Map {uuid: name} aus Szene-String f"{key}_uuid_map".
-    Gibt leeres Dict zurück, falls nicht vorhanden/lesbar.
-    """
-    map_key = f"{key}_uuid_map"
-    if map_key not in scene:
-        return {}
-    try:
-        data = ast.literal_eval(scene[map_key])
-        if isinstance(data, dict):
-            return {str(u): str(n) for u, n in data.items()}
-    except Exception:
-        pass
-    return {}
-
-
-def _select_reference_key(scene: bpy.types.Scene) -> Optional[str]:
-    """
-    Mutual Exclusivity:
-      - genau einer von "good_marker" oder "best_marker" muss existieren.
-    """
-    has_good = "good_marker" in scene
-    has_best = "best_marker" in scene
-    if has_good and has_best:
-        print("[MarkerCorrection][WARN] Beide Referenz-Sets vorhanden – Konflikt.")
-        return None
-    if not has_good and not has_best:
-        print("[MarkerCorrection][WARN] Kein Referenz-Set vorhanden.")
-        return None
-    return "good_marker" if has_good else "best_marker"
-
-
-def _build_reference_name_set(context: bpy.types.Context,
-                              scene: bpy.types.Scene) -> Optional[Dict[str, Any]]:
-    """
-    Liefert:
-      {
-        "key": "good_marker"|"best_marker",
-        "is_uuid": bool,
-        "ref_values": List[str],
-        "uuid_to_name": Dict[str,str],
-        "name_set": Set[str]
-      }
-    """
-    key = _select_reference_key(scene)
-    if key is None:
-        return None
-
-    ref_values = _read_scene_string(scene, key)
-    if not ref_values:
-        print(f"[MarkerCorrection][WARN] Szene-String {key} ist leer.")
-        return None
-
-    is_uuid = _detect_uuid_mode(ref_values)
-    uuid_to_name = _load_uuid_map(scene, key) if is_uuid else {}
-
-    clip = _active_clip(context)
-    if not clip:
-        name_set = set(uuid_to_name.values()) if is_uuid else set(ref_values)
-    else:
-        scene_names = {t.name for t in clip.tracking.tracks}
-        if is_uuid and uuid_to_name:
-            mapped_names = set(uuid_to_name.get(uid, "") for uid in ref_values)
-            name_set = {n for n in mapped_names if n and n in scene_names}
-        elif is_uuid and not uuid_to_name:
-            name_set = set()
-        else:
-            name_set = {n for n in ref_values if n in scene_names}
-
-    return {
-        "key": key,
-        "is_uuid": is_uuid,
-        "ref_values": ref_values,
-        "uuid_to_name": uuid_to_name,
-        "name_set": name_set,
-    }
+def set_marker_position(track, frame: int, x: float, y: float):
+    mk = track.markers.find_frame(frame)
+    if mk:
+        mk.co[0], mk.co[1] = float(x), float(y)
 
 
 # ============================================================
-# Mathe / Robustheit
+# Hauptlogik
 # ============================================================
 
-def _dist2(a: Tuple[float, float], b: Tuple[float, float]) -> float:
-    dx = a[0] - b[0]
-    dy = a[1] - b[1]
-    return dx * dx + dy * dy
-
-
-def _radial_weight(p_target: Tuple[float, float],
-                   p_ref: Tuple[float, float],
-                   eps: float = 1e-6) -> float:
-    """Gewicht = 1 / (eps + Distanz), Distanz = sqrt(dist2)."""
-    d2 = _dist2(p_target, p_ref)
-    w = 1.0 / (eps + math.sqrt(d2))
-    # Formel-Log auf NORMAL-Level
-    print(f"[MarkerCorrection][FORMULA] weight={w:.6f}  dist={math.sqrt(d2):.6f}")
-    return w
-
-
-def _trimmed_weighted_mean(vals: List[Tuple[float, float]],
-                           weights: List[float],
-                           trim_ratio: float = 0.10) -> Tuple[float, float]:
-    """
-    Trimmed Weighted Mean der Geschwindigkeitskomponenten.
-    Bei <5 Samples → klassisches gewichtetes Mittel ohne Trimming.
-    """
-    n = len(vals)
-    if n == 0:
-        return 0.0, 0.0
-    if n < 5:
-        wsum = sum(weights) if weights else 0.0
-        if wsum <= 0.0:
-            return 0.0, 0.0
-        vx = sum(v[0] * w for v, w in zip(vals, weights)) / wsum
-        vy = sum(v[1] * w for v, w in zip(vals, weights)) / wsum
-        print(f"[MarkerCorrection][TRIM] direct_mean  n={n}  vx={vx:.6f}  vy={vy:.6f}")
-        return vx, vy
-
-    # Sortiere nach Betrag des Velocity-Vektors und trimme Extremwerte
-    combined = sorted(zip(vals, weights), key=lambda x: (x[0][0]**2 + x[0][1]**2))
-    k = max(1, int(n * trim_ratio))
-    trimmed = combined[k:-k] if n > 2 * k else combined
-    vals_t, w_t = zip(*trimmed)
-    wsum = sum(w_t)
-    if wsum <= 0.0:
-        return 0.0, 0.0
-    vx = sum(v[0] * w for v, w in zip(vals_t, w_t)) / wsum
-    vy = sum(v[1] * w for v, w in zip(vals_t, w_t)) / wsum
-    print(f"[MarkerCorrection][TRIM] n={n} trim={trim_ratio*100:.1f}%  → vx={vx:.6f} vy={vy:.6f}")
-    return vx, vy
-
-
-# ============================================================
-# Hauptfunktion
-# ============================================================
-
-def correct_marker_positions(scene: bpy.types.Scene,
-                             good_markers,
+def correct_marker_positions(scene,
+                             good_trackss,
                              selected_markers,
-                             frame_a: Optional[int],
-                             frame_b: Optional[int],
-                             frame_c: Optional[int] = None,
-                             frame_d: Optional[int] = None):
+                             frame_a,
+                             frame_b,
+                             frame_c=None,
+                             frame_d=None):
     """
-    Korrigiert instabile Markerpositionen anhand stabiler Referenzen
-    aus bis zu 4 vorherigen Frames.
+    Stabilisiert Markerpositionen im Frame_a anhand stabiler Marker
+    aus bis zu 4 Rückblickframes.
     """
 
-    # ---- Hard Guard: Ziel-Frame muss gesetzt sein -------------------
-    if frame_b is None:
-        _dbg(scene, 2, "[MarkerCorrection][WARN] frame_b ist None – Abbruch.")
+    # ----------------------------------------------------------
+    # Referenzquellenwahl (Mutual Exclusivity)
+    # ----------------------------------------------------------
+    if "good_tracks" in scene and "best_tracks" in scene:
+        print("[MarkerCorrection][WARN] Beide Referenz-Strings vorhanden – Abbruch.")
         return
 
-    ctx = bpy.context
-    _dbg(scene, 2, f"[MarkerCorrection][FRAME] {int(frame_b)}")
-
-    ref_info = _build_reference_name_set(ctx, scene)
-    if not ref_info:
-        _dbg(scene, 2, "[MarkerCorrection][WARN] Keine Referenzen gefunden – Abbruch.")
+    if "good_tracks" in scene:
+        good_trackss = scene["good_tracks"]
+        print("[MarkerCorrection][INIT] Verwende Referenz: good_tracks")
+    elif "best_tracks" in scene:
+        good_trackss = scene["best_tracks"]
+        print("[MarkerCorrection][INIT] Verwende Referenz: best_tracks")
+    else:
+        print("[MarkerCorrection][WARN] Kein Referenz-String gefunden – Abbruch.")
         return
 
-    clip = _active_clip(ctx)
-    if not clip:
-        _dbg(scene, 2, "[MarkerCorrection][WARN] Kein aktiver Clip – Abbruch.")
+    # ----------------------------------------------------------
+    # Mindestabdeckung prüfen
+    # ----------------------------------------------------------
+    min_required = getattr(scene, "kaiserlich_markers_per_frame", 20) / 2
+
+    fa = get_active_markers(frame_a)
+    fb = get_active_markers(frame_b)
+    fc = get_active_markers(frame_c) if frame_c else []
+    fd = get_active_markers(frame_d) if frame_d else []
+
+    fa_good = [m for m in fa if m in good_trackss]
+    fb_good = [m for m in fb if m in good_trackss]
+    fc_good = [m for m in fc if m in good_trackss]
+    fd_good = [m for m in fd if m in good_trackss]
+
+    la, lb, lc, ld = len(fa_good), len(fb_good), len(fc_good), len(fd_good)
+
+    # ----------------------------------------------------------
+    # Moduswahl nach Datenlage
+    # ----------------------------------------------------------
+    if ld >= min_required:
+        source = fd_good; mode = 4
+    elif lc >= min_required:
+        source = fc_good; mode = 3
+    elif lb >= min_required:
+        source = fb_good; mode = 2
+    elif la >= min_required:
+        print("[MarkerCorrection][INFO] Nur aktueller Frame – keine Korrektur nötig.")
+        return
+    else:
+        print("[MarkerCorrection][WARN] Zu wenige stabile Marker – Abbruch.")
         return
 
-    # Vorbereitung
-    all_tracks = {t.name: t for t in clip.tracking.tracks}
+    print(f"[MarkerCorrection][MODE] {mode}-Frame-Basis gewählt "
+          f"(fd={ld} fc={lc} fb={lb} fa={la}, min={min_required:.0f})")
 
-    # Stats für Summary
-    stats_total = 0
-    stats_moved = 0
-    stats_skipped_no_target = 0
-    stats_no_prev = 0
+    # ----------------------------------------------------------
+    # Hilfsfunktionen
+    # ----------------------------------------------------------
+    def robust_weighted_mean(pairs: List[Tuple[float, float]]) -> float:
+        """Trimmed weighted mean (10 %) mit Fallback."""
+        n = len(pairs)
+        if n == 0:
+            return 0.0
+        if n < 5:
+            s = sum(w for _, w in pairs)
+            return sum(v * w for v, w in pairs) / s if s else 0.0
+        pairs = sorted(pairs, key=lambda x: x[0])
+        cut = max(1, int(0.1 * n))
+        core = pairs[cut:-cut] if n > 2 * cut else pairs
+        s = sum(w for _, w in core)
+        return sum(v * w for v, w in core) / s if s else 0.0
 
-    def _same_pos(a, b, tol=1e-7):
-        return abs(a[0] - b[0]) < tol and abs(a[1] - b[1]) < tol
+    def radial_weight(ax, ay, bx, by):
+        d = math.hypot(ax - bx, ay - by)
+        return 1.0 / (1e-6 + d)
 
-    for tr in selected_markers:
-        if tr.name not in all_tracks:
+    # ----------------------------------------------------------
+    # Positionskorrektur
+    # ----------------------------------------------------------
+    for sm in selected_markers:
+        fa_sm_x, fa_sm_y = get_marker_position(sm, frame_a)
+        fb_sm_x, fb_sm_y = get_marker_position(sm, frame_b)
+
+        wvx, wvy = [], []
+
+        for gm in source:
+            fa_gx, fa_gy = get_marker_position(gm, frame_a)
+            fb_gx, fb_gy = get_marker_position(gm, frame_b)
+            if mode >= 3:
+                fc_gx, fc_gy = get_marker_position(gm, frame_c)
+            if mode == 4:
+                fd_gx, fd_gy = get_marker_position(gm, frame_d)
+
+            # Geschwindigkeitsabschätzung
+            if mode == 4:
+                v1x, v1y = fb_gx - fc_gx, fb_gy - fc_gy
+                v2x, v2y = fa_gx - fb_gx, fa_gy - fb_gy
+                vx, vy = 0.5 * (v1x + v2x), 0.5 * (v1y + v2y)
+            elif mode == 3:
+                vx = 0.5 * ((fb_gx - fc_gx) + (fa_gx - fb_gx))
+                vy = 0.5 * ((fb_gy - fc_gy) + (fa_gy - fb_gy))
+            elif mode == 2:
+                vx, vy = fa_gx - fb_gx, fa_gy - fb_gy
+            else:
+                vx = vy = 0.0
+
+            w = radial_weight(fa_sm_x, fa_sm_y, fa_gx, fa_gy)
+            wvx.append((vx, w))
+            wvy.append((vy, w))
+            print(f"[MarkerCorrection][FORMULA] gm={gm.name}  "
+                  f"v=({vx:+.5f},{vy:+.5f})  w={w:.4f}")
+
+        if not wvx or not wvy:
+            print(f"[MarkerCorrection][WARN] {sm.name}: keine gültigen Referenzen.")
             continue
 
-        stats_total += 1
+        avg_vx, avg_vy = robust_weighted_mean(wvx), robust_weighted_mean(wvy)
 
-        if not marker_exists(tr, frame_b):
-            stats_skipped_no_target += 1
-            _dbg(scene, 3, f"[MarkerCorrection][TRACK] {tr.name}  skip: kein Marker im Ziel-Frame")
-            continue
+        # Vorhersage & Kalibrierung
+        new_x, new_y = fb_sm_x + avg_vx, fb_sm_y + avg_vy
+        calib_x, calib_y = 0.5 * (fa_sm_x + new_x), 0.5 * (fa_sm_y + new_y)
 
-        p_cur = get_marker_position(tr, frame_b)
-        velocities: List[Tuple[float, float]] = []
-        weights: List[float] = []
+        # Dämpfung (±5 %)
+        final_x = max(new_x * 0.95, min(new_x * 1.05, calib_x))
+        final_y = max(new_y * 0.95, min(new_y * 1.05, calib_y))
 
-        # Nur valide Rückblick-Frames berücksichtigen (eindeutig & sortiert)
-        prev_frames = [f for f in {frame_a, frame_c, frame_d} if isinstance(f, int)]
-        prev_frames.sort()
+        set_marker_position(sm, frame_a, final_x, final_y)
+        print(f"[MarkerCorrection][RESULT] {sm.name}: "
+              f"({fa_sm_x:.5f},{fa_sm_y:.5f}) → ({final_x:.5f},{final_y:.5f})")
 
-        for f_prev in prev_frames:
-            if not marker_exists(tr, f_prev):
-                continue
-            p_prev = get_marker_position(tr, f_prev)
-            vx = p_cur[0] - p_prev[0]
-            vy = p_cur[1] - p_prev[1]
-            w = _radial_weight(p_cur, p_prev)  # loggt FORMULA
-            velocities.append((vx, vy))
-            weights.append(w)
-            _dbg(scene, 3, f"[MarkerCorrection][TRACK] {tr.name}  prev={f_prev}  v=({vx:+.6f},{vy:+.6f})  w={w:.6f}")
-
-        if not velocities:
-            stats_no_prev += 1
-            _dbg(scene, 2, f"[MarkerCorrection][WARN] {tr.name}: keine gültigen Rückblick-Frames.")
-            continue
-
-        vx, vy = _trimmed_weighted_mean(velocities, weights)  # loggt TRIM
-        new_pos = (p_cur[0] - vx, p_cur[1] - vy)
-
-        if _same_pos(p_cur, new_pos):
-            _dbg(scene, 3, f"[MarkerCorrection][RESULT] {tr.name}  unchanged  at=({p_cur[0]:.6f},{p_cur[1]:.6f})")
-            continue
-
-        set_marker_position(tr, frame_b, new_pos[0], new_pos[1])
-        stats_moved += 1
-        _dbg(scene, 2, f"[MarkerCorrection][TRACK] {tr.name}")
-        _dbg(scene, 2, f"[MarkerCorrection][RESULT] old=({p_cur[0]:.6f},{p_cur[1]:.6f}) → new=({new_pos[0]:.6f},{new_pos[1]:.6f})")
-
-    _dbg(scene, 1, f"[MarkerCorrection][SUMMARY] frame={int(frame_b)}  "
-                   f"tracks={stats_total}  moved={stats_moved}  "
-                   f"skipped_no_target={stats_skipped_no_target}  no_prev={stats_no_prev}")
+    print(f"[MarkerCorrection][SUMMARY] Marker-Korrektur abgeschlossen "
+          f"(Mode={mode}, Frames={frame_a},{frame_b},{frame_c},{frame_d}).")
