@@ -285,22 +285,41 @@ def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, fra
         avg_vx = robust_weighted_mean(wvx)
         avg_vy = robust_weighted_mean(wvy)
 
-        # Vorhersage aus Vorframe
+        # ----------------------------------------------------------
+        # Adaptive Stabilisierung (nichtlinear, quadratisch geglättet)
+        # ----------------------------------------------------------
         new_x = fb_sm_x + avg_vx
         new_y = fb_sm_y + avg_vy
 
-        # Adaptive Stabilisierung (abweichungsabhängige Gewichtung)
+        # Abweichungen zwischen Schätzung und gemessener Markerposition
         diff_x = abs(fa_sm_x - new_x)
         diff_y = abs(fa_sm_y - new_y)
 
-        # Empfindlichkeit an Bildseitenverhältnis anpassen
-        w_x = min(1.0, diff_x * 5.0)
-        w_y = min(1.0, diff_y * 5.0 * aspect_ratio)
+        # Seitenverhältnis berücksichtigen (aniso-Korrektur)
+        w_aspect = aspect_ratio if aspect_ratio != 0 else 1.0
+        diff_y *= w_aspect
 
-        final_x = (new_x * w_x + fa_sm_x * (1.0 - w_x))
-        final_y = (new_y * w_y + fa_sm_y * (1.0 - w_y))
+        # Quadratische Gewichtsfunktion: (1 - diff²)
+        wx_base = max(0.0, min(1.0, 1.0 - (diff_x * diff_x)))
+        wy_base = max(0.0, min(1.0, 1.0 - (diff_y * diff_y)))
+
+        # Normierte adaptive Mischung nach der exakten Formel:
+        # ((S*(1-Δ²)) + (M*(1-(1-Δ²)))) / ((1-Δ²) + (1-(1-Δ²)))
+        # vereinfacht zu gleitender, symmetrischer Blend
+        def adaptive_blend(estimate, measure, w):
+            a = w
+            b = 1.0 - w
+            numerator = (estimate * a) + (measure * b)
+            denominator = a + b if (a + b) != 0 else 1.0
+            return numerator / denominator
+
+        final_x = adaptive_blend(new_x, fa_sm_x, wx_base)
+        final_y = adaptive_blend(new_y, fa_sm_y, wy_base)
 
         set_marker_position(sm, frame_a, final_x, final_y)
+
+        # Optionales Debug-Log:
+        # print(f"[Adaptive] {sm}: Δx={diff_x:.4f}, Δy={diff_y:.4f}, wx={wx_base:.3f}, wy={wy_base:.3f}")
 
     print(f"[Marker Correction] Marker-Korrektur abgeschlossen – Basis: {mode}-Frame (robust, adaptiv, aspect={aspect_ratio:.3f}).")
 
