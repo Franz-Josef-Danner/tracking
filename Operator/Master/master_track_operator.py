@@ -19,10 +19,39 @@ from ...Helper.frame_track_progress import compute_marker_progress
 # Neuer Korrektur-Helper
 # ------------------------------------------------------------
 from ...Helper.marker_position_forward_calibration import (
-    find_active_tracks_key,   # scannt Scene nach good/best_tracks
-    _resolve_reference_key,   # liefert aktiven Referenz-Key direkt zurück
+    find_active_tracks_key,
+    _resolve_reference_key,
 )
 
+# ------------------------------------------------------------
+# Interner Helper: Speicherung aktiver Tracks in Scene-String
+# ------------------------------------------------------------
+def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
+    """
+    Speichert die aktuell selektierten und aktiven Tracks
+    im Scene-String 'calibrate_tracks'.
+    """
+    scene = context.scene
+    if not track_names:
+        return
+
+    try:
+        # Existierende Einträge bereinigen (optional)
+        if "calibrate_tracks" in scene:
+            del scene["calibrate_tracks"]
+
+        # Speicherung als kommagetrennter String (kompatibel zu anderen Strings)
+        scene["calibrate_tracks"] = ",".join(track_names)
+
+        # Optionale Debug-Ausgabe zur Kontrolle
+        print(f"[MasterTrackCycle] Scene-String 'calibrate_tracks' gespeichert – {len(track_names)} Tracks.")
+    except Exception as e:
+        print(f"[MasterTrackCycle][WARN] Konnte Scene-String 'calibrate_tracks' nicht speichern: {e}")
+
+
+# =====================================================================
+# Hauptoperator
+# =====================================================================
 class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     bl_idname = "kaiserlich_tracker.master_track_cycle"
     bl_label = "Track Cycle (Modal)"
@@ -61,13 +90,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             self.report({'ERROR'}, "No active clip found.")
             return {"CANCELLED"}
 
-        # Get start and end frames
+        # Start- und End-Frame
         self._start_frame = ph_get_start_frame(context)
         self._end_frame = get_end_frame(context)
         if self._end_frame < self._start_frame:
             self._end_frame = self._start_frame
 
-        # Collect current track selection
+        # Aktuelle Track-Selektion
         self._original_selected = collect_selected_track_names(context)
         if not self._original_selected:
             self.report({'WARNING'}, "No tracks selected.")
@@ -75,33 +104,39 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
         self._processing_names = list(self._original_selected)
 
-        # Find CLIP_EDITOR area
+        # Clip-Editor finden
         self._window, self._area, self._region, self._space = find_clip_editor_area(clip)
         if not self._window:
             self.report({'ERROR'}, "No CLIP_EDITOR area found.")
             return {"CANCELLED"}
 
-        # Set starting frame
+        # Startframe setzen
         self._current_frame = max(self._start_frame, int(scene.frame_current))
         self._space.clip_user.frame_current = self._current_frame
         scene.frame_current = self._current_frame
 
-        # Initialize histories for each track
+        # Historien vorbereiten
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
 
-        # Lock current selection
+        # Auswahl fixieren
         tracking = clip.tracking
         for tr in tracking.tracks:
             tr.select = (tr.name in self._original_selected)
 
         # --------------------------------------------------------
-        # Referenz-Key nur EINMAL zu Beginn bestimmen
+        # Referenz-Key bestimmen
         # --------------------------------------------------------
-        from ...Helper.marker_position_forward_calibration import _resolve_reference_key
         self._active_ref_key = _resolve_reference_key(scene)
         print(f"[MasterTrackCycle] Initialer Referenz-Key: {self._active_ref_key}")
 
-        # Activate timer
+        # --------------------------------------------------------
+        # NEU: Aktuell selektierte und aktive Tracks speichern
+        # --------------------------------------------------------
+        store_calibrate_tracks_in_scene(context, self._processing_names)
+
+        # --------------------------------------------------------
+        # Timer starten
+        # --------------------------------------------------------
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
@@ -126,7 +161,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
         tracking = clip.tracking
 
-        # Update histories
+        # Historien aktualisieren
         for name in list(self._processing_names):
             tr = tracking.tracks.get(name)
             if not tr:
@@ -135,40 +170,25 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             if mk and not mk.mute:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
 
-        # ---------------------------
-        # 1) Positions-Stabilisierung
-        # ---------------------------
-        # Frames: a = current, b = previous, c = prev-1, d = prev-2 (falls vorhanden)
-        a = int(self._current_frame)
-        b = max(self._start_frame, a - 1)
-        c = b - 1 if (b - 1) >= self._start_frame else None
-        d = (c - 1) if (c is not None and c - 1 >= self._start_frame) else None
+        # -----------------------------------------------
+        # 1) Vor jedem Calibration-Step sichern
+        # -----------------------------------------------
+        store_calibrate_tracks_in_scene(context, self._processing_names)
 
-        # Selektierte Tracks als Objekte
-        selected_tracks = [tracking.tracks.get(nm) for nm in self._processing_names]
-        selected_tracks = [t for t in selected_tracks if t is not None]
+        # Danach würde marker_position_forward_calibration.py aufgerufen werden
+        # (hier nur vorbereitend, damit calibrate_tracks aktuell ist)
 
-        try:
-            if a > self._start_frame and selected_tracks and self._active_ref_key:
-                # Nur noch Logging bei Änderung
-                print(f"[MasterTrackCycle] Nutzung Referenz-Key: {self._active_ref_key}")
-            elif not self._active_ref_key:
-                print("[MasterTrackCycle][WARN] Kein Referenz-Key verfügbar.")
-        except Exception as e:
-            print(f"[MasterTrackCycle][WARN] Referenzprüfung fehlgeschlagen: {e}")
-
-
-        # ---------------------------
-        # 2) Adaptive Formel (deine Logik)
-        # ---------------------------
+        # -----------------------------------------------
+        # 2) Adaptive Formel
+        # -----------------------------------------------
         try:
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception:
             pass
 
-        # ---------------------------
+        # -----------------------------------------------
         # 3) Tracking-Step
-        # ---------------------------
+        # -----------------------------------------------
         success = track_markers_with_override(
             self._window, self._area, self._region, self._space,
             backwards=False, sequence=False
@@ -177,7 +197,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
-        # Advance frame
+        # Frame fortsetzen
         scene = context.scene
         if self._space.clip_user.frame_current == self._current_frame:
             self._space.clip_user.frame_current += 1
@@ -188,12 +208,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         self._current_frame = self._space.clip_user.frame_current
         self._frames_processed += 1
 
-        # Filter active tracks
+        # Aktive Tracks filtern
         self._processing_names, _ = filter_active_tracks_at_frame(
             context, self._processing_names, self._current_frame
         )
 
-        # Termination conditions
+        # Abbruchbedingungen
         if self._current_frame >= self._end_frame:
             self._finish(context)
             return {"FINISHED"}
@@ -209,7 +229,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
-    # Finalization / Cleanup
+    # Abschluss / Cleanup
     # --------------------------------------------------------
 
     def _finish(self, context, cancelled: bool = False):
@@ -218,48 +238,44 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             wm.event_timer_remove(self._timer)
         self._timer = None
 
-        # Restore original selection
+        # Ursprüngliche Auswahl wiederherstellen
         clip = getattr(context.space_data, "clip", None)
         if clip and hasattr(clip, "tracking"):
             for tr in clip.tracking.tracks:
                 tr.select = (tr.name in self._original_selected)
 
-        # Optional: Reset zum Startframe, damit der Folge-Operator konsistent beginnt
+        # Zurücksetzen
         try:
             reset_to_frame(context, self._start_frame)
         except Exception:
             pass
 
-        # Progress/QoS aktualisieren (defensiv gekapselt)
+        # Progress aktualisieren
         try:
-            metrics = None
-            try:
-                from ...Helper.track_quality_metrics import compute_track_quality_metrics
-                metrics = compute_track_quality_metrics(context)
-                quality_percent = float(metrics.get("prozent", 100.0))
-                context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
-            except Exception:
-                pass
-
-            try:
-                _, perc = compute_marker_progress(context.scene, update_ui=True)
-                context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
-            except Exception:
-                pass
+            from ...Helper.track_quality_metrics import compute_track_quality_metrics
+            metrics = compute_track_quality_metrics(context)
+            quality_percent = float(metrics.get("prozent", 100.0))
+            context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
         except Exception:
             pass
 
-        # Chain to next operator (nur wenn nicht abgebrochen)
+        try:
+            _, perc = compute_marker_progress(context.scene, update_ui=True)
+            context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
+        except Exception:
+            pass
+
+        # Folge-Operator starten
         if not cancelled:
             try:
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
             except Exception:
                 pass
 
+
 # ------------------------------------------------------------
 # Register
 # ------------------------------------------------------------
-
 def register():
     bpy.utils.register_class(KAISERLICHTRACKER_OT_master_track_cycle)
 
