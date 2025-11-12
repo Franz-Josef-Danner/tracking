@@ -220,7 +220,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 print("[MasterCycle][Motion] Motion-Phase abgeschlossen → Operator CANCELLED (kein Weak Frame)")
                 print("[MasterCycle][Motion] Kein Weak Frame – Übergabe an master_resolve_operator ...")
                 try:
-                    self._rebuild_good_tracks(context, reason="Post-motion phase handover to resolve")
                     bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
                     print("[MasterCycle][Motion] Übergabe erfolgreich ausgeführt → Prozess abgeschlossen.")
                     return {'FINISHED'}
@@ -260,8 +259,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         from ...Helper.delete import delete_tracks_by_names
                         delete_tracks_by_names(bpy.context, flagged_names)
 
-                self._rebuild_good_tracks(context, reason="Post-Stage1 cleanup")
-
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
                     filter_problematic_tracks(context, threshold=10.0)
 
@@ -270,7 +267,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 frame = find_first_weak_frame(context)
                 if frame is None:
                     print("[MasterCycle][Filter] Kein neuer Weak Frame gefunden → starte Resolve Operator")
-                    self._rebuild_good_tracks(context, reason="Pre-resolve cleanup checkpoint")
                     bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
                     return {'FINISHED'}
 
@@ -280,7 +276,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         print(f"[MasterCycle][Filter] Entferne Cache Key: {k}")
                         del scene[k]
 
-                self._rebuild_good_tracks(context, reason="Post-cache-reset cleanup")
 
                 from ...Helper.util_scene import set_scene_props
                 set_scene_props(
@@ -309,32 +304,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 space.clip_user.frame_current = frame
         except Exception:
             pass
-
-        # ---------------------------------------------------------------
-        # Good Tracks erst nach vollständigem Cleanup erzeugen
-        # ---------------------------------------------------------------
-        try:
-            print("[MasterCycle][Tracks] Prüfe ob Cleanup abgeschlossen ist ...")
-
-            # ------------------------------------------------------------
-            # Prüfen, ob ein Cleanup durch 'filter_and_delete_all_tracks'
-            # bereits ausgeführt wurde (Flag = 'filter_all')
-            # ------------------------------------------------------------
-            cleanup_stage = scene.get("cleanup_stage", "")
-            cleanup_done = cleanup_stage == "filter_all"
-
-            if cleanup_done:
-                print(f"[MasterCycle][Tracks] Cleanup vollständig abgeschlossen (Stage={cleanup_stage}) → Erstelle Good Tracks ...")
-                self._rebuild_good_tracks(context, reason="Post-cleanup (filter_all) good_tracks rebuild")
-
-                # Nach erfolgreichem Rebuild Flag zurücksetzen, um Wiederholungen zu vermeiden
-                if "cleanup_stage" in scene:
-                    del scene["cleanup_stage"]
-            else:
-                print(f"[MasterCycle][Tracks] Kein vollständiger Cleanup erkannt (Stage={cleanup_stage}) → Good Tracks werden NICHT erzeugt")
-
-        except Exception as e:
-            print(f"[MasterCycle][Tracks] FEHLER beim Prüfen oder Erstellen der Good Tracks: {e}")
 
         try:
             motion_value_exists = scene.get("motion_value") is not None
