@@ -449,6 +449,29 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         print(f"  rot_scale_thresh_scale    : {self.state.rot_scale_thresh_scale:.6f}")
         print(f"  perspective_thresh        : {self.state.perspective_thresh:.6f}")
 
+
+        # ================================================================
+        # Write results to Scene variable 'motion_list'
+        # ================================================================
+        scene = context.scene
+        result_dict = {
+            "rot_thresh_x": round(self.state.rot_thresh_x, 6),
+            "rot_thresh_y": round(self.state.rot_thresh_y, 6),
+            "scale_thresh_min": round(self.state.scale_thresh_min, 6),
+            "scale_thresh_max": round(self.state.scale_thresh_max, 6),
+            "rot_scale_thresh_rot": round(self.state.rot_scale_thresh_rot, 6),
+            "rot_scale_thresh_scale": round(self.state.rot_scale_thresh_scale, 6),
+            "perspective_thresh": round(self.state.perspective_thresh, 6),
+        }
+
+        try:
+            scene["motion_list"] = str(result_dict)
+            print(f"[DEEP TEST][STORE] motion_list → Scene stored ({len(result_dict)} keys)")
+        except Exception as e:
+            print(f"[DEEP TEST][STORE][ERROR] Could not store motion_list: {e}")
+
+        print("==========================================================\n")
+
         # handover to master_detect_adapt
         self._invoke_master_detect_adapt(context)
 

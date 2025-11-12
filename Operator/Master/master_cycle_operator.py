@@ -132,6 +132,69 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         frame = find_first_weak_frame(context)
 
         if frame is None:
+            # ============================================================
+            # Kein Low Marker Frame gefunden → Threshold-Auswertung
+            # ============================================================
+            scene = context.scene
+
+            # 1) Wenn motion_value bereits existiert, DeepTest überspringen
+            if "motion_value" in scene:
+                print("[MASTER CYCLE] Motion value bereits vorhanden → DeepTest übersprungen.")
+                mv = scene["motion_value"]
+                if isinstance(mv, dict):
+                    # Werte direkt in Szene eintragen
+                    scene["kaiserlich_rot_thresh_x"] = mv.get("rot_thresh_x", 1.0)
+                    scene["kaiserlich_rot_thresh_y"] = mv.get("rot_thresh_y", 1.0)
+                    scene["kaiserlich_scale_thresh_min"] = mv.get("scale_thresh_min", 1.0)
+                    scene["kaiserlich_scale_thresh_max"] = mv.get("scale_thresh_max", 1.1)
+                    scene["kaiserlich_rot_scale_thresh_rot"] = mv.get("rot_scale_thresh_rot", 1.0)
+                    scene["kaiserlich_rot_scale_thresh_scale"] = mv.get("rot_scale_thresh_scale", 1.0)
+                    scene["kaiserlich_perspective_thresh"] = mv.get("perspective_thresh", 1.0)
+                else:
+                    print("[MASTER CYCLE][WARN] motion_value ist kein Dictionary – ignoriert.")
+
+                # Direkt an master_detect_adapt weitergeben
+                try:
+                    bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                except Exception as e:
+                    print(f"[MASTER CYCLE][ERROR] Detect Adapt Übergabe fehlgeschlagen: {e}")
+                return {'FINISHED'}
+
+            # 2) Wenn keine motion_value vorhanden → motion_list auswerten
+            if "motion_list" in scene:
+                import ast, statistics
+                try:
+                    ml_raw = scene["motion_list"]
+                    ml = ast.literal_eval(ml_raw) if isinstance(ml_raw, str) else ml_raw
+                    if isinstance(ml, dict):
+                        result = {}
+                        for k, v in ml.items():
+                            if isinstance(v, (int, float)):
+                                if v < 1.0:
+                                    result.setdefault(k.split("_")[0], []).append(v)
+
+                        # Mittelwerte berechnen für jeden Threshold-Typ
+                        avg_values = {}
+                        for k, vals in result.items():
+                            if vals:
+                                avg_values[k] = round(statistics.mean(vals), 6)
+
+                        # motion_value speichern
+                        scene["motion_value"] = avg_values
+                        print(f"[MASTER CYCLE] motion_value erstellt: {avg_values}")
+                    else:
+                        print("[MASTER CYCLE][WARN] motion_list ist kein Dictionary – ignoriert.")
+                except Exception as e:
+                    print(f"[MASTER CYCLE][ERROR] motion_list konnte nicht ausgewertet werden: {e}")
+
+                # Falls motion_value nun existiert, direkt weitergeben
+                if "motion_value" in scene:
+                    try:
+                        bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                    except Exception as e:
+                        print(f"[MASTER CYCLE][ERROR] Übergabe an Detect Adapt fehlgeschlagen: {e}")
+                    return {'FINISHED'}
+
             try:
                 window, area, region, space = find_clip_editor_area(
                     getattr(getattr(context, "space_data", None), "clip", None)
