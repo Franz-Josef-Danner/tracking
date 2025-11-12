@@ -45,7 +45,7 @@ class DeepTestState:
     reference_value: float = 0.0
     start: float = 0.0
     lower_limit: float = 0.0
-    step: float = 0.0
+    step: int = 0
     next_val: float = 0.0
     converter: float = 0.0
 
@@ -295,7 +295,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         except Exception:
             pass
 
-        # step-specific thresholds (exclusive per category as in the original)
+        # step-specific thresholds (nur aktive Kategorie anfassen; andere beibehalten)
         if step == 0:
             if clip:
                 width, height = clip.size
@@ -304,54 +304,60 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 scene.kaiserlich_rot_thresh_y = float(y_val)
                 self.state.rot_thresh_x = float(val)
                 self.state.rot_thresh_y = float(y_val)
-                scene.kaiserlich_scale_thresh_min = 1
-                scene.kaiserlich_scale_thresh_max = 1
-                scene.kaiserlich_rot_scale_thresh_rot = 1
-                scene.kaiserlich_rot_scale_thresh_scale = 1
-                scene.kaiserlich_perspective_thresh = 1
+                # andere Kategorien NICHT auf 1 zurücksetzen – letzte Bestwerte stehen lassen
+                scene.kaiserlich_scale_thresh_min   = self.state.scale_thresh_min
+                scene.kaiserlich_scale_thresh_max   = self.state.scale_thresh_max
+                scene.kaiserlich_rot_scale_thresh_rot   = self.state.rot_scale_thresh_rot
+                scene.kaiserlich_rot_scale_thresh_scale = self.state.rot_scale_thresh_scale
+                scene.kaiserlich_perspective_thresh     = self.state.perspective_thresh
             return
 
         elif step == 1:
-            scene.kaiserlich_rot_thresh_x = 1
-            scene.kaiserlich_rot_thresh_y = 1
+            # Rot-Werte beibehalten
+            scene.kaiserlich_rot_thresh_x = self.state.rot_thresh_x
+            scene.kaiserlich_rot_thresh_y = self.state.rot_thresh_y
             scene.kaiserlich_scale_thresh_min = float(val)
             scene.kaiserlich_scale_thresh_max = float(min(1.0, val * 1.1))
             self.state.scale_thresh_min = float(val)
             self.state.scale_thresh_max = float(min(1.0, val * 1.1))
-            scene.kaiserlich_rot_scale_thresh_rot = 1
-            scene.kaiserlich_rot_scale_thresh_scale = 1
-            scene.kaiserlich_perspective_thresh = 1
+            # übrige Kategorien beibehalten
+            scene.kaiserlich_rot_scale_thresh_rot   = self.state.rot_scale_thresh_rot
+            scene.kaiserlich_rot_scale_thresh_scale = self.state.rot_scale_thresh_scale
+            scene.kaiserlich_perspective_thresh     = self.state.perspective_thresh
             return
 
         elif step == 2:
-            scene.kaiserlich_rot_thresh_x = 1
-            scene.kaiserlich_rot_thresh_y = 1
-            scene.kaiserlich_scale_thresh_min = 1
-            scene.kaiserlich_scale_thresh_max = 1
+            # Rot/Scale beibehalten
+            scene.kaiserlich_rot_thresh_x = self.state.rot_thresh_x
+            scene.kaiserlich_rot_thresh_y = self.state.rot_thresh_y
+            scene.kaiserlich_scale_thresh_min = self.state.scale_thresh_min
+            scene.kaiserlich_scale_thresh_max = self.state.scale_thresh_max
             scene.kaiserlich_rot_scale_thresh_rot = float(val)
-            scene.kaiserlich_rot_scale_thresh_scale = 0.0
+            scene.kaiserlich_rot_scale_thresh_scale = self.state.rot_scale_thresh_scale
             self.state.rot_scale_thresh_rot = float(val)
-            scene.kaiserlich_perspective_thresh = 1
+            scene.kaiserlich_perspective_thresh = self.state.perspective_thresh
             return
 
         elif step == 3:
-            scene.kaiserlich_rot_thresh_x = 1
-            scene.kaiserlich_rot_thresh_y = 1
-            scene.kaiserlich_scale_thresh_min = 1
-            scene.kaiserlich_scale_thresh_max = 1
-            scene.kaiserlich_rot_scale_thresh_rot = 0.0
+            # Rot/ScaleMinMax/RotScaleRot beibehalten
+            scene.kaiserlich_rot_thresh_x = self.state.rot_thresh_x
+            scene.kaiserlich_rot_thresh_y = self.state.rot_thresh_y
+            scene.kaiserlich_scale_thresh_min = self.state.scale_thresh_min
+            scene.kaiserlich_scale_thresh_max = self.state.scale_thresh_max
+            scene.kaiserlich_rot_scale_thresh_rot = self.state.rot_scale_thresh_rot
             scene.kaiserlich_rot_scale_thresh_scale = float(val)
             self.state.rot_scale_thresh_scale = float(val)
-            scene.kaiserlich_perspective_thresh = 1
+            scene.kaiserlich_perspective_thresh = self.state.perspective_thresh
             return
 
         elif step == 4:
-            scene.kaiserlich_rot_thresh_x = 1
-            scene.kaiserlich_rot_thresh_y = 1
-            scene.kaiserlich_scale_thresh_min = 1
-            scene.kaiserlich_scale_thresh_max = 1
-            scene.kaiserlich_rot_scale_thresh_rot = 1
-            scene.kaiserlich_rot_scale_thresh_scale = 1
+            # alle bisherigen Bestwerte beibehalten
+            scene.kaiserlich_rot_thresh_x = self.state.rot_thresh_x
+            scene.kaiserlich_rot_thresh_y = self.state.rot_thresh_y
+            scene.kaiserlich_scale_thresh_min = self.state.scale_thresh_min
+            scene.kaiserlich_scale_thresh_max = self.state.scale_thresh_max
+            scene.kaiserlich_rot_scale_thresh_rot = self.state.rot_scale_thresh_rot
+            scene.kaiserlich_rot_scale_thresh_scale = self.state.rot_scale_thresh_scale
             scene.kaiserlich_perspective_thresh = float(val)
             self.state.perspective_thresh = float(val)
             return
