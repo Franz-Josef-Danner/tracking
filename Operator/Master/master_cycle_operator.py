@@ -201,8 +201,18 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     "rot_scale_thresh_scale": "kaiserlich_rot_scale_thresh_scale",
                     "perspective_thresh": "kaiserlich_perspective_thresh",
                 }.items():
-                    if prop in scene:
-                        setattr(scene, prop, motion_value.get(k, 0.0))
+                    if hasattr(scene, prop):
+                        try:
+                            value = motion_value.get(k, 0.0)
+                            # Wenn kein Wert (<1) gefunden wurde, wurde 0.0 gesetzt → stattdessen 1.0 schreiben
+                            if value == 0.0:
+                                value = 1.0
+                            setattr(scene, prop, value)
+                            print(f"[MOTION → SCENE] {prop} = {value}")
+                        except Exception as e:
+                            print(f"[MOTION → SCENE][ERROR] {prop}: {e}")
+                        except Exception as e:
+                            print(f"[MOTION → SCENE][ERROR] {prop}: {e}")
 
                 # --- UI-Refresh ---
                 for window in bpy.context.window_manager.windows:
