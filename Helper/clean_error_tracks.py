@@ -1,4 +1,5 @@
 import bpy
+import time
 
 def _find_active_clip(context: bpy.types.Context):
     """Find the active MovieClip, preferring Clip Editor, fallback Sequencer."""
@@ -101,5 +102,8 @@ def clean_error_tracks(context: bpy.types.Context, sort_desc: bool = True) -> in
         scene["best_tracks"] = id_list
     except Exception:
         pass
+
+
+    time.sleep(1.0)
 
     return deleted
