@@ -71,8 +71,8 @@ def register():
         from .UI import ui
         ui.register()
     except Exception as e:
-        print(f"[Kaiserlich Tracker] Warnung: UI-Properties konnten nicht registriert werden: {e}")
-
+        pass
+    
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

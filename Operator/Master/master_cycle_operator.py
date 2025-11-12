@@ -127,7 +127,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     del scene[_k]
 
         except Exception as ex:
-            print(f"[MasterCycle][WARN] Scene cleanup skipped due to error: {ex}")
+            pass
 
         frame = find_first_weak_frame(context)
 

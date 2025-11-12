@@ -49,5 +49,4 @@ def save_copy_to_project_backup(
         copy=True,
     )
 
-    print(f"[SaveCopy] ✅ Kopie gespeichert: {target_path}")
     return str(target_path)

@@ -57,10 +57,9 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         try:
             find_active_tracks_key(scene)
         except Exception as e:
-            print(f"[store_calibrate_tracks_in_scene] Fehler beim find_active_tracks_key: {e}")
-
+            pass
     except Exception as e:
-        print(f"[store_calibrate_tracks_in_scene] Fehler: {e}")
+        pass
 
 
 # ------------------------------------------------------------

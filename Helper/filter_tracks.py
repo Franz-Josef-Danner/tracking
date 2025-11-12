@@ -70,9 +70,7 @@ def filter_problematic_tracks(
     # --- 1) Interner Filter (Bewegungsanalyse)
     try:
         bpy.ops.clip.filter_tracks(track_threshold=threshold)
-        print(f"[Kaiserlich Tracker][Filter] Filter angewendet (Threshold={threshold}).")
     except Exception as e:
-        print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Anwenden des Filters: {e}")
         return
 
     # --- 2) Cleanup für kurze Tracks
@@ -84,9 +82,8 @@ def filter_problematic_tracks(
 
         bpy.ops.clip.clean_tracks()
 
-        print(f"[Kaiserlich Tracker][Filter] Cleanup ✓ – Tracks mit < {resolved_min_frames} Frames gelöscht.")
     except Exception as e:
-        print(f"[Kaiserlich Tracker][Filter] ❌ Fehler beim Cleanup: {e}")
+        pass
 
     # --- 3) Schutz wieder aufheben ---
     if protected_names:

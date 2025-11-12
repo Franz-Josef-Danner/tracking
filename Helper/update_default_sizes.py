@@ -73,7 +73,5 @@ def update_default_sizes(context: bpy.types.Context) -> Tuple[int, int, int, int
         scene = getattr(context, "scene", None)
         ef_target = int(getattr(scene, "kaiserlich_markers_per_frame", 25)) if scene else 25
         result = run_bootstrap(context, ef_target)
-        print(f"[Kaiserlich Tracker][update_default_sizes] Pattern max erreicht ({_MAX}). Bootstrap neu gestartet.")
-        print(f"[Kaiserlich Tracker][Bootstrap Result] {result}")
 
     return old_pattern, old_search, new_pattern, new_search
