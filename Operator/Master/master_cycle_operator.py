@@ -258,7 +258,9 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         delete_tracks_by_names(bpy.context, flagged_names)
 
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+                    print("[MasterCycle][Filter] → Starte filter_problematic_tracks (threshold=10.0)")
                     filter_problematic_tracks(context, threshold=10.0)
+                    print("[MasterCycle][Filter] → filter_problematic_tracks abgeschlossen")
 
                 self._rebuild_good_tracks(context, reason="Post-Stage2 cleanup")
 
