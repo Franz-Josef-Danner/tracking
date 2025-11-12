@@ -114,7 +114,7 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                     self._finalize(context)
                     self.cancel(context)
                     scene = context.scene
-                    scene.kaiserlich_progress_title = f"{int(100)}%"
+                    scene.kaiserlich_progress_step = f"{int(100)}%"
                     return {'FINISHED'}
 
                 # otherwise proceed with next atomic step
@@ -282,8 +282,8 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         vale = min(100.0, 100.0 - (((math.log10(max(0.00001, converter) * 100000.0) - 0.205) * 1.03) * 20.0))
         if vale < 100:
             total = max(0, min(100, (((step * 1.24) + 1) * 17) - ((100 - (vale - 1)) / 6)))
-            scene.kaiserlich_progress_step = f"{int(total)}%"
-        scene.kaiserlich_progress_title = f"{int(vale * 0.99)}%"
+            scene.kaiserlich_progress_step = f"{int(total * 0.99)}%"
+        scene.kaiserlich_progress_title = f"{int(vale)}%"
 
         try:
             scene.kaiserlich_converter = converter
