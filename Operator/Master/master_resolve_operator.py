@@ -13,17 +13,21 @@ try:
         refine_intrinsics_principal_point_on,
         refine_intrinsics_radial_distortion_on,
     )
+    from ...Helper.low_marker_frame import find_first_weak_frame
 except Exception as e:
     raise ImportError(f"[master_resolve_operator] Missing add-on modules: {e}")
 
 
 class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
-    """Multi-Stage Camera Solve Operator with Intrinsics Escalation"""
+    """Multi-Stage Camera Solve Operator with Intrinsics Escalation and Post-Solve Cleanup"""
     bl_idname = "kaiserlich_tracker.master_resolve_operator"
     bl_label = "Kaiserlich: Resolve Master (staged)"
-    bl_description = "Executes the camera solve in multiple escalating refinement stages"
+    bl_description = (
+        "Executes the camera solve in multiple escalating refinement stages, "
+        "runs cleanup after each solve, and triggers Master Cycle if weak frames are found."
+    )
     bl_options = {'REGISTER', 'UNDO'}
-    
+
     poll_interval: bpy.props.FloatProperty(default=0.25)
     timeout_seconds: bpy.props.FloatProperty(default=8.0)
 
@@ -34,7 +38,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
     _avg_error = None
     _area = _region = _space = None
 
-    MAX_STAGES = 4  # Number of solve refinement stages
+    MAX_STAGES = 4
 
     # ---------------- Lifecycle ----------------
     def invoke(self, context, event):
@@ -60,47 +64,36 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             self._stage = 1
             return {'RUNNING_MODAL'}
 
-        # --- PHASE 1: Solve Sequence --------------------------------------
+        # --- PHASE 1: Solve + Cleanup + Weak Frame Check ------------------
         if self._phase == 1:
             if self._stage > self.MAX_STAGES:
-                bpy.ops.kaiserlich_tracker.clean_error_operator('INVOKE_DEFAULT')
                 self._update_progress(context, 100)
                 return self._finish(context)
 
+            # Solve stage
             self._run_solve_stage(context, self._stage)
-            self._phase = 2
-            self._elapsed = 0.0
-            progress = int((self._stage - 1) / self.MAX_STAGES * 100)
-            self._update_progress(context, progress)
-            return {'RUNNING_MODAL'}
 
-        # --- PHASE 2: Polling after Solve ---------------------------------
-        if self._phase == 2:
-            self._elapsed += self.poll_interval
-            clip = getattr(self._space, "clip", None)
-            err_val = self._safe_avg_error(clip)
-            max_err = getattr(context.scene, "max_error_value", 20.0)
+            # --- Cleanup directly after each solve ---
+            try:
+                bpy.ops.kaiserlich_tracker.clean_error_operator('EXEC_DEFAULT')
+            except Exception as e:
+                self.report({'WARNING'}, f"Cleanup failed at stage {self._stage}: {e}")
 
-            if err_val is not None:
-                self._avg_error = err_val
-                if err_val <= max_err:
+            # --- Search for weak frame ---
+            try:
+                weak_frame = find_first_weak_frame(context)
+                if weak_frame is not None:
+                    # Low Marker Frame found → hand over to Master Cycle
+                    bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
                     self._update_progress(context, 100)
                     return self._finish(context)
+            except Exception as e:
+                self.report({'WARNING'}, f"Weak frame check failed: {e}")
 
-                # If error too high → escalate to next stage
-                self._stage += 1
-                self._phase = 1
-                progress = int((self._stage - 1) / self.MAX_STAGES * 100)
-                self._update_progress(context, progress)
-                return {'RUNNING_MODAL'}
-
-            if self._elapsed >= self.timeout_seconds:
-                self._stage += 1
-                self._phase = 1
-                progress = int((self._stage - 1) / self.MAX_STAGES * 100)
-                self._update_progress(context, progress)
-                return {'RUNNING_MODAL'}
-
+            # --- If no weak frame found, continue to next stage ---
+            self._stage += 1
+            progress = int((self._stage - 1) / self.MAX_STAGES * 100)
+            self._update_progress(context, progress)
             return {'RUNNING_MODAL'}
 
         return {'RUNNING_MODAL'}
@@ -112,7 +105,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
         # Stage configuration
         if stage == 1:
-            pass  # Focal=False, Principal=False, Dist=False
+            pass
         elif stage == 2:
             refine_intrinsics_focal_length_on(context)
         elif stage == 3:
@@ -140,12 +133,6 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
                     region = next((r for r in area.regions if r.type == 'WINDOW'), None)
                     return area, region, area.spaces.active
         return None, None, None
-
-    def _safe_avg_error(self, clip):
-        try:
-            return get_average_error(clip)
-        except Exception:
-            return None
 
     def _update_progress(self, context, value: int):
         """Updates the string-based UI property for progress (e.g., '75 %')."""

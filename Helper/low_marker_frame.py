@@ -1,4 +1,4 @@
-# Helper/weak_frame_helper.py – nur aktive Marker zählen (silent)
+# Helper/low_marker_frame.py
 import bpy
 from typing import Dict, Optional
 from .scene import get_scene_range
