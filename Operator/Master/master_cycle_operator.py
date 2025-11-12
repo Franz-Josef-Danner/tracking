@@ -110,7 +110,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             print("\n[MasterCycle][Scene] --- Starte Bereinigung alter Scene-Keys ---")
             keys_to_delete = [
                 "good_tracks", "good_tracks_names", "good_tracks_uuid_map",
-                "best_tracks", "best_tracks_names", "best_tracks_uuid_map",
                 "calibrate_tracks", "calibrate_tracks_names", "calibrate_tracks_uuid_map",
                 "frame_value_cache", "kaiserlich_best_thresholds"
             ]
