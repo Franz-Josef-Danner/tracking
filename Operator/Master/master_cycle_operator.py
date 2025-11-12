@@ -315,19 +315,23 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         # ---------------------------------------------------------------
         try:
             print("[MasterCycle][Tracks] Prüfe ob Cleanup abgeschlossen ist ...")
-            cleanup_done = False
 
-            # Cleanup gilt als abgeschlossen, wenn:
-            #   - kein weiterer weak frame offen ist
-            #   - oder 'frame_value_cache' und 'kaiserlich_best_thresholds' gelöscht wurden
-            if "frame_value_cache" not in scene and "kaiserlich_best_thresholds" not in scene:
+            cleanup_done = False
+            cleanup_stage = scene.get("cleanup_stage", "")
+
+            # Cleanup gilt als abgeschlossen, wenn eine der beiden Filter-Funktionen
+            # erfolgreich gelaufen ist und den Scene-Status entsprechend gesetzt hat.
+            if cleanup_stage in {"filter_all", "filter_problematic"}:
                 cleanup_done = True
 
             if cleanup_done:
-                print("[MasterCycle][Tracks] Cleanup abgeschlossen → Erstelle Good Tracks ...")
-                self._rebuild_good_tracks(context, reason="Post-cleanup good_tracks rebuild")
+                print(f"[MasterCycle][Tracks] Cleanup abgeschlossen (Stage={cleanup_stage}) → Erstelle Good Tracks ...")
+                self._rebuild_good_tracks(context, reason=f"Post-cleanup ({cleanup_stage}) good_tracks rebuild")
+                # Nach erfolgreichem Rebuild das Flag zurücksetzen
+                if "cleanup_stage" in scene:
+                    del scene["cleanup_stage"]
             else:
-                print("[MasterCycle][Tracks] Cleanup nicht vollständig → überspringe Rebuild")
+                print(f"[MasterCycle][Tracks] Cleanup noch nicht abgeschlossen (Stage={cleanup_stage}) → überspringe Rebuild")
         except Exception as e:
             print(f"[MasterCycle][Tracks] FEHLER beim Prüfen oder Erstellen der Good Tracks: {e}")
 
