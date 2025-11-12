@@ -157,10 +157,38 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         for entry in motion_list:
                             if not isinstance(entry, dict):
                                 continue
-                            for k in thresholds.keys():
+                            # Prüfen, ob Threshold komplett ausgelassen werden soll (wenn immer 1)
+                            for k in list(thresholds.keys()):
                                 v = entry.get(k)
+                                # Wenn der Threshold-Wert exakt 1 ist → komplett überspringen
+                                if isinstance(v, (float, int)) and v == 1.0:
+                                    thresholds.pop(k, None)
+                                    continue
+                                # Nur Werte kleiner als 1 berücksichtigen
                                 if isinstance(v, (float, int)) and v < 1.0:
-                                    thresholds[k].append(float(v))
+                                    thresholds.setdefault(k, []).append(float(v))
+
+                        # Falls bestimmte Keys ausgelassen wurden, sicherstellen, dass sie nicht fehlen
+                        all_keys = {
+                            "rot_thresh_x", "rot_thresh_y",
+                            "scale_thresh_min", "scale_thresh_max",
+                            "rot_scale_thresh_rot", "rot_scale_thresh_scale",
+                            "perspective_thresh"
+                        }
+                        for key in all_keys:
+                            if key not in thresholds:
+                                thresholds[key] = []
+
+                        # ---------------------------------------------------------------
+                        # Debug-Ausgabe des Berechnungsvorgangs
+                        # ---------------------------------------------------------------
+                        print("\n[MOTION LIST → MOTION VALUE] ----------------------------")
+                        for k, vals in thresholds.items():
+                            if vals:
+                                print(f"  {k}: {len(vals)} Werte  |  min={min(vals):.6f}, max={max(vals):.6f}, avg={sum(vals)/len(vals):.6f}")
+                            else:
+                                print(f"  {k}: Keine gültigen Werte (<1) gefunden oder ausgelassen.")
+                        print("-------------------------------------------------------------")
 
                         motion_value = {}
                         for k, vals in thresholds.items():
@@ -171,6 +199,10 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
                         scene["motion_value"] = motion_value
 
+                        # ---------------------------------------------------------------
+                        # Ergebnis-Ausgabe von motion_value
+                        # ---------------------------------------------------------------
+                        print("[RESULT] scene['motion_value'] =", motion_value)
                 # ---------------------------------------------------------------
                 # motion_value (egal ob neu oder vorhanden) in Szene übertragen
                 # ---------------------------------------------------------------
