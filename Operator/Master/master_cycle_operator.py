@@ -216,15 +216,9 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         except Exception as e:
                             print(f"[MasterCycle][Motion] Fehler beim Setzen von {prop}: {e}")
                             pass
-                print("[MasterCycle][Motion] Motion-Phase abgeschlossen → Operator CANCELLED (kein Weak Frame)")
-                print("[MasterCycle][Motion] Kein Weak Frame – Übergabe an master_resolve_operator ...")
-                try:
-                    bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
-                    print("[MasterCycle][Motion] Übergabe erfolgreich ausgeführt → Prozess abgeschlossen.")
-                    return {'FINISHED'}
-                except Exception as ex:
-                    print(f"[MasterCycle][Motion] FEHLER bei Übergabe an master_resolve_operator: {ex}")
-                    return {'CANCELLED'}
+                print("[MasterCycle][Motion] Motion-Phase abgeschlossen → Fahre normal fort (kein Early Return)")
+                # Kein Return mehr – der Operator läuft ganz regulär weiter
+                pass
             except Exception as e:
                 print(f"[MasterCycle][Motion] FEHLER: {e}")
                 return {'CANCELLED'}
