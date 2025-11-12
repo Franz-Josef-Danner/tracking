@@ -437,6 +437,17 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
                 if area.type == 'CLIP_EDITOR':
                     area.tag_redraw()
         self.state.stop_flag = True
+        # ================================================================
+        # Final Deep Test Summary Log
+        # ================================================================
+        print("\n[DEEP TEST][RESULT] =======================================")
+        print(f"  rot_thresh_x              : {self.state.rot_thresh_x:.6f}")
+        print(f"  rot_thresh_y              : {self.state.rot_thresh_y:.6f}")
+        print(f"  scale_thresh_min          : {self.state.scale_thresh_min:.6f}")
+        print(f"  scale_thresh_max          : {self.state.scale_thresh_max:.6f}")
+        print(f"  rot_scale_thresh_rot      : {self.state.rot_scale_thresh_rot:.6f}")
+        print(f"  rot_scale_thresh_scale    : {self.state.rot_scale_thresh_scale:.6f}")
+        print(f"  perspective_thresh        : {self.state.perspective_thresh:.6f}")
 
         # handover to master_detect_adapt
         self._invoke_master_detect_adapt(context)
