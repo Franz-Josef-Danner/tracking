@@ -58,9 +58,12 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
         # --- PHASE 0: Locate Clip Editor ----------------------------------
         if self._phase == 0:
+            print("\n[Resolve][Phase 0] Suche nach Clip Editor Kontext ...")
             self._area, self._region, self._space = self._find_clip_context()
             if not (self._space and getattr(self._space, "clip", None)):
+                print("[Resolve][Phase 0] Kein Clip Editor gefunden → Abbruch.")
                 return self._finish(context, cancelled=True)
+            print("[Resolve][Phase 0] Clip Editor gefunden → Wechsel zu Phase 1 (Solve-Start)")
             self._phase = 1
             self._stage = 1
             return {'RUNNING_MODAL'}
@@ -69,32 +72,39 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         if self._phase == 1:
             if self._stage > self.MAX_STAGES:
                 self._update_progress(context, 100)
+                print("[Resolve][Phase 1] Alle Stages abgeschlossen → Beende Operator.")
                 return self._finish(context)
 
-            # Solve stage
+            print(f"\n[Resolve][Stage {self._stage}] Starte Solve-Phase ...")
             self._run_solve_stage(context, self._stage)
+            print(f"[Resolve][Stage {self._stage}] Solve abgeschlossen.")
 
-            # --- Cleanup directly after each solve ---
             try:
+                print(f"[Resolve][Stage {self._stage}] Starte Cleanup (clean_error_operator) ...")
                 bpy.ops.kaiserlich_tracker.clean_error_operator('EXEC_DEFAULT')
+                print(f"[Resolve][Stage {self._stage}] Cleanup erfolgreich abgeschlossen.")
             except Exception as e:
+                print(f"[Resolve][Stage {self._stage}] FEHLER beim Cleanup: {e}")
                 self.report({'WARNING'}, f"Cleanup failed at stage {self._stage}: {e}")
 
-            # --- Search for weak frame ---
             try:
+                print(f"[Resolve][Stage {self._stage}] Suche nach weak frame ...")
                 weak_frame = find_first_weak_frame(context)
                 if weak_frame is not None:
-                    # Low Marker Frame found → hand over to Master Cycle
+                    print(f"[Resolve][Stage {self._stage}] Weak Frame gefunden → Übergabe an MasterCycle (Frame {weak_frame}) ...")
                     bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
                     self._update_progress(context, 100)
                     return self._finish(context)
+                else:
+                    print(f"[Resolve][Stage {self._stage}] Kein Weak Frame gefunden.")
             except Exception as e:
+                print(f"[Resolve][Stage {self._stage}] FEHLER bei Weak Frame Check: {e}")
                 self.report({'WARNING'}, f"Weak frame check failed: {e}")
 
-            # --- If no weak frame found, continue to next stage ---
             self._stage += 1
             progress = int((self._stage - 1) / self.MAX_STAGES * 100)
             self._update_progress(context, progress)
+            print(f"[Resolve][Stage {self._stage - 1}] Weiter zu Stage {self._stage} (Progress: {progress}%)")
             return {'RUNNING_MODAL'}
 
         return {'RUNNING_MODAL'}
@@ -102,29 +112,39 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
     # ---------------- Solve Logic ----------------
     def _run_solve_stage(self, context, stage: int):
         """Executes a solve with predefined intrinsic refinement settings."""
+        print(f"[Resolve][Stage {stage}] Setze Intrinsics-Parameter zurück ...")
         refine_intrinsics_reset(context)
-
-        # Stage configuration
         if stage == 1:
+            print("[Resolve][Stage 1] Basis-Solve (keine Intrinsics-Verfeinerung)")
             pass
         elif stage == 2:
+            print("[Resolve][Stage 2] Aktiviere Focal Length Refinement")
             refine_intrinsics_focal_length_on(context)
         elif stage == 3:
+            print("[Resolve][Stage 3] Aktiviere Focal Length + Principal Point Refinement")
             refine_intrinsics_focal_length_on(context)
             refine_intrinsics_principal_point_on(context)
         elif stage == 4:
+            print("[Resolve][Stage 4] Aktiviere Focal Length + Principal Point + Radial Distortion Refinement")
             refine_intrinsics_focal_length_on(context)
             refine_intrinsics_principal_point_on(context)
             refine_intrinsics_radial_distortion_on(context)
 
-        # Perform solve
         try:
+            print(f"[Resolve][Stage {stage}] Führe Solve aus (clip.solve_camera) ...")
             buf_out, buf_err = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
                 with bpy.context.temp_override(area=self._area, region=self._region, space_data=self._space):
                     bpy.ops.clip.solve_camera('EXEC_DEFAULT')
-        except Exception:
-            pass
+            out_log = buf_out.getvalue().strip()
+            err_log = buf_err.getvalue().strip()
+            if out_log:
+                print(f"[Resolve][Stage {stage}] Solve STDOUT:\n{out_log}")
+            if err_log:
+                print(f"[Resolve][Stage {stage}] Solve STDERR:\n{err_log}")
+            print(f"[Resolve][Stage {stage}] Solve erfolgreich beendet.")
+        except Exception as e:
+            print(f"[Resolve][Stage {stage}] Solve fehlgeschlagen: {e}")
 
     # ---------------- Helpers ----------------
     def _find_clip_context(self):
@@ -150,6 +170,10 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         wm = context.window_manager
         if self._timer:
             wm.event_timer_remove(self._timer)
+        if cancelled:
+            print("[Resolve] Operator abgebrochen.")
+        else:
+            print("[Resolve] Operator abgeschlossen.")
         return {'CANCELLED'} if cancelled else {'FINISHED'}
 
 
