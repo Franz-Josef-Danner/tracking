@@ -315,18 +315,24 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         # ---------------------------------------------------------------
         try:
             print("[MasterCycle][Tracks] Prüfe ob Cleanup abgeschlossen ist ...")
+
+            # ------------------------------------------------------------
+            # Prüfen, ob ein Cleanup durch 'filter_and_delete_all_tracks'
+            # bereits ausgeführt wurde (Flag = 'filter_all')
+            # ------------------------------------------------------------
             cleanup_stage = scene.get("cleanup_stage", "")
             cleanup_done = cleanup_stage == "filter_all"
- 
+
             if cleanup_done:
                 print(f"[MasterCycle][Tracks] Cleanup vollständig abgeschlossen (Stage={cleanup_stage}) → Erstelle Good Tracks ...")
                 self._rebuild_good_tracks(context, reason="Post-cleanup (filter_all) good_tracks rebuild")
- 
+
                 # Nach erfolgreichem Rebuild Flag zurücksetzen, um Wiederholungen zu vermeiden
                 if "cleanup_stage" in scene:
                     del scene["cleanup_stage"]
             else:
-                print(f"[MasterCycle][Tracks] Cleanup noch nicht vollständig (Stage={cleanup_stage}) → überspringe Rebuild")
+                print(f"[MasterCycle][Tracks] Kein vollständiger Cleanup erkannt (Stage={cleanup_stage}) → Good Tracks werden NICHT erzeugt")
+
         except Exception as e:
             print(f"[MasterCycle][Tracks] FEHLER beim Prüfen oder Erstellen der Good Tracks: {e}")
 
