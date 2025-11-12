@@ -21,6 +21,17 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         # Run bootstrap to calculate initial parameters
         # ------------------------------------------------------------------
         scene = context.scene
+
+        # ================================================================
+        # Vollständige Bereinigung der Bewegungsdaten
+        # ================================================================
+        for k in ("motion_list", "motion_value"):
+            if k in scene:
+                try:
+                    del scene[k]
+                except Exception:
+                    pass
+
         ef_target = int(getattr(scene, "kaiserlich_markers_per_frame", 25))
         params = run_bootstrap(context, ef_target)
         if params:
