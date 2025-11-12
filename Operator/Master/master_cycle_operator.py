@@ -6,11 +6,10 @@ from bpy.types import Operator, Context
 
 # ---- Helper Imports ---------------------------------------------------------
 from ...Helper.low_marker_frame import find_first_weak_frame
-from ...Helper.filter_all_tracks import filter_and_delete_all_tracks
 from ...Helper.filter_tracks import filter_problematic_tracks
 from ...Helper.update_default_sizes import update_default_sizes
 from ...Helper.find_clip_editor_area import find_clip_editor_area
-
+from ...Helper.delete import delete_tracks_by_names
 
 # ===================================================================
 # Zentrale Hilfsfunktion: UUID-basierte Track-Speicherung in Scene
@@ -256,7 +255,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     tracking = clip_obj.tracking
                     flagged_names = [t.name for t in tracking.tracks if t.select]
                     if flagged_names:
-                        from ...Helper.delete import delete_tracks_by_names
                         delete_tracks_by_names(bpy.context, flagged_names)
 
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
