@@ -150,7 +150,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                             motion_list = list(raw_motion)
 
                     if not motion_list:
-                        print("[MOTION] Keine gültige motion_list gefunden.")
                         return {'CANCELLED'}
 
                     # --- Threshold-Aggregation ---
@@ -181,16 +180,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
                     scene["motion_value"] = motion_value
 
-                    # --- Log-Ausgabe ---
-                    print("\n[MOTION LIST → MOTION VALUE] ----------------------------")
-                    for k, vals in thresholds.items():
-                        if vals:
-                            print(f"  {k}: {len(vals)} Werte | min={min(vals):.6f}, max={max(vals):.6f}, avg={sum(vals)/len(vals):.6f}")
-                        else:
-                            print(f"  {k}: Keine gültigen Werte (<1) gefunden → Default 1.000000 gesetzt.")
-                    print("[RESULT] scene['motion_value'] =", motion_value)
-                    print("-------------------------------------------------------------")
-
                 # ===================================================================
                 # Werte in Szenen-Properties schreiben
                 # ===================================================================
@@ -207,9 +196,10 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         try:
                             value = motion_value.get(k, 1.0)  # Default konsistent zu motion_value
                             setattr(scene, prop, value)
-                            print(f"[MOTION → SCENE] {prop} = {value}")
                         except Exception as e:
-                            print(f"[MOTION → SCENE][ERROR] {prop}: {e}")
+                            pass
+                return {'CANCELLED'}
+            except Exception as e:
                 return {'CANCELLED'}
 
         # ===================================================================
