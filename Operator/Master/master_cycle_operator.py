@@ -264,24 +264,15 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
                     return {'FINISHED'}
 
+                # Tracking-Defaults optional aktualisieren (nicht löschen!)
                 update_default_sizes(context)
+
+                # Cache-Keys bereinigen, aber nichts mehr überschreiben
                 for k in ("frame_value_cache", "kaiserlich_best_thresholds"):
                     if k in scene:
                         print(f"[MasterCycle][Filter] Entferne Cache Key: {k}")
                         del scene[k]
 
-
-                from ...Helper.util_scene import set_scene_props
-                set_scene_props(
-                    scene,
-                    kaiserlich_rot_thresh_x=1.0,
-                    kaiserlich_rot_thresh_y=1.0,
-                    kaiserlich_scale_thresh_min=1.0,
-                    kaiserlich_scale_thresh_max=1.1,
-                    kaiserlich_rot_scale_thresh_rot=1.0,
-                    kaiserlich_rot_scale_thresh_scale=1.0,
-                    kaiserlich_perspective_thresh=1.0
-                )
             except Exception as ex:
                 self.report({'ERROR'}, f"Error during filter process: {ex}")
                 print(f"[MasterCycle][Filter] FEHLER: {ex}")
