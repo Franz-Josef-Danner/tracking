@@ -1,3 +1,5 @@
+# Helper/bootstrap.py
+# ---------------------------------------------------------------------
 import bpy
 from .marker_size import apply_marker_sizes
 import math
@@ -30,6 +32,10 @@ def run_bootstrap(context, ef: int):
     og = math.ceil(za * 1.1)
     ug = math.floor(za * 0.9)
 
+    # Neue Defaults
+    default_correlation_min = 0.79
+    default_margin = sz
+
     apply_marker_sizes(clip, pz, sz)
 
     return {
@@ -45,4 +51,6 @@ def run_bootstrap(context, ef: int):
         "og": og,
         "ug": ug,
         "ef": ef,
+        "default_correlation_min": default_correlation_min,
+        "default_margin": default_margin,
     }

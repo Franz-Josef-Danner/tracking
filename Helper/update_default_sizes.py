@@ -68,6 +68,13 @@ def update_default_sizes(context: bpy.types.Context) -> Tuple[int, int, int, int
     settings.default_pattern_size = new_pattern
     settings.default_search_size = new_search
 
+    # --- NEU: default_margin anpassen ---------------------------------------
+    # default_margin folgt immer der Search-Size
+    if hasattr(settings, "default_margin"):
+        settings.default_margin = new_search
+    else:
+        setattr(settings, "default_margin", new_search)
+
     # --- Bootstrap auslösen, wenn Pattern-Max erreicht -----------------------
     if new_pattern >= _MAX:
         scene = getattr(context, "scene", None)
