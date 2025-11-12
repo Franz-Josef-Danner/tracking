@@ -175,7 +175,9 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         if vals:
                             motion_value[k] = round(sum(vals) / len(vals), 6)
                         else:
-                            motion_value[k] = 0.0
+                            # Wenn nach Aussortieren von 1.0 keine Werte übrig bleiben,
+                            # auf 1.0 (neutral) setzen statt 0.0.
+                            motion_value[k] = 1.0
 
                     scene["motion_value"] = motion_value
 
@@ -185,7 +187,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         if vals:
                             print(f"  {k}: {len(vals)} Werte | min={min(vals):.6f}, max={max(vals):.6f}, avg={sum(vals)/len(vals):.6f}")
                         else:
-                            print(f"  {k}: Keine gültigen Werte (<1) gefunden.")
+                            print(f"  {k}: Keine gültigen Werte (<1) gefunden → Default 1.000000 gesetzt.")
                     print("[RESULT] scene['motion_value'] =", motion_value)
                     print("-------------------------------------------------------------")
 
@@ -203,25 +205,11 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 }.items():
                     if hasattr(scene, prop):
                         try:
-                            value = motion_value.get(k, 0.0)
-                            # Wenn kein Wert (<1) gefunden wurde, wurde 0.0 gesetzt → stattdessen 1.0 schreiben
-                            if value == 0.0:
-                                value = 1.0
+                            value = motion_value.get(k, 1.0)  # Default konsistent zu motion_value
                             setattr(scene, prop, value)
                             print(f"[MOTION → SCENE] {prop} = {value}")
                         except Exception as e:
                             print(f"[MOTION → SCENE][ERROR] {prop}: {e}")
-                        except Exception as e:
-                            print(f"[MOTION → SCENE][ERROR] {prop}: {e}")
-
-                # --- UI-Refresh ---
-                for window in bpy.context.window_manager.windows:
-                    for area in window.screen.areas:
-                        if area.type == 'CLIP_EDITOR':
-                            area.tag_redraw()
-
-            except Exception as ex:
-                self.report({'ERROR'}, f"Motion list processing failed: {ex}")
                 return {'CANCELLED'}
 
         # ===================================================================
