@@ -15,6 +15,7 @@ try:
         refine_intrinsics_radial_distortion_on,
     )
     from ...Helper.low_marker_frame import find_first_weak_frame
+    from ...Helper.clean_error_tracks import clean_error_tracks
 except Exception as e:
     raise ImportError(f"[master_resolve_operator] Missing add-on modules: {e}")
 
@@ -73,19 +74,27 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             if self._stage > self.MAX_STAGES:
                 self._update_progress(context, 100)
                 print("[Resolve][Phase 1] Alle Stages abgeschlossen → Beende Operator.")
+                # Finaler globaler Cleanup nach allen Solves
+                try:
+                    print("[Resolve][Final] Alle Stages abgeschlossen → Starte abschließenden Cleanup-Operator ...")
+                    bpy.ops.kaiserlich_tracker.clean_error_operator('EXEC_DEFAULT')
+                    print("[Resolve][Final] Cleanup-Operator erfolgreich ausgeführt.")
+                except Exception as e:
+                    print(f"[Resolve][Final] FEHLER beim finalen Cleanup: {e}")
                 return self._finish(context)
 
             print(f"\n[Resolve][Stage {self._stage}] Starte Solve-Phase ...")
             self._run_solve_stage(context, self._stage)
             print(f"[Resolve][Stage {self._stage}] Solve abgeschlossen.")
 
+            # Zwischen-Solve: interner Cleanup über Helper
             try:
-                print(f"[Resolve][Stage {self._stage}] Starte Cleanup (clean_error_operator) ...")
-                bpy.ops.kaiserlich_tracker.clean_error_operator('EXEC_DEFAULT')
-                print(f"[Resolve][Stage {self._stage}] Cleanup erfolgreich abgeschlossen.")
+                print(f"[Resolve][Stage {self._stage}] Starte Zwischen-Cleanup (Helper clean_error_tracks) ...")
+                deleted = clean_error_tracks(context, sort_desc=True)
+                print(f"[Resolve][Stage {self._stage}] Zwischen-Cleanup abgeschlossen → {deleted} fehlerhafte Tracks gelöscht.")
             except Exception as e:
-                print(f"[Resolve][Stage {self._stage}] FEHLER beim Cleanup: {e}")
-                self.report({'WARNING'}, f"Cleanup failed at stage {self._stage}: {e}")
+                print(f"[Resolve][Stage {self._stage}] FEHLER im Zwischen-Cleanup: {e}")
+                self.report({'WARNING'}, f"Intermediate cleanup failed: {e}")
 
             try:
                 print(f"[Resolve][Stage {self._stage}] Suche nach weak frame ...")
