@@ -110,10 +110,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         # ===============================================================
         # Vollständige Scene-Bereinigung beim Auslösen des Operators
         # ===============================================================
-        # Entfernt sämtliche gespeicherten Track-Strings inkl. Varianten
-        # (UUID-Maps, Namenslisten, Kalibrierungsdaten usw.).
-        # Dadurch wird sichergestellt, dass keine alten Datenreste
-        # aus vorigen Tracking-Zyklen verwendet werden.
         try:
             keys_to_delete = [
                 "good_tracks", "good_tracks_names", "good_tracks_uuid_map",
@@ -121,156 +117,73 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 "calibrate_tracks", "calibrate_tracks_names", "calibrate_tracks_uuid_map",
                 "frame_value_cache", "kaiserlich_best_thresholds"
             ]
-
             for _k in keys_to_delete:
                 if _k in scene:
                     del scene[_k]
-
-        except Exception as ex:
+        except Exception:
             pass
 
+        # ===============================================================
+        # Low Marker Frame immer suchen – unabhängig von motion_value
+        # ===============================================================
         frame = find_first_weak_frame(context)
 
-        if frame is None:
-            # ============================================================
-            # Kein Low Marker Frame gefunden → Threshold-Auswertung
-            # ============================================================
-            scene = context.scene
-
-            # 1) Wenn motion_value bereits existiert, DeepTest überspringen
-            if "motion_value" in scene:
-                print("[MASTER CYCLE] Motion value bereits vorhanden → DeepTest übersprungen.")
-                mv = scene["motion_value"]
-                if isinstance(mv, dict):
-                    # Werte direkt in Szene eintragen
-                    scene["kaiserlich_rot_thresh_x"] = mv.get("rot_thresh_x", 1.0)
-                    scene["kaiserlich_rot_thresh_y"] = mv.get("rot_thresh_y", 1.0)
-                    scene["kaiserlich_scale_thresh_min"] = mv.get("scale_thresh_min", 1.0)
-                    scene["kaiserlich_scale_thresh_max"] = mv.get("scale_thresh_max", 1.1)
-                    scene["kaiserlich_rot_scale_thresh_rot"] = mv.get("rot_scale_thresh_rot", 1.0)
-                    scene["kaiserlich_rot_scale_thresh_scale"] = mv.get("rot_scale_thresh_scale", 1.0)
-                    scene["kaiserlich_perspective_thresh"] = mv.get("perspective_thresh", 1.0)
-                else:
-                    print("[MASTER CYCLE][WARN] motion_value ist kein Dictionary – ignoriert.")
-
-                # Direkt an master_detect_adapt weitergeben
-                try:
-                    bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                except Exception as e:
-                    print(f"[MASTER CYCLE][ERROR] Detect Adapt Übergabe fehlgeschlagen: {e}")
-                return {'FINISHED'}
-
-            # 2) Wenn keine motion_value vorhanden → motion_list auswerten
-            if "motion_list" in scene:
-                import ast, statistics
-                try:
-                    ml_raw = scene["motion_list"]
-                    ml = ast.literal_eval(ml_raw) if isinstance(ml_raw, str) else ml_raw
-                    if isinstance(ml, dict):
-                        result = {}
-                        for k, v in ml.items():
-                            if isinstance(v, (int, float)):
-                                if v < 1.0:
-                                    result.setdefault(k.split("_")[0], []).append(v)
-
-                        # Mittelwerte berechnen für jeden Threshold-Typ
-                        avg_values = {}
-                        for k, vals in result.items():
-                            if vals:
-                                avg_values[k] = round(statistics.mean(vals), 6)
-
-                        # motion_value speichern
-                        scene["motion_value"] = avg_values
-                        print(f"[MASTER CYCLE] motion_value erstellt: {avg_values}")
-                    else:
-                        print("[MASTER CYCLE][WARN] motion_list ist kein Dictionary – ignoriert.")
-                except Exception as e:
-                    print(f"[MASTER CYCLE][ERROR] motion_list konnte nicht ausgewertet werden: {e}")
-
-                # Falls motion_value nun existiert, direkt weitergeben
-                if "motion_value" in scene:
-                    try:
-                        bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                    except Exception as e:
-                        print(f"[MASTER CYCLE][ERROR] Übergabe an Detect Adapt fehlgeschlagen: {e}")
-                    return {'FINISHED'}
-
+        # ===============================================================
+        # Motion-/Threshold-Logik
+        # ===============================================================
+        motion_exists = "motion_value" in scene
+        if not motion_exists and "motion_list" in scene:
+            import ast, statistics
             try:
-                window, area, region, space = find_clip_editor_area(
-                    getattr(getattr(context, "space_data", None), "clip", None)
-                )
+                ml_raw = scene["motion_list"]
+                ml = ast.literal_eval(ml_raw) if isinstance(ml_raw, str) else ml_raw
+                if isinstance(ml, dict):
+                    result = {}
+                    for k, v in ml.items():
+                        if isinstance(v, (int, float)) and v < 1.0:
+                            result.setdefault(k.split("_")[0], []).append(v)
+                    avg_values = {k: round(statistics.mean(vals), 6) for k, vals in result.items() if vals}
+                    if avg_values:
+                        scene["motion_value"] = avg_values
+                # kein else: still valid, aber ohne Erstellung
+            except Exception:
+                pass
 
-                if not all((window, area, region, space)):
-                    raise RuntimeError("No CLIP_EDITOR area found – cannot continue cleanup")
+        # ===============================================================
+        # Playhead setzen (immer, wenn Frame gefunden)
+        # ===============================================================
+        if frame is not None:
+            scene.frame_current = frame
+            try:
+                space = getattr(context, "space_data", None)
+                if space and getattr(space, "clip_user", None):
+                    space.clip_user.frame_current = frame
+            except Exception:
+                pass
 
-                clip_ref = getattr(getattr(context, "space_data", None), "clip", None)
-                if getattr(space, "clip", None) is None and clip_ref:
-                    space.clip = clip_ref
-
-                clip_obj = getattr(space, "clip", None)
-                if not clip_obj:
-                    raise RuntimeError("No active clip in current context")
-
-                with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-                    bpy.ops.clip.filter_tracks(track_threshold=30.0)
-                    tracking = clip_obj.tracking
-                    flagged_names = [t.name for t in tracking.tracks if t.select]
-                    if flagged_names:
-                        from ...Helper.delete import delete_tracks_by_names
-                        delete_tracks_by_names(bpy.context, flagged_names)
-
-                self._rebuild_good_tracks(context, reason="Post-Stage1 cleanup")
-
-                with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-                    filter_problematic_tracks(context, threshold=10.0)
-
-                self._rebuild_good_tracks(context, reason="Post-Stage2 cleanup")
-
-                frame = find_first_weak_frame(context)
-                if frame is None:
-                    self._rebuild_good_tracks(context, reason="Pre-resolve cleanup checkpoint")
-                    bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
-                    return {'FINISHED'}
-
-                update_default_sizes(context)
-                for k in ("frame_value_cache", "kaiserlich_best_thresholds"):
-                    if k in scene:
-                        del scene[k]
-
-                self._rebuild_good_tracks(context, reason="Post-cache-reset cleanup")
-
-                from ...Helper.util_scene import set_scene_props
-                set_scene_props(
-                    scene,
-                    kaiserlich_rot_thresh_x=1.0,
-                    kaiserlich_rot_thresh_y=1.0,
-                    kaiserlich_scale_thresh_min=1.0,
-                    kaiserlich_scale_thresh_max=1.1,
-                    kaiserlich_rot_scale_thresh_rot=1.0,
-                    kaiserlich_rot_scale_thresh_scale=1.0,
-                    kaiserlich_perspective_thresh=1.0
-                )
-
-            except Exception as ex:
-                self.report({'ERROR'}, f"Error during filter process: {ex}")
-                return {'CANCELLED'}
-
-        scene.frame_current = frame
-        try:
-            space = getattr(context, "space_data", None)
-            if space and getattr(space, "clip_user", None):
-                space.clip_user.frame_current = frame
-        except Exception:
-            pass
-
+        # ===============================================================
+        # Rebuild & Defaults (immer)
+        # ===============================================================
         self._rebuild_good_tracks(context, reason="Normal path (weak frame found)")
+        update_default_sizes(context)
 
-        try:
-            bpy.ops.kaiserlichtracker.master_deep_test_operator('INVOKE_DEFAULT')
-        except Exception:
-            pass
-
-        return {'FINISHED'}
+        # ===============================================================
+        # Entscheidungslogik: DeepTest nur wenn KEIN motion_value existiert
+        # ===============================================================
+        if "motion_value" in scene:
+            # motion_value existiert → DeepTest überspringen, direkt Detect Adapt
+            try:
+                bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+            except Exception:
+                pass
+            return {'FINISHED'}
+        else:
+            # Kein motion_value → DeepTest normal starten
+            try:
+                bpy.ops.kaiserlichtracker.master_deep_test_operator('INVOKE_DEFAULT')
+            except Exception:
+                pass
+            return {'FINISHED'}
 
 
 def register():
