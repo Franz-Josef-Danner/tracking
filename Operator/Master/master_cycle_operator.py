@@ -1,3 +1,4 @@
+# master_cycle_operator.py
 import bpy
 import uuid
 import ast
@@ -217,7 +218,15 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                             print(f"[MasterCycle][Motion] Fehler beim Setzen von {prop}: {e}")
                             pass
                 print("[MasterCycle][Motion] Motion-Phase abgeschlossen → Operator CANCELLED (kein Weak Frame)")
-                return {'CANCELLED'}
+                print("[MasterCycle][Motion] Kein Weak Frame – Übergabe an master_resolve_operator ...")
+                try:
+                    self._rebuild_good_tracks(context, reason="Post-motion phase handover to resolve")
+                    bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
+                    print("[MasterCycle][Motion] Übergabe erfolgreich ausgeführt → Prozess abgeschlossen.")
+                    return {'FINISHED'}
+                except Exception as ex:
+                    print(f"[MasterCycle][Motion] FEHLER bei Übergabe an master_resolve_operator: {ex}")
+                    return {'CANCELLED'}
             except Exception as e:
                 print(f"[MasterCycle][Motion] FEHLER: {e}")
                 return {'CANCELLED'}

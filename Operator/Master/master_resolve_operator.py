@@ -1,3 +1,4 @@
+# master_resolve_operator
 from __future__ import annotations
 import bpy
 from bpy.types import Operator
