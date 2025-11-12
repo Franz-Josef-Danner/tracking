@@ -301,8 +301,26 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         except Exception:
             pass
 
-        print("[MasterCycle][Tracks] Rebuild Good Tracks vor nächstem Operator ...")
-        self._rebuild_good_tracks(context, reason="Normal path (weak frame found)")
+        # ---------------------------------------------------------------
+        # Good Tracks erst nach vollständigem Cleanup erzeugen
+        # ---------------------------------------------------------------
+        try:
+            print("[MasterCycle][Tracks] Prüfe ob Cleanup abgeschlossen ist ...")
+            cleanup_done = False
+
+            # Cleanup gilt als abgeschlossen, wenn:
+            #   - kein weiterer weak frame offen ist
+            #   - oder 'frame_value_cache' und 'kaiserlich_best_thresholds' gelöscht wurden
+            if "frame_value_cache" not in scene and "kaiserlich_best_thresholds" not in scene:
+                cleanup_done = True
+
+            if cleanup_done:
+                print("[MasterCycle][Tracks] Cleanup abgeschlossen → Erstelle Good Tracks ...")
+                self._rebuild_good_tracks(context, reason="Post-cleanup good_tracks rebuild")
+            else:
+                print("[MasterCycle][Tracks] Cleanup nicht vollständig → überspringe Rebuild")
+        except Exception as e:
+            print(f"[MasterCycle][Tracks] FEHLER beim Prüfen oder Erstellen der Good Tracks: {e}")
 
         try:
             motion_value_exists = scene.get("motion_value") is not None
