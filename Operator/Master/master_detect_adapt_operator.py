@@ -28,6 +28,7 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
         # ------------------------------------------------------------------
         if params:
             md = float(params.get('md', 100))
+            # ma wird weiter unten aus MovieTrackingSettings.default_margin überschrieben
             ma = int(round(float(params.get('ma', 100)) * 1.1))
             tr = float(params.get('tr', 0.5))
             pz = int(params.get('pz', 50))
@@ -47,6 +48,7 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             frame_end = scene_obj.frame_end if scene_obj else None
 
             tracking_settings = getattr(clip.tracking, "settings", None)
+            # historischer Fallback – wird unten durch default_margin ersetzt
             ma = getattr(tracking_settings, "margin", 100) if tracking_settings else 100
             pz = getattr(tracking_settings, "pattern_size", 50) if tracking_settings else 50
             sz = getattr(tracking_settings, "search_size", 100) if tracking_settings else 100
@@ -56,6 +58,27 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             za = ef_target * 4
             og = math.ceil(za * 1.1)
             ug = math.floor(za * 0.9)
+
+        # ------------------------------------------------------------------
+        # Margin immer aus MovieTrackingSettings.default_margin holen
+        # (UI-Setting: "Default Margin" im Tracking-Panel)
+        # ------------------------------------------------------------------
+        try:
+            clip_margin = getattr(context.space_data, "clip", None)
+            if clip_margin is None and getattr(context, "scene", None) is not None:
+                clip_margin = getattr(context.scene.tracking, "active", None)
+
+            tracking_settings_margin = (
+                getattr(clip_margin.tracking, "settings", None) if clip_margin else None
+            )
+
+            if tracking_settings_margin is not None and hasattr(tracking_settings_margin, "default_margin"):
+                ma = int(tracking_settings_margin.default_margin)
+                print(f"[DetectAdapt] margin aus default_margin übernommen: {ma}")
+            else:
+                print("[DetectAdapt] WARN: default_margin nicht verfügbar, verwende bisherigen ma-Wert.")
+        except Exception as e:
+            print(f"[DetectAdapt] WARN: Fehler beim Lesen von default_margin: {e}")
 
         # ------------------------------------------------------------------
         # Snapshot current state of markers before detection
