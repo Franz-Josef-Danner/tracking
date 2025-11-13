@@ -385,6 +385,22 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         if not clip:
             return
 
+        # ------------------------------------------------------------------
+        # Margin immer aus MovieTrackingSettings.default_margin holen
+        # (gleiche Logik wie in master_detect_adapt_operator)
+        # ------------------------------------------------------------------
+        try:
+            tracking_settings = getattr(clip.tracking, "settings", None)
+            if tracking_settings and hasattr(tracking_settings, "default_margin"):
+                margin_val = int(tracking_settings.default_margin)
+                # global anwenden, bevor detect_adapt läuft
+                tracking_settings.margin = margin_val
+                print(f"[DeepTest] margin aus default_margin übernommen: {margin_val}")
+            else:
+                print("[DeepTest] WARN: default_margin nicht verfügbar – margin bleibt unverändert.")
+        except Exception as e:
+            print(f"[DeepTest] WARN: Fehler beim Lesen von default_margin: {e}")
+
         scene = context.scene
 
         # playhead boundary logic
