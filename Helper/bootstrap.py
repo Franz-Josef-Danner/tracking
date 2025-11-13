@@ -134,14 +134,20 @@ def apply_bootstrap_defaults(context, params: dict) -> None:
     else:
         print("[BootstrapApply] Scene-Property 'kaiserlich_margin' nicht vorhanden.")
 
-    # --- Tracking-Settings ---------------------------------------------------
+    # --- Tracking-Settings: default_correlation_min --------------------------
     if clip is not None:
         try:
             settings = clip.tracking.settings
-            settings.correlation_min = corr
-            print(f"[BootstrapApply] settings.correlation_min         = {settings.correlation_min}")
+            print("[BootstrapApply] Setze settings.default_correlation_min ...")
+
+            old_val = settings.default_correlation_min
+            settings.default_correlation_min = corr
+            new_val = settings.default_correlation_min
+
+            print(f"[BootstrapApply] settings.default_correlation_min: {old_val} -> {new_val}")
+
         except Exception as e:
-            print(f"[BootstrapApply] FEHLER beim Setzen von settings.correlation_min: {e}")
+            print(f"[BootstrapApply] FEHLER beim Setzen von settings.default_correlation_min: {e}")
     else:
         print("[BootstrapApply] Kein Clip gefunden – Tracking-Settings werden nicht gesetzt.")
 
