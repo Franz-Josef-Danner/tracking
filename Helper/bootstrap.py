@@ -1,8 +1,10 @@
 # Helper/bootstrap.py
 # ---------------------------------------------------------------------
 import bpy
-from .marker_size import apply_marker_sizes
 import math
+
+from .marker_size import apply_marker_sizes
+
 
 def run_bootstrap(context, ef: int):
     """Berechnet Startparameter basierend auf Clip-Auflösung und gewünschter Markeranzahl.
@@ -30,17 +32,18 @@ def run_bootstrap(context, ef: int):
     print(f"[Bootstrap] frame_end (se): {se}")
     print(f"[Bootstrap] gewünschte Markeranzahl (ef): {ef}")
 
-    ma = hz * 0.025
-    md = hz * 0.025
-    pz = int(hz * 0.01)
-    sz = pz * 2
-    tr = 0.0001
-    za = ef * 4
-    og = math.ceil(za * 1.1)
-    ug = math.floor(za * 0.9)
+    # Basis-Parameter
+    ma = hz * 0.025          # max area
+    md = hz * 0.025          # min distance
+    pz = int(hz * 0.01)      # pattern size
+    sz = pz * 2              # search size
+    tr = 0.0001              # threshold
+    za = ef * 4              # Zielanzahl intern
+    og = math.ceil(za * 1.1) # Obergrenze
+    ug = math.floor(za * 0.9)# Untergrenze
 
     # Neue Defaults
-    default_correlation_min = 0.79
+    default_correlation_min = 0.97
     default_margin = sz
 
     print("[Bootstrap] Berechnete Parameter:")
@@ -82,3 +85,71 @@ def run_bootstrap(context, ef: int):
     print("[Bootstrap] --------------------------------------------------")
 
     return params
+
+
+def apply_bootstrap_defaults(context, params: dict) -> None:
+    """
+    Übernimmt die aus run_bootstrap() berechneten Werte in:
+      - Scene-Properties (z.B. kaiserlich_correlation_min, kaiserlich_margin)
+      - Tracking-Settings (settings.correlation_min)
+      - Scene-ID-Property "bootstrap_params"
+
+    Erwartet das dict, das von run_bootstrap() zurückgegeben wurde.
+    """
+    if not params:
+        print("[BootstrapApply] Keine Params übergeben – Abbruch.")
+        return
+
+    scene = getattr(context, "scene", None)
+    if scene is None:
+        print("[BootstrapApply] context.scene ist None – Abbruch.")
+        return
+
+    # Aktiven Clip ermitteln
+    clip = None
+    space = getattr(context, "space_data", None)
+    if space and getattr(space, "clip", None):
+        clip = space.clip
+    if clip is None:
+        clip = getattr(scene.tracking, "active", None)
+
+    corr = float(params.get("default_correlation_min", 0.95))
+    margin = int(params.get("default_margin", 0))
+
+    print("[BootstrapApply] ---------------------------------------------")
+    print("[BootstrapApply] Übernehme Bootstrap-Defaults ...")
+    print(f"[BootstrapApply] correlation_min (aus Params) : {corr}")
+    print(f"[BootstrapApply] margin (aus Params)          : {margin}")
+
+    # --- Scene-Properties ----------------------------------------------------
+    if hasattr(scene, "kaiserlich_correlation_min"):
+        scene.kaiserlich_correlation_min = corr
+        print(f"[BootstrapApply] scene.kaiserlich_correlation_min = {scene.kaiserlich_correlation_min}")
+    else:
+        print("[BootstrapApply] Scene-Property 'kaiserlich_correlation_min' nicht vorhanden.")
+
+    if hasattr(scene, "kaiserlich_margin"):
+        scene.kaiserlich_margin = margin
+        print(f"[BootstrapApply] scene.kaiserlich_margin          = {scene.kaiserlich_margin}")
+    else:
+        print("[BootstrapApply] Scene-Property 'kaiserlich_margin' nicht vorhanden.")
+
+    # --- Tracking-Settings ---------------------------------------------------
+    if clip is not None:
+        try:
+            settings = clip.tracking.settings
+            settings.correlation_min = corr
+            print(f"[BootstrapApply] settings.correlation_min         = {settings.correlation_min}")
+        except Exception as e:
+            print(f"[BootstrapApply] FEHLER beim Setzen von settings.correlation_min: {e}")
+    else:
+        print("[BootstrapApply] Kein Clip gefunden – Tracking-Settings werden nicht gesetzt.")
+
+    # --- Params in Scene-ID-Property speichern ------------------------------
+    try:
+        scene["bootstrap_params"] = dict(params)
+        print("[BootstrapApply] scene['bootstrap_params'] wurde aktualisiert.")
+    except Exception as e:
+        print(f"[BootstrapApply] FEHLER beim Setzen von scene['bootstrap_params']: {e}")
+
+    print("[BootstrapApply] ---------------------------------------------")
