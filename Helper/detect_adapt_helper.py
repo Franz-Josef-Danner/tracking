@@ -43,11 +43,32 @@ def run_detect_adapt(context: bpy.types.Context) -> None:
         hz = clip.size[0]
         vc = clip.size[1]
         tracking_settings = getattr(clip.tracking, "settings", None)
+        # historischer fallback - wird unten durch default_margin ersetzt
         ma = getattr(tracking_settings, "margin", 100) if tracking_settings else 100
         pz = getattr(tracking_settings, "pattern_size", 50) if tracking_settings else 50
         sz = getattr(tracking_settings, "search_size", 100) if tracking_settings else 100
         md = hz * 0.025
         tr = 0.0001
+    # ------------------------------------------------------------------
+    # Margin ausschließlich aus MovieTrackingSettings.default_margin
+    # → einheitliche Quelle für DeepTest + DetectAdapt + Tracking
+    # ------------------------------------------------------------------
+    try:
+        clip_margin = getattr(context.space_data, "clip", None) if getattr(context, "space_data", None) else None
+        if clip_margin is None and getattr(context, "scene", None) is not None:
+            clip_margin = getattr(context.scene.tracking, "active", None)
+
+        tracking_settings_margin = (
+            getattr(clip_margin.tracking, "settings", None) if clip_margin else None
+        )
+
+        if tracking_settings_margin is not None and hasattr(tracking_settings_margin, "default_margin"):
+            ma = int(tracking_settings_margin.default_margin)
+            print(f"[DetectAdapt] margin aus default_margin übernommen: {ma}")
+        else:
+            print("[DetectAdapt] INFO: default_margin nicht vorhanden – verwende bisherigen ma-Wert.")
+    except Exception as e:
+        print(f"[DetectAdapt] WARN: Fehler beim Lesen von default_margin: {e}")
 
     pre_snapshot = snapshot_active_markers(context)
 
