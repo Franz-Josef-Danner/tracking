@@ -105,7 +105,12 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
         # ------------------------------------------------------------------
         while loop < max_loops:
             loop += 1
-
+            # --------------------------------------------------------------
+            # Logging: Margin / Threshold / Min-Distance für Debugging
+            # --------------------------------------------------------------
+            print(f"[DetectAdapt][Loop {loop}] margin={ma}, "
+                  f"threshold={tr}, min_distance={int(max(1, round(last_md)))}")
+ 
             detect_features(
                 context,
                 placement='FRAME',
