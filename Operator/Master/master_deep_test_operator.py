@@ -473,8 +473,37 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
         }
 
         try:
-            scene["motion_list"] = str(result_dict)
-            print(f"[DEEP TEST][STORE] motion_list → Scene stored ({len(result_dict)} keys)")
+            import ast  # ganz oben im File sicherstellen
+
+            try:
+                existing = scene.get("motion_list")
+
+                parsed = None
+                if isinstance(existing, str):
+                    try:
+                        parsed = ast.literal_eval(existing)
+                    except Exception:
+                        parsed = None
+                else:
+                    parsed = existing
+
+                # Normalisieren auf Liste
+                if isinstance(parsed, list):
+                    motion_list = parsed
+                elif isinstance(parsed, dict):
+                    motion_list = [parsed]
+                else:
+                    motion_list = []
+
+                # aktuellen Deep-Test anhängen
+                motion_list.append(result_dict)
+
+                # zurückschreiben
+                scene["motion_list"] = str(motion_list)
+                print(f"[DEEP TEST][STORE] motion_list → Scene stored ({len(motion_list)} entries)")
+            except Exception as e:
+                print(f"[DEEP TEST][STORE][ERROR] Could not store motion_list: {e}")
+
         except Exception as e:
             print(f"[DEEP TEST][STORE][ERROR] Could not store motion_list: {e}")
 
