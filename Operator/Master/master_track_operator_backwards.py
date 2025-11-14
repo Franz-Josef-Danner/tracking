@@ -297,21 +297,9 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
-        # Filter active tracks
-        self._processing_names, _ = filter_active_tracks_at_frame(
-            context, self._processing_names, self._current_frame
-        )
-
-        # Exit conditions
-        if not self._processing_names:
-            self._finish(context)
-            return {"FINISHED"}
-
-        if self.max_frames > 0 and self._frames_processed >= self.max_frames:
-            self._finish(context)
-            return {"FINISHED"}
-
-        # Step backward
+        # -------------------------------------------
+        # 1) FRAME NACH HINTEN SETZEN (vor Filter!)
+        # -------------------------------------------
         scene = context.scene
         if self._space.clip_user.frame_current == self._current_frame:
             self._space.clip_user.frame_current -= 1
@@ -322,6 +310,24 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         scene.frame_current = self._space.clip_user.frame_current
         self._current_frame = self._space.clip_user.frame_current
         self._frames_processed += 1
+
+        # -------------------------------------------
+        # 2) AKTIVE TRACKS FILTERN (nach Frame Move!)
+        # -------------------------------------------
+        self._processing_names, _ = filter_active_tracks_at_frame(
+            context, self._processing_names, self._current_frame
+        )
+
+        # -------------------------------------------
+        # 3) EXIT CONDITIONS
+        # -------------------------------------------
+        if not self._processing_names:
+            self._finish(context)
+            return {"FINISHED"}
+
+        if self.max_frames > 0 and self._frames_processed >= self.max_frames:
+            self._finish(context)
+            return {"FINISHED"}
 
         if self._current_frame <= self._start_frame:
             self._finish(context)
