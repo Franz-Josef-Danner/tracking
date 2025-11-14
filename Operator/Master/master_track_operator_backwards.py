@@ -297,9 +297,15 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
-        # -------------------------------------------
-        # 1) FRAME NACH HINTEN SETZEN (vor Filter!)
-        # -------------------------------------------
+        # -----------------------------------------------------------
+        # NEUE REIHENFOLGE (symmetrisch zu Forward):
+        # 1) tracking (oben)
+        # 2) frame bewegen
+        # 3) aktive Tracks filtern
+        # 4) Abbruchprüfungen
+        # -----------------------------------------------------------
+
+        # --- Step backward (Frame bewegen) ---
         scene = context.scene
         if self._space.clip_user.frame_current == self._current_frame:
             self._space.clip_user.frame_current -= 1
@@ -311,16 +317,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         self._current_frame = self._space.clip_user.frame_current
         self._frames_processed += 1
 
-        # -------------------------------------------
-        # 2) AKTIVE TRACKS FILTERN (nach Frame Move!)
-        # -------------------------------------------
+        # --- Aktive Tracks nach Frameverschiebung filtern ---
         self._processing_names, _ = filter_active_tracks_at_frame(
             context, self._processing_names, self._current_frame
         )
 
-        # -------------------------------------------
-        # 3) EXIT CONDITIONS
-        # -------------------------------------------
+        # --- Abbruchbedingungen ---
         if not self._processing_names:
             self._finish(context)
             return {"FINISHED"}
