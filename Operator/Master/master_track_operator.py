@@ -200,15 +200,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             pass
         
         # -----------------------------------------------
-        # 3) ACTIVE CALIBRATION STEP (neu)
+        # 3) ACTIVE CALIBRATION STEP (mit good/best Referenz)
         # -----------------------------------------------
         try:
             scene = context.scene
 
-            # Dynamisch den Referenz-Key neu bestimmen
-            active_key, meta = find_active_tracks_key(scene)
-
-            # Aktuelle Kalibrierungs-Trackliste aus Scene holen
+            # Aktuelle Kalibrierungstracks
             calibrate_raw = scene.get("calibrate_tracks", "")
             if isinstance(calibrate_raw, str):
                 calibrate_tracks = [
@@ -217,22 +214,43 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             else:
                 calibrate_tracks = []
 
-            # Zu korrigierende Marker müssen existieren
-            if calibrate_tracks and active_key:
-                # Kontext: aktueller, vorheriger und nächster Frame
-                f_a = self._current_frame
-                f_b = max(self._start_frame, f_a - 1)
-                f_c = min(self._end_frame,   f_a + 1)
+            # Keine calibrate_tracks → kein Calibration Step
+            if not calibrate_tracks:
+                pass
+            else:
+                # -------------------------------------------
+                # Referenz bestimmen: best_tracks > good_tracks
+                # -------------------------------------------
+                ref_tracks = []
 
-                # Korrektur ausführen
-                correct_marker_positions(
-                    scene,
-                    None,              # good_trackss wird intern aus scene gewählt
-                    calibrate_tracks,  # Liste der zu korrigierenden Tracks
-                    f_a, f_b, f_c
-                )
+                best_raw = scene.get("best_tracks", "")
+                good_raw = scene.get("good_tracks", "")
+
+                if isinstance(best_raw, str) and best_raw.strip():
+                    ref_tracks = [t.strip() for t in best_raw.split(",") if t.strip()]
+                elif isinstance(good_raw, str) and good_raw.strip():
+                    ref_tracks = [t.strip() for t in good_raw.split(",") if t.strip()]
+
+                # Ohne Referenzen → KEIN Calibration Step
+                if not ref_tracks:
+                    pass
+                else:
+                    # Frames definieren (vorher, aktuell, nachher)
+                    f_a = self._current_frame
+                    f_b = max(self._start_frame, f_a - 1)
+                    f_c = min(self._end_frame, f_a + 1)
+
+                    # Korrektur ausführen
+                    correct_marker_positions(
+                        scene,
+                        ref_tracks,        # ← WICHTIG: good/best als Referenz
+                        calibrate_tracks,  # ← zu korrigierende Tracks
+                        f_a, f_b, f_c
+                    )
+
         except Exception:
             pass
+
 
         # -----------------------------------------------
         # 4) adapt search size

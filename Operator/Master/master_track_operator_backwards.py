@@ -196,7 +196,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             pass
 
         # -------------------------------------------------------
-        # BACKWARD CALIBRATION STEP (korrekt)
+        # BACKWARD CALIBRATION STEP (mit Referenzwahl good/best)
         # -------------------------------------------------------
         try:
             scene = context.scene
@@ -210,28 +210,58 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             else:
                 calibrate_tracks = []
 
-            if calibrate_tracks:
-                # Referenz-Key aktualisieren (nur Validierungszweck)
-                active_key, meta = find_backward_active_key(scene)
+            # Wenn keine calibrate_tracks → nichts tun
+            if not calibrate_tracks:
+                pass
+            else:
+                # -------------------------------------------------
+                # Referenz: Best Tracks > Good Tracks > None
+                # -------------------------------------------------
+                ref_names = []
 
-                # Frame-Kontexte für rückwärts Tracking
-                f_now = self._current_frame
-                f_next = min(self._end_frame, f_now + 1)
-                f_next2 = min(self._end_frame, f_now + 2)
-                f_next3 = min(self._end_frame, f_now + 3)
+                best_raw = scene.get("best_tracks", "")
+                good_raw = scene.get("good_tracks", "")
 
-                # >>> WICHTIG: calibrate_tracks (nicht good/best) übergeben <<<
-                correct_marker_positions_backward(
-                    scene,
-                    calibrate_tracks,
-                    f_now,
-                    f_next,
-                    f_next2,
-                    f_next3
-                )
+                if isinstance(best_raw, str) and best_raw.strip():
+                    ref_names = [
+                        t.strip() for t in best_raw.split(",") if t.strip()
+                    ]
+                elif isinstance(good_raw, str) and good_raw.strip():
+                    ref_names = [
+                        t.strip() for t in good_raw.split(",") if t.strip()
+                    ]
+
+                # Wenn keine Referenz → Kalibrierungsblock überspringen
+                if not ref_names:
+                    # Keine good/best → Backward Calibration vollständig überspringen
+                    pass
+                else:
+                    # Frame-Kontexte für rückwärts Tracking
+                    f_now = self._current_frame
+                    f_next = min(self._end_frame, f_now + 1)
+                    f_next2 = min(self._end_frame, f_now + 2)
+                    f_next3 = min(self._end_frame, f_now + 3)
+
+                    # Referenz-Key aktualisieren (optional)
+                    try:
+                        active_key, meta = find_backward_active_key(scene)
+                    except:
+                        active_key = None
+
+                    # Backward-Korrektur mit Referenztracks
+                    correct_marker_positions_backward(
+                        scene,
+                        calibrate_tracks,     # Tracks, die korrigiert werden sollen
+                        ref_names,            # Referenztracks (good/best)
+                        f_now,
+                        f_next,
+                        f_next2,
+                        f_next3
+                    )
 
         except Exception as e:
             pass
+
 
         # adapt search size
         try:
