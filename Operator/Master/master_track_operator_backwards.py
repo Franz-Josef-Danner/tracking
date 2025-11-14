@@ -30,8 +30,12 @@ from ...Helper.reference_key import (
     get_reference_tracks,
     filter_existing_tracks,
     # NEU: Forward/Backward sollen denselben Referenz-Key verwenden
-    _resolve_reference_key
 )
+
+# ------------------------------------------------------------
+# NEU: Forward/Backward sollen denselben Referenz-Key verwenden
+# ------------------------------------------------------------
+from ...Helper.marker_position_forward_calibration import _resolve_reference_key
 
 # ------------------------------------------------------------
 # Interner Helper: Speicherung aktiver Tracks in Scene-String
