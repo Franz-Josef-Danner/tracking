@@ -283,8 +283,16 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         # Hand over control to forward tracking operator
         if not cancelled:
             try:
-                # Forward logic: direct invoke without temp_override
-                bpy.ops.kaiserlich_tracker.master_track_cycle('INVOKE_DEFAULT')
+                clip = getattr(context.space_data, "clip", None)
+                if clip is None:
+                    return
+
+                window, area, region, space = find_clip_editor_area(clip)
+                if not window:
+                    return
+
+                with context.temp_override(window=window, area=area, region=region, space_data=space):
+                    bpy.ops.kaiserlich_tracker.master_track_cycle()
             except Exception:
                 pass
 
