@@ -23,6 +23,13 @@ from ...Helper.marker_position_backward_calibration import (
     correct_marker_positions_backward
 )
 
+# ------------------------------------------------------------
+# Neuer Import: Zentrales Referenz-Key-System
+# ------------------------------------------------------------
+from ...Helper.reference_key import (
+    get_reference_tracks,
+    filter_existing_tracks,
+)
 
 # ------------------------------------------------------------
 # Interner Helper: Speicherung aktiver Tracks in Scene-String
@@ -209,28 +216,16 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             if not calibrate_tracks:
                 pass
             else:
-                # -------------------------------------------------
-                # Referenz: Best Tracks > Good Tracks > None
-                # -------------------------------------------------
-                ref_names = []
+                # -------------------------------------------------------
+                # Referenz über das zentrale Referenz-Key-System
+                # -------------------------------------------------------
+                ref_names = get_reference_tracks(scene)
+                ref_names = filter_existing_tracks(context, ref_names)
 
-                best_raw = scene.get("best_tracks", "")
-                good_raw = scene.get("good_tracks", "")
-
-                if isinstance(best_raw, str) and best_raw.strip():
-                    ref_names = [
-                        t.strip() for t in best_raw.split(",") if t.strip()
-                    ]
-                elif isinstance(good_raw, str) and good_raw.strip():
-                    ref_names = [
-                        t.strip() for t in good_raw.split(",") if t.strip()
-                    ]
-
-                # Wenn keine Referenz → Kalibrierungsblock überspringen
+                # Wenn keine Referenz → Kalibrierung überspringen
                 if not ref_names:
-                    # Keine good/best → Backward Calibration vollständig überspringen
                     pass
-                else:
+                else: 
                     # Frame-Kontexte für rückwärts Tracking
                     f_now = self._current_frame
                     # Zukunft nur verwenden, wenn Frames existieren
@@ -245,12 +240,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                         f_next2 = None
                     if f_next3 > self._end_frame:
                         f_next3 = None
-
-                    # Referenz-Key aktualisieren (optional)
-                    try:
-                        active_key, meta = find_backward_active_key(scene)
-                    except:
-                        active_key = None
 
                     # ---------------------------------------------------
                     # Variante A:

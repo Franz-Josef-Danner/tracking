@@ -26,6 +26,13 @@ from ...Helper.marker_position_forward_calibration import (
 )
 
 # ------------------------------------------------------------
+# Neuer Import: Zentrales Referenz-Key-System
+# ------------------------------------------------------------
+from ...Helper.reference_key import (
+    get_reference_tracks,
+    filter_existing_tracks,
+)
+# ------------------------------------------------------------
 # Interner Helper: Speicherung aktiver Tracks in Scene-String
 # ------------------------------------------------------------
 def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
@@ -216,17 +223,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                 # Keine Kalibrier-Tracks → nichts tun
                 pass
             else:
-                # --- Referenz bestimmen ---
-                best_raw = scene.get("best_tracks", "")
-                good_raw = scene.get("good_tracks", "")
 
-                if isinstance(best_raw, str) and best_raw.strip():
-                    ref_tracks = [t.strip() for t in best_raw.split(",") if t.strip()]
-                elif isinstance(good_raw, str) and good_raw.strip():
-                    ref_tracks = [t.strip() for t in good_raw.split(",") if t.strip()]
-                else:
-                    ref_tracks = []
-
+                # -------------------------------------------------------
+                # Referenz über das zentrale Referenz-Key-System
+                # -------------------------------------------------------
+                ref_tracks = get_reference_tracks(scene)
+                ref_tracks = filter_existing_tracks(context, ref_tracks)
                 # Keine Referenz → kein Calibration Step
                 if not ref_tracks:
                     pass
@@ -237,7 +239,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                         return
 
                     tracking = clip.tracking
-                    ref_tracks = [t for t in ref_tracks if t in tracking.tracks]
                     calibrate_tracks = [t for t in calibrate_tracks if t in tracking.tracks]
 
                     if not ref_tracks or not calibrate_tracks:
