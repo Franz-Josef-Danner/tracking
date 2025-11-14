@@ -20,9 +20,9 @@ from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
 # Neuer Import: Backward-MarkerCalibration-Helper (ersetzt Forward)
 # ------------------------------------------------------------
 from ...Helper.marker_position_backward_calibration import (
-    correct_marker_positions_backward,
-    find_active_tracks_key as find_backward_active_key
+    correct_marker_positions_backward
 )
+
 
 # ------------------------------------------------------------
 # Interner Helper: Speicherung aktiver Tracks in Scene-String
@@ -56,11 +56,6 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         scene["calibrate_tracks"] = ",".join(track_names)
         scene["calibrate_tracks_uuid_map"] = str(uuid_map)
 
-        # Direkt danach MarkerCalibration-Helper aufrufen
-        try:
-            find_backward_active_key(scene)
-        except Exception as e:
-            pass
     except Exception as e:
         pass
 
