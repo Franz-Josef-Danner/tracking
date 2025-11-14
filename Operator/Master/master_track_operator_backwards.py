@@ -212,43 +212,42 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             else:
                 calibrate_tracks = []
 
-            # Wenn keine calibrate_tracks → nichts tun
             if not calibrate_tracks:
                 pass
             else:
                 # -------------------------------------------------------
-                # Referenz über das zentrale Referenz-Key-System
+                # Referenz über zentrales Referenz-Key-System
                 # -------------------------------------------------------
                 ref_names = get_reference_tracks(scene)
                 ref_names = filter_existing_tracks(context, ref_names)
 
-                # Wenn keine Referenz → Kalibrierung überspringen
-                if not ref_names:
+                # --- Dead-Reference Cleanup (neu, Punkt 4) ---
+                clip = getattr(context.space_data, "clip", None)
+                if not clip:
+                    return {"CANCELLED"}
+
+                tracking = clip.tracking
+
+                calibrate_tracks = [t for t in calibrate_tracks if t in tracking.tracks]
+                ref_names = [t for t in ref_names if t in tracking.tracks]
+
+                # Wenn nach Cleanup keine gültigen Tracks mehr existieren → skip
+                if not ref_names or not calibrate_tracks:
                     pass
-                else: 
+                else:
                     # Frame-Kontexte für rückwärts Tracking
                     f_now = self._current_frame
-                    # Zukunft nur verwenden, wenn Frames existieren
-                    f_next = f_now + 1
+
+                    f_next  = f_now + 1
                     f_next2 = f_now + 2
                     f_next3 = f_now + 3
 
-                    # Clip-Limits anwenden
-                    if f_next > self._end_frame:
-                        f_next = None
-                    if f_next2 > self._end_frame:
-                        f_next2 = None
-                    if f_next3 > self._end_frame:
-                        f_next3 = None
-
-                    # ---------------------------------------------------
-                    # Variante A:
-                    # Sofortige Korrektur → vorausgesetzt f_next existiert
-                    # f_next2 / f_next3 werden nur genutzt, wenn vorhanden
-                    # ---------------------------------------------------
+                    # Clip-Limits
+                    if f_next > self._end_frame:  f_next = None
+                    if f_next2 > self._end_frame: f_next2 = None
+                    if f_next3 > self._end_frame: f_next3 = None
 
                     if f_next is not None:
-                        # Korrektur-Call mit dynamischer Zukunft
                         try:
                             correct_marker_positions_backward(
                                 scene,
@@ -257,17 +256,11 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                                 f_now,
                                 f_next, f_next2, f_next3
                             )
-
-                        except Exception as e:
+                        except Exception:
                             pass
-                    else:
-                        # f_next existiert nicht (Frame 0)
-                        # → keine Backward-Korrektur möglich
-                        pass
 
-        except Exception as e:
+        except Exception:
             pass
-
 
         # adapt search size
         try:
