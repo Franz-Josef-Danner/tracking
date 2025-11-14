@@ -169,15 +169,38 @@ def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, fra
     Adaptive Gewichtung je nach Abweichung, robuste Mittelung, radiale Gewichte.
     """
 
-    # Mutual Exclusivity & Auswahl der Referenzquelle
-    if "good_tracks" in scene and "best_tracks" in scene:
-        return
-    elif "good_tracks" in scene:
-        good_trackss = scene["good_tracks"]
-    elif "best_tracks" in scene:
-        good_trackss = scene["best_tracks"]
+    # ----------------------------------------------------------
+    # Auswahl der Referenzquelle (korrigiert):
+    # Priorität:
+    #    1. best_tracks (falls vorhanden und nicht leer)
+    #    2. good_tracks (falls vorhanden und nicht leer)
+    #    3. wenn beide fehlen → kein Calibration-Step
+    # ----------------------------------------------------------
+    ref_best = scene.get("best_tracks")
+    ref_good = scene.get("good_tracks")
+
+    # Falls best_tracks existiert → verwenden
+    if ref_best:
+        try:
+            good_trackss = ast.literal_eval(ref_best) if isinstance(ref_best, str) else ref_best
+        except Exception:
+            good_trackss = []
+
+    # Falls nur good_tracks existiert → verwenden
+    elif ref_good:
+        try:
+            good_trackss = ast.literal_eval(ref_good) if isinstance(ref_good, str) else ref_good
+        except Exception:
+            good_trackss = []
+
+    # Wenn keines der beiden existiert → Calibration überspringen
     else:
         return
+
+    # Falls nach parsing leer → ebenso kein Calibration-Step
+    if not good_trackss:
+        return
+
 
     # Mindestabdeckung
     min_required = getattr(scene, "kaiserlich_markers_per_frame", 20) / 2
