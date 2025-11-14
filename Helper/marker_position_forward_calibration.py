@@ -155,7 +155,7 @@ def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
 # set_marker_position(track_or_name, frame, x, y) -> None
 
 # --- FEHLENDE IMPORTS HINZUGEFÜGT ---
-from Helper.marker_positions_helper import (
+from .marker_positions_helper import (
     get_active_markers,
     get_marker_position,
     set_marker_position,
