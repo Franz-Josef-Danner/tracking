@@ -29,6 +29,8 @@ from ...Helper.marker_position_backward_calibration import (
 from ...Helper.reference_key import (
     get_reference_tracks,
     filter_existing_tracks,
+    # NEU: Forward/Backward sollen denselben Referenz-Key verwenden
+    _resolve_reference_key
 )
 
 # ------------------------------------------------------------
@@ -152,6 +154,19 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         tracking = clip.tracking
         for tr in tracking.tracks:
             tr.select = (tr.name in self._original_selected)
+        # --------------------------------------------------------
+        # NEU: Referenz-Key bestimmen (identisch zu Forward)
+        # --------------------------------------------------------
+        try:
+            scene = context.scene
+            self._active_ref_key = _resolve_reference_key(scene)
+        except Exception:
+            # Falls kein Key bestimmt werden kann → None,
+            # Backward arbeitet dann wie bisher ohne Referenz-Key.
+            self._active_ref_key = None
+
+        # (Forward speichert den aktiven Key nicht als Scene-Prop,
+        # daher hier ebenfalls kein Scene-Write.)
 
         # Activate timer
         wm = context.window_manager
