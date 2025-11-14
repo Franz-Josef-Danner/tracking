@@ -238,9 +238,18 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                 else:
                     # Frame-Kontexte für rückwärts Tracking
                     f_now = self._current_frame
-                    f_next = min(self._end_frame, f_now + 1)
-                    f_next2 = min(self._end_frame, f_now + 2)
-                    f_next3 = min(self._end_frame, f_now + 3)
+                    # Zukunft nur verwenden, wenn Frames existieren
+                    f_next = f_now + 1
+                    f_next2 = f_now + 2
+                    f_next3 = f_now + 3
+
+                    # Clip-Limits anwenden
+                    if f_next > self._end_frame:
+                        f_next = None
+                    if f_next2 > self._end_frame:
+                        f_next2 = None
+                    if f_next3 > self._end_frame:
+                        f_next3 = None
 
                     # Referenz-Key aktualisieren (optional)
                     try:
@@ -248,16 +257,30 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                     except:
                         active_key = None
 
-                    # Backward-Korrektur mit Referenztracks
-                    correct_marker_positions_backward(
-                        scene,
-                        calibrate_tracks,     # Tracks, die korrigiert werden sollen
-                        ref_names,            # Referenztracks (good/best)
-                        f_now,
-                        f_next,
-                        f_next2,
-                        f_next3
-                    )
+                    # ---------------------------------------------------
+                    # Variante A:
+                    # Sofortige Korrektur → vorausgesetzt f_next existiert
+                    # f_next2 / f_next3 werden nur genutzt, wenn vorhanden
+                    # ---------------------------------------------------
+
+                    if f_next is not None:
+                        # Korrektur-Call mit dynamischer Zukunft
+                        try:
+                            correct_marker_positions_backward(
+                                scene,
+                                calibrate_tracks,     # Tracks, die korrigiert werden sollen
+                                ref_names,            # Referenztracks (good/best)
+                                f_now,
+                                f_next,
+                                f_next2,
+                                f_next3
+                            )
+                        except Exception as e:
+                            pass
+                    else:
+                        # f_next existiert nicht (Frame 0)
+                        # → keine Backward-Korrektur möglich
+                        pass
 
         except Exception as e:
             pass
