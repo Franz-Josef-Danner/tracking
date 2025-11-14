@@ -22,6 +22,7 @@ from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
 from ...Helper.marker_position_forward_calibration import (
     find_active_tracks_key,
     _resolve_reference_key,
+    correct_marker_positions
 )
 
 # ------------------------------------------------------------
@@ -197,8 +198,44 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception:
             pass
+        
         # -----------------------------------------------
-        # 3) adapt search size
+        # 3) ACTIVE CALIBRATION STEP (neu)
+        # -----------------------------------------------
+        try:
+            scene = context.scene
+
+            # Dynamisch den Referenz-Key neu bestimmen
+            active_key, meta = find_active_tracks_key(scene)
+
+            # Aktuelle Kalibrierungs-Trackliste aus Scene holen
+            calibrate_raw = scene.get("calibrate_tracks", "")
+            if isinstance(calibrate_raw, str):
+                calibrate_tracks = [
+                    t.strip() for t in calibrate_raw.split(",") if t.strip()
+                ]
+            else:
+                calibrate_tracks = []
+
+            # Zu korrigierende Marker müssen existieren
+            if calibrate_tracks and active_key:
+                # Kontext: aktueller, vorheriger und nächster Frame
+                f_a = self._current_frame
+                f_b = max(self._start_frame, f_a - 1)
+                f_c = min(self._end_frame,   f_a + 1)
+
+                # Korrektur ausführen
+                correct_marker_positions(
+                    scene,
+                    None,              # good_trackss wird intern aus scene gewählt
+                    calibrate_tracks,  # Liste der zu korrigierenden Tracks
+                    f_a, f_b, f_c
+                )
+        except Exception:
+            pass
+
+        # -----------------------------------------------
+        # 4) adapt search size
         # -----------------------------------------------
         try:
             adapt_search_size_for_calibrate_tracks(context)
@@ -206,7 +243,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             pass
 
         # -----------------------------------------------
-        # 4) Tracking-Step
+        # 5) Tracking-Step
         # -----------------------------------------------
         success = track_markers_with_override(
             self._window, self._area, self._region, self._space,
