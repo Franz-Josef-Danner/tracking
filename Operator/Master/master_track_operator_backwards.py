@@ -14,6 +14,7 @@ from ...Helper.selection_helper import collect_selected_track_names
 from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
+from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
 
 # ------------------------------------------------------------
 # Neuer Import: MarkerCalibration-Helper
@@ -191,7 +192,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception:
             pass
-
+        # adapt search size
+        try:
+            adapt_search_size_for_calibrate_tracks(context)
+        except Exception:
+            pass
+        
         # Perform backward tracking step
         success = track_markers_with_override(
             self._window, self._area, self._region, self._space,
