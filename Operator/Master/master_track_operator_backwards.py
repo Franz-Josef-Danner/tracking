@@ -17,10 +17,12 @@ from ...Helper.frame_track_progress import compute_marker_progress
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
 
 # ------------------------------------------------------------
-# Neuer Import: MarkerCalibration-Helper
+# Neuer Import: Backward-MarkerCalibration-Helper (ersetzt Forward)
 # ------------------------------------------------------------
-from ...Helper.marker_position_forward_calibration import find_active_tracks_key
-
+from ...Helper.marker_position_backward_calibration import (
+    correct_marker_positions_backward,
+    find_active_tracks_key as find_backward_active_key
+)
 
 # ------------------------------------------------------------
 # Interner Helper: Speicherung aktiver Tracks in Scene-String
@@ -56,7 +58,7 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
 
         # Direkt danach MarkerCalibration-Helper aufrufen
         try:
-            find_active_tracks_key(scene)
+            find_backward_active_key(scene)
         except Exception as e:
             pass
     except Exception as e:
@@ -192,6 +194,45 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception:
             pass
+
+        # -------------------------------------------------------
+        # BACKWARD CALIBRATION STEP (korrekt)
+        # -------------------------------------------------------
+        try:
+            scene = context.scene
+
+            # calibrate_tracks aus Scene lesen
+            calibrate_raw = scene.get("calibrate_tracks", "")
+            if isinstance(calibrate_raw, str):
+                calibrate_tracks = [
+                    t.strip() for t in calibrate_raw.split(",") if t.strip()
+                ]
+            else:
+                calibrate_tracks = []
+
+            if calibrate_tracks:
+                # Referenz-Key aktualisieren (nur Validierungszweck)
+                active_key, meta = find_backward_active_key(scene)
+
+                # Frame-Kontexte für rückwärts Tracking
+                f_now = self._current_frame
+                f_next = min(self._end_frame, f_now + 1)
+                f_next2 = min(self._end_frame, f_now + 2)
+                f_next3 = min(self._end_frame, f_now + 3)
+
+                # >>> WICHTIG: calibrate_tracks (nicht good/best) übergeben <<<
+                correct_marker_positions_backward(
+                    scene,
+                    calibrate_tracks,
+                    f_now,
+                    f_next,
+                    f_next2,
+                    f_next3
+                )
+
+        except Exception as e:
+            pass
+
         # adapt search size
         try:
             adapt_search_size_for_calibrate_tracks(context)
