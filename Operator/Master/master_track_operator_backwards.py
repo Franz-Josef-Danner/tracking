@@ -268,13 +268,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                         try:
                             correct_marker_positions_backward(
                                 scene,
-                                calibrate_tracks,     # Tracks, die korrigiert werden sollen
-                                ref_names,            # Referenztracks (good/best)
+                                ref_names,
+                                calibrate_tracks,
                                 f_now,
-                                f_next,
-                                f_next2,
-                                f_next3
+                                f_next, f_next2, f_next3
                             )
+
                         except Exception as e:
                             pass
                     else:
