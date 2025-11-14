@@ -150,188 +150,166 @@ def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
     return key
 
 
-# ---------------------------------------------------------------------
-# Erwartete Low-Level-Helper (unverändert, extern bereitgestellt)
-# ---------------------------------------------------------------------
 # get_active_markers(frame) -> List[str|TrackObj]
 # get_marker_position(track_or_name, frame) -> Tuple[float, float]
 # set_marker_position(track_or_name, frame, x, y) -> None
+
+# --- FEHLENDE IMPORTS HINZUGEFÜGT ---
+from Helper.marker_positions_helper import (
+    get_active_markers,
+    get_marker_position,
+    set_marker_position,
+)
 
 
 # ---------------------------------------------------------------------
 # Marker-Korrektur über bis zu 4 Frames (adaptive Stabilisierung)
 # Automatische Auswahl zwischen 'good_tracks' und 'best_tracks'
 # ---------------------------------------------------------------------
-def correct_marker_positions(scene, good_trackss, calibrate_tracks, frame_a, frame_b, frame_c=None, frame_d=None):
+def correct_marker_positions(
+    scene: bpy.types.Scene,
+    ref_tracks_input,
+    calibrate_tracks,
+    frame_now: int,
+    frame_prev: Optional[int],
+    frame_prev2: Optional[int] = None,
+    frame_prev3: Optional[int] = None
+):
     """
-    Stabilisiert/rekonstruiert Markerpositionen im aktuellen Frame (frame_a)
-    anhand „stabiler“ Marker-Referenzen aus bis zu vier Frames (frame_b…frame_d).
-    Adaptive Gewichtung je nach Abweichung, robuste Mittelung, radiale Gewichte.
+    Korrigierte Forward-Kalibrierung (symmetrisch zu Backward):
+        frame_now  = aktueller Frame
+        frame_prev = vergangener Frame (-1)
     """
 
-    # ----------------------------------------------------------
-    # Auswahl der Referenzquelle (korrigiert):
-    # Priorität:
-    #    1. best_tracks (falls vorhanden und nicht leer)
-    #    2. good_tracks (falls vorhanden und nicht leer)
-    #    3. wenn beide fehlen → kein Calibration-Step
-    # ----------------------------------------------------------
-    ref_best = scene.get("best_tracks")
-    ref_good = scene.get("good_tracks")
-
-    # Falls best_tracks existiert → verwenden
-    if ref_best:
-        try:
-            good_trackss = ast.literal_eval(ref_best) if isinstance(ref_best, str) else ref_best
-        except Exception:
-            good_trackss = []
-
-    # Falls nur good_tracks existiert → verwenden
-    elif ref_good:
-        try:
-            good_trackss = ast.literal_eval(ref_good) if isinstance(ref_good, str) else ref_good
-        except Exception:
-            good_trackss = []
-
-    # Wenn keines der beiden existiert → Calibration überspringen
+    # -------------------------------------------------------------
+    # Referenzen konsistent wie Backward auflösen
+    # -------------------------------------------------------------
+    if "best_tracks" in scene:
+        ref_scene = _read_scene_list(scene, "best_tracks")
+    elif "good_tracks" in scene:
+        ref_scene = _read_scene_list(scene, "good_tracks")
     else:
         return
 
-    # Falls nach parsing leer → ebenso kein Calibration-Step
-    if not good_trackss:
+    if not ref_scene:
         return
 
+    ref_tracks = list(set(ref_tracks_input) & set(ref_scene))
+    if not ref_tracks:
+        return
 
     # Mindestabdeckung
     min_required = getattr(scene, "kaiserlich_markers_per_frame", 20) / 2
 
-    # Aktive Marker je Frame
-    fa_marker = get_active_markers(frame_a)
-    fb_marker = get_active_markers(frame_b)
-    fc_marker = get_active_markers(frame_c) if frame_c else []
-    fd_marker = get_active_markers(frame_d) if frame_d else []
+    # Frames sauber spiegeln
+    f0 = get_active_markers(frame_now)
+    f1 = get_active_markers(frame_prev) if frame_prev else []
+    f2 = get_active_markers(frame_prev2) if frame_prev2 else []
+    f3 = get_active_markers(frame_prev3) if frame_prev3 else []
 
-    # Schnittmengen mit stabilen Referenzen
-    fa_good = [m for m in fa_marker if m in good_trackss]
-    fb_good = [m for m in fb_marker if m in good_trackss]
-    fc_good = [m for m in fc_marker if m in good_trackss]
-    fd_good = [m for m in fd_marker if m in good_trackss]
+    f0_good = [m for m in f0 if m in ref_tracks]
+    f1_good = [m for m in f1 if m in ref_tracks]
+    f2_good = [m for m in f2 if m in ref_tracks]
+    f3_good = [m for m in f3 if m in ref_tracks]
 
-    fa_gm_count = len(fa_good)
-    fb_gm_count = len(fb_good)
-    fc_gm_count = len(fc_good)
-    fd_gm_count = len(fd_good)
-
-    # Fallauswahl 4→3→2→0
-    if fd_gm_count >= min_required:
-        source = fd_good
+    # Auswahl identisch zu Backwards (4 → 3 → 2)
+    if len(f3_good) >= min_required:
+        source = f3_good
         mode = 4
-    elif fc_gm_count >= min_required:
-        source = fc_good
+    elif len(f2_good) >= min_required:
+        source = f2_good
         mode = 3
-    elif fb_gm_count >= min_required:
-        source = fb_good
+    elif len(f1_good) >= min_required:
+        source = f1_good
         mode = 2
-    elif fa_gm_count >= min_required:
-        return
     else:
         return
 
-    # ----------------------------------------------------------
-    # Auflösungs-Verhältnis für Y-Skalierung bestimmen
-    # ----------------------------------------------------------
+    # Aspect Ratio
     try:
         clip = bpy.context.edit_movieclip or bpy.context.space_data.clip
-        width = getattr(clip, "size", [1, 1])[0]
-        height = getattr(clip, "size", [1, 1])[1]
-        aspect_ratio = (width / height) if height != 0 else 1.0
+        w = clip.size[0]
+        h = clip.size[1]
+        aspect_ratio = w / h if h != 0 else 1.0
     except Exception:
         aspect_ratio = 1.0
 
-    # Positionsupdate für alle Zielmarker
-    for sm in calibrate_tracks:
-        fa_sm_x, fa_sm_y = get_marker_position(sm, frame_a)
-        fb_sm_x, fb_sm_y = get_marker_position(sm, frame_b)
+    # -----------------------------------------------------------------
+    # Marker-Korrekturen (vollständig gespiegelt)
+    # -----------------------------------------------------------------
+    for tr in calibrate_tracks:
 
-        wvx, wvy = [], []
+        x_now,  y_now  = get_marker_position(tr, frame_now)
+        x_prev, y_prev = get_marker_position(tr, frame_prev)
+
+        vlist_x = []
+        vlist_y = []
 
         for gm in source:
-            fa_gm_x, fa_gm_y = get_marker_position(gm, frame_a)
-            fb_gm_x, fb_gm_y = get_marker_position(gm, frame_b)
+            g0x, g0y = get_marker_position(gm, frame_now)
+            g1x, g1y = get_marker_position(gm, frame_prev)
 
             if mode >= 3:
-                fc_gm_x, fc_gm_y = get_marker_position(gm, frame_c)
+                g2x, g2y = get_marker_position(gm, frame_prev2)
             if mode == 4:
-                fd_gm_x, fd_gm_y = get_marker_position(gm, frame_d)
+                g3x, g3y = get_marker_position(gm, frame_prev3)
 
             if mode == 4:
-                v_gm_x = 0.5 * ((fb_gm_x - fc_gm_x) + (fa_gm_x - fb_gm_x))
-                v_gm_y = 0.5 * ((fb_gm_y - fc_gm_y) + (fa_gm_y - fb_gm_y))
+                vx = 0.5 * ((g2x - g3x) + (g1x - g2x))
+                vy = 0.5 * ((g2y - g3y) + (g1y - g2y))
             elif mode == 3:
-                v_gm_x = 0.5 * ((fb_gm_x - fc_gm_x) + (fa_gm_x - fb_gm_x))
-                v_gm_y = 0.5 * ((fb_gm_y - fc_gm_y) + (fa_gm_y - fb_gm_y))
+                vx = 0.5 * ((g1x - g2x) + (g0x - g1x))
+                vy = 0.5 * ((g1y - g2y) + (g0y - g1y))
             elif mode == 2:
-                v_gm_x = (fa_gm_x - fb_gm_x)
-                v_gm_y = (fa_gm_y - fb_gm_y)
+                vx = (g1x - g0x)
+                vy = (g1y - g0y)
             else:
-                v_gm_x = v_gm_y = 0.0
+                vx = vy = 0.0
 
-            dx, dy = (fa_sm_x - fa_gm_x), (fa_sm_y - fa_gm_y)
-            dist = (dx * dx + dy * dy) ** 0.5
+            dx = (x_now - g0x)
+            dy = (y_now - g0y)
+            dist = (dx*dx + dy*dy) ** 0.5
             w = 1.0 / (1e-6 + dist)
 
-            wvx.append((v_gm_x, w))
-            wvy.append((v_gm_y, w))
+            vlist_x.append((vx, w))
+            vlist_y.append((vy, w))
 
-        if not wvx or not wvy:
+        if not vlist_x:
             continue
 
-        def robust_weighted_mean(values_with_weights):
-            if len(values_with_weights) < 5:
-                total_w = sum(w for _, w in values_with_weights)
-                return (sum(v * w for v, w in values_with_weights) / total_w) if total_w else 0.0
-            sorted_vals = sorted(values_with_weights, key=lambda x: x[0])
-            n = len(sorted_vals)
-            cut = max(1, int(0.1 * n))
-            trimmed = sorted_vals[cut:-cut] if n > 2 * cut else sorted_vals
-            total_w = sum(w for _, w in trimmed)
-            return (sum(v * w for v, w in trimmed) / total_w) if total_w else 0.0
+        def robust_weighted_mean(vw):
+            if len(vw) < 5:
+                sw = sum(w for _, w in vw)
+                return sum(v*w for v, w in vw) / sw if sw else 0.0
+            vs = sorted(vw, key=lambda x: x[0])
+            n = len(vs)
+            cut = max(1, int(0.1*n))
+            trimmed = vs[cut:-cut] if n > 2*cut else vs
+            sw = sum(w for _, w in trimmed)
+            return sum(v*w for v, w in trimmed) / sw if sw else 0.0
 
-        avg_vx = robust_weighted_mean(wvx)
-        avg_vy = robust_weighted_mean(wvy)
+        avg_vx = robust_weighted_mean(vlist_x)
+        avg_vy = robust_weighted_mean(vlist_y)
 
-        # ----------------------------------------------------------
-        # Adaptive Stabilisierung (nichtlinear, quadratisch geglättet)
-        # ----------------------------------------------------------
-        new_x = fb_sm_x + avg_vx
-        new_y = fb_sm_y + avg_vy
+        # Forward-Projektion (gespiegelt aus backward)
+        pred_x = x_prev + avg_vx
+        pred_y = y_prev + avg_vy
 
-        # Abweichungen zwischen Schätzung und gemessener Markerposition
-        diff_x = abs(fa_sm_x - new_x)
-        diff_y = abs(fa_sm_y - new_y)
+        diff_x = abs(x_now - pred_x)
+        diff_y = abs(y_now - pred_y) * aspect_ratio
 
-        # Seitenverhältnis berücksichtigen (aniso-Korrektur)
-        w_aspect = aspect_ratio if aspect_ratio != 0 else 1.0
-        diff_y *= w_aspect
+        wx = max(0.0, min(1.0, 1.0 - (diff_x ** (diff_x * 20))))
+        wy = max(0.0, min(1.0, 1.0 - (diff_y ** (diff_y * 20))))
 
-        # Quadratische Gewichtsfunktion: (1 - diff²)
-        wx_base = max(0.0, min(1.0, 1.0 - (diff_x ** (diff_x * 20))))
-        wy_base = max(0.0, min(1.0, 1.0 - (diff_y ** (diff_y * 20))))
-
-        # Normierte adaptive Mischung nach der exakten Formel:
-        # ((S*(1-Δ²)) + (M*(1-(1-Δ²)))) / ((1-Δ²) + (1-(1-Δ²)))
-        # vereinfacht zu gleitender, symmetrischer Blend
-        def adaptive_blend(estimate, measure, w):
+        def blend(est, meas, w):
             a = w
             b = 1.0 - w
-            numerator = (estimate * a) + (measure * b)
-            denominator = a + b if (a + b) != 0 else 1.0
-            return numerator / denominator
+            return (est*a + meas*b) / (a+b if (a+b) != 0 else 1.0)
 
-        final_x = adaptive_blend(new_x, fa_sm_x, wx_base)
-        final_y = adaptive_blend(new_y, fa_sm_y, wy_base)
+        final_x = blend(pred_x, x_now, wx)
+        final_y = blend(pred_y, y_now, wy)
 
-        set_marker_position(sm, frame_a, final_x, final_y)
+        set_marker_position(tr, frame_now, final_x, final_y)
 
         # Optionales Debug-Log:
 
