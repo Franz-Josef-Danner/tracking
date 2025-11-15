@@ -15,7 +15,7 @@ from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
 from ...Helper.motion_model_group_analysis import apply_group_motion_model
-from ...Helper.motion_model_helper import apply_motion_model  # optional, falls woanders genutzt
+from ...Helper.motion_model_helper import apply_motion_model
 
 # ------------------------------------------------------------
 # Neuer Korrektur-Helper
@@ -196,18 +196,15 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # -----------------------------------------------
         store_calibrate_tracks_in_scene(context, self._processing_names)
 
-        # Danach würde marker_position_forward_calibration.py aufgerufen werden
-        # (hier nur vorbereitend, damit calibrate_tracks aktuell ist)
+        # (Vorbereitung: calibrate_tracks wurden aktualisiert)
 
         # -----------------------------------------------
-        # 2) Live Motion-Model Analyse (gruppenbasiert, pro Marker individuell)
+        # 2) LIVE GROUP MOTION-MODEL ANALYSE
         # -----------------------------------------------
         try:
-            apply_group_motion_model(context, max_frames=5)
+            apply_group_motion_model(context, max_frames=12)
         except Exception as e:
             print(f"[MasterTrack][MotionModel] ERROR: {e}")
-            pass
-
         # -----------------------------------------------
         # 3) ACTIVE CALIBRATION STEP (mit good/best Referenz)
         # -----------------------------------------------
