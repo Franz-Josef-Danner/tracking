@@ -238,13 +238,21 @@ def detect_perspective(
     max_dev = max(dev_values) if dev_values else 0.0
     mv_avg = sum(dev_values) / len(dev_values) if dev_values else 0.0
 
+    # NEW: Standardabweichung für echte Differenzanalyse
+    if len(dev_values) > 1:
+        mean = mv_avg
+        var = sum((v - mean) ** 2 for v in dev_values) / len(dev_values)
+        p_std = math.sqrt(var)
+    else:
+        p_std = 0.0
+
     print(
         f"[GroupModel][Perspective] max_dev={max_dev:.6f}, "
-        f"avg_dev={mv_avg:.6f}"
+        f"avg_dev={mv_avg:.6f}, std={p_std:.6f}"
     )
 
-    return center_name, max_dev, devs, mv_avg
-
+    # Rückgabe erweitert um p_std
+    return center_name, max_dev, devs, mv_avg, p_std
 
 # ================================================================
 # Hysterese-State (global + per Marker)
@@ -382,12 +390,15 @@ def apply_group_motion_model(context: bpy.types.Context, max_frames: int = 12) -
     global_model_raw = evaluate_global_model(core_positions)
 
     # ---- Perspective-Analyse (alle Marker) ----
-    center_name, max_dev, p_map, mv_avg = detect_perspective(marker_positions_xy)
+    center_name, max_dev, p_map, mv_avg, p_std = detect_perspective(marker_positions_xy)
 
-    # Perspective nur bei signifikanter globaler Nichtlinearität
-    if max_dev > 2.5 and global_model_raw != "Loc":
-        global_model_raw = "Perspective"
-        print(f"[GroupModel] -> Perspective (global max_dev={max_dev:.3f})")
+    # NEW: robuster globaler Perspective-Trigger
+    # Nur wenn Ausreißer außerhalb 3*STD liegen und global keine reine Translation
+    if p_std > 0.0:
+        global_zscore = (max_dev - mv_avg) / (p_std + 1e-9)
+        if global_zscore > 3.0 and global_model_raw != "Loc":
+            global_model_raw = "Perspective"
+            print(f"[GroupModel] -> Perspective (global_zscore={global_zscore:.3f})")
 
     # ---- Hysterese auf globalem Modell ----
     effective_global = _apply_global_hysteresis(current_frame, global_model_raw)
@@ -420,8 +431,10 @@ def apply_group_motion_model(context: bpy.types.Context, max_frames: int = 12) -
 
         # individuelle Perspective-Abweichung
         indiv_ratio = 0.0
-        if name in p_map and p_avg != 0.0:
-            indiv_ratio = p_map[name] / (abs(p_avg) + 1e-9)
+        # NEW: Z-Score statt division durch mv_avg
+        indiv_ratio = 0.0
+        if name in p_map and p_std > 1e-9:
+            indiv_ratio = (p_map[name] - mv_avg) / (p_std + 1e-9)
 
         # ---- Cluster-basierte Zielmodell-Wahl ----
         candidate_model = effective_global
@@ -443,23 +456,21 @@ def apply_group_motion_model(context: bpy.types.Context, max_frames: int = 12) -
         else:
             wants_perspective = False
 
-            if cluster == "outlier":
-                # Outlier: sehr sensitiv auf Perspective
-                if indiv_ratio > 1.5 and max_dev > 1.0:
-                    candidate_model = "Perspective"
-                    wants_perspective = True
+        # NEW: Z-Score-basierte Regeln (Cluster-sensitiv, aber mathematisch korrekt)
+        if cluster == "outlier":
+            if indiv_ratio > 2.0:
+                candidate_model = "Perspective"
+                wants_perspective = True
 
-            elif cluster == "periphery":
-                # Periphery: mittlere Sensitivität
-                if indiv_ratio > 2.0 and max_dev > 1.5:
-                    candidate_model = "Perspective"
-                    wants_perspective = True
+        elif cluster == "periphery":
+            if indiv_ratio > 2.5:
+                candidate_model = "Perspective"
+                wants_perspective = True
 
-            else:  # core
-                # Core: sehr konservativ – Perspective nur bei sehr deutlicher Abweichung
-                if indiv_ratio > 3.0 and max_dev > 2.0:
-                    candidate_model = "Perspective"
-                    wants_perspective = True
+        else:  # core
+            if indiv_ratio > 3.0:
+                candidate_model = "Perspective"
+                wants_perspective = True
 
             # Logging
             if wants_perspective:
