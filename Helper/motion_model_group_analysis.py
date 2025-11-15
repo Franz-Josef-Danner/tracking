@@ -162,9 +162,12 @@ def detect_perspective(marker_positions: Dict[str, List[Tuple[float, float]]]) -
 
     max_dev = max(devs.values())
 
+    # Durchschnittliche RMS-Abweichung der Marker (robust)
+    dev_values = list(devs.values())
+    mv_avg = sum(dev_values) / len(dev_values) if dev_values else 0.0
     print(f"[GroupModel][Perspective] max_dev={max_dev:.6f}, avg_dev={mv_avg:.6f}")
 
-    return center, max_dev, devs
+    return center, max_dev, devs, mv_avg
 
 
 # ================================================================
@@ -209,15 +212,16 @@ def apply_group_motion_model(context: bpy.types.Context, max_frames: int = 10) -
     global_model = evaluate_global_model(marker_positions)
 
     # ---- Perspective prüfen ----
-    center, p_dev, p_map = detect_perspective(marker_positions)
+    center, max_dev, p_map, mv_avg = detect_perspective(marker_positions)
 
     # adaptiv:
     mv_values = list(p_map.values())
     p_avg = sum(mv_values) / len(mv_values) if mv_values else 0.0
     # neue Bedingung: Perspective nur wenn global über Threshold
-    if max_dev > 2.5:  # robust, empirisch stabil
+    # Perspective nur bei signifikanter, globaler Nichtlinearität:
+    if max_dev > 2.5 and global_model != "Loc":
         global_model = "Perspective"
-        print(f"[GroupModel] -> Perspective (global_rms dev={max_dev:.3f})")
+        print(f"[GroupModel] -> Perspective (global max_dev={max_dev:.3f})")
 
     # ---- Für jeden Marker anwenden ----
     for tr in selected:
@@ -227,7 +231,8 @@ def apply_group_motion_model(context: bpy.types.Context, max_frames: int = 10) -
         if tr.name in p_map and p_avg != 0:
             indiv_ratio = p_map[tr.name] / (abs(p_avg) + 1e-9)
 
-        if indiv_ratio > 1.5:
+        # stabil: Marker wird Perspective nur, wenn er > ~2.0 * globaler RMS ist
+        if indiv_ratio > 2.0 and max_dev > 1.0:
             model = "Perspective"
             print(f"[GroupModel] Track='{tr.name}' → Perspective (indiv_ratio={indiv_ratio:.6f})")
         else:
