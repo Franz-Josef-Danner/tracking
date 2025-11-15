@@ -134,19 +134,32 @@ def detect_perspective(marker_positions: Dict[str, List[Tuple[float, float]]]) -
     cx   = sum(x for x, _ in cpts) / len(cpts)
     cy   = sum(y for _, y in cpts) / len(cpts)
 
+    # --- Neue stabile RMS-basierte Perspective-Analyse ---
     mv_values = {}
     for name, pts in marker_positions.items():
-        if len(pts) < 2:
+        if len(pts) < 3:
             continue
-        dists = [(abs(cx - x) + abs(cy - y)) * 0.5 for x, y in pts]
-        mv_i = sum(dists[i] - dists[i+1] for i in range(len(dists) - 1))
-        mv_values[name] = mv_i
+
+        # radiale Abstände
+        dist = [(abs(cx - x) + abs(cy - y)) * 0.5 for x, y in pts]
+
+        # Veränderungen (Ableitung)
+        diffs = [(dist[i+1] - dist[i]) for i in range(len(dist)-1)]
+
+        # rms-Wert
+        rms = math.sqrt(sum(d*d for d in diffs) / len(diffs))
+        mv_values[name] = rms
 
     if not mv_values:
         return center, 0.0, {}
 
-    mv_avg = sum(abs(v) for v in mv_values.values()) / len(mv_values)
-    devs   = {name: abs(v - mv_avg) for name, v in mv_values.items()}
+    # globaler rms
+    global_rms = sum(mv_values.values()) / len(mv_values)
+
+    # Abweichungen relativ zum RMS, NICHT durch tiny numbers
+    devs = {name: (mv/global_rms if global_rms > 1e-6 else 1.0)
+            for name, mv in mv_values.items()}
+
     max_dev = max(devs.values())
 
     print(f"[GroupModel][Perspective] max_dev={max_dev:.6f}, avg_dev={mv_avg:.6f}")
@@ -201,11 +214,10 @@ def apply_group_motion_model(context: bpy.types.Context, max_frames: int = 10) -
     # adaptiv:
     mv_values = list(p_map.values())
     p_avg = sum(mv_values) / len(mv_values) if mv_values else 0.0
-    perspective_ratio = (p_dev / (abs(p_avg) + 1e-9)) if mv_values else 0.0
-
-    if perspective_ratio > 1.5:
+    # neue Bedingung: Perspective nur wenn global über Threshold
+    if max_dev > 2.5:  # robust, empirisch stabil
         global_model = "Perspective"
-        print(f"[GroupModel] -> Perspective durch globale Abweichung (ratio={perspective_ratio:.6f})")
+        print(f"[GroupModel] -> Perspective (global_rms dev={max_dev:.3f})")
 
     # ---- Für jeden Marker anwenden ----
     for tr in selected:
