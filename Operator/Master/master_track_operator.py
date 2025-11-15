@@ -6,7 +6,6 @@ from collections import deque
 # ------------------------------------------------------------
 # Helper Imports (bestehend)
 # ------------------------------------------------------------
-from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
 from ...Helper.scene import get_end_frame
 from ...Helper.find_clip_editor_area import find_clip_editor_area
@@ -15,6 +14,8 @@ from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
+from ...Helper.motion_analysis_helper import detect_motion_model_for_track
+from ...Helper.motion_model_helper import apply_motion_model
 
 # ------------------------------------------------------------
 # Neuer Korrektur-Helper
@@ -199,13 +200,24 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # (hier nur vorbereitend, damit calibrate_tracks aktuell ist)
 
         # -----------------------------------------------
-        # 2) Adaptive Formel
+        # 2) Live Motion-Model Analyse (datengetrieben)
         # -----------------------------------------------
         try:
-            apply_formula_on_selected_tracks(context, max_frames=5)
+            for name in self._processing_names:
+                tr = tracking.tracks.get(name)
+                if not tr:
+                    continue
+
+                # Motion-Matrix + Positionsdaten analysieren
+                model = detect_motion_model_for_track(tr, self._current_frame, max_history=5)
+
+                # Modell sofort anwenden
+                apply_motion_model(tr, None, motion_model=model)
+
         except Exception:
             pass
-        
+
+
         # -----------------------------------------------
         # 3) ACTIVE CALIBRATION STEP (mit good/best Referenz)
         # -----------------------------------------------
