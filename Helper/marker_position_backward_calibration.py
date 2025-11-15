@@ -5,7 +5,7 @@
 # Frames, Velocity-Richtung und adaptiver Blend-Logik.
 # ------------------------------------------------------------
 
-from typing import Optional, Tuple, Dict, Any, Iterable
+from typing import Optional, Tuple, Dict, Any, Iterable, List
 import ast
 import bpy
 
