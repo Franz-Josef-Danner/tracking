@@ -150,58 +150,57 @@ def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
     return key
 
 
+# ---------------------------------------------------------------------
+# Erwartete Low-Level-Helper (unverändert, extern bereitgestellt)
+# ---------------------------------------------------------------------
 # get_active_markers(frame) -> List[str|TrackObj]
 # get_marker_position(track_or_name, frame) -> Tuple[float, float]
 # set_marker_position(track_or_name, frame, x, y) -> None
 
-# --- FEHLENDE IMPORTS HINZUGEFÜGT ---
-from .marker_positions_helper import (
-    get_active_markers,
-    get_marker_position,
-    set_marker_position,
-)
 
+# =====================================================================
+# Kaiserlich Tracker – Symmetrische Forward Calibration (bereinigt)
+# Spiegelbild der Backward-Version, ohne Sonderwege / Fehlerquellen
+# =====================================================================
 
-# ---------------------------------------------------------------------
-# Marker-Korrektur über bis zu 4 Frames (adaptive Stabilisierung)
-# Automatische Auswahl zwischen 'good_tracks' und 'best_tracks'
-# ---------------------------------------------------------------------
 def correct_marker_positions(
     scene: bpy.types.Scene,
-    ref_tracks_input,
-    calibrate_tracks,
+    ref_tracks: List[str],
+    calibrate_tracks: List[str],
     frame_now: int,
     frame_prev: Optional[int],
     frame_prev2: Optional[int] = None,
     frame_prev3: Optional[int] = None
 ):
     """
-    Korrigierte Forward-Kalibrierung (symmetrisch zu Backward):
-        frame_now  = aktueller Frame
-        frame_prev = vergangener Frame (-1)
+    Symmetrische Forward-Kalibrierung:
+    f_now  = aktueller Frame
+    f_prev = Frame in Tracking-Richtung (vorwärts: -1)
     """
 
-    # -------------------------------------------------------------
-    # Referenzen konsistent wie Backward auflösen
-    # -------------------------------------------------------------
+    # ------------------------------------------------------------
+    # 1. Referenzquelle deterministisch wählen (identisch zu Backward)
+    # ------------------------------------------------------------
+    ref_scene = None
     if "best_tracks" in scene:
         ref_scene = _read_scene_list(scene, "best_tracks")
     elif "good_tracks" in scene:
         ref_scene = _read_scene_list(scene, "good_tracks")
-    else:
-        return
 
     if not ref_scene:
         return
 
-    ref_tracks = list(set(ref_tracks_input) & set(ref_scene))
+    # final verwendete Referenzliste
+    ref_tracks = list(set(ref_tracks) & set(ref_scene))
     if not ref_tracks:
         return
 
-    # Mindestabdeckung
+    # ------------------------------------------------------------
+    # 2. Mindestabdeckung
+    # ------------------------------------------------------------
     min_required = getattr(scene, "kaiserlich_markers_per_frame", 20) / 2
 
-    # Frames sauber spiegeln
+    # aktive Marker je Frame (spiegelbildlich zu Backward)
     f0 = get_active_markers(frame_now)
     f1 = get_active_markers(frame_prev) if frame_prev else []
     f2 = get_active_markers(frame_prev2) if frame_prev2 else []
@@ -212,7 +211,7 @@ def correct_marker_positions(
     f2_good = [m for m in f2 if m in ref_tracks]
     f3_good = [m for m in f3 if m in ref_tracks]
 
-    # Auswahl identisch zu Backwards (4 → 3 → 2)
+    # Auswahl exakt wie Backward (4 → 3 → 2)
     if len(f3_good) >= min_required:
         source = f3_good
         mode = 4
@@ -225,7 +224,9 @@ def correct_marker_positions(
     else:
         return
 
-    # Aspect Ratio
+    # ------------------------------------------------------------
+    # 3. Clip-Aspect
+    # ------------------------------------------------------------
     try:
         clip = bpy.context.edit_movieclip or bpy.context.space_data.clip
         w = clip.size[0]
@@ -234,17 +235,23 @@ def correct_marker_positions(
     except Exception:
         aspect_ratio = 1.0
 
-    # -----------------------------------------------------------------
-    # Marker-Korrekturen (vollständig gespiegelt)
-    # -----------------------------------------------------------------
+    # ------------------------------------------------------------
+    # 4. Kalibrierung aller Ziel-Marker
+    # ------------------------------------------------------------
     for tr in calibrate_tracks:
 
-        x_now,  y_now  = get_marker_position(tr, frame_now)
+        # aktuelle Marker-Position (frame_now)
+        x_now, y_now = get_marker_position(tr, frame_now)
+
+        # Marker-Position im vorigen Frame (frame_prev)
         x_prev, y_prev = get_marker_position(tr, frame_prev)
 
         vlist_x = []
         vlist_y = []
 
+        # --------------------------------------------------------
+        # Velocity-Schätzung (identisch zu Backward, Zeit invertiert)
+        # --------------------------------------------------------
         for gm in source:
             g0x, g0y = get_marker_position(gm, frame_now)
             g1x, g1y = get_marker_position(gm, frame_prev)
@@ -277,30 +284,40 @@ def correct_marker_positions(
         if not vlist_x:
             continue
 
+        # --------------------------------------------------------
+        # 5. Robuste Gewichtete Mittelwerte (identisch zu Backward)
+        # --------------------------------------------------------
         def robust_weighted_mean(vw):
             if len(vw) < 5:
-                sw = sum(w for _, w in vw)
+                sw = sum(w for v, w in vw)
                 return sum(v*w for v, w in vw) / sw if sw else 0.0
             vs = sorted(vw, key=lambda x: x[0])
             n = len(vs)
             cut = max(1, int(0.1*n))
             trimmed = vs[cut:-cut] if n > 2*cut else vs
-            sw = sum(w for _, w in trimmed)
+            sw = sum(w for v, w in trimmed)
             return sum(v*w for v, w in trimmed) / sw if sw else 0.0
 
         avg_vx = robust_weighted_mean(vlist_x)
         avg_vy = robust_weighted_mean(vlist_y)
 
-        # Forward-Projektion (gespiegelt aus backward)
+        # --------------------------------------------------------
+        # 6. Vorwärts-Prognose (exakte Spiegelung)
+        # pred = prev + velocity
+        # --------------------------------------------------------
         pred_x = x_prev + avg_vx
         pred_y = y_prev + avg_vy
 
+        # Differenzen
         diff_x = abs(x_now - pred_x)
         diff_y = abs(y_now - pred_y) * aspect_ratio
 
         wx = max(0.0, min(1.0, 1.0 - (diff_x ** (diff_x * 20))))
         wy = max(0.0, min(1.0, 1.0 - (diff_y ** (diff_y * 20))))
 
+        # --------------------------------------------------------
+        # 7. Adaptiver Blend (identisch zu Backward)
+        # --------------------------------------------------------
         def blend(est, meas, w):
             a = w
             b = 1.0 - w
@@ -310,6 +327,7 @@ def correct_marker_positions(
         final_y = blend(pred_y, y_now, wy)
 
         set_marker_position(tr, frame_now, final_x, final_y)
+
 
         # Optionales Debug-Log:
 
