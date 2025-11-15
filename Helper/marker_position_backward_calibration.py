@@ -142,12 +142,15 @@ def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
 # Rückwärts-Kalibrierung (kritischer Teil)
 # ------------------------------------------------------------
 
-def correct_marker_positions_backward(scene,
-                                      calibrate_tracks,
-                                      frame_now: int,
-                                      frame_next: int,
-                                      frame_next2: Optional[int] = None,
-                                      frame_next3: Optional[int] = None):
+def correct_marker_positions_backward(
+    scene: bpy.types.Scene,
+    ref_tracks: List[str],          # NEU – identisch zu Forward
+    calibrate_tracks: List[str],
+    frame_now: int,
+    frame_next: Optional[int],
+    frame_next2: Optional[int] = None,
+    frame_next3: Optional[int] = None
+):
     """
     Rückwärts-Kalibrierung:
     - frame_now  : aktueller Frame
@@ -155,14 +158,20 @@ def correct_marker_positions_backward(scene,
     - weitere Frames optional
     """
 
-    # Referenz-Trackliste bestimmen
-    if "good_tracks" in scene and "best_tracks" in scene:
+    # ------------------------------------------------------------
+    # Referenz direkt aus Parametern übernehmen (Forward-Parität)
+    # ------------------------------------------------------------
+    if not ref_tracks:
         return
-    elif "good_tracks" in scene:
-        good_refs = scene["good_tracks"]
-    elif "best_tracks" in scene:
-        good_refs = scene["best_tracks"]
-    else:
+
+    try:
+        clip = bpy.context.edit_movieclip or bpy.context.space_data.clip
+        real_names = {t.name for t in clip.tracking.tracks}
+        good_refs = [t for t in ref_tracks if t in real_names]
+    except Exception:
+        return
+
+    if not good_refs:
         return
 
     min_required = getattr(scene, "kaiserlich_markers_per_frame", 20) / 2

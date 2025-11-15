@@ -270,7 +270,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                         try:
                             correct_marker_positions_backward(
                                 scene,
-                                ref_names,
+                                ref_names,          # NEU: identisch zu Forward
                                 calibrate_tracks,
                                 f_now,
                                 f_next, f_next2, f_next3
