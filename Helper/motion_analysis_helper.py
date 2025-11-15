@@ -10,23 +10,29 @@ def collect_marker_motion_data(track, current_frame, max_history=5):
     Liefert: [(frame, (x, y), matrix), ...]
     Achtung: nutzt die letzten max_history Frames rückwärts.
     """
+    print(f"[MotionAnalysis][Collect] Track='{track.name}', current_frame={current_frame}, max_history={max_history}")
     positions = []
 
     for i in range(max_history):
         f = current_frame - i
         mk = track.markers.find_frame(f)
         if not mk or mk.mute:
+            # bewusst leise – sonst zu viel Spam bei langen Runs
             continue
 
         mat = getattr(mk, "matrix", None)
         if mat is None:
+            print(f"[MotionAnalysis][Collect] WARN: Frame={f} hat keine Matrix.")
             continue
 
         positions.append((f, (mk.co[0], mk.co[1]), mat.copy()))
 
     positions.sort(key=lambda x: x[0])
-    return positions
 
+    frames = [f for f, _, _ in positions]
+    print(f"[MotionAnalysis][Collect] Gefundene Frames: {frames} (count={len(positions)})")
+
+    return positions
 
 
 # ==========================================================
@@ -34,13 +40,15 @@ def collect_marker_motion_data(track, current_frame, max_history=5):
 # ==========================================================
 def extract_motion_components(pos_list):
     if len(pos_list) < 2:
+        print("[MotionAnalysis][Extract] Zu wenig Daten (<2), keine Komponenten.")
         return []
 
     comps = []
 
+    print(f"[MotionAnalysis][Extract] Paare={len(pos_list) - 1}")
     for i in range(len(pos_list)-1):
-        _, (x1, y1), M1 = pos_list[i]
-        _, (x2, y2), M2 = pos_list[i+1]
+        f1, (x1, y1), M1 = pos_list[i]
+        f2, (x2, y2), M2 = pos_list[i+1]
 
         # --- Translation ---
         d_trans = math.hypot(x2 - x1, y2 - y1)
@@ -67,8 +75,12 @@ def extract_motion_components(pos_list):
 
         comps.append((d_trans, d_rot, d_scale, d_shear))
 
-    return comps
+        print(
+            f"[MotionAnalysis][Extract] Frame {f1}->{f2}: "
+            f"dT={d_trans:.6f}, dR={d_rot:.6f}, dS={d_scale:.6f}, dH={d_shear:.6f}"
+        )
 
+    return comps
 
 
 # ==========================================================
@@ -76,6 +88,7 @@ def extract_motion_components(pos_list):
 # ==========================================================
 def classify_motion_model(components):
     if not components:
+        print("[MotionAnalysis][Classify] Keine Komponenten -> 'Loc'")
         return "Loc"
 
     t = sum(c[0] for c in components)
@@ -83,33 +96,51 @@ def classify_motion_model(components):
     s = sum(c[2] for c in components)
     h = sum(c[3] for c in components)
 
+    print(
+        "[MotionAnalysis][Classify] Summen: "
+        f"T={t:.6f}, R={r:.6f}, S={s:.6f}, H={h:.6f}"
+    )
+
     # Perspective dominiert → klarster Fall
     if h > (r + s) * 1.5:
+        print("[MotionAnalysis][Classify] Entscheidung: Perspective")
         return "Perspective"
 
     # Rotation dominiert
     if r > s * 1.5 and r > t * 1.2:
+        print("[MotionAnalysis][Classify] Entscheidung: LocRot")
         return "LocRot"
 
     # Scale dominiert
     if s > r * 1.5 and s > t * 1.2:
+        print("[MotionAnalysis][Classify] Entscheidung: LocScale")
         return "LocScale"
 
     # Rotation + Scale vergleichbar
     if r > 0.0005 and s > 0.0005:
+        print("[MotionAnalysis][Classify] Entscheidung: LocRotScale")
         return "LocRotScale"
 
+    print("[MotionAnalysis][Classify] Entscheidung: Loc")
     return "Loc"
-
 
 
 # ==========================================================
 # Haupt-API: Modell bestimmen für EINEN Track
 # ==========================================================
 def detect_motion_model_for_track(track, current_frame, max_history=5):
-    pos_data = collect_marker_motion_data(track, current_frame, max_history=max_history)
+    print(
+        f"[MotionAnalysis][Detect] START Track='{track.name}', "
+        f"current_frame={current_frame}, max_history={max_history}"
+    )
 
+    pos_data = collect_marker_motion_data(track, current_frame, max_history=max_history)
     components = extract_motion_components(pos_data)
     model = classify_motion_model(components)
+
+    print(
+        f"[MotionAnalysis][Detect] RESULT Track='{track.name}', "
+        f"Model={model}, Components={len(components)}"
+    )
 
     return model
