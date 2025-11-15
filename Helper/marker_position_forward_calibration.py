@@ -85,6 +85,41 @@ def _compare_tracks_with_scene(scene: bpy.types.Scene, key: str, names: Iterable
         if f"{key}_missing" in _last_logged_values:
             del _last_logged_values[f"{key}_missing"]
 
+# ------------------------------------------------------------
+# Hilfsfunktion: Scene-String zu Trackliste parsen
+# Identisch zur Backward-Variante, aber robuster
+# ------------------------------------------------------------
+def _read_scene_list(scene: bpy.types.Scene, key: str) -> Optional[List[str]]:
+    raw = scene.get(key)
+    if raw is None:
+        return None
+
+    # Falls String → versuchen literal_eval
+    if isinstance(raw, str):
+        try:
+            parsed = ast.literal_eval(raw)
+            # Liste direkt übernehmen
+            if isinstance(parsed, list):
+                return [str(x).strip() for x in parsed if str(x).strip()]
+            # Dict → Werte extrahieren
+            if isinstance(parsed, dict):
+                return [str(v).strip() for v in parsed.values() if str(v).strip()]
+            # Fallback CSV
+            return [s.strip() for s in raw.split(",") if s.strip()]
+        except Exception:
+            # Fallback CSV
+            return [s.strip() for s in raw.split(",") if s.strip()]
+
+    # Falls Liste
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if str(x).strip()]
+
+    # Falls Dict
+    if isinstance(raw, dict):
+        return [str(v).strip() for v in raw.values() if str(v).strip()]
+
+    return None
+
 
 def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[str, Any]]:
     """Ermittelt aktiven Key ('best_tracks' bevorzugt, sonst 'good_tracks') und liefert Meta-Infos."""
