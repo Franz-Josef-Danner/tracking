@@ -49,8 +49,8 @@ def _apply_search_size(marker, pattern_size: Vector, scale_factor: float = 2.0):
     size = pattern_size * scale_factor
     half = size * 0.5
 
-    marker.search_min = Vector((-half.x, -half.y))
-    marker.search_max = Vector((+half.x, +half.y))
+    marker.search_min = Vector((min(100,-half.x), min(100,-half.y)))
+    marker.search_max = Vector((min(100,+half.x), min(100,+half.y)))
 
 
 def adapt_search_size_for_calibrate_tracks(context):
