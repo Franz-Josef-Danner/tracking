@@ -9,6 +9,11 @@ from typing import Optional, Tuple, Dict, Any, Iterable, List
 import ast
 import bpy
 
+# -------------------------------------------------------------------------
+# NEU: Forward-Parser importieren (stellt ref_scene sicher)
+# -------------------------------------------------------------------------
+from .marker_position_forward_calibration import _read_scene_list
+
 _last_logged_values: Dict[str, str] = {}
 
 
@@ -158,17 +163,13 @@ def correct_marker_positions_backward(
     """
 
     # ------------------------------------------------------------
-    # 1. Globale Referenz aus Szene lesen (Forward-Parität)
+    # 1. Globale Referenz aus Szene lesen (identisch zu Forward)
     # ------------------------------------------------------------
     ref_scene = None
     if "best_tracks" in scene:
-        ref_scene = _read_scene_list(scene, "best_tracks") \
-                    if callable(globals().get("_read_scene_list", None)) \
-                    else None
+        ref_scene = _read_scene_list(scene, "best_tracks")
     if not ref_scene and "good_tracks" in scene:
-        ref_scene = _read_scene_list(scene, "good_tracks") \
-                    if callable(globals().get("_read_scene_list", None)) \
-                    else None
+        ref_scene = _read_scene_list(scene, "good_tracks")
 
     # Falls gar keine Referenzen existieren → keine Kalibrierung
     if not ref_scene:
@@ -179,14 +180,15 @@ def correct_marker_positions_backward(
     if not ref_tracks:
         return
 
-    # Optionaler Dead-Reference Cleanup (identisch wie Forward)
+    # ------------------------------------------------------------
+    # 1b. Dead-Reference Cleanup (Forward-Parität)
+    # ------------------------------------------------------------
     try:
         clip = bpy.context.edit_movieclip or bpy.context.space_data.clip
         real_names = {t.name for t in clip.tracking.tracks}
         ref_tracks = [t for t in ref_tracks if t in real_names]
     except Exception:
         return
-
     if not ref_tracks:
         return
 
@@ -219,7 +221,7 @@ def correct_marker_positions_backward(
         return
 
     # ------------------------------------------------------------
-    # 3. Clip-Aspect
+    # 3. Clip-Aspect (clip ist jetzt garantiert definiert)
     # ------------------------------------------------------------
     try:
         width = clip.size[0]
