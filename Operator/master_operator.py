@@ -68,7 +68,7 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         # DeepTest starten
         # ================================================================
         try:
-            bpy.ops.kaiserlichtracker.master_deep_test_operator('INVOKE_DEFAULT')
+            bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
         except Exception:
             pass
 
