@@ -1,31 +1,31 @@
 import math
-from mathutils import Matrix
+
+# Optional, falls du später auf get_positions zurückgreifen willst:
+from .marker_positions_helper import get_positions
 
 
 # ==========================================================
-# Rohdaten sammeln: Position + Matrix pro Frame
+# Rohdaten sammeln: Position pro Frame
 # ==========================================================
 def collect_marker_motion_data(track, current_frame, max_history=5):
     """
-    Liefert: [(frame, (x, y), matrix), ...]
-    Achtung: nutzt die letzten max_history Frames rückwärts.
+    Liefert: [(frame, x, y), ...]
+    Nutzt die letzten max_history Frames rückwärts.
     """
     print(f"[MotionAnalysis][Collect] Track='{track.name}', current_frame={current_frame}, max_history={max_history}")
-    positions = []
 
+    # Variante A: Direkt über Marker-Liste
+    positions = []
     for i in range(max_history):
         f = current_frame - i
         mk = track.markers.find_frame(f)
         if not mk or mk.mute:
-            # bewusst leise – sonst zu viel Spam bei langen Runs
             continue
+        positions.append((f, mk.co[0], mk.co[1]))
 
-        mat = getattr(mk, "matrix", None)
-        if mat is None:
-            print(f"[MotionAnalysis][Collect] WARN: Frame={f} hat keine Matrix.")
-            continue
-
-        positions.append((f, (mk.co[0], mk.co[1]), mat.copy()))
+    # Wenn du schon überall get_positions verwendest, könntest du statt oben auch:
+    # raw = get_positions(track, current_frame, max_frames=max_history)
+    # positions = [(f, x, y) for f, (x, y) in raw]
 
     positions.sort(key=lambda x: x[0])
 
@@ -36,92 +36,113 @@ def collect_marker_motion_data(track, current_frame, max_history=5):
 
 
 # ==========================================================
-# Komponenten extrahieren: Translation / Rotation / Scale / Shear
+# Komponenten extrahieren: Translation / Spannweiten / Distanz-Varianz
 # ==========================================================
 def extract_motion_components(pos_list):
+    """
+    Berechnet:
+      - frame-weise Translation (d_trans)
+      - X/Y-Spannweite (dx_span, dy_span)
+      - Distanz-Varianz (dist_var) als grober Scale-Proxy
+    """
     if len(pos_list) < 2:
         print("[MotionAnalysis][Extract] Zu wenig Daten (<2), keine Komponenten.")
-        return []
+        return [], 0.0, 0.0, 0.0
 
     comps = []
+    xs = [x for _, x, _ in pos_list]
+    ys = [y for _, _, y in pos_list]
 
-    print(f"[MotionAnalysis][Extract] Paare={len(pos_list) - 1}")
-    for i in range(len(pos_list)-1):
-        f1, (x1, y1), M1 = pos_list[i]
-        f2, (x2, y2), M2 = pos_list[i+1]
+    # Spannweite in X/Y über das Zeitfenster
+    dx_span = max(xs) - min(xs)
+    dy_span = max(ys) - min(ys)
 
-        # --- Translation ---
-        d_trans = math.hypot(x2 - x1, y2 - y1)
+    print(
+        f"[MotionAnalysis][Extract] Framespan={pos_list[0][0]}->{pos_list[-1][0]}, "
+        f"dx_span={dx_span:.6f}, dy_span={dy_span:.6f}"
+    )
 
-        # --- Rotation ---
-        rot1 = math.atan2(M1[1][0], M1[0][0])
-        rot2 = math.atan2(M2[1][0], M2[0][0])
-        d_rot = abs(rot2 - rot1)
+    # Frame-zu-Frame Translation + Distanz-Liste
+    dists = []
+    for i in range(len(pos_list) - 1):
+        f1, x1, y1 = pos_list[i]
+        f2, x2, y2 = pos_list[i + 1]
 
-        # --- Scale ---
-        def scale_from_matrix(M):
-            sx = math.sqrt(M[0][0]**2 + M[0][1]**2)
-            sy = math.sqrt(M[1][0]**2 + M[1][1]**2)
-            return sx, sy
-
-        s1x, s1y = scale_from_matrix(M1)
-        s2x, s2y = scale_from_matrix(M2)
-        d_scale = math.hypot(s2x - s1x, s2y - s1y)
-
-        # --- Shear (Perspective) ---
-        shear1 = abs(M1[0][1] - M1[1][0])
-        shear2 = abs(M2[0][1] - M2[1][0])
-        d_shear = abs(shear2 - shear1)
-
-        comps.append((d_trans, d_rot, d_scale, d_shear))
+        dx = x2 - x1
+        dy = y2 - y1
+        d_trans = math.hypot(dx, dy)
+        dists.append(d_trans)
+        comps.append((f1, f2, d_trans))
 
         print(
             f"[MotionAnalysis][Extract] Frame {f1}->{f2}: "
-            f"dT={d_trans:.6f}, dR={d_rot:.6f}, dS={d_scale:.6f}, dH={d_shear:.6f}"
+            f"dx={dx:.6f}, dy={dy:.6f}, dT={d_trans:.6f}"
         )
 
-    return comps
+    if dists:
+        dist_min = min(dists)
+        dist_max = max(dists)
+        dist_var = dist_max - dist_min
+    else:
+        dist_var = 0.0
+
+    print(
+        f"[MotionAnalysis][Extract] Distanz-Stats: "
+        f"min={dist_min:.6f if dists else 0.0}, "
+        f"max={dist_max:.6f if dists else 0.0}, "
+        f"var={dist_var:.6f}"
+        if dists
+        else "[MotionAnalysis][Extract] Distanz-Stats: keine Distanzen"
+    )
+
+    return comps, dx_span, dy_span, dist_var
 
 
 # ==========================================================
-# Modellwahl – Verhältnisbasiert (datengetrieben, ohne Schwellen)
+# Modellwahl – Verhältnisbasiert auf Positionsdaten
 # ==========================================================
-def classify_motion_model(components):
+def classify_motion_model(components, dx_span, dy_span, dist_var):
+    """
+    Komponenten:
+      - components: [(f1, f2, d_trans), ...]
+      - dx_span/dy_span: Gesamtbewegung in X/Y
+      - dist_var: Variation der Translation (proxy für „Skalierung“)
+    """
     if not components:
         print("[MotionAnalysis][Classify] Keine Komponenten -> 'Loc'")
         return "Loc"
 
-    t = sum(c[0] for c in components)
-    r = sum(c[1] for c in components)
-    s = sum(c[2] for c in components)
-    h = sum(c[3] for c in components)
+    total_trans = sum(c[2] for c in components)
 
     print(
-        "[MotionAnalysis][Classify] Summen: "
-        f"T={t:.6f}, R={r:.6f}, S={s:.6f}, H={h:.6f}"
+        "[MotionAnalysis][Classify] Summary: "
+        f"total_trans={total_trans:.6f}, dx_span={dx_span:.6f}, "
+        f"dy_span={dy_span:.6f}, dist_var={dist_var:.6f}"
     )
 
-    # Perspective dominiert → klarster Fall
-    if h > (r + s) * 1.5:
-        print("[MotionAnalysis][Classify] Entscheidung: Perspective")
-        return "Perspective"
+    # Heuristik:
+    # - Wenn quasi nichts passiert → Loc
+    if total_trans < 1e-5 and dx_span < 1e-5 and dy_span < 1e-5:
+        print("[MotionAnalysis][Classify] Entscheidung: Loc (kaum Bewegung)")
+        return "Loc"
 
-    # Rotation dominiert
-    if r > s * 1.5 and r > t * 1.2:
+    # „Rotationsähnlich“: viel X/Y-Bewegung, aber Distanz über Frames relativ stabil
+    if dist_var < total_trans * 0.2 and (dx_span > total_trans * 0.3 or dy_span > total_trans * 0.3):
         print("[MotionAnalysis][Classify] Entscheidung: LocRot")
         return "LocRot"
 
-    # Scale dominiert
-    if s > r * 1.5 and s > t * 1.2:
+    # „Scale-ähnlich“: starke Varianz in der Bewegungsdistanz
+    if dist_var > total_trans * 0.4:
         print("[MotionAnalysis][Classify] Entscheidung: LocScale")
         return "LocScale"
 
-    # Rotation + Scale vergleichbar
-    if r > 0.0005 and s > 0.0005:
+    # Mix: Rotation + „irgendwas“ → LocRotScale
+    if dist_var > total_trans * 0.2 and (dx_span > total_trans * 0.2 or dy_span > total_trans * 0.2):
         print("[MotionAnalysis][Classify] Entscheidung: LocRotScale")
         return "LocRotScale"
 
-    print("[MotionAnalysis][Classify] Entscheidung: Loc")
+    # Fallback
+    print("[MotionAnalysis][Classify] Entscheidung: Loc (Fallback)")
     return "Loc"
 
 
@@ -135,12 +156,12 @@ def detect_motion_model_for_track(track, current_frame, max_history=5):
     )
 
     pos_data = collect_marker_motion_data(track, current_frame, max_history=max_history)
-    components = extract_motion_components(pos_data)
-    model = classify_motion_model(components)
+    components, dx_span, dy_span, dist_var = extract_motion_components(pos_data)
+    model = classify_motion_model(components, dx_span, dy_span, dist_var)
 
     print(
         f"[MotionAnalysis][Detect] RESULT Track='{track.name}', "
-        f"Model={model}, Components={len(components)}"
+        f"Model={model}, Segmente={len(components)}"
     )
 
     return model
