@@ -246,7 +246,11 @@ def correct_marker_positions(
     f2_good = [m for m in f2 if m in ref_tracks]
     f3_good = [m for m in f3 if m in ref_tracks]
 
-    # Auswahl exakt wie Backward (4 → 3 → 2)
+    # Symmetrische Mindestabdeckungs-Logik (Forward <-> Backward)
+    # Forward nutzt: f3 → f2 → f1 → sonst return
+    # Backward nutzt: f3 → f2 → f1 → sonst return
+    # f0 (frame_now) wird nicht als Quelle verwendet.
+
     if len(f3_good) >= min_required:
         source = f3_good
         mode = 4

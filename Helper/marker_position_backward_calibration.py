@@ -5,7 +5,7 @@
 # Frames, Velocity-Richtung und adaptiver Blend-Logik.
 # ------------------------------------------------------------
 
-from typing import Optional, Tuple, Dict, Any, Iterable, List
+from typing import Optional, Tuple, Dict, Any, Iterable
 import ast
 import bpy
 
@@ -142,15 +142,12 @@ def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
 # Rückwärts-Kalibrierung (kritischer Teil)
 # ------------------------------------------------------------
 
-def correct_marker_positions_backward(
-    scene: bpy.types.Scene,
-    ref_tracks: List[str],          # NEU – identisch zu Forward
-    calibrate_tracks: List[str],
-    frame_now: int,
-    frame_next: Optional[int],
-    frame_next2: Optional[int] = None,
-    frame_next3: Optional[int] = None
-):
+def correct_marker_positions_backward(scene,
+                                      calibrate_tracks,
+                                      frame_now: int,
+                                      frame_next: int,
+                                      frame_next2: Optional[int] = None,
+                                      frame_next3: Optional[int] = None):
     """
     Rückwärts-Kalibrierung:
     - frame_now  : aktueller Frame
@@ -159,20 +156,32 @@ def correct_marker_positions_backward(
     """
 
     # ------------------------------------------------------------
-    # Referenz direkt aus Parametern übernehmen (Forward-Parität)
+    # Referenz-Trackliste bestimmen – identisch wie Forward
     # ------------------------------------------------------------
-    if not ref_tracks:
+    ref_scene = None
+
+    # Priorität: best_tracks → good_tracks
+    if "best_tracks" in scene:
+        ref_scene = _read_scene_list(scene, "best_tracks")
+    elif "good_tracks" in scene:
+        ref_scene = _read_scene_list(scene, "good_tracks")
+
+    if not ref_scene:
         return
 
+    # Nur existierende echte Tracks filtern
     try:
         clip = bpy.context.edit_movieclip or bpy.context.space_data.clip
-        real_names = {t.name for t in clip.tracking.tracks}
-        good_refs = [t for t in ref_tracks if t in real_names]
+        real_names = [t.name for t in clip.tracking.tracks]
+        ref_scene = [t for t in ref_scene if t in real_names]
     except Exception:
         return
 
-    if not good_refs:
+    if not ref_scene:
         return
+
+    # Final verwendete Referenzliste
+    good_refs = ref_scene
 
     min_required = getattr(scene, "kaiserlich_markers_per_frame", 20) / 2
 
