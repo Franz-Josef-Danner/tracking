@@ -155,33 +155,15 @@ def correct_marker_positions_backward(scene,
     - weitere Frames optional
     """
 
-    # ------------------------------------------------------------
-    # Referenz-Trackliste bestimmen – identisch wie Forward
-    # ------------------------------------------------------------
-    ref_scene = None
-
-    # Priorität: best_tracks → good_tracks
-    if "best_tracks" in scene:
-        ref_scene = _read_scene_list(scene, "best_tracks")
+    # Referenz-Trackliste bestimmen
+    if "good_tracks" in scene and "best_tracks" in scene:
+        return
     elif "good_tracks" in scene:
-        ref_scene = _read_scene_list(scene, "good_tracks")
-
-    if not ref_scene:
+        good_refs = scene["good_tracks"]
+    elif "best_tracks" in scene:
+        good_refs = scene["best_tracks"]
+    else:
         return
-
-    # Nur existierende echte Tracks filtern
-    try:
-        clip = bpy.context.edit_movieclip or bpy.context.space_data.clip
-        real_names = [t.name for t in clip.tracking.tracks]
-        ref_scene = [t for t in ref_scene if t in real_names]
-    except Exception:
-        return
-
-    if not ref_scene:
-        return
-
-    # Final verwendete Referenzliste
-    good_refs = ref_scene
 
     min_required = getattr(scene, "kaiserlich_markers_per_frame", 20) / 2
 
