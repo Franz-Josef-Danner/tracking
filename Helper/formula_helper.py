@@ -9,20 +9,21 @@ from .motion_model_helper import apply_motion_model
 
 
 # ==========================================================
-# Bewegungsmodell-Evaluierung (Loc, LocRot, LocScale, LocRotScale)
+# Globale akkumulierte Werte
 # ==========================================================
+dx_var_accum = 0.0
+dy_var_accum = 0.0
+rel_var_accum = 0.0
+count = 0
 
-dx_var_sum = []
-dy_var_sum = []
-rel_var_sum = []
-addi = []
 
 def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
                                     thresh_rot: float = 0.002,
                                     thresh_scale: float = 0.005,
                                     thresh_rot_scale_rot: float = 0.002,
                                     thresh_rot_scale_scale: float = 0.005) -> str:
-    """Bestimmt das Bewegungsmodell anhand paarweiser Vergleiche der Markerpositionen."""
+    global dx_var_accum, dy_var_accum, rel_var_accum, count
+
     if len(all_positions) < 2:
         return "Loc"
 
@@ -30,29 +31,33 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     avg_x_values = []
     avg_y_values = []
 
-
-
     for i in range(len(all_positions) - 1):
         (x1, y1), (x2, y2) = all_positions[i], all_positions[i + 1]
-        avg_x = (x1 + x2) / 2.0
-        avg_y = (y1 + y2) / 2.0
-        # relative Distanz nach deiner Vorgabe
-        rel_dist = (abs(x1 - x2) + abs(y1 - y2)) / 2.0
-        avg_x_values.append(avg_x)
-        avg_y_values.append(avg_y)
-        rel_distances.append(rel_dist)
+        avg_x_values.append((x1 + x2) / 2.0)
+        avg_y_values.append((y1 + y2) / 2.0)
+        rel_distances.append((abs(x1 - x2) + abs(y1 - y2)) / 2.0)
 
     if not rel_distances:
         return "Loc"
 
-    addi += 1
     dx_var = max(avg_x_values) - min(avg_x_values)
-    dx_var_sum = sum([dx_var]) / addi
     dy_var = max(avg_y_values) - min(avg_y_values)
-    dy_var_sum = sum([dy_var]) / addi
     rel_var = max(rel_distances) - min(rel_distances)
-    rel_var_sum = sum([rel_var]) / addi
 
+    # laufende Akkumulation
+    count += 1
+    dx_var_accum += dx_var
+    dy_var_accum += dy_var
+    rel_var_accum += rel_var
+
+    dx_var_mean = dx_var_accum / count
+    dy_var_mean = dy_var_accum / count
+    rel_var_mean = rel_var_accum / count
+
+    # Debug
+    print(f"[MotionModel][AVG] count={count} dx={dx_var_mean:.6f} dy={dy_var_mean:.6f} rel={rel_var_mean:.6f}")
+
+    # Klassifikation ohne Veränderung
     if (
         rel_var > thresh_rot_scale_scale
         and (dx_var > thresh_rot_scale_rot or dy_var > thresh_rot_scale_rot)
