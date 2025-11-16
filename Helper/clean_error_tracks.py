@@ -111,7 +111,7 @@ def clean_error_tracks(context: Context, sort_desc: bool = True) -> int:
         print("[CleanError] Kandidaten:")
 
         try:
-            from ...Helper.delete import delete_track_by_name
+            from .delete import delete_track_by_name
         except Exception as e:
             print(f"[CleanError] delete_track_by_name Importfehler → EXIT ({e})")
             return 0
