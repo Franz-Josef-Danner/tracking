@@ -86,6 +86,7 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
     - max_dev: größte Abweichung ggü. Mittelwert der mv_i über alle Marker
     - per_marker_dev_dict: Abweichung je Marker (für per-Marker-Perspective)
     """
+
     if not marker_positions:
         return None, 0.0, {}
 
@@ -139,6 +140,7 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
 # ==========================================================
 
 def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
+    global global_p_dev_accum, count
     """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
@@ -185,10 +187,10 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         )
         perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
+        
         global_p_dev_accum += global_p_dev
-        avg_global_p_dev = global_p_dev_accum / count
-    
-        print(f"[Perspective][AVG] count={count} global_p_dev={avg_global_p_dev:.6f}")
+        global_p_dev_accum_mean = global_p_dev_accum / count
+        print(f"[Perspective][AVG] count={count} global_p_dev={global_p_dev_accum_mean:.6f}")
 
         if global_p_dev > perspective_thresh:
             global_model = "Perspective"
