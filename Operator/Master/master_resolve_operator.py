@@ -17,264 +17,231 @@ from ...Helper.low_marker_frame import find_first_weak_frame
 
 
 # ------------------------------------------------------------
-# Platzhalter für deine Zyklen
-# → HIER deine echten Operator-Aufrufe einsetzen
+# interne Helper
 # ------------------------------------------------------------
-def run_cycle_1(context: Context) -> None:
-    """
-    cycle_1 start:
-    Hier einen Tracking-/Cleanup-Cycle starten, NICHT den Resolve selbst.
-    Beispiel:
-        bpy.ops.kaiserlich_tracker.master_track_operator('INVOKE_DEFAULT')
-    """
-    print("[Resolve] cycle_1 start (TODO: echten Operator einhängen)")
-
-
-def run_cycle_2(context: Context) -> None:
-    """
-    cycle_2 start:
-    Zweiter, ggf. aggressiverer Cycle.
-    Beispiel:
-        bpy.ops.kaiserlich_tracker.master_track_operator_backwards('INVOKE_DEFAULT')
-    """
-    print("[Resolve] cycle_2 start (TODO: echten Operator einhängen)")
-
-
-# ------------------------------------------------------------
-# Interne Helper
-# ------------------------------------------------------------
-def _solve_camera(context: Context) -> None:
+def _solve_camera(context: Context) -> float:
+    """Wrapper um solve_camera + Logging; liefert aktuellen Average Error."""
     print("[Resolve] → bpy.ops.clip.solve_camera()")
     bpy.ops.clip.solve_camera()
+    avg_error = float(get_average_error())
+    print(f"[Resolve] Average Error = {avg_error:.6f}")
+    return avg_error
 
 
-def _get_err(clip) -> float:
-    try:
-        return float(get_average_error(clip))
-    except Exception as e:
-        print(f"[Resolve] ERROR get_average_error: {e}")
-        return 0.0
+def _get_max_error_value(scene: bpy.types.Scene) -> float:
+    """Liest scene.max_error_value, fallback auf 5.0."""
+    return float(getattr(scene, "max_error_value", 5.0))
 
 
-def _has_weak_frame(context: Context) -> bool:
-    weak = find_first_weak_frame(context)
-    print(f"[Resolve] find_first_weak_frame → {weak}")
-    return bool(weak)
-
-
-def _cleanup_if_needed(context: Context, clip, limit: float, label: str) -> float:
-    err = _get_err(clip)
-    print(f"[Resolve][{label}] Average Error = {err:.6f} (Limit {limit:.6f})")
-    if err > limit:
-        print(f"[Resolve][{label}] Error {err:.6f} > {limit:.6f} → clean_error_tracks()")
-        try:
-            removed = clean_error_tracks(context)
-            print(f"[Resolve][{label}] clean_error_tracks removed: {removed}")
-        except Exception as e:
-            print(f"[Resolve][{label}] ERROR clean_error_tracks: {e}")
-    else:
-        print(f"[Resolve][{label}] Error OK → kein Cleanup")
-    return err
-
-
+# ------------------------------------------------------------
+# Master Resolve Operator
+# ------------------------------------------------------------
 class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
-    """
-    Mehrstufige Resolve-Pipeline gemäß Vorgabe:
+    bl_idname = "kaiserlich_tracker.master_resolve"
+    bl_label = "Master Resolve"
+    bl_description = "Master resolve operator for camera tracking"
 
-    STAGE 1:
-        refine_intrinsics_reset
-        cycle_1 start
-        solve_camera
-        if err > 10:
-            clean_error_tracks
-            if kein weak frame:
-                → zurück zu cycle_1 (Loop)
-            else:
-                → master_cycle_operator + Finish
-        else:
-            → STAGE 2
-
-    STAGE 2 (cycle_2, mit scene.max_error_value):
-        cycle_2 start
-        if err > max_err:
-            1) focal on → solve → ggf. cleanup
-               if weak frame: → master_cycle_operator
-            2) focal + principal → solve → ggf. cleanup
-               if weak frame: → master_cycle_operator
-            3) focal + principal + radial → solve → ggf. cleanup
-               if weak frame: → master_cycle_operator
-               else (kein weak frame):
-                   → zurück zu cycle_2 (Loop, begrenzt)
-        else:
-            finished
-    """
-    bl_idname = "kaiserlich_tracker.master_resolve_operator"
-    bl_label = "Kaiserlich: Resolve Master"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    # Sicherheitsgrenzen gegen Endlosschleifen
-    MAX_STAGE1_LOOPS: int = 5
+    # harte Limits als Sicherheitsnetz gegen Endlosschleifen
+    MAX_GLOBAL_LOOPS: int = 5
+    MAX_STAGE1_LOOPS: int = 3
     MAX_STAGE2_LOOPS: int = 5
+    HARD_ERROR_LIMIT: float = 10.0  # dein „> 10 → zurück zu Cycle 1“
 
     def execute(self, context: Context):
-
-        clip = getattr(context, "edit_movieclip", None) or getattr(context.scene, "movieclip", None)
-        if clip is None:
-            print("[Resolve] CANCEL: Kein aktiver Clip")
-            return {'CANCELLED'}
-
         scene = context.scene
-        stage2_limit = float(getattr(scene, "max_error_value", 10.0))
-        stage1_limit = 10.0  # wie von dir vorgegeben
 
+        for global_iter in range(1, self.MAX_GLOBAL_LOOPS + 1):
+            print(f"\n============================")
+            print(f"[Resolve] GLOBAL LOOP {global_iter}/{self.MAX_GLOBAL_LOOPS}")
+            print(f"============================")
+
+            # -------------------------
+            # STAGE 1 (Cycle 1)
+            # -------------------------
+            stage1_state, avg_error = self._run_stage1(context)
+            if stage1_state == "MASTER":
+                print("[Resolve] Übergabe an Master Cycle aus Stage 1 → DONE")
+                return {'FINISHED'}
+            if stage1_state == "FAIL":
+                print("[Resolve] Stage 1 konnte keinen validen Solve liefern → CANCEL")
+                return {'CANCELLED'}
+
+            # wenn wir hier sind: avg_error <= HARD_ERROR_LIMIT
+            max_error_value = _get_max_error_value(scene)
+            if avg_error <= max_error_value:
+                print(f"[Stage1] Error {avg_error:.6f} <= Max {max_error_value:.6f} → DONE")
+                return {'FINISHED'}
+
+            # -------------------------
+            # STAGE 2 (Cycle 2)
+            # -------------------------
+            finished, back_to_cycle1 = self._run_stage2(context, avg_error)
+            if finished:
+                print("[Resolve] Stage 2 beendet → DONE")
+                return {'FINISHED'}
+
+            if back_to_cycle1:
+                print("[Resolve] Stage 2 fordert Rücksprung zu Stage 1.")
+                # global loop → Stage 1 wird erneut gefahren
+                continue
+
+        print("[Resolve] MAX_GLOBAL_LOOPS erreicht → CANCEL")
+        return {'CANCELLED'}
+
+    # --------------------------------------------------------
+    # STAGE 1: reset → solve → ggf. Cleanup → Weak-Frame-Check
+    # --------------------------------------------------------
+    def _run_stage1(self, context: Context) -> tuple[str, float]:
+        """
+        Rückgabe:
+          ("STAGE2", avg_error)  → Stage 1 fertig, Stage 2 darf übernehmen
+          ("MASTER", avg_error)  → an Master-Cycle übergeben
+          ("FAIL",   avg_error)  → Abbruch
+        """
         print("\n============================")
-        print("  KAISERLICH RESOLVE START")
+        print("[Stage1] START")
         print("============================")
 
-        # --------------------------------------------------------
-        # STAGE 1 – reset + cycle_1-loop
-        # --------------------------------------------------------
-        stage1_iter = 0
-        while True:
-            stage1_iter += 1
-            print(f"\n[Stage1] Iteration {stage1_iter}/{self.MAX_STAGE1_LOOPS}")
+        avg_error: float = 0.0
 
+        for i in range(1, self.MAX_STAGE1_LOOPS + 1):
+            print(f"[Stage1] Iteration {i}/{self.MAX_STAGE1_LOOPS}")
+
+            # Intrinsics Reset
             print("[Stage1] → refine_intrinsics_reset()")
-            try:
-                refine_intrinsics_reset()
-            except Exception as e:
-                print(f"[Stage1] ERROR refine_intrinsics_reset: {e}")
+            refine_intrinsics_reset(context)
 
-            print("[Stage1] → cycle_1 start")
-            run_cycle_1(context)
+            # Cycle 1 start (falls du später einen eigenen Operator einhängst)
+            print("[Stage1] → Cycle 1 (aktuell nur Solve)")
+            avg_error = _solve_camera(context)
 
-            print("[Stage1] → solve_camera()")
-            _solve_camera(context)
+            if avg_error <= self.HARD_ERROR_LIMIT:
+                print(f"[Stage1] Average Error {avg_error:.6f} <= {self.HARD_ERROR_LIMIT:.6f} → weiter zu Stage 2")
+                return "STAGE2", avg_error
 
-            # Error prüfen und ggf. Cleanup
-            err = _cleanup_if_needed(context, clip, stage1_limit, "Stage1")
+            # Error > 10 → Cleanup und Weak-Frame-Check
+            print(f"[Stage1] Average Error {avg_error:.6f} > {self.HARD_ERROR_LIMIT:.6f} → clean_error_tracks()")
+            clean_error_tracks(context)
 
-            if err > stage1_limit:
-                # Schlecht → Weak Frame prüfen
-                if not _has_weak_frame(context):
-                    print("[Stage1] Kein weak frame → zurück zu cycle_1 (Loop)")
-                    if stage1_iter >= self.MAX_STAGE1_LOOPS:
-                        print("[Stage1] MAX_STAGE1_LOOPS erreicht → Breche STAGE 1 ab, gehe zu STAGE 2")
-                        break
-                    continue  # zurück zum Anfang von STAGE 1
-                else:
-                    print("[Stage1] Weak Frame gefunden → Übergabe an master_cycle_operator")
-                    bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
-                    print("============================")
-                    print("  KAISERLICH RESOLVE DONE")
-                    print("============================\n")
-                    return {'FINISHED'}
+            weak_frame = find_first_weak_frame(context)
+            if weak_frame is None:
+                # kein Weak Frame → zurück zu Cycle 1 (nächste Iteration)
+                print("[Stage1] Kein Weak Frame gefunden → zurück zu Cycle 1")
+                continue
             else:
-                # Error <= 10 → STAGE 2
-                print("[Stage1] Error <= 10 → Wechsel zu STAGE 2")
-                break
+                # Weak Frame gefunden → Übergabe an Master Cycle
+                print(f"[Stage1] Weak Frame gefunden ({weak_frame}) → Übergabe an master_cycle_operator")
+                bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
+                return "MASTER", avg_error
 
-        # --------------------------------------------------------
-        # STAGE 2 – cycle_2 + Eskalation Intrinsics
-        # --------------------------------------------------------
-        stage2_iter = 0
-        while True:
-            stage2_iter += 1
-            print(f"\n[Stage2] Iteration {stage2_iter}/{self.MAX_STAGE2_LOOPS}")
-            print("[Stage2] → cycle_2 start")
-            run_cycle_2(context)
+        print("[Stage1] MAX_STAGE1_LOOPS erreicht, Error weiterhin zu hoch → FAIL")
+        return "FAIL", avg_error
 
-            # Basis-Error nach cycle_2
-            base_err = _get_err(clip)
-            print(f"[Stage2] Basis-Error nach cycle_2 = {base_err:.6f} (Limit {stage2_limit:.6f})")
+    # --------------------------------------------------------
+    # STAGE 2: fokussierte Intrinsics-Eskalation (Cycle 2)
+    # --------------------------------------------------------
+    def _run_stage2(self, context: Context, avg_error: float) -> tuple[bool, bool]:
+        """
+        Stage 2 entspricht deinem „Cycle 2 start“ + Eskalationslogik.
 
-            if base_err <= stage2_limit:
-                print("[Stage2] Basis-Error <= Limit → Finished.")
-                print("============================")
-                print("  KAISERLICH RESOLVE DONE")
-                print("============================\n")
-                return {'FINISHED'}
+        Rückgabe:
+          finished=True, back_to_cycle1=False → Resolve fertig (OK oder Übergabe an Master Cycle)
+          finished=False, back_to_cycle1=True → Stage 2 möchte zurück zu Cycle 1
+        """
+        scene = context.scene
+        max_error_value = _get_max_error_value(scene)
 
-            # ----------------------------------------------------
-            # Step 1 – focal on
-            # ----------------------------------------------------
+        print("\n============================")
+        print("[Stage2] START (Cycle 2)")
+        print("============================")
+        print(f"[Stage2] Basis-Error = {avg_error:.6f} (Limit {max_error_value:.6f}, Hard-Limit {self.HARD_ERROR_LIMIT:.6f})")
+
+        # Sicherheitscheck: wenn hier schon ok, sofort raus
+        if avg_error <= max_error_value:
+            print("[Stage2] Basis-Error bereits <= MaxError → DONE")
+            return True, False
+
+        for iteration in range(1, self.MAX_STAGE2_LOOPS + 1):
+            print(f"\n[Stage2] Iteration {iteration}/{self.MAX_STAGE2_LOOPS}")
+
+            # ------------------------------------------------
+            # STEP 1: refine_intrinsics_focal_length_on
+            # ------------------------------------------------
             print("[Stage2][Step1] → refine_intrinsics_focal_length_on() + solve")
-            try:
-                refine_intrinsics_focal_length_on()
-            except Exception as e:
-                print(f"[Stage2][Step1] ERROR refine_intrinsics_focal_length_on: {e}")
+            refine_intrinsics_focal_length_on(context)
+            avg_error = _solve_camera(context)
 
-            _solve_camera(context)
-            err = _cleanup_if_needed(context, clip, stage2_limit, "Stage2-Step1")
+            if avg_error > self.HARD_ERROR_LIMIT:
+                print(f"[Stage2][Step1] Error {avg_error:.6f} > {self.HARD_ERROR_LIMIT:.6f} → back to Cycle 1")
+                return False, True  # zurück zu Stage 1
 
-            if _has_weak_frame(context):
-                print("[Stage2][Step1] Weak Frame gefunden → master_cycle_operator")
+            if avg_error <= max_error_value:
+                print(f"[Stage2][Step1] Error {avg_error:.6f} <= {max_error_value:.6f} → DONE")
+                return True, False
+
+            print(f"[Stage2][Step1] Error {avg_error:.6f} > {max_error_value:.6f} → clean_error_tracks()")
+            clean_error_tracks(context)
+
+            weak_frame = find_first_weak_frame(context)
+            if weak_frame is not None:
+                print(f"[Stage2][Step1] Weak Frame {weak_frame} gefunden → Übergabe an master_cycle_operator")
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
-                print("============================")
-                print("  KAISERLICH RESOLVE DONE")
-                print("============================\n")
-                return {'FINISHED'}
+                return True, False
 
-            # ----------------------------------------------------
-            # Step 2 – focal + principal
-            # ----------------------------------------------------
+            # ------------------------------------------------
+            # STEP 2: focal + principal point
+            # ------------------------------------------------
             print("[Stage2][Step2] → refine_intrinsics_focal_length_on + principal_point_on + solve")
-            try:
-                refine_intrinsics_focal_length_on()
-                refine_intrinsics_principal_point_on()
-            except Exception as e:
-                print(f"[Stage2][Step2] ERROR refine_intrinsics_*: {e}")
+            refine_intrinsics_focal_length_on(context)
+            refine_intrinsics_principal_point_on(context)
+            avg_error = _solve_camera(context)
 
-            _solve_camera(context)
-            err = _cleanup_if_needed(context, clip, stage2_limit, "Stage2-Step2")
+            if avg_error > self.HARD_ERROR_LIMIT:
+                print(f"[Stage2][Step2] Error {avg_error:.6f} > {self.HARD_ERROR_LIMIT:.6f} → back to Cycle 1")
+                return False, True
 
-            if _has_weak_frame(context):
-                print("[Stage2][Step2] Weak Frame gefunden → master_cycle_operator")
+            if avg_error <= max_error_value:
+                print(f"[Stage2][Step2] Error {avg_error:.6f} <= {max_error_value:.6f} → DONE")
+                return True, False
+
+            print(f"[Stage2][Step2] Error {avg_error:.6f} > {max_error_value:.6f} → clean_error_tracks()")
+            clean_error_tracks(context)
+
+            weak_frame = find_first_weak_frame(context)
+            if weak_frame is not None:
+                print(f"[Stage2][Step2] Weak Frame {weak_frame} gefunden → Übergabe an master_cycle_operator")
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
-                print("============================")
-                print("  KAISERLICH RESOLVE DONE")
-                print("============================\n")
-                return {'FINISHED'}
+                return True, False
 
-            # ----------------------------------------------------
-            # Step 3 – focal + principal + radial
-            # ----------------------------------------------------
-            print("[Stage2][Step3] → refine_intrinsics_focal + principal + radial + solve")
-            try:
-                refine_intrinsics_focal_length_on()
-                refine_intrinsics_principal_point_on()
-                refine_intrinsics_radial_distortion_on()
-            except Exception as e:
-                print(f"[Stage2][Step3] ERROR refine_intrinsics_*: {e}")
+            # ------------------------------------------------
+            # STEP 3: focal + principal point + radial distortion
+            # ------------------------------------------------
+            print("[Stage2][Step3] → refine_intrinsics_focal_length_on + principal_point_on + radial_distortion_on + solve")
+            refine_intrinsics_focal_length_on(context)
+            refine_intrinsics_principal_point_on(context)
+            refine_intrinsics_radial_distortion_on(context)
+            avg_error = _solve_camera(context)
 
-            _solve_camera(context)
-            err = _cleanup_if_needed(context, clip, stage2_limit, "Stage2-Step3")
+            if avg_error > self.HARD_ERROR_LIMIT:
+                print(f"[Stage2][Step3] Error {avg_error:.6f} > {self.HARD_ERROR_LIMIT:.6f} → back to Cycle 1")
+                return False, True
 
-            if _has_weak_frame(context):
-                print("[Stage2][Step3] Weak Frame gefunden → master_cycle_operator")
+            if avg_error <= max_error_value:
+                print(f"[Stage2][Step3] Error {avg_error:.6f} <= {max_error_value:.6f} → DONE")
+                return True, False
+
+            print(f"[Stage2][Step3] Error {avg_error:.6f} > {max_error_value:.6f} → clean_error_tracks()")
+            clean_error_tracks(context)
+
+            weak_frame = find_first_weak_frame(context)
+            if weak_frame is not None:
+                print(f"[Stage2][Step3] Weak Frame {weak_frame} gefunden → Übergabe an master_cycle_operator")
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
-                print("============================")
-                print("  KAISERLICH RESOLVE DONE")
-                print("============================\n")
-                return {'FINISHED'}
+                return True, False
 
-            # → Kein weak frame in allen drei Stufen
-            print("[Stage2] Kein weak frame in allen Steps → zurück zu cycle_2 (Loop)")
+            # kein Weak Frame und Error immer noch zu hoch → zurück zu Cycle 2 (nächste Iteration)
+            print("[Stage2] Kein Weak Frame, Error weiterhin > MaxError → nächste Iteration Cycle 2")
 
-            if stage2_iter >= self.MAX_STAGE2_LOOPS:
-                print("[Stage2] MAX_STAGE2_LOOPS erreicht → harter Finish ohne Übergabe")
-                print("============================")
-                print("  KAISERLICH RESOLVE DONE")
-                print("============================\n")
-                return {'FINISHED'}
-            # sonst: while-Schleife wiederholt cycle_2
-
-    # --------------------------------------------------------
-    # Register/Unregister
-    # --------------------------------------------------------
-def register():
-    bpy.utils.register_class(KAISERLICHTRACKER_OT_master_resolve_operator)
-
-
-def unregister():
-    bpy.utils.unregister_class(KAISERLICHTRACKER_OT_master_resolve_operator)
+        print("[Stage2] MAX_STAGE2_LOOPS erreicht → keine weitere Verbesserung")
+        # an der Stelle betrachten wir Resolve als „fertig“, obwohl Error hoch ist
+        return True, False
