@@ -1,7 +1,65 @@
+from __future__ import annotations
+
 import bpy
 import time
+from bpy.types import Context
 
-def clean_error_tracks(context: bpy.types.Context, sort_desc: bool = True) -> int:
+
+# ------------------------------------------------------------
+# Helper: aktiven Clip finden
+# ------------------------------------------------------------
+def _find_active_clip(context: Context):
+    """Find the active MovieClip, preferring Clip Editor, fallback Sequencer."""
+    # Clip Editor bevorzugen
+    wm = context.window_manager
+    if wm is not None:
+        for win in wm.windows:
+            screen = win.screen
+            if screen is None:
+                continue
+            for area in screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    space = area.spaces.active
+                    if space and getattr(space, "clip", None):
+                        return space.clip
+
+    # Fallback: Sequencer-Strip mit Clip
+    scene = context.scene
+    if hasattr(scene, "sequence_editor_active_strip"):
+        strip = scene.sequence_editor_active_strip
+        if strip and getattr(strip, "clip", None):
+            return strip.clip
+
+    print("[CleanError] Kein aktiver Clip gefunden.")
+    return None
+
+
+# ------------------------------------------------------------
+# Helper: Track-Error ermitteln
+# ------------------------------------------------------------
+def _get_track_error(track):
+    """Retrieve average per-track error (solve or marker-based)."""
+    # direkte Attribute versuchen
+    for name in ("average_error", "error", "solve_error", "reprojection_error"):
+        val = getattr(track, name, None)
+        if val is not None:
+            try:
+                return float(val)
+            except Exception:
+                pass
+
+    # Fallback: Marker-Errors mitteln (falls vorhanden)
+    try:
+        vals = [float(m.error) for m in track.markers if hasattr(m, "error")]
+        return sum(vals) / len(vals) if vals else None
+    except Exception:
+        return None
+
+
+# ------------------------------------------------------------
+# Hauptfunktion: Clean Error Tracks
+# ------------------------------------------------------------
+def clean_error_tracks(context: Context, sort_desc: bool = True) -> int:
     scene = context.scene
     clip = _find_active_clip(context)
     if not clip:
@@ -23,6 +81,7 @@ def clean_error_tracks(context: bpy.types.Context, sort_desc: bool = True) -> in
             "length": len(t.markers)
         })
 
+    # Sortierung nach Error (None ans Ende)
     results.sort(
         key=lambda r: (r["error"] is None, -r["error"] if r["error"] else 0.0)
         if sort_desc else
@@ -38,7 +97,7 @@ def clean_error_tracks(context: bpy.types.Context, sort_desc: bool = True) -> in
     print("-------------------------------------------------")
 
     if avg_error is None or max_error_value is None:
-        print("[CleanError] Kein durchschnittlicher Fehler vorhanden → EXIT")
+        print("[CleanError] Kein durchschnittlicher Fehler oder kein max_error_value → EXIT")
         return 0
 
     deleted = 0
@@ -53,10 +112,11 @@ def clean_error_tracks(context: bpy.types.Context, sort_desc: bool = True) -> in
 
         try:
             from ...Helper.delete import delete_track_by_name
-        except Exception:
-            print("[CleanError] delete_track_by_name Importfehler → EXIT")
+        except Exception as e:
+            print(f"[CleanError] delete_track_by_name Importfehler → EXIT ({e})")
             return 0
 
+        # Kandidaten sammeln + loggen
         for r in results:
             if r["error"] is not None and r["error"] > limit:
                 candidates_log.append(r)
@@ -64,23 +124,27 @@ def clean_error_tracks(context: bpy.types.Context, sort_desc: bool = True) -> in
 
         print("[CleanError] Löschvorgang startet …")
 
+        # Tatsächlich löschen + Log
         for r in candidates_log:
             try:
                 delete_track_by_name(context, r["name"])
                 deleted += 1
                 deleted_log.append(r)
                 print(f" ✔ GELÖSCHT: {r['name']} (Err={r['error']:.4f})")
-            except Exception:
-                print(f" ✖ FEHLGESCHLAGEN: {r['name']}")
+            except Exception as e:
+                print(f" ✖ FEHLGESCHLAGEN: {r['name']} ({e})")
 
     else:
-        print("[CleanError] Kein Cleaning nötig.")
+        print("[CleanError] Kein Cleaning nötig (avg_error <= max_error_value).")
         return 0
 
-    # Refresh Scene Track-Cache
-    id_list = [str(id(t)) for t in clip.tracking.tracks]
-    scene["best_track_ids"] = id_list
-    scene["best_tracks"] = id_list
+    # Scene-Cache aktualisieren
+    try:
+        id_list = [str(id(t)) for t in clip.tracking.tracks]
+        scene["best_track_ids"] = id_list
+        scene["best_tracks"] = id_list
+    except Exception as e:
+        print(f"[CleanError] Fehler beim Aktualisieren von best_tracks: {e}")
 
     print("-------------------------------------------------")
     print(f"[CleanError] RESULT: Deleted={deleted}")
