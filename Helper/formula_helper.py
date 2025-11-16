@@ -139,7 +139,7 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
 # ==========================================================
 
 def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
-    global global_p_dev_accum, countP
+    global dx_var_accum, dy_var_accum, rel_var_accum, global_p_dev_accum, countP, count
     """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
@@ -180,33 +180,41 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
         )
 
-        # --- 2) Perspective global & per Marker einmalig berechnen ---
+        # --- 2) Perspective global & per Marker ---
         _, global_p_dev, per_marker_dev = _detect_perspective_motion(
             marker_positions,
             getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         )
         perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
-        
+
         countP += 1
         global_p_dev_accum += global_p_dev
         global_p_dev_accum_mean = global_p_dev_accum / countP
         print(f"[Perspective][AVG] countP={countP} global_p_dev={global_p_dev_accum_mean:.6f}")
 
-        if global_p_dev > perspective_thresh:
-            global_model = "Perspective"
+        # --- 2.1 Schwellen dynamisch schreiben ---
+        dx_var_mean = dx_var_accum / count if count else 0.0
+        dy_var_mean = dy_var_accum / count if count else 0.0
+        rel_var_mean = rel_var_accum / count if count else 0.0
 
-        # --- 3) Pro Track anwenden (Priorität: Perspective > LocRotScale > LocScale > LocRot > Loc) ---
+        scene["kaiserlich_rot_thresh_x"] = dx_var_mean
+        scene["kaiserlich_rot_thresh_y"] = dy_var_mean
+        scene["kaiserlich_scale_thresh_max"] = rel_var_mean
+        scene["kaiserlich_rot_scale_thresh_rot"] = rel_var_mean
+        scene["kaiserlich_rot_scale_thresh_scale"] = (dx_var_mean + dy_var_mean) * 0.5
+        scene["kaiserlich_perspective_thresh"] = global_p_dev_accum_mean
+
+        # --- 3) Pro Track Motion Model bestimmen & anwenden ---
         for track in selected_tracks:
             positions = get_positions(track, current_frame, max_frames=max_frames)
             if len(positions) < 2:
                 continue
 
-            # Perspective-Priorität prüfen
             marker_p_dev = per_marker_dev.get(track.name, 0.0)
-            if global_model == "Perspective" or marker_p_dev > perspective_thresh:
+
+            if global_p_dev > perspective_thresh or marker_p_dev > perspective_thresh:
                 motion_model = "Perspective"
             else:
-                # Pairwise für individuellen Marker
                 individual_model = _evaluate_motion_model_pairwise(
                     [(x, y) for _, (x, y) in positions],
                     getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
@@ -214,16 +222,9 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
                     getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002),
                     getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
                 )
-                # Hybrid: wenn Marker stark abweicht, nimm sein Modell, sonst global
                 motion_model = individual_model if individual_model != global_model else global_model
 
-            # --- Lineare Regression & Anwendung ---
-            frames = [frame for frame, _ in positions]
-            xs = [co[0] for _, co in positions]
-            ys = [co[1] for _, co in positions]
-
-            # Die lineare Regression und das Logging werden entfernt, da sie nicht funktionsnotwendig sind.
             apply_motion_model(track, positions, motion_model=motion_model)
 
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[MotionModel][ERROR] {e}")
