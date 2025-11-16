@@ -14,6 +14,7 @@ from .motion_model_helper import apply_motion_model
 dx_var_accum = 0.0
 dy_var_accum = 0.0
 rel_var_accum = 0.0
+global_p_dev_accum = 0.0
 count = 0
 
 
@@ -184,6 +185,11 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         )
         perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
+        global_p_dev_accum += global_p_dev
+        avg_global_p_dev = global_p_dev_accum / count
+    
+        print(f"[Perspective][AVG] count={count} global_p_dev={avg_global_p_dev:.6f}")
+
         if global_p_dev > perspective_thresh:
             global_model = "Perspective"
 
