@@ -218,3 +218,27 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
 
     except Exception as e:
         pass
+
+
+    # ==========================================================
+    # KPI Tracking Accumulate (NEW)
+    # ==========================================================
+    try:
+        from ...Helper.tracking_stats import tracking_stats_accumulate
+
+        dx_var = scene.get("kaiserlich_dx_var", 0.0)
+        dy_var = scene.get("kaiserlich_dy_var", 0.0)
+        rel_var = scene.get("kaiserlich_rel_var", 0.0)
+        global_p_dev = scene.get("kaiserlich_global_p_dev", 0.0)
+        avg_p_dev = scene.get("kaiserlich_p_dev_avg", 0.0)
+
+        tracking_stats_accumulate(
+            scene,
+            dx_var=dx_var,
+            dy_var=dy_var,
+            rel_var=rel_var,
+            global_p_dev=global_p_dev,
+            avg_p_dev=avg_p_dev,
+        )
+    except Exception as e:
+        print(f"[KPI][ACCUMULATE][ERROR] {e}")
