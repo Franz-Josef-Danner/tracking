@@ -4,54 +4,74 @@ import bpy
 from bpy.types import Operator, Context
 
 # Helper Imports
-from ...Helper.refine_intrinsics import (
-    refine_intrinsics_reset,
-)
+from ...Helper.refine_intrinsics import refine_intrinsics_reset
 from ...Helper.get_average_error import get_average_error
+from ...Helper.clean_error_tracks import clean_error_tracks
 
 
 class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
-    """Minimalistische Resolve-Pipeline:
-    1) Reset Intrinsics
-    2) Master-Cycle
-    3) Solve Camera
+    """
+    Resolve-Master-Pipeline:
+    1) Intrinsics reset
+    2) cycle_1
+    3) solve camera
+    4) KPI-Gate → clean_error_tracks bei schlechtem Ergebnis
     """
     bl_idname = "kaiserlich_tracker.master_resolve_operator"
     bl_label = "Kaiserlich: Resolve Master"
     bl_options = {'REGISTER', 'UNDO'}
 
+    MAX_ACCEPTABLE_ERROR: float = 10.0
+
     def execute(self, context: Context):
 
         clip = getattr(context, "edit_movieclip", None)
         if not clip:
-            print("[Resolve] Kein Clip → CANCEL")
+            print("[Resolve] Kein aktiver Clip → CANCEL")
             return {'CANCELLED'}
 
-        print("[Resolve] Starte Resolve-Pipeline")
+        print("\n============================")
+        print("  KAISERLICH RESOLVE START")
+        print("============================")
 
-        # STEP 1: Intrinsics Reset
+        # Step 1 — Intrinsics Reset
         print("[Resolve] Step 1 → refine_intrinsics_reset()")
         refine_intrinsics_reset()
 
-        # STEP 2: Master Cycle
-        print("[Resolve] Step 2 → Master Cycle")
+        # Step 2 — Cycle_1 (Master Cycle condensed)
+        print("[Resolve] Step 2 → cycle_1")
         try:
             bpy.ops.kaiserlich_tracker.master_cycle_operator('EXEC_DEFAULT')
         except Exception as e:
-            print(f"[Resolve] Fehler MasterCycle: {e}")
+            print(f"[Resolve] ERROR MasterCycle: {e}")
 
-        # STEP 3: Solve Camera
+        # Step 3 — Solve Camera
         print("[Resolve] Step 3 → Solve Camera")
         try:
             bpy.ops.clip.solve_camera()
         except Exception as e:
-            print(f"[Resolve] SolveCamera Fehler: {e}")
+            print(f"[Resolve] ERROR SolveCamera: {e}")
 
-        # KPI
+        # Step 4 — KPI Prüfen
         err = get_average_error(clip)
-        print(f"[Resolve] Final Average Error = {err:.4f}")
+        print(f"[Resolve] Average Error = {err:.4f}")
 
-        print("[Resolve] Pipeline → FINISHED")
+        # KPI-Gate
+        if err > self.MAX_ACCEPTABLE_ERROR:
+            print(f"[Resolve] KPI FAIL → Error {err:.4f} > {self.MAX_ACCEPTABLE_ERROR}")
+            print("[Resolve] Cleanup: clean_error_tracks()")
+            try:
+                removed = clean_error_tracks(context)
+                print(f"[Resolve] Cleanup removed {removed} tracks")
+            except Exception as e:
+                print(f"[Resolve] ERROR clean_error_tracks: {e}")
+        else:
+            print("[Resolve] KPI PASS → No Cleanup")
+
+        print("============================")
+        print("  KAISERLICH RESOLVE DONE")
+        print("============================\n")
+
         return {'FINISHED'}
 
 
