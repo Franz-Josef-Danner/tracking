@@ -37,7 +37,7 @@ def _get_max_error_value(scene: bpy.types.Scene) -> float:
 # Master Resolve Operator
 # ------------------------------------------------------------
 class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
-    bl_idname = "kaiserlich_tracker.master_resolve"
+    bl_idname = "kaiserlich_tracker.master_resolve_operator"
     bl_label = "Master Resolve"
     bl_description = "Master resolve operator for camera tracking"
 
