@@ -6,6 +6,7 @@ from collections import deque
 # ------------------------------------------------------------
 # Helper Imports (bestehend)
 # ------------------------------------------------------------
+from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
 from ...Helper.scene import get_end_frame
 from ...Helper.find_clip_editor_area import find_clip_editor_area
@@ -14,8 +15,6 @@ from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
-from ...Helper.motion_model_group_analysis import apply_group_motion_model
-from ...Helper.motion_model_helper import apply_motion_model
 
 # ------------------------------------------------------------
 # Neuer Korrektur-Helper
@@ -26,13 +25,6 @@ from ...Helper.marker_position_forward_calibration import (
     correct_marker_positions
 )
 
-# ------------------------------------------------------------
-# Neuer Import: Zentrales Referenz-Key-System
-# ------------------------------------------------------------
-from ...Helper.reference_key import (
-    get_reference_tracks,
-    filter_existing_tracks,
-)
 # ------------------------------------------------------------
 # Interner Helper: Speicherung aktiver Tracks in Scene-String
 # ------------------------------------------------------------
@@ -196,98 +188,69 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # -----------------------------------------------
         store_calibrate_tracks_in_scene(context, self._processing_names)
 
-        # (Vorbereitung: calibrate_tracks wurden aktualisiert)
+        # Danach würde marker_position_forward_calibration.py aufgerufen werden
+        # (hier nur vorbereitend, damit calibrate_tracks aktuell ist)
 
         # -----------------------------------------------
-        # 2) LIVE GROUP MOTION-MODEL ANALYSE
+        # 2) Adaptive Formel
         # -----------------------------------------------
         try:
-            apply_group_motion_model(context, max_frames=12)
-        except Exception as e:
-            print(f"[MasterTrack][MotionModel] ERROR: {e}")
+            apply_formula_on_selected_tracks(context, max_frames=5)
+        except Exception:
+            pass
+        
         # -----------------------------------------------
         # 3) ACTIVE CALIBRATION STEP (mit good/best Referenz)
         # -----------------------------------------------
         try:
             scene = context.scene
 
-            # --- calibrate_tracks laden ---
+            # Aktuelle Kalibrierungstracks
             calibrate_raw = scene.get("calibrate_tracks", "")
             if isinstance(calibrate_raw, str):
-                calibrate_tracks = [t.strip() for t in calibrate_raw.split(",") if t.strip()]
+                calibrate_tracks = [
+                    t.strip() for t in calibrate_raw.split(",") if t.strip()
+                ]
             else:
                 calibrate_tracks = []
 
+            # Keine calibrate_tracks → kein Calibration Step
             if not calibrate_tracks:
-                # Keine Kalibrier-Tracks → nichts tun
                 pass
             else:
+                # -------------------------------------------
+                # Referenz bestimmen: best_tracks > good_tracks
+                # -------------------------------------------
+                ref_tracks = []
 
-                # -------------------------------------------------------
-                # Referenz über das zentrale Referenz-Key-System
-                # -------------------------------------------------------
-                ref_tracks = get_reference_tracks(scene)
-                ref_tracks = filter_existing_tracks(context, ref_tracks)
-                # Keine Referenz → kein Calibration Step
+                best_raw = scene.get("best_tracks", "")
+                good_raw = scene.get("good_tracks", "")
+
+                if isinstance(best_raw, str) and best_raw.strip():
+                    ref_tracks = [t.strip() for t in best_raw.split(",") if t.strip()]
+                elif isinstance(good_raw, str) and good_raw.strip():
+                    ref_tracks = [t.strip() for t in good_raw.split(",") if t.strip()]
+
+                # Ohne Referenzen → KEIN Calibration Step
                 if not ref_tracks:
                     pass
                 else:
-                    # --- Existenz sicherstellen (Dead-Refs löschen) ---
-                    clip = getattr(context.space_data, "clip", None)
-                    if not clip:
-                        return
+                    # Frames definieren (vorher, aktuell, nachher)
+                    f_a = self._current_frame
+                    f_b = max(self._start_frame, f_a - 1)
+                    f_c = min(self._end_frame, f_a + 1)
 
-                    tracking = clip.tracking
-                    calibrate_tracks = [t for t in calibrate_tracks if t in tracking.tracks]
-
-                    if not ref_tracks or not calibrate_tracks:
-                        pass
-                    else:
-                        # ----------------------------------------------------
-                        # Variante A:
-                        # Dynamische Vergangenheit – Korrektur sobald f_prev existiert.
-                        # f_prev2 / f_prev3 werden nur genutzt, wenn vorhanden.
-                        # ----------------------------------------------------
-
-                        f_now = self._current_frame
-
-                        # Basis-Vergangenheit
-                        f_prev  = f_now - 1
-                        f_prev2 = f_now - 2
-                        f_prev3 = f_now - 3
-
-                        # Clip-Limits anwenden
-                        if f_prev < self._start_frame:
-                            f_prev = None
-                        if f_prev2 < self._start_frame:
-                            f_prev2 = None
-                        if f_prev3 < self._start_frame:
-                            f_prev3 = None
-
-                        # ----------------------------------------------------
-                        # Sofortige Korrektur, sobald EIN gültiger Vergangenheit-Frame existiert
-                        # ----------------------------------------------------
-                        if f_prev is not None:
-
-                            try:
-                                correct_marker_positions(
-                                    scene,
-                                    ref_tracks,         # Referenztracks
-                                    calibrate_tracks,   # Zieltracks
-                                    f_now,
-                                    f_prev,
-                                    f_prev2,
-                                    f_prev3
-                                )
-                            except Exception as e:
-                                pass
-
-                        else:
-                            # f_prev existiert nicht → Frame 0 → keine Korrektur möglich
-                            pass
+                    # Korrektur ausführen
+                    correct_marker_positions(
+                        scene,
+                        ref_tracks,        # ← WICHTIG: good/best als Referenz
+                        calibrate_tracks,  # ← zu korrigierende Tracks
+                        f_a, f_b, f_c
+                    )
 
         except Exception:
             pass
+
 
         # -----------------------------------------------
         # 4) adapt search size
