@@ -296,8 +296,8 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 print("[MasterCycle][NextOp] Starte master_detect_adapt Operator")
                 bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
             else:
-                print("[MasterCycle][NextOp] Starte master_deep_test_operator Operator")
-                bpy.ops.kaiserlichtracker.master_deep_test_operator('INVOKE_DEFAULT')
+                print("[MasterCycle][NextOp] Starte master_detect_adapt Operator")
+                bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
         except Exception as ex:
             self.report({'WARNING'}, f"Error launching next operator: {ex}")
             print(f"[MasterCycle][NextOp] WARNUNG: {ex}")
