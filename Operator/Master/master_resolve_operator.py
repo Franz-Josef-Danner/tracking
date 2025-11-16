@@ -217,6 +217,10 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         print("[Resolve][Stage 0] Subphase: Evaluate")
         avg_err = get_average_error(self._space.clip)
         self._avg_error = avg_err
+        # Zusätzliche Fehler-Qualifikation
+        if avg_err is None or avg_err != avg_err:  # NaN-Check
+            print(f"[Resolve][Stage {self._stage}] avg_error ungültig → ABORT.")
+            return "ABORT", None
         print(f"[Resolve][Stage 0] Durchschnittsfehler nach Solve: {avg_err}")
         threshold_stage0 = 10.0
         if avg_err is not None and avg_err <= threshold_stage0:
@@ -237,6 +241,10 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             print("[Resolve][Stage 0] Kein Weak Frame gefunden → FINISH ohne MasterCycle.")
             return "FINISH", None
         else:
+            # Master-Cycle-Eskalationsschutz
+            if len(self._space.clip.tracking.tracks) < 5:
+                print(f"[Resolve][Stage {self._stage}] Zu wenige Tracks übrig → ABORT.")
+                return "ABORT", None
             print(f"[Resolve][Stage 0] Weak Frame gefunden (Frame {weak_frame}) → MASTER_CYCLE.")
             return "MASTER_CYCLE", None
 
@@ -253,6 +261,10 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         print("[Resolve][Stage 1] Subphase: Evaluate")
         avg_err = get_average_error(self._space.clip)
         self._avg_error = avg_err
+        # Zusätzliche Fehler-Qualifikation
+        if avg_err is None or avg_err != avg_err:  # NaN-Check
+            print(f"[Resolve][Stage {self._stage}] avg_error ungültig → ABORT.")
+            return "ABORT", None
         print(f"[Resolve][Stage 1] Durchschnittsfehler nach Solve: {avg_err}")
         if avg_err is not None and avg_err <= max_err:
             print("[Resolve][Stage 1] avg_error <= max_error_value → FINISH.")
@@ -272,6 +284,10 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             print("[Resolve][Stage 1] Kein Weak Frame gefunden → Weiter zu Stage 2.")
             return "NEXT_STAGE", 2
         else:
+            # Master-Cycle-Eskalationsschutz
+            if len(self._space.clip.tracking.tracks) < 5:
+                print(f"[Resolve][Stage {self._stage}] Zu wenige Tracks übrig → ABORT.")
+                return "ABORT", None
             print(f"[Resolve][Stage 1] Weak Frame gefunden (Frame {weak_frame}) → MASTER_CYCLE.")
             return "MASTER_CYCLE", None
 
@@ -289,6 +305,10 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         print("[Resolve][Stage 2] Subphase: Evaluate")
         avg_err = get_average_error(self._space.clip)
         self._avg_error = avg_err
+        # Zusätzliche Fehler-Qualifikation
+        if avg_err is None or avg_err != avg_err:  # NaN-Check
+            print(f"[Resolve][Stage {self._stage}] avg_error ungültig → ABORT.")
+            return "ABORT", None
         print(f"[Resolve][Stage 2] Durchschnittsfehler nach Solve: {avg_err}")
         if avg_err is not None and avg_err <= max_err:
             print("[Resolve][Stage 2] avg_error <= max_error_value → FINISH.")
@@ -308,6 +328,10 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             print("[Resolve][Stage 2] Kein Weak Frame gefunden → Weiter zu Stage 3.")
             return "NEXT_STAGE", 3
         else:
+            # Master-Cycle-Eskalationsschutz
+            if len(self._space.clip.tracking.tracks) < 5:
+                print(f"[Resolve][Stage {self._stage}] Zu wenige Tracks übrig → ABORT.")
+                return "ABORT", None
             print(f"[Resolve][Stage 2] Weak Frame gefunden (Frame {weak_frame}) → MASTER_CYCLE.")
             return "MASTER_CYCLE", None
 
@@ -325,6 +349,10 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         print("[Resolve][Stage 3] Subphase: Evaluate")
         avg_err = get_average_error(self._space.clip)
         self._avg_error = avg_err
+        # Zusätzliche Fehler-Qualifikation
+        if avg_err is None or avg_err != avg_err:  # NaN-Check
+            print(f"[Resolve][Stage {self._stage}] avg_error ungültig → ABORT.")
+            return "ABORT", None
         print(f"[Resolve][Stage 3] Durchschnittsfehler nach Solve: {avg_err}")
         if avg_err is not None and avg_err <= max_err:
             print("[Resolve][Stage 3] avg_error <= max_error_value → FINISH.")
@@ -344,6 +372,10 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             print("[Resolve][Stage 3] Kein Weak Frame gefunden → FINISH (kein MasterCycle mehr).")
             return "FINISH", None
         else:
+            # Master-Cycle-Eskalationsschutz
+            if len(self._space.clip.tracking.tracks) < 5:
+                print(f"[Resolve][Stage {self._stage}] Zu wenige Tracks übrig → ABORT.")
+                return "ABORT", None
             print(f"[Resolve][Stage 3] Weak Frame gefunden (Frame {weak_frame}) → MASTER_CYCLE.")
             return "MASTER_CYCLE", None
 
@@ -364,6 +396,29 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
                 with bpy.context.temp_override(area=self._area, region=self._region, space_data=self._space):
                     bpy.ops.clip.solve_camera('EXEC_DEFAULT')
+
+                # -----------------------------------------
+                # Post-Solve: Entferne nicht rekonstruierbare Tracks
+                # -----------------------------------------
+                try:
+                    clip = self._space.clip
+                    tracking = clip.tracking
+                    reconstructed = tracking.reconstruction
+
+                    if reconstructed and hasattr(reconstructed, "points"):
+                        bad = []
+                        for track in tracking.tracks:
+                            if track.name not in reconstructed.points:
+                                bad.append(track.name)
+
+                        if bad:
+                            print(f"[Resolve][{label}] Entferne {len(bad)} nicht rekonstruierbare Tracks.")
+                            from ...Helper.delete import delete_tracks_by_names
+                            delete_tracks_by_names(clip, bad)
+                            clip.tracking.objects.active.reconstruction.is_valid = False
+                except Exception as e:
+                    print(f"[Resolve][{label}] Fehler bei Post-Solve-Cleanup: {e}")
+
             out_log = buf_out.getvalue().strip()
             err_log = buf_err.getvalue().strip()
             if out_log:
