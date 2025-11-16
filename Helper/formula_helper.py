@@ -29,7 +29,7 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
         (x1, y1), (x2, y2) = all_positions[i], all_positions[i + 1]
         avg_x = (x1 + x2) / 2.0
         avg_y = (y1 + y2) / 2.0
-        # relative Distanz nach deiner Vorgabe
+        # relative Distanz
         rel_dist = (abs(x1 - x2) + abs(y1 - y2)) / 2.0
         avg_x_values.append(avg_x)
         avg_y_values.append(avg_y)
@@ -39,14 +39,16 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
         return "Loc"
 
     dx_var = max(avg_x_values) - min(avg_x_values)
-    dx_var_sum += dx_var
-    print("DX_VAR_sum:", dx_var_sum)
     dy_var = max(avg_y_values) - min(avg_y_values)
-    dy_var_sum += dy_var
-    print("DY_VAR_sum:", dy_var_sum)
     rel_var = max(rel_distances) - min(rel_distances)
-    rel_var_sum += rel_var
-    print("REL_VAR_sum:", rel_var_sum)
+
+    # === Szene Variablen speichern & Log ===
+    scene = bpy.context.scene
+    scene["kaiserlich_dx_var"] = dx_var
+    scene["kaiserlich_dy_var"] = dy_var
+    scene["kaiserlich_rel_var"] = rel_var
+
+    print(f"[MotionModel Pairwise] dx_var={dx_var:.6f}, dy_var={dy_var:.6f}, rel_var={rel_var:.6f}")
 
     if (
         rel_var > thresh_rot_scale_scale
@@ -71,14 +73,10 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
     """
     Bestimmt Mittelpunkt-Marker und prüft perspektivische Abweichung.
     Rückgabe: (center_marker, max_dev, per_marker_dev_dict)
-    - center_marker: Name des Markers mit geringster Gesamtbewegung
-    - max_dev: größte Abweichung ggü. Mittelwert der mv_i über alle Marker
-    - per_marker_dev_dict: Abweichung je Marker (für per-Marker-Perspective)
     """
     if not marker_positions:
         return None, 0.0, {}
 
-    # 1) Bewegungslänge pro Marker (mpd_i)
     total_movement = {}
     for name, positions in marker_positions.items():
         if len(positions) < 2:
@@ -90,13 +88,11 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
     if not total_movement:
         return None, 0.0, {}
 
-    # 2) Mittelpunkt = Marker mit geringster Bewegung
     center_marker = min(total_movement, key=total_movement.get)
     center_positions = marker_positions[center_marker]
     mmx = sum(x for x, _ in center_positions) / len(center_positions)
     mmy = sum(y for _, y in center_positions) / len(center_positions)
 
-    # 3) Abstände zum Mittelpunkt je Frame und deren Veränderung (mv_i)
     mv_values = {}
     for name, positions in marker_positions.items():
         if len(positions) < 2:
@@ -110,16 +106,24 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
 
     mvth = sum(abs(v) for v in mv_values.values()) / len(mv_values)
 
-    # 4) Abweichungen je Marker
     per_marker_dev: dict[str, float] = {}
     for name, mv_i in mv_values.items():
         per_marker_dev[name] = abs(mv_i - mvth)
 
     max_dev = max(per_marker_dev.values()) if per_marker_dev else 0.0
+
+    # === Szene Variablen speichern & Log ===
+    scene = bpy.context.scene
+    scene["kaiserlich_global_p_dev"] = max_dev
+
+    for name, dev in per_marker_dev.items():
+        scene[f"kaiserlich_p_dev_{name}"] = dev
+
+    print(f"[Perspective] global_p_dev={max_dev:.6f}")
+    for name, dev in per_marker_dev.items():
+        print(f"[Perspective] {name}: dev={dev:.6f}")
+
     return center_marker, max_dev, per_marker_dev
-
-
-
 
 
 
@@ -140,10 +144,10 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             selected_tracks = [active_track]
     if not selected_tracks:
         return
+
     scene = context.scene
     current_frame = scene.frame_current
 
-    # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
     for track in selected_tracks:
         positions = get_positions(track, current_frame, max_frames=max_frames)
@@ -153,7 +157,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         return
 
     try:
-        # --- 1) Globales Modell aus Mittelwerten ---
+        # --- 1) Global ---
         all_positions = []
         for pts in marker_positions.values():
             mean_x = sum(x for x, _ in pts) / len(pts)
@@ -168,31 +172,26 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
         )
 
-        # --- 2) Perspective global & per Marker einmalig berechnen ---
+        # --- 2) Perspective einmalig ---
         _, global_p_dev, per_marker_dev = _detect_perspective_motion(
             marker_positions,
             getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         )
-        global_p_dev_sum += global_p_dev
-        print("GLOBAL_P_DEV_SUM:", global_p_dev_sum)
-        per_marker_dev_sum += per_marker_dev
-        print("PER_MARKER_DEV_SUM:", per_marker_dev_sum)
+
         perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         if global_p_dev > perspective_thresh:
             global_model = "Perspective"
 
-        # --- 3) Pro Track anwenden (Priorität: Perspective > LocRotScale > LocScale > LocRot > Loc) ---
+        # --- 3) Pro Track Motion-Model setzen ---
         for track in selected_tracks:
             positions = get_positions(track, current_frame, max_frames=max_frames)
             if len(positions) < 2:
                 continue
 
-            # Perspective-Priorität prüfen
             marker_p_dev = per_marker_dev.get(track.name, 0.0)
             if global_model == "Perspective" or marker_p_dev > perspective_thresh:
                 motion_model = "Perspective"
             else:
-                # Pairwise für individuellen Marker
                 individual_model = _evaluate_motion_model_pairwise(
                     [(x, y) for _, (x, y) in positions],
                     getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
@@ -200,16 +199,9 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
                     getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002),
                     getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
                 )
-                # Hybrid: wenn Marker stark abweicht, nimm sein Modell, sonst global
                 motion_model = individual_model if individual_model != global_model else global_model
 
-            # --- Lineare Regression & Anwendung ---
-            frames = [frame for frame, _ in positions]
-            xs = [co[0] for _, co in positions]
-            ys = [co[1] for _, co in positions]
-
-            # Die lineare Regression und das Logging werden entfernt, da sie nicht funktionsnotwendig sind.
             apply_motion_model(track, positions, motion_model=motion_model)
 
-    except Exception:
-        pass
+    except Exception as e:
+        print("[apply_formula_on_selected_tracks] ERROR:", e)
