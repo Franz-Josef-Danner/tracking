@@ -31,15 +31,6 @@ from ...Helper.track_length_helper import get_total_track_length
 from ...Helper.delete import delete_tracks_by_names
 from ...Helper.get_clip_context import get_clip_context
 from ...Helper.ui_progress import set_progress  # progress helper (kept as imported)
-# -------------------------------------------------------------------------------------------------
-# KPI Tracking Stats (NEW)
-# -------------------------------------------------------------------------------------------------
-from ...Helper.tracking_stats import (
-    tracking_stats_init,
-    tracking_stats_accumulate,
-    tracking_stats_finalize
-)
-
 
 # -------------------------------------------------------------------------------------------------
 # Runtime State
@@ -100,9 +91,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
     # Execute
     # ---------------------------------------------------------------------------------------------
     def execute(self, context: Context):
-        # === KPI Tracking Start des gesamten Deep-Tests === (NEW)
-        tracking_stats_init(context.scene)
-
         self.state = DeepTestState()
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.1, window=context.window)
@@ -636,11 +624,6 @@ class KAISERLICHTRACKER_OT_master_deep_test_operator(Operator):
 
             active_tracks, dropped = filter_active_tracks_at_frame(context, active_tracks, current_frame)
             if not active_tracks:
-                # === Tracking-Lauf abgeschlossen → KPI finalisieren === (NEW)
-                try:
-                    tracking_stats_finalize(scene)
-                except Exception as e:
-                    print(f"[KPI][Error] finalize failed: {e}")
                 break
 
             try:
