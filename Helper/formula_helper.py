@@ -52,8 +52,6 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     avg_motion_var = (dx_var + dy_var + rel_var) / 3.0
     scene["kaiserlich_motion_var_avg"] = avg_motion_var
 
-    # Nur noch den Durchschnitt loggen
-    print(f"[MotionModel Pairwise] avg_var={avg_motion_var:.6f}")
 
     if (
         rel_var > thresh_rot_scale_scale
@@ -134,9 +132,6 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
     else:
         avg_p_dev = 0.0
     scene["kaiserlich_p_dev_avg"] = avg_p_dev
-
-    # Nur noch Durchschnitt / aggregierten Wert loggen
-    print(f"[Perspective] global_p_dev={max_dev:.6f}, avg_p_dev={avg_p_dev:.6f}")
 
     return center_marker, max_dev, per_marker_dev
 
@@ -222,4 +217,4 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             apply_motion_model(track, positions, motion_model=motion_model)
 
     except Exception as e:
-        print("[apply_formula_on_selected_tracks] ERROR:", e)
+        pass
