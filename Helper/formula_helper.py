@@ -1,3 +1,4 @@
+# formula_helper.py
 from __future__ import annotations
 
 import bpy
@@ -224,7 +225,9 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     # KPI Tracking Accumulate (NEW)
     # ==========================================================
     try:
-        from ...Helper.tracking_stats import tracking_stats_accumulate
+        # formula_helper.py liegt in KaiserlichTracker/Helper/
+        # darum nur eine Ebene hoch (.) statt drei (...)
+        from .tracking_stats import tracking_stats_accumulate
 
         dx_var = scene.get("kaiserlich_dx_var", 0.0)
         dy_var = scene.get("kaiserlich_dy_var", 0.0)
