@@ -39,11 +39,14 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
         return "Loc"
 
     dx_var = max(avg_x_values) - min(avg_x_values)
-    print("DX_VAR:", dx_var)
+    dx_var_sum += dx_var
+    print("DX_VAR_sum:", dx_var_sum)
     dy_var = max(avg_y_values) - min(avg_y_values)
-    print("DY_VAR:", dy_var)
+    dy_var_sum += dy_var
+    print("DY_VAR_sum:", dy_var_sum)
     rel_var = max(rel_distances) - min(rel_distances)
-    print("REL_VAR:", rel_var)
+    rel_var_sum += rel_var
+    print("REL_VAR_sum:", rel_var_sum)
 
     if (
         rel_var > thresh_rot_scale_scale
@@ -170,8 +173,10 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             marker_positions,
             getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         )
-        print("GLOBAL_P_DEV:", global_p_dev)
-        print("PER_MARKER_DEV:", per_marker_dev)
+        global_p_dev_sum += global_p_dev
+        print("GLOBAL_P_DEV_SUM:", global_p_dev_sum)
+        per_marker_dev_sum += per_marker_dev
+        print("PER_MARKER_DEV_SUM:", per_marker_dev_sum)
         perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         if global_p_dev > perspective_thresh:
             global_model = "Perspective"
