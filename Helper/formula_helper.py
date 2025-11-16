@@ -46,18 +46,43 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     dy_var = max(avg_y_values) - min(avg_y_values)
     rel_var = max(rel_distances) - min(rel_distances)
 
-    # laufende Akkumulation
-    count += 1
-    dx_var_accum += dx_var
-    dy_var_accum += dy_var
-    rel_var_accum += rel_var
+    if dx_var == 0.0:
+        count += 1
+        dx_var_mean = dx_var_accum / 2
+        dy_var_accum += dy_var
+        rel_var_accum += rel_var
+        
+        dy_var_mean = dy_var_accum / count
+        rel_var_mean = rel_var_accum / count
+        print(f"[MotionModel][AVG] count={count} dx={dx_var_mean:.6f} dy={dy_var_mean:.6f} rel={rel_var_mean:.6f}")
+    elif dy_var == 0.0:
+        count += 1
+        dx_var_accum += dx_var
+        dy_var_mean = dy_var_accum / 2
+        rel_var_accum += rel_var
 
-    dx_var_mean = dx_var_accum / count
-    dy_var_mean = dy_var_accum / count
-    rel_var_mean = rel_var_accum / count
+        dx_var_mean = dx_var_accum / count
+        rel_var_mean = rel_var_accum / count
+        print(f"[MotionModel][AVG] count={count} dx={dx_var_mean:.6f} dy={dy_var_mean:.6f} rel={rel_var_mean:.6f}")
+    elif rel_var == 0.0:
+        count += 1
+        dx_var_accum += dx_var
+        dy_var_accum += dy_var
+        rel_var_mean = rel_var_accum / 2
 
-    # Debug
-    print(f"[MotionModel][AVG] count={count} dx={dx_var_mean:.6f} dy={dy_var_mean:.6f} rel={rel_var_mean:.6f}")
+        dx_var_mean = dx_var_accum / count
+        dy_var_mean = dy_var_accum / count
+        print(f"[MotionModel][AVG] count={count} dx={dx_var_mean:.6f} dy={dy_var_mean:.6f} rel={rel_var_mean:.6f}")
+    else:
+        count += 1
+        dx_var_accum += dx_var
+        dy_var_accum += dy_var
+        rel_var_accum += rel_var
+
+        dx_var_mean = dx_var_accum / count
+        dy_var_mean = dy_var_accum / count
+        rel_var_mean = rel_var_accum / count
+        print(f"[MotionModel][AVG] count={count} dx={dx_var_mean:.6f} dy={dy_var_mean:.6f} rel={rel_var_mean:.6f}")
 
     # Klassifikation ohne Veränderung
     if (
