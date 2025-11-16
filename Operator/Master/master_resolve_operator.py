@@ -93,6 +93,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
     _elapsed = 0.0
     _avg_error = None
     _area = _region = _space = None
+    _subphase = 0  # 0 = Solve, 1 = Evaluate/Decide
 
     # ---------------- Lifecycle ----------------
     def invoke(self, context, event):
@@ -103,6 +104,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         self._stage = 0
         self._elapsed = 0.0
         self._avg_error = None
+        self._subphase = 0
         self._update_progress(context, 0)
         print("\n[Resolve] Invoke gestartet – initialisiere Resolve-Pipeline.")
         return {'RUNNING_MODAL'}
@@ -126,22 +128,32 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
         # PHASE 1: Stages 0–3 sequentiell
         if self._phase == 1:
-            if self._stage == 0:
-                decision, next_stage = self._run_stage0(context)
-            elif self._stage == 1:
-                decision, next_stage = self._run_stage1(context)
-            elif self._stage == 2:
-                decision, next_stage = self._run_stage2(context)
-            elif self._stage == 3:
-                decision, next_stage = self._run_stage3(context)
-            else:
-                # sollte nicht vorkommen – failsafe
-                print(f"[Resolve] Ungültige Stage {self._stage} → Abbruch.")
-                return self._finish(context, cancelled=True)
+            # --- Subphase 0: Solve ---
+            if self._subphase == 0:
+                if not self._run_solve_only(context, self._stage):
+                    print(f"[Resolve][Stage {self._stage}] Solve fehlgeschlagen → ABORT.")
+                    return self._finish(context, cancelled=True)
+                self._subphase = 1
+                return {'RUNNING_MODAL'}
+
+            # --- Subphase 1: Evaluate + Decision ---
+            if self._subphase == 1:
+                if self._stage == 0:
+                    decision, next_stage = self._run_stage0_evaluate(context)
+                elif self._stage == 1:
+                    decision, next_stage = self._run_stage1_evaluate(context)
+                elif self._stage == 2:
+                    decision, next_stage = self._run_stage2_evaluate(context)
+                elif self._stage == 3:
+                    decision, next_stage = self._run_stage3_evaluate(context)
+                else:
+                    print(f"[Resolve] Ungültige Stage {self._stage} → Abbruch.")
+                    return self._finish(context, cancelled=True)
 
             # Entscheidung auswerten
             if decision == "NEXT_STAGE":
                 self._stage = next_stage
+                self._subphase = 0
                 progress = int((self._stage / 3) * 100) if self._stage > 0 else 0
                 self._update_progress(context, progress)
                 print(f"[Resolve] Wechsel zu Stage {self._stage} (Progress: {progress} %).")
@@ -154,23 +166,34 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
                 except Exception as e:
                     print(f"[Resolve] FEHLER beim Aufruf von master_cycle_operator: {e}")
                 self._update_progress(context, 100)
+                self._subphase = 0
                 return self._finish(context)
 
             elif decision == "FINISH":
                 print("[Resolve] Resolve-Pipeline abgeschlossen (FINISHED).")
                 self._update_progress(context, 100)
+                self._subphase = 0
                 return self._finish(context)
 
             elif decision == "ABORT":
                 print("[Resolve] Resolve-Pipeline abgebrochen (ABORT).")
+                self._subphase = 0
                 return self._finish(context, cancelled=True)
-
-            # Fallback
-            return {'RUNNING_MODAL'}
 
         return {'RUNNING_MODAL'}
 
     # ---------------- Stage Logic ----------------
+    # ---------------- NEW: Nur Solve (keine Auswertung) ----------------
+    def _run_solve_only(self, context, stage: int) -> bool:
+        print(f"\n[Resolve][Stage {stage}] Subphase: Solve")
+        refine_intrinsics_reset(context)
+        if stage >= 1:
+            refine_intrinsics_focal_length_on(context)
+        if stage >= 2:
+            refine_intrinsics_principal_point_on(context)
+        if stage >= 3:
+            refine_intrinsics_radial_distortion_on(context)
+        return self._solve_camera(context, label=f"Stage {stage}")
 
     def _get_max_error_value(self, context) -> float:
         scene = context.scene
@@ -182,44 +205,34 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         except Exception:
             return default
 
-    def _run_stage0(self, context):
+    def _run_stage0_evaluate(self, context):
         """
         Stage 0:
             - Intrinsics reset
-            - Solve
+            - Solve (in Subphase 0)
             - Schwelle: avg_error > 10.0
         """
         print("\n[Resolve][Stage 0] Starte Basis-Solve (kein Intrinsics-Refine, Schwelle 10.0).")
         refine_intrinsics_reset(context)
-
-        solve_ok = self._solve_camera(context, label="Stage 0")
-        if not solve_ok:
-            print("[Resolve][Stage 0] Solve fehlgeschlagen → ABORT.")
-            return "ABORT", None
-
+        print("[Resolve][Stage 0] Subphase: Evaluate")
         avg_err = get_average_error(self._space.clip)
         self._avg_error = avg_err
         print(f"[Resolve][Stage 0] Durchschnittsfehler nach Solve: {avg_err}")
-
         threshold_stage0 = 10.0
         if avg_err is not None and avg_err <= threshold_stage0:
             print(f"[Resolve][Stage 0] avg_error <= {threshold_stage0} → Weiter zu Stage 1.")
             return "NEXT_STAGE", 1
-
-        # avg_error > 10 → Cleanup + Weak-Frame-Check
         print(f"[Resolve][Stage 0] avg_error > {threshold_stage0} → Cleanup + Weak-Frame-Check.")
         try:
             deleted = clean_error_tracks(context, sort_desc=True)
             print(f"[Resolve][Stage 0] clean_error_tracks: {deleted} fehlerhafte Tracks gelöscht.")
         except Exception as e:
             print(f"[Resolve][Stage 0] FEHLER in clean_error_tracks: {e}")
-
         try:
             weak_frame = find_first_weak_frame(context)
         except Exception as e:
             print(f"[Resolve][Stage 0] FEHLER bei find_first_weak_frame: {e}")
             weak_frame = None
-
         if weak_frame is None:
             print("[Resolve][Stage 0] Kein Weak Frame gefunden → FINISH ohne MasterCycle.")
             return "FINISH", None
@@ -227,44 +240,34 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             print(f"[Resolve][Stage 0] Weak Frame gefunden (Frame {weak_frame}) → MASTER_CYCLE.")
             return "MASTER_CYCLE", None
 
-    def _run_stage1(self, context):
+    def _run_stage1_evaluate(self, context):
         """
         Stage 1:
-            - Focal Length Refinement
+            - Focal Length Refinement (Solve in Subphase 0)
             - Schwelle: avg_error <= max_error_value → FINISH
-            - sonst: Cleanup + Weak-Frame-Check → Stage 2 oder MasterCycle
         """
         max_err = self._get_max_error_value(context)
         print(f"\n[Resolve][Stage 1] Focal-Refine mit max_error_value = {max_err}")
         refine_intrinsics_reset(context)
         refine_intrinsics_focal_length_on(context)
-
-        solve_ok = self._solve_camera(context, label="Stage 1")
-        if not solve_ok:
-            print("[Resolve][Stage 1] Solve fehlgeschlagen → ABORT.")
-            return "ABORT", None
-
+        print("[Resolve][Stage 1] Subphase: Evaluate")
         avg_err = get_average_error(self._space.clip)
         self._avg_error = avg_err
         print(f"[Resolve][Stage 1] Durchschnittsfehler nach Solve: {avg_err}")
-
         if avg_err is not None and avg_err <= max_err:
             print("[Resolve][Stage 1] avg_error <= max_error_value → FINISH.")
             return "FINISH", None
-
         print("[Resolve][Stage 1] avg_error > max_error_value → Cleanup + Weak-Frame-Check.")
         try:
             deleted = clean_error_tracks(context, sort_desc=True)
             print(f"[Resolve][Stage 1] clean_error_tracks: {deleted} fehlerhafte Tracks gelöscht.")
         except Exception as e:
             print(f"[Resolve][Stage 1] FEHLER in clean_error_tracks: {e}")
-
         try:
             weak_frame = find_first_weak_frame(context)
         except Exception as e:
             print(f"[Resolve][Stage 1] FEHLER bei find_first_weak_frame: {e}")
             weak_frame = None
-
         if weak_frame is None:
             print("[Resolve][Stage 1] Kein Weak Frame gefunden → Weiter zu Stage 2.")
             return "NEXT_STAGE", 2
@@ -272,45 +275,35 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             print(f"[Resolve][Stage 1] Weak Frame gefunden (Frame {weak_frame}) → MASTER_CYCLE.")
             return "MASTER_CYCLE", None
 
-    def _run_stage2(self, context):
+    def _run_stage2_evaluate(self, context):
         """
         Stage 2:
-            - Focal Length + Principal Point Refinement
+            - Focal + Principal (Solve in Subphase 0)
             - Schwelle: avg_error <= max_error_value → FINISH
-            - sonst: Cleanup + Weak-Frame-Check → Stage 3 oder MasterCycle
         """
         max_err = self._get_max_error_value(context)
         print(f"\n[Resolve][Stage 2] Focal + Principal-Refine mit max_error_value = {max_err}")
         refine_intrinsics_reset(context)
         refine_intrinsics_focal_length_on(context)
         refine_intrinsics_principal_point_on(context)
-
-        solve_ok = self._solve_camera(context, label="Stage 2")
-        if not solve_ok:
-            print("[Resolve][Stage 2] Solve fehlgeschlagen → ABORT.")
-            return "ABORT", None
-
+        print("[Resolve][Stage 2] Subphase: Evaluate")
         avg_err = get_average_error(self._space.clip)
         self._avg_error = avg_err
         print(f"[Resolve][Stage 2] Durchschnittsfehler nach Solve: {avg_err}")
-
         if avg_err is not None and avg_err <= max_err:
             print("[Resolve][Stage 2] avg_error <= max_error_value → FINISH.")
             return "FINISH", None
-
         print("[Resolve][Stage 2] avg_error > max_error_value → Cleanup + Weak-Frame-Check.")
         try:
             deleted = clean_error_tracks(context, sort_desc=True)
             print(f"[Resolve][Stage 2] clean_error_tracks: {deleted} fehlerhafte Tracks gelöscht.")
         except Exception as e:
             print(f"[Resolve][Stage 2] FEHLER in clean_error_tracks: {e}")
-
         try:
             weak_frame = find_first_weak_frame(context)
         except Exception as e:
             print(f"[Resolve][Stage 2] FEHLER bei find_first_weak_frame: {e}")
             weak_frame = None
-
         if weak_frame is None:
             print("[Resolve][Stage 2] Kein Weak Frame gefunden → Weiter zu Stage 3.")
             return "NEXT_STAGE", 3
@@ -318,14 +311,10 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             print(f"[Resolve][Stage 2] Weak Frame gefunden (Frame {weak_frame}) → MASTER_CYCLE.")
             return "MASTER_CYCLE", None
 
-    def _run_stage3(self, context):
+    def _run_stage3_evaluate(self, context):
         """
         Stage 3:
-            - Focal Length + Principal Point + Radial Distortion Refinement
-            - Schwelle: avg_error <= max_error_value → FINISH
-            - sonst: Cleanup + Weak-Frame-Check:
-                - weak_frame None  -> FINISH
-                - weak_frame nicht None -> MASTER_CYCLE
+            - Focal + Principal + Radial (Solve in Subphase 0)
         """
         max_err = self._get_max_error_value(context)
         print(f"\n[Resolve][Stage 3] Focal + Principal + Radial-Refine mit max_error_value = {max_err}")
@@ -333,33 +322,24 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
         refine_intrinsics_focal_length_on(context)
         refine_intrinsics_principal_point_on(context)
         refine_intrinsics_radial_distortion_on(context)
-
-        solve_ok = self._solve_camera(context, label="Stage 3")
-        if not solve_ok:
-            print("[Resolve][Stage 3] Solve fehlgeschlagen → ABORT.")
-            return "ABORT", None
-
+        print("[Resolve][Stage 3] Subphase: Evaluate")
         avg_err = get_average_error(self._space.clip)
         self._avg_error = avg_err
         print(f"[Resolve][Stage 3] Durchschnittsfehler nach Solve: {avg_err}")
-
         if avg_err is not None and avg_err <= max_err:
             print("[Resolve][Stage 3] avg_error <= max_error_value → FINISH.")
             return "FINISH", None
-
         print("[Resolve][Stage 3] avg_error > max_error_value → Cleanup + Weak-Frame-Check.")
         try:
             deleted = clean_error_tracks(context, sort_desc=True)
             print(f"[Resolve][Stage 3] clean_error_tracks: {deleted} fehlerhafte Tracks gelöscht.")
         except Exception as e:
             print(f"[Resolve][Stage 3] FEHLER in clean_error_tracks: {e}")
-
         try:
             weak_frame = find_first_weak_frame(context)
         except Exception as e:
             print(f"[Resolve][Stage 3] FEHLER bei find_first_weak_frame: {e}")
             weak_frame = None
-
         if weak_frame is None:
             print("[Resolve][Stage 3] Kein Weak Frame gefunden → FINISH (kein MasterCycle mehr).")
             return "FINISH", None
