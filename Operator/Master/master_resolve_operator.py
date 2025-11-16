@@ -197,7 +197,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             print("[Resolve][Stage 0] Solve fehlgeschlagen → ABORT.")
             return "ABORT", None
 
-        avg_err = get_average_error(context)
+        avg_err = get_average_error(self._space.clip)
         self._avg_error = avg_err
         print(f"[Resolve][Stage 0] Durchschnittsfehler nach Solve: {avg_err}")
 
@@ -244,7 +244,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             print("[Resolve][Stage 1] Solve fehlgeschlagen → ABORT.")
             return "ABORT", None
 
-        avg_err = get_average_error(context)
+        avg_err = get_average_error(self._space.clip)
         self._avg_error = avg_err
         print(f"[Resolve][Stage 1] Durchschnittsfehler nach Solve: {avg_err}")
 
@@ -290,7 +290,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             print("[Resolve][Stage 2] Solve fehlgeschlagen → ABORT.")
             return "ABORT", None
 
-        avg_err = get_average_error(context)
+        avg_err = get_average_error(self._space.clip)
         self._avg_error = avg_err
         print(f"[Resolve][Stage 2] Durchschnittsfehler nach Solve: {avg_err}")
 
@@ -339,7 +339,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             print("[Resolve][Stage 3] Solve fehlgeschlagen → ABORT.")
             return "ABORT", None
 
-        avg_err = get_average_error(context)
+        avg_err = get_average_error(self._space.clip)
         self._avg_error = avg_err
         print(f"[Resolve][Stage 3] Durchschnittsfehler nach Solve: {avg_err}")
 
