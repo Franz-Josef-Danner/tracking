@@ -186,7 +186,7 @@ def _detect_perspective_motion(
 # ==========================================================
 # Hauptlogik – Hybrid-Bewertung + Adaptive Schwellenwerte
 # ==========================================================
-def get_from_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
+def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: int = 10) -> None:
     """
     Führt globale Motion-Analyse aus:
     - Hybrid Loc/Rot/Scale-Modell aus Marker-Mittelwerten
