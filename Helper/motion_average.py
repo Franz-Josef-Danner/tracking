@@ -5,7 +5,7 @@ import bpy
 from typing import List, Tuple
 import math
 
-from .marker_positions_helper import get_positions
+from .marker_positions_helper_bidir  import get_positions_bidir
 
 # ==========================================================
 # Globale akkumulierte Werte
@@ -178,7 +178,7 @@ def get_from_selected_tracks(
 
     candidate_tracks = []
     for track in clip.tracking.tracks:
-        positions = get_positions(track, current_frame, frames_per_track)
+        positions = get_positions_bidir(track, current_frame, frames_per_track)
         if len(positions) >= 2:
             candidate_tracks.append(track)
 
@@ -203,7 +203,7 @@ def get_from_selected_tracks(
     # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
     for track in selected_tracks:
-        positions = get_positions(
+        positions = get_positions_bidir(
             track,
             current_frame,
             max_frames=frames_per_track,
