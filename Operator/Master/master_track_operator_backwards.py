@@ -212,11 +212,9 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         store_calibrate_tracks_in_scene(context, self._processing_names)
 
         # Apply optional optimization formula
-        try:
-            get_from_selected_tracks_backwards(context, max_frames=5)
-            apply_formula_on_selected_tracks_backwards(context, max_frames=5)
-        except Exception:
-            pass
+        get_from_selected_tracks_backwards(context, max_frames=5)
+        apply_formula_on_selected_tracks_backwards(context, max_frames=5)
+
 
         # -------------------------------------------------------
         # BACKWARD CALIBRATION STEP (mit Referenzwahl good/best)
