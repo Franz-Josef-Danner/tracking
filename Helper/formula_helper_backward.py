@@ -164,9 +164,9 @@ def apply_formula_on_selected_tracks_backwards(context: 'bpy.types.Context', max
         # --- 2) Perspective global & per Marker einmalig berechnen ---
         _, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
             marker_positions,
-            getattr(scene, "kaiserlich_perspective_thresh", 0.002) / 1000000
+            perspective_thresh=getattr(scene, "kaiserlich_perspective_thresh", 0.002) / 1000000
         )
-        perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002) / 1000000
+        perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         if global_p_dev > perspective_thresh:
             global_model = "Perspective"
 
@@ -184,10 +184,10 @@ def apply_formula_on_selected_tracks_backwards(context: 'bpy.types.Context', max
                 # Pairwise für individuellen Marker
                 individual_model = _evaluate_motion_model_pairwise_backwards(
                     [(x, y) for _, (x, y) in positions],
-                    getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 100000,
-                    getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / 100000,
-                    getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / 100000,
-                    getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / 100000
+                    getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
+                    getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
+                    getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002),
+                    getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
                 )
                 # Hybrid: wenn Marker stark abweicht, nimm sein Modell, sonst global
                 motion_model = individual_model if individual_model != global_model else global_model
