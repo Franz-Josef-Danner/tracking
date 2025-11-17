@@ -1,3 +1,4 @@
+# Helper.motion_average.py
 from __future__ import annotations
 
 import bpy
@@ -138,6 +139,9 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
 # ==========================================================
 
 def get_from_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
+    if current_frame == scene.frame_start:
+        reset_motion_average_forward()
+
     global dx_var_accum, dy_var_accum, rel_var_accum, global_p_dev_accum, MAX_HISTORY
     """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
@@ -206,3 +210,10 @@ def get_from_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -
 
     except Exception:
         pass
+
+def reset_motion_average_forward():
+    dx_var_accum.clear()
+    dy_var_accum.clear()
+    rel_var_accum.clear()
+    global_p_dev_accum.clear()
+    print("[MotionModel][FWD] Reset accumulators")

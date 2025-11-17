@@ -14,7 +14,7 @@ from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
-from ...Helper.motion_average import get_from_selected_tracks
+from ...Helper.motion_average_backwards import get_from_selected_tracks_backwards
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
 
 # ------------------------------------------------------------
@@ -213,7 +213,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         # Apply optional optimization formula
         try:
-            get_from_selected_tracks(context, max_frames=5)
+            get_from_selected_tracks_backwards(context, max_frames=5)
             apply_formula_on_selected_tracks(context, max_frames=5)
         except Exception:
             pass
