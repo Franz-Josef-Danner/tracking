@@ -136,9 +136,9 @@ def register():
     bpy.types.Scene.kaiserlich_rot_scale_thresh_scale = bpy.props.FloatProperty(
         name="Rot+Scale ΔScale",
         description="Sensitivity for combined rotation and scaling (scale component)",
-        default=50,
+        default=100,
         min=1,
-        max=100,
+        max=200,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_perspective_thresh = bpy.props.FloatProperty(
