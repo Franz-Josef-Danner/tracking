@@ -123,8 +123,9 @@ def _detect_perspective_motion_backwards(marker_positions: dict[str, list[tuple[
         abs_dev = [abs(md_list[i] - md_list[i + 1]) for i in range(len(md_list) - 1)]
         mv_i = sum(abs_dev)
         mv_values[name] = mv_i
+        # Nur absolute Abweichung nutzen – robuste Perspektiv-Detektion
         md_list = [(abs(mmx - x) + abs(mmy - y)) / 2.0 for x, y in positions]
-        mv_i = sum(md_list[i] - md_list[i + 1] for i in range(len(md_list) - 1))
+        mv_i = sum(abs(md_list[i+1] - md_list[i]) for i in range(len(md_list) - 1))
         mv_values[name] = mv_i
 
     if not mv_values:
@@ -210,13 +211,13 @@ def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: i
         dy_var_mean = sum(dy_var_accum) / len(dy_var_accum) if dy_var_accum else 0.0
         rel_var_mean = sum(rel_var_accum) / len(rel_var_accum) if rel_var_accum else 0.0
 
-        scene["kaiserlich_rot_thresh_x"] = (dx_var_mean / 100) * 100000
-        scene["kaiserlich_rot_thresh_y"] = (dy_var_mean / 100) * 100000
-        scene["kaiserlich_scale_thresh_max"] = (rel_var_mean / 500) * 100000
-        scene["kaiserlich_scale_thresh_min"] = (rel_var_mean / 250) * 100000
-        scene["kaiserlich_rot_scale_thresh_rot"] = (((dx_var_mean / 100) + (dy_var_mean / 250)) / 2) * 100000
-        scene["kaiserlich_rot_scale_thresh_scale"] =  (rel_var_mean / 400) * 100000
-        scene["kaiserlich_perspective_thresh"] = (global_p_dev_accum_mean * 10000) * 1000000
+        scene["kaiserlich_rot_thresh_x"] = (dx_var_mean / 250) * 100000
+        scene["kaiserlich_rot_thresh_y"] = (dy_var_mean / 250) * 100000
+        scene["kaiserlich_scale_thresh_max"] = (rel_var_mean / 1000) * 100000
+        scene["kaiserlich_scale_thresh_min"] = (rel_var_mean / 500) * 100000
+        scene["kaiserlich_rot_scale_thresh_rot"] = (((dx_var_mean / 250) + (dy_var_mean / 250)) / 2) * 100000
+        scene["kaiserlich_rot_scale_thresh_scale"] =  (rel_var_mean / 750) * 100000
+        scene["kaiserlich_perspective_thresh"] = (global_p_dev_accum_mean / 10) * 1000000
 
 
     except Exception:
