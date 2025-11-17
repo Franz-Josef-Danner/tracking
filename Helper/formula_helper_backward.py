@@ -1,3 +1,4 @@
+# Helper/formula_helper_backward.py
 from __future__ import annotations
 
 import bpy
@@ -145,60 +146,56 @@ def apply_formula_on_selected_tracks_backwards(context: 'bpy.types.Context', max
     if not marker_positions:
         return
 
-    try:
-        # --- 1) Globales Modell aus Mittelwerten ---
-        all_positions = []
-        for pts in marker_positions.values():
-            mean_x = sum(x for x, _ in pts) / len(pts)
-            mean_y = sum(y for _, y in pts) / len(pts)
-            all_positions.append((mean_x, mean_y))
+    # --- 1) Globales Modell aus Mittelwerten ---
+    all_positions = []
+    for pts in marker_positions.values():
+        mean_x = sum(x for x, _ in pts) / len(pts)
+        mean_y = sum(y for _, y in pts) / len(pts)
+        all_positions.append((mean_x, mean_y))
 
-        global_model = _evaluate_motion_model_pairwise_backwards(
-            all_positions,
-            getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 100000,
-            getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / 100000,
-            getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / 100000,
-            getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / 100000
-        )
+    global_model = _evaluate_motion_model_pairwise_backwards(
+        all_positions,
+        getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 100000,
+        getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / 100000,
+        getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / 100000,
+        getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / 100000
+    )
 
-        # --- 2) Perspective global & per Marker einmalig berechnen ---
-        _, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
-            marker_positions,
-            perspective_thresh=getattr(scene, "kaiserlich_perspective_thresh", 0.002) / 1000000
-        )
-        perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
-        if global_p_dev > perspective_thresh:
-            global_model = "Perspective"
+    # --- 2) Perspective global & per Marker einmalig berechnen ---
+    _, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
+        marker_positions,
+        perspective_thresh=getattr(scene, "kaiserlich_perspective_thresh", 0.002) / 1000000
+    )
+    perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
+    if global_p_dev > perspective_thresh:
+        global_model = "Perspective"
 
-        # --- 3) Pro Track anwenden (Priorität: Perspective > LocRotScale > LocScale > LocRot > Loc) ---
-        for track in selected_tracks:
-            positions = get_positions_backward(track, current_frame, max_frames=max_frames)
-            if len(positions) < 2:
-                continue
+    # --- 3) Pro Track anwenden (Priorität: Perspective > LocRotScale > LocScale > LocRot > Loc) ---
+    for track in selected_tracks:
+        positions = get_positions_backward(track, current_frame, max_frames=max_frames)
+        if len(positions) < 2:
+            continue
 
-            # Perspective-Priorität prüfen
-            marker_p_dev = per_marker_dev.get(track.name, 0.0)
-            if global_model == "Perspective" or marker_p_dev > perspective_thresh:
-                motion_model = "Perspective"
-            else:
-                # Pairwise für individuellen Marker
-                individual_model = _evaluate_motion_model_pairwise_backwards(
-                    [(x, y) for _, (x, y) in positions],
-                    getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
-                    getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
-                    getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002),
-                    getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
-                )
-                # Hybrid: wenn Marker stark abweicht, nimm sein Modell, sonst global
-                motion_model = individual_model if individual_model != global_model else global_model
+        # Perspective-Priorität prüfen
+        marker_p_dev = per_marker_dev.get(track.name, 0.0)
+        if global_model == "Perspective" or marker_p_dev > perspective_thresh:
+            motion_model = "Perspective"
+        else:
+            # Pairwise für individuellen Marker
+            individual_model = _evaluate_motion_model_pairwise_backwards(
+                [(x, y) for _, (x, y) in positions],
+                getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
+                getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
+                getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002),
+                getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
+            )
+            # Hybrid: wenn Marker stark abweicht, nimm sein Modell, sonst global
+            motion_model = individual_model if individual_model != global_model else global_model
 
-            # --- Lineare Regression & Anwendung ---
-            frames = [frame for frame, _ in positions]
-            xs = [co[0] for _, co in positions]
-            ys = [co[1] for _, co in positions]
+        # --- Lineare Regression & Anwendung ---
+        frames = [frame for frame, _ in positions]
+        xs = [co[0] for _, co in positions]
+        ys = [co[1] for _, co in positions]
 
-            # Die lineare Regression und das Logging werden entfernt, da sie nicht funktionsnotwendig sind.
-            apply_motion_model(track, positions, motion_model=motion_model)
-
-    except Exception:
-        pass
+        # Die lineare Regression und das Logging werden entfernt, da sie nicht funktionsnotwendig sind.
+        apply_motion_model(track, positions, motion_model=motion_model)

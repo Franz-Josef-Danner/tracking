@@ -267,16 +267,14 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                     if f_next3 > self._end_frame: f_next3 = None
 
                     if f_next is not None:
-                        try:
-                            correct_marker_positions_backward(
-                                scene,
-                                ref_names,
-                                calibrate_tracks,
-                                f_now,
-                                f_next, f_next2, f_next3
-                            )
-                        except Exception:
-                            pass
+                        correct_marker_positions_backward(
+                            scene,
+                            ref_names,
+                            calibrate_tracks,
+                            f_now,
+                            f_next, f_next2, f_next3
+                        )
+
 
         except Exception:
             pass

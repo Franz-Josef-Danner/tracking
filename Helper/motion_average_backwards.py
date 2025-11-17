@@ -1,28 +1,4 @@
 # Helper.motion_average.py
-# ==========================================================
-# Motion-Model-Analyse für Blender-Tracking (Forward-Version)
-# ==========================================================
-#
-# Diese Datei analysiert Markerbewegungen und klassifiziert
-# das globale Bewegungsmodell der Kamera/Markersituation:
-#
-#   Loc            → reine Translation
-#   LocRot         → Translation + leichte Rotation
-#   LocScale       → Translation + Skalierung (Zoom-Effekt)
-#   LocRotScale    → kombiniertes komplexes Modell
-#   Perspective    → perspektivische Tiefenverschiebung (falls erkannt)
-#
-# Die Analyse basiert auf fortlaufend gemittelten Abweichungen
-# über mehrere Frames (Gleitfenster = 10 Frames).
-#
-# Warnung:
-# - Das System ist vollständig datengetrieben → Junk-Input erzeugt Junk-Output.
-# - Jede Frame-Iteration bricht das Tracking ggf. um → Performance kostet.
-# - Die Metriken sind rein 2D-basiert → robust für Film-Tracking,
-#   aber kein absoluter Tiefen-Indikator ohne Solve.
-#
-# ==========================================================
-
 from __future__ import annotations
 
 import bpy
@@ -31,12 +7,6 @@ import math
 
 from .marker_positions_helper_backwards import get_positions_backward
 
-# ==========================================================
-# Globale akkumulierte Werte
-# ----------------------------------------------------------
-# Diese Werte glätten Frame-weise Mess-Schwankungen.
-# Die History wird konstant gehalten (MAX_HISTORY Frames).
-# ==========================================================
 dx_var_accum: List[float] = []   # horizontale Streuung
 dy_var_accum: List[float] = []   # vertikale Streuung
 rel_var_accum: List[float] = []  # Streuung relativer Distanzen (Zoom-Indikator)
@@ -44,15 +14,6 @@ global_p_dev_accum: List[float] = []  # perspektivische Abweichung global
 
 MAX_HISTORY: int = 10  # Gleitfenstergröße
 
-
-# ==========================================================
-# Bewegungsmodell-Evaluierung (Paarvergleich)
-# ----------------------------------------------------------
-# INPUT: Mittelpunkte aller ausgewerteten Marker
-# OUTPUT: Motion-Model-String
-#
-# Schwellenwerte werden kontinuierlich dynamisch gesetzt.
-# ==========================================================
 def _evaluate_motion_model_pairwise_backwards(
     all_positions: list[tuple[float, float]],
     thresh_rot: float = 0.002,
