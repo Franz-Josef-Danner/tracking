@@ -258,12 +258,19 @@ def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: i
 
         # Formel empirisch optimiert – nicht theoretisch “schön”
         scene["kaiserlich_rot_thresh_x"] = (dx_var_mean / 250) * 100000
+        print(f"Set kaiserlich_rot_thresh_x to {scene['kaiserlich_rot_thresh_x']}")
         scene["kaiserlich_rot_thresh_y"] = (dy_var_mean / 250) * 100000
+        print(f"Set kaiserlich_rot_thresh_y to {scene['kaiserlich_rot_thresh_y']}")
         scene["kaiserlich_scale_thresh_max"] = (rel_var_mean / 1000) * 100000
+        print(f"Set kaiserlich_scale_thresh_max to {scene['kaiserlich_scale_thresh_max']}")
         scene["kaiserlich_scale_thresh_min"] = (rel_var_mean / 500) * 100000
+        print(f"Set kaiserlich_scale_thresh_min to {scene['kaiserlich_scale_thresh_min']}")
         scene["kaiserlich_rot_scale_thresh_rot"] = (((dx_var_mean/250)+(dy_var_mean/250))/2)*100000
+        print(f"Set kaiserlich_rot_scale_thresh_rot to {scene['kaiserlich_rot_scale_thresh_rot']}")
         scene["kaiserlich_rot_scale_thresh_scale"] = (rel_var_mean / 750) * 100000
+        print(f"Set kaiserlich_rot_scale_thresh_scale to {scene['kaiserlich_rot_scale_thresh_scale']}")
         scene["kaiserlich_perspective_thresh"] = min(1000, (global_p_dev_accum_mean / 10) * 1000000)
+        print(f"Set kaiserlich_perspective_thresh to {scene['kaiserlich_perspective_thresh']}")
 
     except Exception as e:
         print(f"[MotionModel][ERROR] {e}")
