@@ -79,7 +79,6 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     dx_var_mean = sum(dx_var_accum) / len(dx_var_accum)
     dy_var_mean = sum(dy_var_accum) / len(dy_var_accum)
     rel_var_mean = sum(rel_var_accum) / len(rel_var_accum)
-    print(f"[MotionModel][AVG10] dx={dx_var_mean:.6f} dy={dy_var_mean:.6f} rel={rel_var_mean:.6f}")
 
     # Klassifikation ohne Veränderung
     if (
@@ -238,7 +237,6 @@ def get_from_selected_tracks(
         global_p_dev_accum.append(global_p_dev)
         if len(global_p_dev_accum) > MAX_HISTORY: global_p_dev_accum.pop(0)
         global_p_dev_accum_mean = sum(global_p_dev_accum) / len(global_p_dev_accum)
-        print(f"[Perspective][AVG10] global_p_dev={global_p_dev_accum_mean:.6f}")
 
         dx_var_mean = sum(dx_var_accum) / len(dx_var_accum) if dx_var_accum else 0.0
         dy_var_mean = sum(dy_var_accum) / len(dy_var_accum) if dy_var_accum else 0.0
