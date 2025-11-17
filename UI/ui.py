@@ -112,33 +112,33 @@ def register():
     bpy.types.Scene.kaiserlich_scale_thresh_min = bpy.props.FloatProperty(
         name="Min Scale Δ",
         description="Minimum distance change required to detect scaling",
-        default=50,
+        default=100,
         min=1,
-        max=100,
+        max=200,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_scale_thresh_max = bpy.props.FloatProperty(
         name="Max Scale Δ",
         description="Maximum distance change before scaling is considered unstable",
-        default=250,
+        default=100,
         min=1,
-        max=500,
+        max=50,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_rot = bpy.props.FloatProperty(
         name="Rot+Scale ΔRot",
         description="Sensitivity for combined rotation and scaling (rotation component)",
-        default=50,
+        default=250,
         min=1,
-        max=100,
+        max=500,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_scale = bpy.props.FloatProperty(
         name="Rot+Scale ΔScale",
         description="Sensitivity for combined rotation and scaling (scale component)",
-        default=500,
+        default=50,
         min=1,
-        max=10000,
+        max=100,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_perspective_thresh = bpy.props.FloatProperty(
