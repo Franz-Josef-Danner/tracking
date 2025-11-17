@@ -159,7 +159,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             all_positions,
             getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 1100,
             getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / 103500,
-            getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / 1100,
+            getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / 1200,
             getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / 50500
         )
 
@@ -188,7 +188,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
                     [(x, y) for _, (x, y) in positions],
                     getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 1100,
                     getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / 103500,
-                    getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / 1100,
+                    getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / 1200,
                     getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / 50500
                 )
                 # Hybrid: wenn Marker stark abweicht, nimm sein Modell, sonst global
