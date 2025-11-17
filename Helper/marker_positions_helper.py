@@ -68,27 +68,14 @@ def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max
 
     # Determine the earliest frame to inspect.  We walk backwards
     # ``max_frames - 1`` frames from the current frame.
-    # HARD FIX: Frames dürfen in Blender niemals float sein
-    try:
-        current_frame = int(current_frame)
-    except Exception:
-        current_frame = int(round(float(current_frame)))
-    start_frame = int(start_frame)
+    start_frame = current_frame - (max_frames - 1)
+
     # Loop from the start frame up to the current frame (inclusive).
     # For each frame we try to find an exact marker.  If none exists,
     # ``find_frame`` returns ``None`` and we skip that frame.
     for frame in range(start_frame, current_frame + 1):
-        # Sicherheit: Negative Frames vermeiden
-        if frame < 0:
-            continue
-
-        # Blender erwartet zwingend int
-        try:
-            frame_int = int(frame)
-        except Exception:
-            frame_int = int(round(frame))
-        marker = markers.find_frame(frame_int, exact=True)
+        marker = markers.find_frame(frame, exact=True)
         if marker is None:
             continue
-        positions.append((frame_int, marker.co.copy()))
+        positions.append((frame, marker.co.copy()))
     return positions
