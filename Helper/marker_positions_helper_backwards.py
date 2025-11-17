@@ -9,7 +9,7 @@ def get_positions_backward(track: 'bpy.types.MovieTrackingTrack', current_frame:
 
     start_frame = current_frame - (max_frames + 1)
 
-    for frame in range(start_frame, current_frame + 1):
+    for frame in range(current_frame, start_frame - 1, -1):
 
         try:
             f_int = int(round(frame))
