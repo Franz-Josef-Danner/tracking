@@ -249,8 +249,8 @@ def get_from_selected_tracks(
         scene["kaiserlich_rot_thresh_y"] = 5 - ((dy_var_mean * 0.0067) * 1000)
         scene["kaiserlich_scale_thresh_min"] = 2 - ((rel_var_mean * 0.00024) * 10000)
         scene["kaiserlich_scale_thresh_max"] = 8 - ((rel_var_mean * 0.00012) * 103500)
-        scene["kaiserlich_rot_scale_thresh_rot"] = 5 - ((((dx_var_mean * 0.0036) + (dy_var_mean * 0.0067)) / 2) * 1050)
-        scene["kaiserlich_rot_scale_thresh_scale"] =  6 - ((rel_var_mean * 0.00018) * 50000)
+        scene["kaiserlich_rot_scale_thresh_rot"] = 5 - ((((dx_var_mean * 0.0036) + (dy_var_mean * 0.0067)) / 2) * 1100)
+        scene["kaiserlich_rot_scale_thresh_scale"] =  6 - ((rel_var_mean * 0.00018) * 50500)
         scene["kaiserlich_perspective_thresh"] = 30 - ((global_p_dev_accum_mean * 4) * 100)
 
 
