@@ -1,7 +1,5 @@
 import bpy
-import logging
 
-logger = logging.getLogger(__name__)
 
 def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max_frames: int = 5):
 
