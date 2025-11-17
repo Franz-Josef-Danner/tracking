@@ -204,7 +204,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             tr = tracking.tracks.get(name)
             if not tr:
                 continue
-            mk = tr.markers.find_frame(self._current_frame)
+            mk = tr.markers.find_frame(int(self._current_frame))
             if mk:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
 
@@ -316,13 +316,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         # Step backward
         scene = context.scene
         if self._space.clip_user.frame_current == self._current_frame:
-            self._space.clip_user.frame_current -= 1
+            self._space.clip_user.frame_current = int(self._space.clip_user.frame_current) - 1
 
         if self._space.clip_user.frame_current < self._start_frame:
             self._space.clip_user.frame_current = self._start_frame
 
         scene.frame_current = self._space.clip_user.frame_current
-        self._current_frame = self._space.clip_user.frame_current
+        self._current_frame = int(self._space.clip_user.frame_current)
         self._frames_processed += 1
 
         if self._current_frame <= self._start_frame:
