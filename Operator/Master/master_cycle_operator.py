@@ -126,103 +126,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         print(f"[MasterCycle] Ergebnis Weak Frame: {frame}")
 
         # ===================================================================
-        # MOTION LIST → MOTION VALUE
-        # ===================================================================
-        if frame is None:
-            print("[MasterCycle][Motion] Kein Weak Frame gefunden, prüfe Motion-Daten ...")
-            try:
-                existing_motion_value = scene.get("motion_value")
-                if existing_motion_value and isinstance(existing_motion_value, dict):
-                    print("[MasterCycle][Motion] Bestehende motion_value gefunden – wird verwendet")
-                    motion_value = existing_motion_value
-                else:
-                    raw_motion = scene.get("motion_list")
-                    motion_list = None
-                    print(f"[MasterCycle][Motion] Rohdaten motion_list Typ: {type(raw_motion).__name__}")
-
-                    # --- Robust Parsing ---
-                    if raw_motion:
-                        if isinstance(raw_motion, str):
-                            try:
-                                parsed = ast.literal_eval(raw_motion)
-                                if isinstance(parsed, dict):
-                                    motion_list = [parsed]
-                                elif isinstance(parsed, (list, tuple)):
-                                    motion_list = list(parsed)
-                                print(f"[MasterCycle][Motion] Parsed Motion List mit {len(motion_list)} Einträgen")
-                            except Exception:
-                                print("[MasterCycle][Motion] Fehler beim Parsen von motion_list (string)")
-                                motion_list = None
-                        elif isinstance(raw_motion, dict):
-                            motion_list = [raw_motion]
-                        elif isinstance(raw_motion, (list, tuple)):
-                            motion_list = list(raw_motion)
-
-                    if not motion_list:
-                        print("[MasterCycle][Motion] Keine gültige motion_list gefunden → Abbruch")
-                        return {'CANCELLED'}
-
-                    # --- Threshold-Aggregation ---
-                    print("[MasterCycle][Motion] Aggregiere Threshold-Werte ...")
-                    thresholds = {
-                        "rot_thresh_x": [], "rot_thresh_y": [],
-                        "scale_thresh_min": [], "scale_thresh_max": [],
-                        "rot_scale_thresh_rot": [], "rot_scale_thresh_scale": [],
-                        "perspective_thresh": []
-                    }
-
-                    for entry in motion_list:
-                        if not isinstance(entry, dict):
-                            continue
-                        for k in thresholds.keys():
-                            v = entry.get(k)
-                            if isinstance(v, (float, int)) and v < 1.0:
-                                thresholds[k].append(float(v))
-
-                    # --- Durchschnittsbildung ---
-                    motion_value = {}
-                    for k, vals in thresholds.items():
-                        if vals:
-                            motion_value[k] = round(sum(vals) / len(vals), 6)
-                            print(f"[MasterCycle][Motion] {k}: {motion_value[k]} (avg aus {len(vals)} Werten)")
-                        else:
-                            # Wenn nach Aussortieren von 1.0 keine Werte übrig bleiben,
-                            # auf 1.0 (neutral) setzen statt 0.0.
-                            print(f"[MasterCycle][Motion] {k}: keine Werte → setze auf 1.0")
-                            motion_value[k] = 1.0
-
-                    scene["motion_value"] = motion_value
-                    print(f"[MasterCycle][Motion] motion_value geschrieben: {motion_value}")
-
-                # ===================================================================
-                # Werte in Szenen-Properties schreiben
-                # ===================================================================
-                print("[MasterCycle][Motion] Übertrage Thresholds in Scene Properties ...")
-                for k, prop in {
-                    "rot_thresh_x": "kaiserlich_rot_thresh_x",
-                    "rot_thresh_y": "kaiserlich_rot_thresh_y",
-                    "scale_thresh_min": "kaiserlich_scale_thresh_min",
-                    "scale_thresh_max": "kaiserlich_scale_thresh_max",
-                    "rot_scale_thresh_rot": "kaiserlich_rot_scale_thresh_rot",
-                    "rot_scale_thresh_scale": "kaiserlich_rot_scale_thresh_scale",
-                    "perspective_thresh": "kaiserlich_perspective_thresh",
-                }.items():
-                    if hasattr(scene, prop):
-                        try:
-                            value = motion_value.get(k, 1.0)  # Default konsistent zu motion_value
-                            setattr(scene, prop, value)
-                            print(f"[MasterCycle][Motion] {prop} = {value}")
-                        except Exception as e:
-                            print(f"[MasterCycle][Motion] Fehler beim Setzen von {prop}: {e}")
-                            pass
-                print("[MasterCycle][Motion] Motion-Phase abgeschlossen → Fahre normal fort (kein Early Return)")
-                # Kein Return mehr – der Operator läuft ganz regulär weiter
-                pass
-            except Exception as e:
-                print(f"[MasterCycle][Motion] FEHLER: {e}")
-                return {'CANCELLED'}
-
-        # ===================================================================
         # Weiterer Ablauf (wie zuvor)
         # ===================================================================
         if frame is None:
@@ -289,18 +192,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         except Exception:
             pass
 
-        try:
-            motion_value_exists = scene.get("motion_value") is not None
-            print(f"[MasterCycle][NextOp] motion_value vorhanden: {motion_value_exists}")
-            if motion_value_exists:
-                print("[MasterCycle][NextOp] Starte master_detect_adapt Operator")
-                bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-            else:
-                print("[MasterCycle][NextOp] Starte master_detect_adapt Operator")
-                bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-        except Exception as ex:
-            self.report({'WARNING'}, f"Error launching next operator: {ex}")
-            print(f"[MasterCycle][NextOp] WARNUNG: {ex}")
 
         print("[MasterCycle] --- Prozess abgeschlossen ---")
         return {'FINISHED'}
