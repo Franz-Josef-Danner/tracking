@@ -9,12 +9,11 @@ from .marker_positions_helper import get_positions
 # ==========================================================
 # Globale akkumulierte Werte
 # ==========================================================
-dx_var_accum = 0.0
-dy_var_accum = 0.0
-rel_var_accum = 0.0
-global_p_dev_accum = 0.0
-count = 0
-countP = 0
++ dx_var_accum = []
++ dy_var_accum = []
++ rel_var_accum = []
++ global_p_dev_accum = []
++ MAX_HISTORY = 10
 
 
 def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
@@ -22,7 +21,7 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
                                     thresh_scale: float = 0.005,
                                     thresh_rot_scale_rot: float = 0.002,
                                     thresh_rot_scale_scale: float = 0.005) -> str:
-    global dx_var_accum, dy_var_accum, rel_var_accum, count
+    global dx_var_accum, dy_var_accum, rel_var_accum, MAX_HISTORY
 
     if len(all_positions) < 2:
         return "Loc"
@@ -44,16 +43,18 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     dy_var = max(avg_y_values) - min(avg_y_values)
     rel_var = max(rel_distances) - min(rel_distances)
 
+    dx_var_accum.append(dx_var)
+    dy_var_accum.append(dy_var)
+    rel_var_accum.append(rel_var)
 
-    count += 1
-    dx_var_accum += dx_var
-    dy_var_accum += dy_var
-    rel_var_accum += rel_var
+    if len(dx_var_accum) > MAX_HISTORY: dx_var_accum.pop(0)
+    if len(dy_var_accum) > MAX_HISTORY: dy_var_accum.pop(0)
+    if len(rel_var_accum) > MAX_HISTORY: rel_var_accum.pop(0)
 
-    dx_var_mean = dx_var_accum / count
-    dy_var_mean = dy_var_accum / count
-    rel_var_mean = rel_var_accum / count
-    print(f"[MotionModel][AVG] count={count} dx={dx_var_mean:.6f} dy={dy_var_mean:.6f} rel={rel_var_mean:.6f}")
+    dx_var_mean = sum(dx_var_accum) / len(dx_var_accum)
+    dy_var_mean = sum(dy_var_accum) / len(dy_var_accum)
+    rel_var_mean = sum(rel_var_accum) / len(rel_var_accum)
+    print(f"[MotionModel][AVG10] dx={dx_var_mean:.6f} dy={dy_var_mean:.6f} rel={rel_var_mean:.6f}")
 
     # Klassifikation ohne Veränderung
     if (
@@ -137,7 +138,7 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
 # ==========================================================
 
 def get_from_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
-    global dx_var_accum, dy_var_accum, rel_var_accum, global_p_dev_accum, countP, count
+    global dx_var_accum, dy_var_accum, rel_var_accum, global_p_dev_accum, MAX_HISTORY
     """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
@@ -185,14 +186,14 @@ def get_from_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -
         )
         perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         
-        countP += 1
-        global_p_dev_accum += global_p_dev
-        global_p_dev_accum_mean = global_p_dev_accum / countP
-        print(f"[Perspective][AVG] countP={countP} global_p_dev={global_p_dev_accum_mean:.6f}")
+        global_p_dev_accum.append(global_p_dev)
+        if len(global_p_dev_accum) > MAX_HISTORY: global_p_dev_accum.pop(0)
+        global_p_dev_accum_mean = sum(global_p_dev_accum) / len(global_p_dev_accum)
+        print(f"[Perspective][AVG10] global_p_dev={global_p_dev_accum_mean:.6f}")
 
-        dx_var_mean = dx_var_accum / count if count else 0.0
-        dy_var_mean = dy_var_accum / count if count else 0.0
-        rel_var_mean = rel_var_accum / count if count else 0.0
+        dx_var_mean = sum(dx_var_accum) / len(dx_var_accum) if dx_var_accum else 0.0
+        dy_var_mean = sum(dy_var_accum) / len(dy_var_accum) if dy_var_accum else 0.0
+        rel_var_mean = sum(rel_var_accum) / len(rel_var_accum) if rel_var_accum else 0.0
 
         scene["kaiserlich_rot_thresh_x"] = (dx_var_mean / 250) * 100000
         scene["kaiserlich_rot_thresh_y"] = (dy_var_mean / 250) * 100000
