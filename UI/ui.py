@@ -97,7 +97,7 @@ def register():
         name="ΔX Threshold",
         description="Minimum ΔX difference required to detect rotation",
         default=250,
-        min=1,
+        min=0.00001,
         max=500,
         subtype='FACTOR',
     )
@@ -105,7 +105,7 @@ def register():
         name="ΔY Threshold",
         description="Minimum ΔY difference required to detect rotation",
         default=250,
-        min=0.1,
+        min=0.00001,
         max=500,
         subtype='FACTOR',
     )
@@ -113,7 +113,7 @@ def register():
         name="Min Scale Δ",
         description="Minimum distance change required to detect scaling",
         default=100,
-        min=1,
+        min=0.00001,
         max=200,
         subtype='FACTOR',
     )
@@ -121,7 +121,7 @@ def register():
         name="Max Scale Δ",
         description="Maximum distance change before scaling is considered unstable",
         default=50,
-        min=1,
+        min=0.00001,
         max=100,
         subtype='FACTOR',
     )
@@ -129,7 +129,7 @@ def register():
         name="Rot+Scale ΔRot",
         description="Sensitivity for combined rotation and scaling (rotation component)",
         default=250,
-        min=1,
+        min=0.00001,
         max=500,
         subtype='FACTOR',
     )
@@ -137,7 +137,7 @@ def register():
         name="Rot+Scale ΔScale",
         description="Sensitivity for combined rotation and scaling (scale component)",
         default=100,
-        min=1,
+        min=0.00001,
         max=200,
         subtype='FACTOR',
     )
@@ -145,7 +145,7 @@ def register():
         name="Perspective Δ",
         description="Sensitivity for perspective deviation (depth/parallax)",
         default=500,
-        min=1,
+        min=0.00001,
         max=1000,
         subtype='FACTOR',
     )
