@@ -143,7 +143,10 @@ def get_from_selected_tracks_backwards(
 
     marker_positions = {}
     for tr in tracks:
-        pos = get_positions(tr, cf, max_frames=max_frames)
+        # Sicherstellen, dass Frame immer INT ist
+        cf_int = int(cf)
+        pos = get_positions(tr, cf_int, max_frames=max_frames)
+        pos = [(int(f), (x, y)) for f, (x, y) in pos]
         if len(pos) >= 2:
             marker_positions[tr.name] = [(x,y) for _,(x,y) in pos]
 
@@ -180,7 +183,12 @@ def get_from_selected_tracks_backwards(
             global_model = "Perspective"
 
         for tr in tracks:
-            pts = [(x,y) for _,(x,y) in get_positions(tr, cf, max_frames=max_frames)]
+            cf_int = int(cf)
+            local_positions = get_positions(tr, cf_int, max_frames=max_frames)
+            # Frame-Cast → int
+            local_positions = [(int(f), (x, y)) for f, (x, y) in local_positions]
+            pts = [(x, y) for _, (x, y) in local_positions]
+
             if len(pts) < 2: continue
 
             local = _evaluate_motion_model_pairwise_backwards(
