@@ -245,7 +245,7 @@ def get_from_selected_tracks(
         dy_var_mean = sum(dy_var_accum) / len(dy_var_accum) if dy_var_accum else 0.0
         rel_var_mean = sum(rel_var_accum) / len(rel_var_accum) if rel_var_accum else 0.0
 
-        scene["kaiserlich_rot_thresh_x"] = 5 - ((dx_var_mean * 0.0036) * 2000)
+        scene["kaiserlich_rot_thresh_x"] = 5 - ((dx_var_mean * 0.0036) * 500)
         scene["kaiserlich_rot_thresh_y"] = 5 - ((dy_var_mean * 0.0067) * 1000)
         scene["kaiserlich_scale_thresh_min"] = 2 - ((rel_var_mean * 0.00024) * 10000)
         scene["kaiserlich_scale_thresh_max"] = 9 - ((rel_var_mean * 0.00012) * 100000)
