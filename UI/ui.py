@@ -120,9 +120,9 @@ def register():
     bpy.types.Scene.kaiserlich_scale_thresh_max = bpy.props.FloatProperty(
         name="Max Scale Δ",
         description="Maximum distance change before scaling is considered unstable",
-        default=100,
+        default=50,
         min=1,
-        max=50,
+        max=100,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_rot = bpy.props.FloatProperty(
