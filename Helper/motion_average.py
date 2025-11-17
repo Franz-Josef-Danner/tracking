@@ -9,11 +9,11 @@ from .marker_positions_helper import get_positions
 # ==========================================================
 # Globale akkumulierte Werte
 # ==========================================================
-+ dx_var_accum = []
-+ dy_var_accum = []
-+ rel_var_accum = []
-+ global_p_dev_accum = []
-+ MAX_HISTORY = 10
+dx_var_accum = []
+dy_var_accum = []
+rel_var_accum = []
+global_p_dev_accum = []
+MAX_HISTORY = 10
 
 
 def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
