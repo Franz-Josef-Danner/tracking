@@ -157,7 +157,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
 
         global_model = _evaluate_motion_model_pairwise(
             all_positions,
-            getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 1000,
+            getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 2000,
             getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / 100000,
             getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / 1000,
             getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / 1000
@@ -186,7 +186,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
                 # Pairwise für individuellen Marker
                 individual_model = _evaluate_motion_model_pairwise(
                     [(x, y) for _, (x, y) in positions],
-                    getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 1000,
+                    getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 2000,
                     getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / 100000,
                     getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / 1000,
                     getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / 1000
