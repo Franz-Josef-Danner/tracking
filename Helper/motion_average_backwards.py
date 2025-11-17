@@ -16,16 +16,10 @@ rel_var_accum = []
 global_p_dev_accum = []
 MAX_HISTORY = 10
 
-
 # ----------------------------------------------------------
 # Interner Helper: Frames-per-Track aus Szene lesen
 # ----------------------------------------------------------
 def _resolve_frames_per_track(scene: bpy.types.Scene, fallback: int = 5) -> int:
-    """
-    Liest die Anzahl an Frames, die pro Track rückwärts betrachtet werden sollen,
-    aus `scene.kaiserlich_frames_per_track` oder `scene["kaiserlich_frames_per_track"]`.
-    Fällt auf `fallback` zurück und erzwingt Minimum 2 Frames.
-    """
     value = None
     try:
         if hasattr(scene, "kaiserlich_frames_per_track"):
@@ -43,7 +37,6 @@ def _resolve_frames_per_track(scene: bpy.types.Scene, fallback: int = 5) -> int:
     except Exception:
         value_int = fallback
 
-    # Mindestens 2 Frames, damit die paarweise Auswertung funktioniert
     if value_int < 2:
         value_int = 2
     return value_int
@@ -179,22 +172,16 @@ def get_from_selected_tracks_backwards(
     if clip is None:
         return
 
-    # Neue Auswahlstrategie:
-    # 1) Tracks mit aktiven Markern im betrachteten Framefenster
-    # 2) Falls gar nichts aktiv → aktiver oder selektierter Track als Fallback
-
     scene = context.scene
     current_frame = scene.frame_current
     frames_per_track = _resolve_frames_per_track(scene, max_frames if (max_frames is not None and max_frames > 0) else 5)
 
     candidate_tracks = []
     for track in clip.tracking.tracks:
-        # Markerpositionen prüfen
         pos = get_positions_backward(track, current_frame, max_frames=frames_per_track)
         if len(pos) >= 2:
             candidate_tracks.append(track)
 
-    # Wenn es aktive Tracks gibt → perfekt
     if candidate_tracks:
         selected_tracks = candidate_tracks
     else:
