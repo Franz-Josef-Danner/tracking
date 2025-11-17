@@ -200,7 +200,7 @@ def get_from_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -
         scene["kaiserlich_scale_thresh_min"] = rel_var_mean * 500
         scene["kaiserlich_rot_scale_thresh_rot"] = rel_var_mean * 1000
         scene["kaiserlich_rot_scale_thresh_scale"] = ((dx_var_mean * 250) + (dy_var_mean * 250)) / 2
-        scene["kaiserlich_perspective_thresh"] = global_p_dev_accum_mean * 10
+        scene["kaiserlich_perspective_thresh"] = global_p_dev_accum_mean * 10000
 
 
     except Exception:
