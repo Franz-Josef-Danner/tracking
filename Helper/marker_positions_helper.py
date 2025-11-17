@@ -96,56 +96,30 @@ def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max
             positions.append((f_int, marker.co.copy()))
     return positions
 
-def get_positions_backward(
-    track: 'bpy.types.MovieTrackingTrack',
-    current_frame: int,
-    max_frames: int = 5
-):
-    """
-    Sammelt bis zu max_frames Markerpositionen rückwärts ab current_frame.
-    Robust gegen Frame-Lücken + API sicher (int find_frame).
-    """
+def get_positions_backward(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max_frames: int = 5):
+
     markers = track.markers
-    positions: list[tuple[int, tuple[float, float]]] = []
+    positions: list[tuple[int, any]] = []
 
-    # Sicherheits-Casting
-    cf = int(round(current_frame))
+    start_frame = current_frame - (max_frames + 1)
 
-    clip = bpy.context.edit_movieclip or bpy.context.scene.movieclip
-    if not clip:
-        return positions
+    for frame in range(start_frame, current_frame - 1):
 
-    frame_start = int(getattr(clip, "frame_start", cf))
-    frame_end = int(getattr(clip, "frame_end", cf))
-
-    for i in range(max_frames):
-        # Nächster rückwärts Frame Lookup
-        f_float = cf - i
-
-        # Cast + Bounds clamp
         try:
-            f_int = int(round(f_float))
+            f_int = int(round(frame))
         except Exception:
-            logger.debug(f"[Backward][CastFail] {f_float}")
-            break
+            logger.debug(f"[MarkerPositions] Frame cast failed: {frame}")
+            continue
 
-        if f_int < frame_start or f_int > frame_end:
-            break
+        f_int = max(start_frame, min(f_int, current_frame))
 
-        # API-sicherer find_frame-Call
+        marker = None
         try:
             marker = markers.find_frame(f_int)
         except Exception as e:
-            logger.debug(f"[Backward][find_frame] {f_int} → {e}")
-            marker = None
+            logger.debug(f"[MarkerPositions] find_frame({frame}) → {e}")
+            continue
 
-        if not marker:
-            # Wir brechen bei erstem Loch ab → Rückwärts sicher
-            break
-
-        x, y = float(marker.co[0]), float(marker.co[1])
-        positions.append((f_int, (x, y)))
-
-    # Chronologisch aufbereiten (ansteigend)
-    positions.reverse()
+        if marker:
+            positions.append((f_int, marker.co.copy()))
     return positions
