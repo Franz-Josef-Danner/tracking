@@ -158,7 +158,7 @@ def get_from_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -
     # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
     for track in selected_tracks:
-        positions = get_positions(track, current_frame, max_frames=max_frames)
+        positions = get_positions(track, current_frame, max_frames)
         if len(positions) >= 2:
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
     if not marker_positions:
