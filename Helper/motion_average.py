@@ -251,7 +251,7 @@ def get_from_selected_tracks(
         scene["kaiserlich_scale_thresh_min"] = (rel_var_mean) * 0.00024
         scene["kaiserlich_rot_scale_thresh_rot"] = (((dx_var_mean * 0.0036) + (dy_var_mean * 0.0067)) / 2)
         scene["kaiserlich_rot_scale_thresh_scale"] =  (rel_var_mean) * 0.00018
-        scene["kaiserlich_perspective_thresh"] = (global_p_dev_accum_mean) * 0.026
+        scene["kaiserlich_perspective_thresh"] = (global_p_dev_accum_mean) * 0.046
 
 
     except Exception:
