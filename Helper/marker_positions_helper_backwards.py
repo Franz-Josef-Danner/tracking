@@ -7,16 +7,16 @@ def get_positions_backward(track: 'bpy.types.MovieTrackingTrack', current_frame:
     markers = track.markers
     positions: list[tuple[int, any]] = []
 
-    start_frame = current_frame - (max_frames - 1)
+    end_frame = current_frame + (max_frames - 1)
 
-    for frame in range(current_frame, start_frame - 1, -1):
+    for frame in range(current_frame, end_frame + 1):
 
         try:
             f_int = int(round(frame))
         except Exception:
             continue
 
-        f_int = max(start_frame, min(f_int, current_frame))
+        f_int = min(end_frame, max(f_int, current_frame))
 
         marker = None
         try:
