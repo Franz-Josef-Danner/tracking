@@ -139,14 +139,15 @@ def get_from_selected_tracks_backwards(
         return
 
     scene = context.scene
-    cf = scene.frame_current
+    # Sicherstellen, dass Frame IMMER int ist
+    cf = int(scene.frame_current)
 
     marker_positions = {}
     for tr in tracks:
         # Sicherstellen, dass Frame immer INT ist
-        cf_int = int(cf)
-        pos = get_positions(tr, cf_int, max_frames=max_frames)
-        pos = [(int(f), (x, y)) for f, (x, y) in pos]
+        # Frame ist garantiert INT → direkte Verwendung
+        pos = get_positions(tr, cf, max_frames=max_frames)
+        pos = [(int(f), (float(x), float(y))) for f, (x, y) in pos]
         if len(pos) >= 2:
             marker_positions[tr.name] = [(x,y) for _,(x,y) in pos]
 
@@ -183,10 +184,10 @@ def get_from_selected_tracks_backwards(
             global_model = "Perspective"
 
         for tr in tracks:
-            cf_int = int(cf)
-            local_positions = get_positions(tr, cf_int, max_frames=max_frames)
+            # Frame unverändert INT
+            local_positions = get_positions(tr, cf, max_frames=max_frames)
             # Frame-Cast → int
-            local_positions = [(int(f), (x, y)) for f, (x, y) in local_positions]
+            local_positions = [(int(f), (float(x), float(y))) for f, (x, y) in local_positions]
             pts = [(x, y) for _, (x, y) in local_positions]
 
             if len(pts) < 2: continue
