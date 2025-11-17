@@ -210,13 +210,41 @@ def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: i
         dy_var_mean = sum(dy_var_accum) / len(dy_var_accum) if dy_var_accum else 0.0
         rel_var_mean = sum(rel_var_accum) / len(rel_var_accum) if rel_var_accum else 0.0
 
-        scene["kaiserlich_rot_thresh_x"] = (dx_var_mean / 250) * 100000
-        scene["kaiserlich_rot_thresh_y"] = (dy_var_mean / 250) * 100000
-        scene["kaiserlich_scale_thresh_max"] = (rel_var_mean / 1000) * 100000
-        scene["kaiserlich_scale_thresh_min"] = (rel_var_mean / 500) * 100000
-        scene["kaiserlich_rot_scale_thresh_rot"] = (((dx_var_mean / 250) + (dy_var_mean / 250)) / 2) * 100000
-        scene["kaiserlich_rot_scale_thresh_scale"] =  (rel_var_mean / 750) * 100000
-        scene["kaiserlich_perspective_thresh"] = (global_p_dev_accum_mean / 10) * 1000000
+        # --- Adaptive Threshold Stabilisierung (Backward-Mode)
+        MIN_ROT = 0.0005
+        MIN_SCALE = 0.0010
+        MIN_PERSPECTIVE = 0.0001
+        STABILITY_FACTOR = 0.2  # max 20% Änderung pro Schritt
+
+        def _clamp_adapt(prev, new, min_val):
+            if prev is None:
+                return max(new, min_val)
+            # Hysterese: begrenze Änderungsrate
+            delta = prev * STABILITY_FACTOR
+            return max(min(prev + delta, new), max(prev - delta, min_val))
+
+        # aktuelle Szene-Thresholds
+        rot_prev = getattr(scene, "kaiserlich_rot_thresh_x", MIN_ROT)
+        scale_prev = getattr(scene, "kaiserlich_scale_thresh_max", MIN_SCALE)
+        persp_prev = getattr(scene, "kaiserlich_perspective_thresh", MIN_PERSPECTIVE)
+
+        # neue Vorschlagswerte aus Varianzen
+        rot_new = max(dx_var_mean, dy_var_mean)
+        scale_new = rel_var_mean
+        persp_new = global_p_dev_accum_mean
+
+        # stabilisierte Thresholds
+        scene["kaiserlich_rot_thresh_x"] = _clamp_adapt(rot_prev, rot_new, MIN_ROT)
+        scene["kaiserlich_rot_thresh_y"] = scene["kaiserlich_rot_thresh_x"]
+        scene["kaiserlich_scale_thresh_max"] = _clamp_adapt(scale_prev, scale_new, MIN_SCALE)
+        scene["kaiserlich_rot_scale_thresh_rot"] = scene["kaiserlich_rot_thresh_x"]
+        scene["kaiserlich_rot_scale_thresh_scale"] = scene["kaiserlich_scale_thresh_max"]
+        scene["kaiserlich_perspective_thresh"] = _clamp_adapt(persp_prev, persp_new, MIN_PERSPECTIVE)
+
+        print(f"[STABILIZED] Rot={scene['kaiserlich_rot_thresh_x']:.6f} "
+            f"Scale={scene['kaiserlich_scale_thresh_max']:.6f} "
+            f"Persp={scene['kaiserlich_perspective_thresh']:.6f}")
+
 
 
     except Exception:
