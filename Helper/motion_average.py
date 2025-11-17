@@ -79,6 +79,7 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     dx_var_mean = sum(dx_var_accum) / len(dx_var_accum)
     dy_var_mean = sum(dy_var_accum) / len(dy_var_accum)
     rel_var_mean = sum(rel_var_accum) / len(rel_var_accum)
+    print(f"[MotionModel][AVG10] dx={dx_var_mean:.6f} dy={dy_var_mean:.6f} rel={rel_var_mean:.6f}")
 
     # Klassifikation ohne Veränderung
     if (
@@ -171,12 +172,9 @@ def get_from_selected_tracks(
     if clip is None:
         return
 
-    # Neue Auswahlstrategie: nur Tracks mit aktiven Markern in den relevanten Frames
     scene = context.scene
     current_frame = scene.frame_current
-
-    default_frames = max_frames if (max_frames is not None and max_frames > 0) else 5
-    frames_per_track = _resolve_frames_per_track(scene, default_frames)
+    frames_per_track = _resolve_frames_per_track(scene, max_frames if (max_frames is not None and max_frames > 0) else 5)
 
     candidate_tracks = []
     for track in clip.tracking.tracks:
@@ -187,7 +185,7 @@ def get_from_selected_tracks(
     if candidate_tracks:
         selected_tracks = candidate_tracks
     else:
-        # Minimaler Fallback: bisherige Logik
+        # Fallback: bisherige Logik
         selected_tracks = [t for t in clip.tracking.tracks if t.select]
         if not selected_tracks and clip.tracking.tracks.active:
             selected_tracks = [clip.tracking.tracks.active]
@@ -198,14 +196,18 @@ def get_from_selected_tracks(
     scene = context.scene
     current_frame = scene.frame_current
 
-    # Frames-per-Track bestimmen
+    # Frames-per-Track aus Szene beziehen (Fallback: max_frames oder 5)
     default_frames = max_frames if (max_frames is not None and max_frames > 0) else 5
     frames_per_track = _resolve_frames_per_track(scene, default_frames)
 
-    # Markerpositionen sammeln
+    # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
     for track in selected_tracks:
-        positions = get_positions(track, current_frame, frames_per_track)
+        positions = get_positions_backward(
+            track,
+            current_frame,
+            max_frames=frames_per_track,
+        )
         if len(positions) >= 2:
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
     if not marker_positions:
@@ -237,6 +239,7 @@ def get_from_selected_tracks(
         global_p_dev_accum.append(global_p_dev)
         if len(global_p_dev_accum) > MAX_HISTORY: global_p_dev_accum.pop(0)
         global_p_dev_accum_mean = sum(global_p_dev_accum) / len(global_p_dev_accum)
+        print(f"[Perspective][AVG10] global_p_dev={global_p_dev_accum_mean:.6f}")
 
         dx_var_mean = sum(dx_var_accum) / len(dx_var_accum) if dx_var_accum else 0.0
         dy_var_mean = sum(dy_var_accum) / len(dy_var_accum) if dy_var_accum else 0.0
@@ -246,9 +249,9 @@ def get_from_selected_tracks(
         scene["kaiserlich_rot_thresh_y"] = (dy_var_mean / 500)
         scene["kaiserlich_scale_thresh_max"] = (rel_var_mean / 2000)
         scene["kaiserlich_scale_thresh_min"] = (rel_var_mean / 1000)
-        scene["kaiserlich_rot_scale_thresh_rot"] = (((dx_var_mean / 500) + (dy_var_mean / 250)) / 2)
-        scene["kaiserlich_rot_scale_thresh_scale"] =  (rel_var_mean / 1500)
-        scene["kaiserlich_perspective_thresh"] = min(1000, (global_p_dev_accum_mean / 100))
+        scene["kaiserlich_rot_scale_thresh_rot"] = (((dx_var_mean / 250) + (dy_var_mean / 250)) / 2)
+        scene["kaiserlich_rot_scale_thresh_scale"] =  (rel_var_mean / 750)
+        scene["kaiserlich_perspective_thresh"] = min(1000, (global_p_dev_accum_mean / 10))
 
 
     except Exception:
