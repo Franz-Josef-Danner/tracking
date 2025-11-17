@@ -17,7 +17,7 @@ global_p_dev_accum = []
 MAX_HISTORY = 10
 
 
-def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
+def _evaluate_motion_model_pairwise_backwards(all_positions: list[tuple[float, float]],
                                     thresh_rot: float = 0.002,
                                     thresh_scale: float = 0.005,
                                     thresh_rot_scale_rot: float = 0.002,
@@ -27,18 +27,19 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     if len(all_positions) < 2:
         return "Loc"
 
-    # all_positions enthält rückwärts gesampelte Daten → erst normalisieren:
-    positions_bw = list(reversed(all_positions))
-
+    # BACKWARD-Variante: von hinten nach vorne auswerten
     avg_x_values = []
     avg_y_values = []
     rel_distances = []
 
-    for i in range(len(positions_bw) - 1):
-        (x1, y1), (x2, y2) = positions_bw[i], positions_bw[i + 1]
+    for i in range(len(all_positions) - 1, 0, -1):
+        (x1, y1) = all_positions[i]      # aktueller (späterer) Frame
+        (x2, y2) = all_positions[i - 1]  # vorheriger Frame in der Zeit
+
         avg_x_values.append((x1 + x2) / 2.0)
         avg_y_values.append((y1 + y2) / 2.0)
         rel_distances.append((abs(x1 - x2) + abs(y1 - y2)) / 2.0)
+
 
 
     if not rel_distances:
@@ -79,7 +80,7 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
 # Perspective-Erkennung (Mittelpunktanalyse)
 # ==========================================================
 
-def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, float]]],
+def _detect_perspective_motion_backwards(marker_positions: dict[str, list[tuple[float, float]]],
                                perspective_thresh: float = 0.002
                                ) -> tuple[str | None, float, dict[str, float]]:
     """
@@ -185,7 +186,7 @@ def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: i
             mean_y = sum(y for _, y in pts) / len(pts)
             all_positions.append((mean_x, mean_y))
 
-        global_model = _evaluate_motion_model_pairwise(
+        global_model = _evaluate_motion_model_pairwise_backwards(
             all_positions,
             getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
             getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
@@ -194,7 +195,7 @@ def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: i
         )
 
         # --- 2) Perspective global & per Marker einmalig berechnen ---
-        _, global_p_dev, per_marker_dev = _detect_perspective_motion(
+        _, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
             marker_positions,
             getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         )
