@@ -74,8 +74,19 @@ def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max
     # For each frame we try to find an exact marker.  If none exists,
     # ``find_frame`` returns ``None`` and we skip that frame.
     for frame in range(start_frame, current_frame + 1):
-        marker = markers.find_frame(frame, exact=True)
-        if marker is None:
+        # Safety: ensure frame is always int
+        try:
+            f_int = int(round(frame))
+        except Exception:
             continue
-        positions.append((frame, marker.co.copy()))
+
+        marker = None
+        try:
+            marker = markers.find_frame(f_int, exact=True)
+        except Exception as e:
+            logger.debug(f"[MarkerPositions] find_frame({frame}) → {e}")
+            continue
+
+        if marker:
+            positions.append((f_int, marker.co.copy()))
     return positions
