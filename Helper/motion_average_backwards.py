@@ -247,7 +247,7 @@ def get_from_selected_tracks_backwards(
 
         scene["kaiserlich_rot_thresh_x"] = 500 - (((dx_var_mean) * 0.0036) * 100000)
         scene["kaiserlich_rot_thresh_y"] = 800 - (((dy_var_mean) * 0.0067) * 100000)
-        scene["kaiserlich_scale_thresh_max"] = 30 - (((rel_var_mean) * 0.00012) * 100000)
+        scene["kaiserlich_scale_thresh_max"] = 40 - (((rel_var_mean) * 0.00012) * 100000)
         scene["kaiserlich_scale_thresh_min"] = 10 - (((rel_var_mean) * 0.00024) * 100000)
         scene["kaiserlich_rot_scale_thresh_rot"] = 800 - ((((dx_var_mean * 0.0036) + (dy_var_mean * 0.0067)) / 2) * 100000)
         scene["kaiserlich_rot_scale_thresh_scale"] =  20 - (((rel_var_mean) * 0.00018) * 100000)
