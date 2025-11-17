@@ -34,12 +34,13 @@ def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max
 def get_positions_backward(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max_frames: int = 5):
 
     markers = track.markers
+    print(f"Getting positions backward for track {track.name} from frame {current_frame} going back {max_frames} frames")
     positions: list[tuple[int, any]] = []
-
+    print(f"Markers available: {[marker.frame for marker in markers]}")
     start_frame = current_frame - (max_frames + 1)
-
+    print(f"Calculated start frame: {start_frame}")
     for frame in range(start_frame, current_frame - 1):
-
+        print(f"Checking frame: {frame}")
         try:
             f_int = int(round(frame))
         except Exception:
