@@ -145,7 +145,7 @@ def _resolve_frames_per_track(scene: bpy.types.Scene, fallback: int = 5) -> int:
     return value_int
 
 
-def apply_formula_on_selected_tracks_backwards(
+def apply_formula_on_selected_tracks(
     context: 'bpy.types.Context',
     max_frames: int | None = None,
 ):
@@ -170,7 +170,7 @@ def apply_formula_on_selected_tracks_backwards(
     # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
     for track in selected_tracks:
-        positions = get_positions_backward(
+        positions = get_positions(
             track,
             current_frame,
             max_frames=frames_per_track,
@@ -187,7 +187,7 @@ def apply_formula_on_selected_tracks_backwards(
         mean_y = sum(y for _, y in pts) / len(pts)
         all_positions.append((mean_x, mean_y))
 
-    global_model = _evaluate_motion_model_pairwise_backwards(
+    global_model = _evaluate_motion_model_pairwise(
         all_positions,
         getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 1000000,
         getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / 1000000,
@@ -196,7 +196,7 @@ def apply_formula_on_selected_tracks_backwards(
     )
 
     # --- 2) Perspective global & per Marker einmalig berechnen ---
-    _, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
+    _, global_p_dev, per_marker_dev = _detect_perspective_motion(
         marker_positions,
         perspective_thresh=getattr(scene, "kaiserlich_perspective_thresh", 0.002) / 1000000
     )
@@ -206,7 +206,7 @@ def apply_formula_on_selected_tracks_backwards(
 
     # --- 3) Pro Track anwenden (Priorität: Perspective > LocRotScale > LocScale > LocRot > Loc) ---
     for track in selected_tracks:
-        positions = get_positions_backward(
+        positions = get_positions(
             track,
             current_frame,
             max_frames=frames_per_track,
@@ -220,7 +220,7 @@ def apply_formula_on_selected_tracks_backwards(
             motion_model = "Perspective"
         else:
             # Pairwise für individuellen Marker
-            individual_model = _evaluate_motion_model_pairwise_backwards(
+            individual_model = _evaluate_motion_model_pairwise(
                 [(x, y) for _, (x, y) in positions],
                 getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 1000000,
                 getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / 1000000,
