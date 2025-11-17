@@ -192,6 +192,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         except Exception:
             pass
 
+        bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
 
         print("[MasterCycle] --- Prozess abgeschlossen ---")
         return {'FINISHED'}
