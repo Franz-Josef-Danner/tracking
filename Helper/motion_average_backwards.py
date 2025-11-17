@@ -4,7 +4,7 @@ import bpy
 from typing import List, Tuple
 from math import fsum
 
-from .marker_positions_helper import get_positions
+from .marker_positions_helper import get_positions_backward
 from .motion_model_helper import apply_motion_model
 
 # ==========================================================
@@ -148,7 +148,7 @@ def get_from_selected_tracks_backwards(
     for tr in tracks:
         # Sicherstellen, dass Frame immer INT ist
         # Frame ist garantiert INT → direkte Verwendung
-        pos = get_positions(tr, cf, max_frames=max_frames)
+        pos = get_positions_backward(tr, cf, max_frames=max_frames)
         pos = [(int(f), (float(x), float(y))) for f, (x, y) in pos]
         if len(pos) >= 2:
             marker_positions[tr.name] = [(x,y) for _,(x,y) in pos]
@@ -187,7 +187,7 @@ def get_from_selected_tracks_backwards(
 
         for tr in tracks:
             # Frame unverändert INT
-            local_positions = get_positions(tr, cf, max_frames=max_frames)
+            local_positions = get_positions_backward(tr, cf, max_frames=max_frames)
             # Frame-Cast → int
             local_positions = [(int(f), (float(x), float(y))) for f, (x, y) in local_positions]
             pts = [(x, y) for _, (x, y) in local_positions]

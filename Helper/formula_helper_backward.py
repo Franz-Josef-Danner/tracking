@@ -5,7 +5,7 @@ import bpy
 from typing import List, Tuple
 import math
 
-from .marker_positions_helper import get_positions
+from .marker_positions_helper import get_positions_forward
 from .motion_model_helper import apply_motion_model
 
 
@@ -136,7 +136,7 @@ def apply_formula_on_selected_tracks_backwards(
 
     marker_positions = {}
     for tr in tracks:
-        pos = get_positions(tr, current_frame, max_frames=max_frames)
+        pos = get_positions_forward(tr, current_frame, max_frames=max_frames)
         # Frame-Cast → int
         pos = [(int(f), (float(x), float(y))) for f, (x, y) in pos]
         if len(pos) >= 2:
@@ -171,7 +171,7 @@ def apply_formula_on_selected_tracks_backwards(
 
         # pro Marker anwenden
         for tr in tracks:
-            pos = get_positions(tr, current_frame, max_frames=max_frames)
+            pos = get_positions_forward(tr, current_frame, max_frames=max_frames)
             pos = [(int(f), (float(x), float(y))) for f, (x, y) in pos]
             if len(pos) < 2:
                 continue

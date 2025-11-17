@@ -82,11 +82,57 @@ def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max
 
         marker = None
         try:
-            marker = markers.find_frame(f_int, exact=True)
+            marker = markers.find_frame(f_int)
         except Exception as e:
             logger.debug(f"[MarkerPositions] find_frame({frame}) → {e}")
             continue
 
         if marker:
             positions.append((f_int, marker.co.copy()))
+    return positions
+
+def get_positions_backward(
+    track: 'bpy.types.MovieTrackingTrack',
+    current_frame: int,
+    max_frames: int = 5
+):
+    """
+    Sammelt bis zu max_frames Markerpositionen rückwärts ab current_frame.
+    Robust gegen Frame-Lücken + API sicher (int find_frame).
+    """
+    markers = track.markers
+    positions: list[tuple[int, tuple[float, float]]] = []
+
+    # Sicherheits-Casting
+    cf = int(round(current_frame))
+
+    clip = bpy.context.edit_movieclip or bpy.context.scene.movieclip
+    if not clip:
+        return positions
+
+    frame_start = int(getattr(clip, "frame_start", cf))
+    frame_end = int(getattr(clip, "frame_end", cf))
+
+    for i in range(max_frames):
+        f = cf - i
+        if f < frame_start or f > frame_end:
+            break
+
+        f_int = int(f)
+        try:
+            marker = markers.find_frame(f_int)
+        except TypeError:
+            marker = markers.find_frame(int(round(f_int)))
+        except Exception:
+            marker = None
+
+        if not marker:
+            # Wir brechen bei erstem Loch ab → Rückwärts sicher
+            break
+
+        x, y = float(marker.co[0]), float(marker.co[1])
+        positions.append((f_int, (x, y)))
+
+    # Chronologisch aufbereiten (ansteigend)
+    positions.reverse()
     return positions
