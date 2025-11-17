@@ -96,57 +96,57 @@ def register():
     bpy.types.Scene.kaiserlich_rot_thresh_x = bpy.props.FloatProperty(
         name="ΔX Threshold",
         description="Minimum ΔX difference required to detect rotation",
-        default=250,
+        default=50,
         min=1,
-        max=500,
+        max=100,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_thresh_y = bpy.props.FloatProperty(
         name="ΔY Threshold",
         description="Minimum ΔY difference required to detect rotation",
-        default=400,
+        default=50,
         min=1,
-        max=800,
+        max=100,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_scale_thresh_min = bpy.props.FloatProperty(
         name="Min Scale Δ",
         description="Minimum distance change required to detect scaling",
-        default=20,
+        default=50,
         min=1,
-        max=30,
+        max=100,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_scale_thresh_max = bpy.props.FloatProperty(
         name="Max Scale Δ",
         description="Maximum distance change before scaling is considered unstable",
-        default=5,
+        default=50,
         min=1,
-        max=10,
+        max=100,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_rot = bpy.props.FloatProperty(
         name="Rot+Scale ΔRot",
         description="Sensitivity for combined rotation and scaling (rotation component)",
-        default=100,
+        default=50,
         min=1,
-        max=800,
+        max=100,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_scale = bpy.props.FloatProperty(
         name="Rot+Scale ΔScale",
         description="Sensitivity for combined rotation and scaling (scale component)",
-        default=10,
+        default=50,
         min=1,
-        max=20,
+        max=100,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_perspective_thresh = bpy.props.FloatProperty(
         name="Perspective Δ",
         description="Sensitivity for perspective deviation (depth/parallax)",
-        default=500,
+        default=50,
         min=1,
-        max=1000,
+        max=100,
         subtype='FACTOR',
     )
     # --- Progress Display ---
