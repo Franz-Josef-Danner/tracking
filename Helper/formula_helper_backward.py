@@ -122,7 +122,39 @@ def _detect_perspective_motion_backwards(marker_positions: dict[str, list[tuple[
 # Hauptlogik – Hybrid-Auswertung + Perspective
 # ==========================================================
 
-def apply_formula_on_selected_tracks_backwards(context: 'bpy.types.Context', max_frames: int = 5):
+# Interner Helper: Frames-per-Track aus Szene lesen
+def _resolve_frames_per_track(scene: bpy.types.Scene, fallback: int = 5) -> int:
+    """
+    Liest die Anzahl an Frames, die pro Track rückwärts betrachtet werden sollen,
+    aus `scene.kaiserlich_frames_per_track` oder `scene["kaiserlich_frames_per_track"]`.
+    Fällt auf `fallback` zurück und erzwingt Minimum 2 Frames.
+    """
+    value = None
+    try:
+        if hasattr(scene, "kaiserlich_frames_per_track"):
+            value = getattr(scene, "kaiserlich_frames_per_track")
+        elif "kaiserlich_frames_per_track" in scene:
+            value = scene["kaiserlich_frames_per_track"]
+    except Exception:
+        value = None
+
+    if value is None:
+        value = fallback
+
+    try:
+        value_int = int(value)
+    except Exception:
+        value_int = fallback
+
+    if value_int < 2:
+        value_int = 2
+    return value_int
+
+
+def apply_formula_on_selected_tracks_backwards(
+    context: 'bpy.types.Context',
+    max_frames: int | None = None,
+):
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
         return
@@ -137,10 +169,18 @@ def apply_formula_on_selected_tracks_backwards(context: 'bpy.types.Context', max
     scene = context.scene
     current_frame = scene.frame_current
 
+    # Frames-per-Track aus Szene beziehen (Fallback: max_frames oder 5)
+    default_frames = max_frames if (max_frames is not None and max_frames > 0) else 5
+    frames_per_track = _resolve_frames_per_track(scene, default_frames)
+
     # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
     for track in selected_tracks:
-        positions = get_positions_backward(track, current_frame, max_frames=max_frames)
+        positions = get_positions_backward(
+            track,
+            current_frame,
+            max_frames=frames_per_track,
+        )
         if len(positions) >= 2:
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
     if not marker_positions:
@@ -172,7 +212,11 @@ def apply_formula_on_selected_tracks_backwards(context: 'bpy.types.Context', max
 
     # --- 3) Pro Track anwenden (Priorität: Perspective > LocRotScale > LocScale > LocRot > Loc) ---
     for track in selected_tracks:
-        positions = get_positions_backward(track, current_frame, max_frames=max_frames)
+        positions = get_positions_backward(
+            track,
+            current_frame,
+            max_frames=frames_per_track,
+        )
         if len(positions) < 2:
             continue
 
