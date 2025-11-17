@@ -144,7 +144,7 @@ def register():
     bpy.types.Scene.kaiserlich_perspective_thresh = bpy.props.FloatProperty(
         name="Perspective Δ",
         description="Sensitivity for perspective deviation (depth/parallax)",
-        default=50,
+        default=500,
         min=1,
         max=1000,
         subtype='FACTOR',
