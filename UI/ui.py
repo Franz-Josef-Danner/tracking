@@ -146,7 +146,7 @@ def register():
         description="Sensitivity for perspective deviation (depth/parallax)",
         default=20,
         min=0,
-        max=40,
+        max=50,
         subtype='FACTOR',
     )
     # --- Progress Display ---
