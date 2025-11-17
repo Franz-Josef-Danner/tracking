@@ -245,12 +245,12 @@ def get_from_selected_tracks_backwards(
         dy_var_mean = sum(dy_var_accum) / len(dy_var_accum) if dy_var_accum else 0.0
         rel_var_mean = sum(rel_var_accum) / len(rel_var_accum) if rel_var_accum else 0.0
 
-        scene["kaiserlich_rot_thresh_x"] = 5 - ((dx_var_mean * 0.0036) * 1000)
+        scene["kaiserlich_rot_thresh_x"] = 4 - ((dx_var_mean * 0.0036) * 1100)
         scene["kaiserlich_rot_thresh_y"] = 5 - ((dy_var_mean * 0.0067) * 1000)
         scene["kaiserlich_scale_thresh_min"] = 2 - ((rel_var_mean * 0.00024) * 10000)
-        scene["kaiserlich_scale_thresh_max"] = 9 - ((rel_var_mean * 0.00012) * 100000)
-        scene["kaiserlich_rot_scale_thresh_rot"] = 5 - ((((dx_var_mean * 0.0036) + (dy_var_mean * 0.0067)) / 2) * 1000)
-        scene["kaiserlich_rot_scale_thresh_scale"] =  1 - ((rel_var_mean * 0.00018) * 1000)
+        scene["kaiserlich_scale_thresh_max"] = 8 - ((rel_var_mean * 0.00012) * 103500)
+        scene["kaiserlich_rot_scale_thresh_rot"] = 5 - ((((dx_var_mean * 0.0036) + (dy_var_mean * 0.0067)) / 2) * 1150)
+        scene["kaiserlich_rot_scale_thresh_scale"] =  6 - ((rel_var_mean * 0.00018) * 50500)
         scene["kaiserlich_perspective_thresh"] = 30 - ((global_p_dev_accum_mean * 4) * 100)
 
     except Exception:
