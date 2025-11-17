@@ -172,13 +172,33 @@ def get_from_selected_tracks(
     if clip is None:
         return
 
-    selected_tracks = [t for t in clip.tracking.tracks if t.select]
-    if not selected_tracks:
-        active_track = clip.tracking.tracks.active
-        if active_track:
-            selected_tracks = [active_track]
+    # Neue Auswahlstrategie:
+    # 1) Tracks mit aktiven Markern im betrachteten Framefenster
+    # 2) Falls gar nichts aktiv → aktiver oder selektierter Track als Fallback
+
+    scene = context.scene
+    current_frame = scene.frame_current
+    frames_per_track = _resolve_frames_per_track(scene, max_frames if (max_frames is not None and max_frames > 0) else 5)
+
+    candidate_tracks = []
+    for track in clip.tracking.tracks:
+        # Markerpositionen prüfen
+        pos = get_positions_backward(track, current_frame, max_frames=frames_per_track)
+        if len(pos) >= 2:
+            candidate_tracks.append(track)
+
+    # Wenn es aktive Tracks gibt → perfekt
+    if candidate_tracks:
+        selected_tracks = candidate_tracks
+    else:
+        # Fallback: bisherige Logik
+        selected_tracks = [t for t in clip.tracking.tracks if t.select]
+        if not selected_tracks and clip.tracking.tracks.active:
+            selected_tracks = [clip.tracking.tracks.active]
+
     if not selected_tracks:
         return
+
     scene = context.scene
     current_frame = scene.frame_current
 
