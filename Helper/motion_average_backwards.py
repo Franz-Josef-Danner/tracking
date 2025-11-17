@@ -216,7 +216,7 @@ def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: i
         scene["kaiserlich_scale_thresh_min"] = (rel_var_mean / 250) * 100000
         scene["kaiserlich_rot_scale_thresh_rot"] = (((dx_var_mean / 100) + (dy_var_mean / 250)) / 2) * 100000
         scene["kaiserlich_rot_scale_thresh_scale"] =  (rel_var_mean / 400) * 100000
-        scene["kaiserlich_perspective_thresh"] = (global_p_dev_accum_mean * 10) * 1000000
+        scene["kaiserlich_perspective_thresh"] = (global_p_dev_accum_mean * 10000) * 1000000
 
 
     except Exception:
