@@ -29,7 +29,7 @@ import bpy
 from typing import List, Tuple, Dict
 import math
 
-from .marker_positions_helper import get_positions
+from .marker_positions_helper import get_positions_backward
 
 # ==========================================================
 # Globale akkumulierte Werte
@@ -213,7 +213,7 @@ def get_from_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -
     # Markerpositionen sammeln (nur Marker mit Historie)
     marker_positions: Dict[str, List[tuple[float, float]]] = {}
     for track in selected_tracks:
-        positions = get_positions(track, current_frame, max_frames=max_frames)
+        positions = get_positions_backward(track, current_frame, max_frames=max_frames)
         if len(positions) >= 2:
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
 

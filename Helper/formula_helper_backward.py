@@ -4,7 +4,7 @@ import bpy
 from typing import List, Tuple
 import math
 
-from .marker_positions_helper import get_positions
+from .marker_positions_helper import get_positions_backward
 from .motion_model_helper import apply_motion_model
 
 
@@ -140,7 +140,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
     for track in selected_tracks:
-        positions = get_positions(track, current_frame, max_frames=max_frames)
+        positions = get_positions_backward(track, current_frame, max_frames=max_frames)
         if len(positions) >= 2:
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
     if not marker_positions:
@@ -173,7 +173,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
 
         # --- 3) Pro Track anwenden (Priorität: Perspective > LocRotScale > LocScale > LocRot > Loc) ---
         for track in selected_tracks:
-            positions = get_positions(track, current_frame, max_frames=max_frames)
+            positions = get_positions_backward(track, current_frame, max_frames=max_frames)
             if len(positions) < 2:
                 continue
 
