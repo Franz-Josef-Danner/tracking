@@ -187,12 +187,6 @@ def _detect_perspective_motion_backwards(
 # Hauptlogik – Hybrid-Bewertung + Adaptive Schwellenwerte
 # ==========================================================
 def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: int = 5) -> None:
-    """
-    Führt globale Motion-Analyse aus:
-    - Hybrid Loc/Rot/Scale-Modell aus Marker-Mittelwerten
-    - Perspektiv-Analyse zur Tiefenindikation
-    - Dynamische Update der Schwellenwerte im Scene-State
-    """
 
     global global_p_dev_accum
 

@@ -121,8 +121,7 @@ def _detect_perspective_motion_backwards(marker_positions: dict[str, list[tuple[
 # Hauptlogik – Hybrid-Auswertung + Perspective
 # ==========================================================
 
-def apply_formula_on_selected_tracks_backwards(context: bpy.types.Context, max_frames: int = 5) -> None:
-    """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
+def apply_formula_on_selected_tracks_backwards(context: 'bpy.types.Context', max_frames: int = 5):
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
         return
