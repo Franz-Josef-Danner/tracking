@@ -4,7 +4,7 @@ import bpy
 from typing import List, Tuple
 import math
 
-from .marker_positions_helper import get_positions_backward
+from .marker_positions_helper_backwards import get_positions_backward
 from .motion_model_helper import apply_motion_model
 
 
