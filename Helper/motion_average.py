@@ -203,7 +203,7 @@ def get_from_selected_tracks(
     # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
     for track in selected_tracks:
-        positions = get_positions_backward(
+        positions = get_positions(
             track,
             current_frame,
             max_frames=frames_per_track,
