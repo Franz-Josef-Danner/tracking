@@ -141,6 +141,8 @@ def get_from_selected_tracks_backwards(
     scene = context.scene
     # Sicherstellen, dass Frame IMMER int ist
     cf = int(scene.frame_current)
+    scene.frame_current = cf
+    context.space_data.clip_user.frame_current = cf
 
     marker_positions = {}
     for tr in tracks:

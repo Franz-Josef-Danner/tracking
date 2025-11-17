@@ -140,7 +140,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         # Determine playhead start position
         self._reset_frame = int(scene.frame_current)
-        scene_current = self._reset_frame
+        scene_current = int(self._reset_frame)
         if scene_current < self._start_frame:
             self._current_frame = self._start_frame
         elif scene_current > self._end_frame:
@@ -149,8 +149,8 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             self._current_frame = scene_current
 
         # Set playhead
-        self._space.clip_user.frame_current = self._current_frame
-        scene.frame_current = self._current_frame
+        self._space.clip_user.frame_current = int(self._current_frame)
+        scene.frame_current = int(self._current_frame)
 
         # Initialize histories
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
@@ -257,11 +257,11 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                     pass
                 else:
                     # Frame-Kontexte für rückwärts Tracking
-                    f_now = self._current_frame
+                    f_now = int(self._current_frame)
 
-                    f_next  = f_now + 1
-                    f_next2 = f_now + 2
-                    f_next3 = f_now + 3
+                    f_next  = int(f_now) + 1
+                    f_next2 = int(f_now) + 2
+                    f_next3 = int(f_now) + 3
 
                     # Clip-Limits
                     if f_next > self._end_frame:  f_next = None
@@ -272,7 +272,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                         try:
                             correct_marker_positions_backward(
                                 scene,
-                                ref_names,          # NEU: identisch zu Forward
+                                ref_names,
                                 calibrate_tracks,
                                 f_now,
                                 f_next, f_next2, f_next3
@@ -315,17 +315,17 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         # Step backward
         scene = context.scene
-        if self._space.clip_user.frame_current == self._current_frame:
-            self._space.clip_user.frame_current = int(self._space.clip_user.frame_current) - 1
+        if int(self._space.clip_user.frame_current) == int(self._current_frame):
+            self._space.clip_user.frame_current = int(self._current_frame) - 1
 
-        if self._space.clip_user.frame_current < self._start_frame:
-            self._space.clip_user.frame_current = self._start_frame
+        if int(self._space.clip_user.frame_current) < int(self._start_frame):
+            self._space.clip_user.frame_current = int(self._start_frame)
 
-        scene.frame_current = self._space.clip_user.frame_current
-        self._current_frame = int(self._space.clip_user.frame_current)
+        scene.frame_current = int(self._space.clip_user.frame_current)
+        self._current_frame = int(scene.frame_current)
         self._frames_processed += 1
 
-        if self._current_frame <= self._start_frame:
+        if int(self._current_frame) <= int(self._start_frame):
             self._finish(context)
             return {"FINISHED"}
 
