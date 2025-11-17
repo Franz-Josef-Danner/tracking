@@ -163,16 +163,16 @@ def apply_formula_on_selected_tracks(
 
         global_model = _evaluate_motion_model_pairwise(
             all_positions,
-            getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
-            getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
-            getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002),
-            getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
+            getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 1000000,
+            getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / 1000000,
+            getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / 1000000,
+            getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / 1000000
         )
 
         # --- 2) Perspective global & per Marker einmalig berechnen ---
         _, global_p_dev, per_marker_dev = _detect_perspective_motion(
             marker_positions,
-            getattr(scene, "kaiserlich_perspective_thresh", 0.002)
+            getattr(scene, "kaiserlich_perspective_thresh", 0.002) / 1000000
         )
         perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002) / 1000000
         if global_p_dev > perspective_thresh:
