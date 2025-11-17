@@ -1,46 +1,48 @@
 # Helper.motion_average_backwards.py
 from __future__ import annotations
-
 import bpy
 from typing import List, Tuple
-import math
+from math import fsum
 
 from .marker_positions_helper import get_positions
+from .motion_model_helper import apply_motion_model
 
 # ==========================================================
 # Globale akkumulierte Werte
 # ==========================================================
-dx_var_accum = []
-dy_var_accum = []
-rel_var_accum = []
-global_p_dev_accum = []
+dx_var_accum: list[float] = []
+dy_var_accum: list[float] = []
+rel_var_accum: list[float] = []
+global_p_dev_accum: list[float] = []
 MAX_HISTORY = 10
 
 
-def _evaluate_motion_model_pairwise_backwards(all_positions: list[tuple[float, float]],
-                                    thresh_rot: float = 0.002,
-                                    thresh_scale: float = 0.005,
-                                    thresh_rot_scale_rot: float = 0.002,
-                                    thresh_rot_scale_scale: float = 0.005) -> str:
-    global dx_var_accum, dy_var_accum, rel_var_accum, MAX_HISTORY
+# ==========================================================
+# Motion-Model Analyse (Backward)
+# ==========================================================
+def _evaluate_motion_model_pairwise_backwards(
+    all_positions: list[tuple[float, float]],
+    thresh_rot: float,
+    thresh_scale: float,
+    thresh_rot_scale_rot: float,
+    thresh_rot_scale_scale: float
+) -> str:
 
     if len(all_positions) < 2:
         return "Loc"
 
-    # BACKWARD-Variante: von hinten nach vorne auswerten
+    # Reihenfolge umkehren
+    pts = list(reversed(all_positions))
+
     avg_x_values = []
     avg_y_values = []
     rel_distances = []
 
-    for i in range(len(all_positions) - 1, 0, -1):
-        (x1, y1) = all_positions[i]      # aktueller (späterer) Frame
-        (x2, y2) = all_positions[i - 1]  # vorheriger Frame in der Zeit
-
+    for i in range(len(pts) - 1):
+        (x1, y1), (x2, y2) = pts[i], pts[i + 1]
         avg_x_values.append((x1 + x2) / 2.0)
         avg_y_values.append((y1 + y2) / 2.0)
         rel_distances.append((abs(x1 - x2) + abs(y1 - y2)) / 2.0)
-
-
 
     if not rel_distances:
         return "Loc"
@@ -57,16 +59,12 @@ def _evaluate_motion_model_pairwise_backwards(all_positions: list[tuple[float, f
     if len(dy_var_accum) > MAX_HISTORY: dy_var_accum.pop(0)
     if len(rel_var_accum) > MAX_HISTORY: rel_var_accum.pop(0)
 
-    dx_var_mean = sum(dx_var_accum) / len(dx_var_accum)
-    dy_var_mean = sum(dy_var_accum) / len(dy_var_accum)
-    rel_var_mean = sum(rel_var_accum) / len(rel_var_accum)
-    print(f"[MotionModel][AVG10] dx={dx_var_mean:.6f} dy={dy_var_mean:.6f} rel={rel_var_mean:.6f}")
+    dx_avg = sum(dx_var_accum) / len(dx_var_accum)
+    dy_avg = sum(dy_var_accum) / len(dy_var_accum)
+    rel_avg = sum(rel_var_accum) / len(rel_var_accum)
+    print(f"[MotionModel][AVG10] dx={dx_avg:.6f} dy={dy_avg:.6f} rel={rel_avg:.6f}")
 
-    # Klassifikation ohne Veränderung
-    if (
-        rel_var > thresh_rot_scale_scale
-        and (dx_var > thresh_rot_scale_rot or dy_var > thresh_rot_scale_rot)
-    ):
+    if rel_var > thresh_rot_scale_scale and (dx_var > thresh_rot_scale_rot or dy_var > thresh_rot_scale_rot):
         return "LocRotScale"
     elif rel_var > thresh_scale:
         return "LocScale"
@@ -77,148 +75,125 @@ def _evaluate_motion_model_pairwise_backwards(all_positions: list[tuple[float, f
 
 
 # ==========================================================
-# Perspective-Erkennung (Mittelpunktanalyse)
+# Perspective-Erkennung (Backward) – richtungsneutral
 # ==========================================================
-
-def _detect_perspective_motion_backwards(marker_positions: dict[str, list[tuple[float, float]]],
-                               perspective_thresh: float = 0.002
-                               ) -> tuple[str | None, float, dict[str, float]]:
-    """
-    Bestimmt Mittelpunkt-Marker und prüft perspektivische Abweichung.
-    Rückgabe: (center_marker, max_dev, per_marker_dev_dict)
-    - center_marker: Name des Markers mit geringster Gesamtbewegung
-    - max_dev: größte Abweichung ggü. Mittelwert der mv_i über alle Marker
-    - per_marker_dev_dict: Abweichung je Marker (für per-Marker-Perspective)
-    """
+def _detect_perspective_motion_backwards(
+    marker_positions: dict[str, list[tuple[float, float]]],
+    perspective_thresh: float
+) -> tuple[str | None, float, dict[str, float]]:
 
     if not marker_positions:
         return None, 0.0, {}
 
-    # 1) Bewegungslänge pro Marker (mpd_i)
-    total_movement = {}
-    for name, positions in marker_positions.items():
-        if len(positions) < 2:
-            continue
-        mpf_values = [(x + y) / 2.0 for x, y in positions]
-        mpd_i = sum(abs(mpf_values[i+1] - mpf_values[i]) for i in range(len(mpf_values) - 1))
-        total_movement[name] = mpd_i
+    mp_rev = {name: list(reversed(pts)) for name, pts in marker_positions.items()}
 
-    if not total_movement:
+    # Bewegungssumme pro Marker
+    total_move = {}
+    for name, pts in mp_rev.items():
+        if len(pts) < 2: continue
+        means = [(x + y) / 2.0 for x, y in pts]
+        total_move[name] = sum(abs(means[i+1] - means[i]) for i in range(len(means)-1))
+
+    if not total_move:
         return None, 0.0, {}
 
-    # 2) Mittelpunkt = Marker mit geringster Bewegung
-    center_marker = min(total_movement, key=total_movement.get)
-    center_positions = marker_positions[center_marker]
-    mmx = sum(x for x, _ in center_positions) / len(center_positions)
-    mmy = sum(y for _, y in center_positions) / len(center_positions)
+    # Mittelpunktsteuerung
+    center = min(total_move, key=total_move.get)
+    center_pts = mp_rev[center]
+    mmx = fsum(x for x,_ in center_pts)/len(center_pts)
+    mmy = fsum(y for _,y in center_pts)/len(center_pts)
 
-    # 3) Abstände zum Mittelpunkt je Frame und deren Veränderung (mv_i)
     mv_values = {}
-    for name, positions in marker_positions.items():
-        if len(positions) < 2:
-            continue
-        # Rückwärts-Tracking: absolute Differenzen nutzen
-        # damit Vorzeichen-Flip keine Erkennung verhindert
-        md_list = [(abs(mmx - x) + abs(mmy - y)) / 2.0 for x, y in positions]
-        abs_dev = [abs(md_list[i] - md_list[i + 1]) for i in range(len(md_list) - 1)]
-        mv_i = sum(abs_dev)
-        mv_values[name] = mv_i
-        # Nur absolute Abweichung nutzen – robuste Perspektiv-Detektion
-        md_list = [(abs(mmx - x) + abs(mmy - y)) / 2.0 for x, y in positions]
-        mv_i = sum(abs(md_list[i+1] - md_list[i]) for i in range(len(md_list) - 1))
-        mv_values[name] = mv_i
+    for name, pts in mp_rev.items():
+        if len(pts) < 2: continue
+        dist = [(abs(mmx-x)+abs(mmy-y))/2.0 for x,y in pts]
+        mv = sum(abs(dist[i+1]-dist[i]) for i in range(len(dist)-1))
+        mv_values[name] = mv
 
     if not mv_values:
-        return center_marker, 0.0, {}
+        return center, 0.0, {}
 
-    mvth = sum(abs(v) for v in mv_values.values()) / len(mv_values)
+    mv_mean = sum(mv_values.values())/len(mv_values)
+    per_dev = {n: abs(v - mv_mean) for n,v in mv_values.items()}
+    max_dev = max(per_dev.values())
 
-    # 4) Abweichungen je Marker
-    per_marker_dev: dict[str, float] = {}
-    for name, mv_i in mv_values.items():
-        per_marker_dev[name] = abs(mv_i - mvth)
-
-    max_dev = max(per_marker_dev.values()) if per_marker_dev else 0.0
-    return center_marker, max_dev, per_marker_dev
-
-
-
-
+    return center, max_dev, per_dev
 
 
 # ==========================================================
-# Hauptlogik – Hybrid-Auswertung + Perspective
+# Hauptlogik – rückwärts Motion-Modeling
 # ==========================================================
+def apply_formula_on_selected_tracks_backwards(
+    context: bpy.types.Context,
+    max_frames: int = 10
+) -> None:
 
-def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: int = 10) -> None:
-    global dx_var_accum, dy_var_accum, rel_var_accum, global_p_dev_accum, MAX_HISTORY
-    """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
         return
 
-    selected_tracks = [t for t in clip.tracking.tracks if t.select]
-    if not selected_tracks:
-        active_track = clip.tracking.tracks.active
-        if active_track:
-            selected_tracks = [active_track]
-    if not selected_tracks:
-        return
-    scene = context.scene
-    current_frame = scene.frame_current
+    tracks = [t for t in clip.tracking.tracks if t.select] or \
+             [clip.tracking.tracks.active] or []
 
-    # --- Markerpositionen sammeln ---
-    marker_positions: dict[str, list[tuple[float, float]]] = {}
-    for track in selected_tracks:
-        positions = get_positions(track, current_frame, max_frames=max_frames)
-        # Rückwärts-Tracking: Reihenfolge der Positionen umkehren
-        if len(positions) >= 2:
-            pts = [(x, y) for _, (x, y) in positions]
-            pts = list(reversed(pts))
-            marker_positions[track.name] = pts
+    if not tracks:
+        return
+
+    scene = context.scene
+    cf = scene.frame_current
+
+    marker_positions = {}
+    for tr in tracks:
+        pos = get_positions(tr, cf, max_frames=max_frames)
+        if len(pos) >= 2:
+            marker_positions[tr.name] = [(x,y) for _,(x,y) in pos]
+
     if not marker_positions:
         return
 
     try:
-        # --- 1) Globales Modell aus Mittelwerten ---
-        all_positions = []
-        for pts in marker_positions.values():
-            mean_x = sum(x for x, _ in pts) / len(pts)
-            mean_y = sum(y for _, y in pts) / len(pts)
-            all_positions.append((mean_x, mean_y))
+        # Globalmodell
+        means = [(sum(x for x,_ in pts)/len(pts), sum(y for _,y in pts)/len(pts))
+                 for pts in marker_positions.values()]
 
         global_model = _evaluate_motion_model_pairwise_backwards(
-            all_positions,
-            getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
-            getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
-            getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002),
-            getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
+            means,
+            scene.kaiserlich_rot_thresh_x/100000.0,
+            scene.kaiserlich_scale_thresh_max/100000.0,
+            scene.kaiserlich_rot_scale_thresh_rot/100000.0,
+            scene.kaiserlich_rot_scale_thresh_scale/100000.0
         )
 
-        # --- 2) Perspective global & per Marker einmalig berechnen ---
-        _, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
+        _, g_dev, per_dev = _detect_perspective_motion_backwards(
             marker_positions,
-            getattr(scene, "kaiserlich_perspective_thresh", 0.002)
+            scene.kaiserlich_perspective_thresh/1000000.0
         )
-        perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
-        
-        global_p_dev_accum.append(global_p_dev)
+
+        global_p_dev_accum.append(g_dev)
         if len(global_p_dev_accum) > MAX_HISTORY: global_p_dev_accum.pop(0)
-        global_p_dev_accum_mean = sum(global_p_dev_accum) / len(global_p_dev_accum)
-        print(f"[Perspective][AVG10] global_p_dev={global_p_dev_accum_mean:.6f}")
+        gp_mean = sum(global_p_dev_accum)/len(global_p_dev_accum)
 
-        dx_var_mean = sum(dx_var_accum) / len(dx_var_accum) if dx_var_accum else 0.0
-        dy_var_mean = sum(dy_var_accum) / len(dy_var_accum) if dy_var_accum else 0.0
-        rel_var_mean = sum(rel_var_accum) / len(rel_var_accum) if rel_var_accum else 0.0
+        print(f"[Perspective][AVG10] global_p_dev={gp_mean:.6f}")
 
-        scene["kaiserlich_rot_thresh_x"] = (dx_var_mean / 250) * 100000
-        scene["kaiserlich_rot_thresh_y"] = (dy_var_mean / 250) * 100000
-        scene["kaiserlich_scale_thresh_max"] = (rel_var_mean / 1000) * 100000
-        scene["kaiserlich_scale_thresh_min"] = (rel_var_mean / 500) * 100000
-        scene["kaiserlich_rot_scale_thresh_rot"] = (((dx_var_mean / 250) + (dy_var_mean / 250)) / 2) * 100000
-        scene["kaiserlich_rot_scale_thresh_scale"] =  (rel_var_mean / 750) * 100000
-        scene["kaiserlich_perspective_thresh"] = (global_p_dev_accum_mean / 10) * 1000000
+        # Basis → Modell pro Track
+        p_thresh = scene.kaiserlich_perspective_thresh/1000000.0
+        if gp_mean > p_thresh:
+            global_model = "Perspective"
 
+        for tr in tracks:
+            pts = [(x,y) for _,(x,y) in get_positions(tr, cf, max_frames=max_frames)]
+            if len(pts) < 2: continue
 
-    except Exception:
-        pass
+            local = _evaluate_motion_model_pairwise_backwards(
+                pts,
+                scene.kaiserlich_rot_thresh_x/100000.0,
+                scene.kaiserlich_scale_thresh_max/100000.0,
+                scene.kaiserlich_rot_scale_thresh_rot/100000.0,
+                scene.kaiserlich_rot_scale_thresh_scale/100000.0
+            )
+
+            dev = per_dev.get(tr.name, 0.0)
+            model = "Perspective" if (global_model == "Perspective" or dev > p_thresh) else local
+            apply_motion_model(tr, pts, model)
+
+    except Exception as e:
+        print(f"[BackwardMotion][ERROR] {e}")
