@@ -53,7 +53,7 @@ MAX_HISTORY: int = 10  # Gleitfenstergröße
 #
 # Schwellenwerte werden kontinuierlich dynamisch gesetzt.
 # ==========================================================
-def _evaluate_motion_model_pairwise(
+def _evaluate_motion_model_pairwise_backwards(
     all_positions: list[tuple[float, float]],
     thresh_rot: float = 0.002,
     thresh_scale: float = 0.005,
@@ -131,7 +131,7 @@ def _evaluate_motion_model_pairwise(
 #   Marker weit vom Mittelpunkt bewegen sich stärker
 #   → Indikator für Perspektive
 # ==========================================================
-def _detect_perspective_motion(
+def _detect_perspective_motion_backwards(
     marker_positions: Dict[str, List[tuple[float, float]]],
     perspective_thresh: float = 0.002,
 ) -> tuple[str | None, float, Dict[str, float]]:
@@ -186,7 +186,7 @@ def _detect_perspective_motion(
 # ==========================================================
 # Hauptlogik – Hybrid-Bewertung + Adaptive Schwellenwerte
 # ==========================================================
-def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: int = 10) -> None:
+def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: int = 5) -> None:
     """
     Führt globale Motion-Analyse aus:
     - Hybrid Loc/Rot/Scale-Modell aus Marker-Mittelwerten
@@ -228,7 +228,7 @@ def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: i
             mean_y = sum(y for _, y in pts) / len(pts)
             all_positions.append((mean_x, mean_y))
 
-        _evaluate_motion_model_pairwise(
+        _evaluate_motion_model_pairwise_backwards(
             all_positions,
             getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
             getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
@@ -237,7 +237,7 @@ def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: i
         )
 
         # --- Perspektive bewerten ---
-        _, global_p_dev, per_marker_dev = _detect_perspective_motion(
+        _, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
             marker_positions,
             getattr(scene, "kaiserlich_perspective_thresh", 0.002),
         )
@@ -258,19 +258,12 @@ def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: i
 
         # Formel empirisch optimiert – nicht theoretisch “schön”
         scene["kaiserlich_rot_thresh_x"] = (dx_var_mean / 250) * 100000
-        print(f"Set kaiserlich_rot_thresh_x to {scene['kaiserlich_rot_thresh_x']}")
         scene["kaiserlich_rot_thresh_y"] = (dy_var_mean / 250) * 100000
-        print(f"Set kaiserlich_rot_thresh_y to {scene['kaiserlich_rot_thresh_y']}")
         scene["kaiserlich_scale_thresh_max"] = (rel_var_mean / 1000) * 100000
-        print(f"Set kaiserlich_scale_thresh_max to {scene['kaiserlich_scale_thresh_max']}")
         scene["kaiserlich_scale_thresh_min"] = (rel_var_mean / 500) * 100000
-        print(f"Set kaiserlich_scale_thresh_min to {scene['kaiserlich_scale_thresh_min']}")
         scene["kaiserlich_rot_scale_thresh_rot"] = (((dx_var_mean/250)+(dy_var_mean/250))/2)*100000
-        print(f"Set kaiserlich_rot_scale_thresh_rot to {scene['kaiserlich_rot_scale_thresh_rot']}")
         scene["kaiserlich_rot_scale_thresh_scale"] = (rel_var_mean / 750) * 100000
-        print(f"Set kaiserlich_rot_scale_thresh_scale to {scene['kaiserlich_rot_scale_thresh_scale']}")
         scene["kaiserlich_perspective_thresh"] = min(1000, (global_p_dev_accum_mean / 10) * 1000000)
-        print(f"Set kaiserlich_perspective_thresh to {scene['kaiserlich_perspective_thresh']}")
 
     except Exception as e:
         print(f"[MotionModel][ERROR] {e}")
