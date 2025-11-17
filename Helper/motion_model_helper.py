@@ -14,4 +14,4 @@ def apply_motion_model(track: 'bpy.types.MovieTrackingTrack',
         marker.co = (x, y)
 
     track.motion_model = motion_model
-    print (track.motion_model)
+    print(f"[MotionModel][APPLY] Track='{track.name}' -> Model={motion_model}")
