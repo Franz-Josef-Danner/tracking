@@ -96,17 +96,17 @@ def register():
     bpy.types.Scene.kaiserlich_rot_thresh_x = bpy.props.FloatProperty(
         name="ΔX Threshold",
         description="Minimum ΔX difference required to detect rotation",
-        default=1,
-        min=1,
-        max=2,
+        default=0.5,
+        min=0,
+        max=1,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_thresh_y = bpy.props.FloatProperty(
         name="ΔY Threshold",
         description="Minimum ΔY difference required to detect rotation",
-        default=1,
-        min=1,
-        max=2,
+        default=0.5,
+        min=0,
+        max=1,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_scale_thresh_min = bpy.props.FloatProperty(
