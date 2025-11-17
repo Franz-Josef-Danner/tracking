@@ -166,9 +166,9 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         # --- 2) Perspective global & per Marker einmalig berechnen ---
         _, global_p_dev, per_marker_dev = _detect_perspective_motion(
             marker_positions,
-            getattr(scene, "kaiserlich_perspective_thresh", 0.002) / 10000
+            getattr(scene, "kaiserlich_perspective_thresh", 0.002) / 1000
         )
-        perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002) / 10000
+        perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002) / 1000
         if global_p_dev > perspective_thresh:
             global_model = "Perspective"
 
