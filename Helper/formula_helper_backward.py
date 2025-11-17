@@ -13,7 +13,7 @@ from .motion_model_helper import apply_motion_model
 # Bewegungsmodell-Evaluierung (Loc, LocRot, LocScale, LocRotScale)
 # ==========================================================
 
-def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
+def _evaluate_motion_model_pairwise_backwards(all_positions: list[tuple[float, float]],
                                     thresh_rot: float = 0.002,
                                     thresh_scale: float = 0.005,
                                     thresh_rot_scale_rot: float = 0.002,
@@ -60,7 +60,7 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
 # Perspective-Erkennung (Mittelpunktanalyse)
 # ==========================================================
 
-def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, float]]],
+def _detect_perspective_motion_backwards(marker_positions: dict[str, list[tuple[float, float]]],
                                perspective_thresh: float = 0.002
                                ) -> tuple[str | None, float, dict[str, float]]:
     """
@@ -122,7 +122,7 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
 # Hauptlogik – Hybrid-Auswertung + Perspective
 # ==========================================================
 
-def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
+def apply_formula_on_selected_tracks_backwards(context: bpy.types.Context, max_frames: int = 10) -> None:
     """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
@@ -155,7 +155,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             mean_y = sum(y for _, y in pts) / len(pts)
             all_positions.append((mean_x, mean_y))
 
-        global_model = _evaluate_motion_model_pairwise(
+        global_model = _evaluate_motion_model_pairwise_backwards(
             all_positions,
             getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
             getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
@@ -164,7 +164,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         )
 
         # --- 2) Perspective global & per Marker einmalig berechnen ---
-        _, global_p_dev, per_marker_dev = _detect_perspective_motion(
+        _, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
             marker_positions,
             getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         )
@@ -184,7 +184,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
                 motion_model = "Perspective"
             else:
                 # Pairwise für individuellen Marker
-                individual_model = _evaluate_motion_model_pairwise(
+                individual_model = _evaluate_motion_model_pairwise_backwards(
                     [(x, y) for _, (x, y) in positions],
                     getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
                     getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
