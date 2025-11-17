@@ -123,7 +123,7 @@ def _detect_perspective_motion_backwards(
 # ==========================================================
 # Hauptlogik – rückwärts Motion-Modeling
 # ==========================================================
-def apply_formula_on_selected_tracks_backwards(
+def get_from_selected_tracks_backwards(
     context: bpy.types.Context,
     max_frames: int = 10
 ) -> None:
