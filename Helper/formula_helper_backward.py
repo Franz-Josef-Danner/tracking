@@ -113,16 +113,10 @@ def _detect_perspective_motion_backwards(marker_positions: dict[str, list[tuple[
     max_dev = max(per_marker_dev.values()) if per_marker_dev else 0.0
     return center_marker, max_dev, per_marker_dev
 
-
-
-
-
-
 # ==========================================================
 # Hauptlogik – Hybrid-Auswertung + Perspective
 # ==========================================================
 
-# Interner Helper: Frames-per-Track aus Szene lesen
 def _resolve_frames_per_track(scene: bpy.types.Scene, fallback: int = 5) -> int:
     """
     Liest die Anzahl an Frames, die pro Track rückwärts betrachtet werden sollen,
