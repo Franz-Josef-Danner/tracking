@@ -131,11 +131,14 @@ def apply_formula_on_selected_tracks_backwards(
         return
 
     scene = context.scene
-    current_frame = scene.frame_current
+    # Sicherstellen, dass Frame IMMER INT ist
+    current_frame = int(scene.frame_current)
 
     marker_positions = {}
     for tr in tracks:
         pos = get_positions(tr, current_frame, max_frames=max_frames)
+        # Frame-Cast → int
+        pos = [(int(f), (float(x), float(y))) for f, (x, y) in pos]
         if len(pos) >= 2:
             marker_positions[tr.name] = [(x, y) for _, (x, y) in pos]
 
@@ -168,9 +171,10 @@ def apply_formula_on_selected_tracks_backwards(
 
         # pro Marker anwenden
         for tr in tracks:
-            pos = get_positions(tr, current_frame, max_frames=max_frames)
-            if len(pos) < 2:
-                continue
+        pos = get_positions(tr, current_frame, max_frames=max_frames)
+        pos = [(int(f), (float(x), float(y))) for f, (x, y) in pos]
+        if len(pos) < 2:
+            continue
 
             local = _evaluate_motion_model_pairwise_backwards(
                 [(x,y) for _,(x,y) in pos],
