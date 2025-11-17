@@ -75,10 +75,15 @@ def get_positions(track: 'bpy.types.MovieTrackingTrack', current_frame: int, max
     # ``find_frame`` returns ``None`` and we skip that frame.
     for frame in range(start_frame, current_frame + 1):
         # Safety: ensure frame is always int
+        # HARTE Absicherung: Frame muss int sein
         try:
             f_int = int(round(frame))
         except Exception:
+            logger.debug(f"[MarkerPositions] Frame cast failed: {frame}")
             continue
+
+        # Bounds clamp: verhindert API-Fehler bei Out-of-Range Lookups
+        f_int = max(start_frame, min(f_int, current_frame))
 
         marker = None
         try:
@@ -114,16 +119,24 @@ def get_positions_backward(
     frame_end = int(getattr(clip, "frame_end", cf))
 
     for i in range(max_frames):
-        f = cf - i
-        if f < frame_start or f > frame_end:
+        # Nächster rückwärts Frame Lookup
+        f_float = cf - i
+
+        # Cast + Bounds clamp
+        try:
+            f_int = int(round(f_float))
+        except Exception:
+            logger.debug(f"[Backward][CastFail] {f_float}")
             break
 
-        f_int = int(f)
+        if f_int < frame_start or f_int > frame_end:
+            break
+
+        # API-sicherer find_frame-Call
         try:
             marker = markers.find_frame(f_int)
-        except TypeError:
-            marker = markers.find_frame(int(round(f_int)))
-        except Exception:
+        except Exception as e:
+            logger.debug(f"[Backward][find_frame] {f_int} → {e}")
             marker = None
 
         if not marker:
