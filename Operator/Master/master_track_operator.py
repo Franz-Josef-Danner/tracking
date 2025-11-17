@@ -195,8 +195,9 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # 2) Adaptive Formel
         # -----------------------------------------------
         try:
-            get_from_selected_tracks(context, max_frames=5)
-            apply_formula_on_selected_tracks(context, max_frames=5)
+            # Frames-per-track wird intern aus Scene gelesen
+            get_from_selected_tracks(context)
+            apply_formula_on_selected_tracks(context)
         except Exception:
             pass
         

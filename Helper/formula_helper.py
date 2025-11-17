@@ -121,7 +121,10 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
 # Hauptlogik – Hybrid-Auswertung + Perspective
 # ==========================================================
 
-def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
+def apply_formula_on_selected_tracks(
+    context: bpy.types.Context,
+    max_frames: int | None = None,
+) -> None:
     """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
@@ -137,10 +140,14 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     scene = context.scene
     current_frame = scene.frame_current
 
-    # --- Markerpositionen sammeln ---
+    # Frames-per-track (Scene)
+    default_frames = max_frames if (max_frames is not None and max_frames > 0) else 5
+    frames_per_track = _resolve_frames_per_track(scene, default_frames)
+
+    # Markerpositionen sammeln
     marker_positions: dict[str, list[tuple[float, float]]] = {}
     for track in selected_tracks:
-        positions = get_positions(track, current_frame, max_frames=max_frames)
+        positions = get_positions(track, current_frame, max_frames=frames_per_track)
         if len(positions) >= 2:
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
     if not marker_positions:
@@ -173,7 +180,11 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
 
         # --- 3) Pro Track anwenden (Priorität: Perspective > LocRotScale > LocScale > LocRot > Loc) ---
         for track in selected_tracks:
-            positions = get_positions(track, current_frame, max_frames=max_frames)
+            positions = get_positions(
+                track,
+                current_frame,
+                max_frames=frames_per_track,
+            )
             if len(positions) < 2:
                 continue
 
