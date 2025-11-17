@@ -99,7 +99,7 @@ def register():
         default=500,
         min=0.1,
         soft_min=1,
-        soft_max=1000,
+        soft_max=10000,
         precision=1,
         subtype='FACTOR',
     )
@@ -108,7 +108,7 @@ def register():
         description="Minimum ΔY difference required to detect rotation",
         default=500,
         min=0.1,
-        soft_max=1000,
+        soft_max=10000,
         precision=1,
         subtype='FACTOR',
     )
@@ -118,7 +118,7 @@ def register():
         default=500,
         min=0.1,
         soft_min=1,
-        soft_max=1000,
+        soft_max=10000,
         precision=1,
         subtype='FACTOR',
     )
@@ -128,7 +128,7 @@ def register():
         default=500,
         min=0.1,
         soft_min=1,
-        soft_max=1000,
+        soft_max=10000,
         precision=1,
         subtype='FACTOR',
     )
@@ -138,7 +138,7 @@ def register():
         default=500,
         min=0.1,
         soft_min=1,
-        soft_max=1000,
+        soft_max=10000,
         precision=1,
         subtype='FACTOR',
     )
@@ -148,7 +148,7 @@ def register():
         default=500,
         min=0.1,
         soft_min=1,
-        soft_max=1000,
+        soft_max=10000,
         precision=1,
         subtype='FACTOR',
     )
@@ -158,7 +158,7 @@ def register():
         default=50,
         min=0.1,
         soft_min=1,
-        soft_max=100,
+        soft_max=1000,
         precision=1,
         subtype='FACTOR',
     )
