@@ -112,9 +112,9 @@ def register():
     bpy.types.Scene.kaiserlich_scale_thresh_min = bpy.props.FloatProperty(
         name="Min Scale Δ",
         description="Minimum distance change required to detect scaling",
-        default=15,
+        default=20,
         min=1,
-        max=30,
+        max=40,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_scale_thresh_max = bpy.props.FloatProperty(
