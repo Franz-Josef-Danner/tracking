@@ -171,10 +171,10 @@ def apply_formula_on_selected_tracks_backwards(
 
         # pro Marker anwenden
         for tr in tracks:
-        pos = get_positions(tr, current_frame, max_frames=max_frames)
-        pos = [(int(f), (float(x), float(y))) for f, (x, y) in pos]
-        if len(pos) < 2:
-            continue
+            pos = get_positions(tr, current_frame, max_frames=max_frames)
+            pos = [(int(f), (float(x), float(y))) for f, (x, y) in pos]
+            if len(pos) < 2:
+                continue
 
             local = _evaluate_motion_model_pairwise_backwards(
                 [(x,y) for _,(x,y) in pos],
