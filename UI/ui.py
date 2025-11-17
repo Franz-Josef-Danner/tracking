@@ -98,7 +98,7 @@ def register():
         description="Minimum ΔX difference required to detect rotation",
         default=0.5,
         min=0,
-        max=1,
+        max=2,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_thresh_y = bpy.props.FloatProperty(
@@ -106,7 +106,7 @@ def register():
         description="Minimum ΔY difference required to detect rotation",
         default=0.5,
         min=0,
-        max=1,
+        max=2,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_scale_thresh_min = bpy.props.FloatProperty(
