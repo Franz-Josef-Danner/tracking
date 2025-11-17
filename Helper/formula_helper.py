@@ -5,8 +5,6 @@ from typing import List, Tuple
 import math
 
 from .marker_positions_helper import get_positions
-from .motion_model_helper import apply_motion_model
-
 
 # ==========================================================
 # Globale akkumulierte Werte
@@ -180,19 +178,18 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
         )
 
-        # --- 2) Perspective global & per Marker ---
+        # --- 2) Perspective global & per Marker einmalig berechnen ---
         _, global_p_dev, per_marker_dev = _detect_perspective_motion(
             marker_positions,
             getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         )
         perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
-
+        
         countP += 1
         global_p_dev_accum += global_p_dev
         global_p_dev_accum_mean = global_p_dev_accum / countP
         print(f"[Perspective][AVG] countP={countP} global_p_dev={global_p_dev_accum_mean:.6f}")
 
-        # --- 2.1 Schwellen dynamisch schreiben ---
         dx_var_mean = dx_var_accum / count if count else 0.0
         dy_var_mean = dy_var_accum / count if count else 0.0
         rel_var_mean = rel_var_accum / count if count else 0.0
@@ -204,27 +201,6 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         scene["kaiserlich_rot_scale_thresh_scale"] = (dx_var_mean + dy_var_mean) * 0.5
         scene["kaiserlich_perspective_thresh"] = global_p_dev_accum_mean
 
-        # --- 3) Pro Track Motion Model bestimmen & anwenden ---
-        for track in selected_tracks:
-            positions = get_positions(track, current_frame, max_frames=max_frames)
-            if len(positions) < 2:
-                continue
 
-            marker_p_dev = per_marker_dev.get(track.name, 0.0)
-
-            if global_p_dev > perspective_thresh or marker_p_dev > perspective_thresh:
-                motion_model = "Perspective"
-            else:
-                individual_model = _evaluate_motion_model_pairwise(
-                    [(x, y) for _, (x, y) in positions],
-                    getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
-                    getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
-                    getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002),
-                    getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
-                )
-                motion_model = individual_model if individual_model != global_model else global_model
-
-            apply_motion_model(track, positions, motion_model=motion_model)
-
-    except Exception as e:
-        print(f"[MotionModel][ERROR] {e}")
+    except Exception:
+        pass
