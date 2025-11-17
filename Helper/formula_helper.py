@@ -160,7 +160,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 1100,
             getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / 103500,
             getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / 1050,
-            getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / 56750
+            getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / 50000
         )
 
         # --- 2) Perspective global & per Marker einmalig berechnen ---
@@ -189,7 +189,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
                     getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / 1100,
                     getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / 103500,
                     getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / 1050,
-                    getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / 56750
+                    getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / 50000
                 )
                 # Hybrid: wenn Marker stark abweicht, nimm sein Modell, sonst global
                 motion_model = individual_model if individual_model != global_model else global_model
