@@ -116,6 +116,12 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
     for name, positions in marker_positions.items():
         if len(positions) < 2:
             continue
+        # Rückwärts-Tracking: absolute Differenzen nutzen
+        # damit Vorzeichen-Flip keine Erkennung verhindert
+        md_list = [(abs(mmx - x) + abs(mmy - y)) / 2.0 for x, y in positions]
+        abs_dev = [abs(md_list[i] - md_list[i + 1]) for i in range(len(md_list) - 1)]
+        mv_i = sum(abs_dev)
+        mv_values[name] = mv_i
         md_list = [(abs(mmx - x) + abs(mmy - y)) / 2.0 for x, y in positions]
         mv_i = sum(md_list[i] - md_list[i + 1] for i in range(len(md_list) - 1))
         mv_values[name] = mv_i
@@ -163,8 +169,11 @@ def get_from_selected_tracks_backwards(context: bpy.types.Context, max_frames: i
     marker_positions: dict[str, list[tuple[float, float]]] = {}
     for track in selected_tracks:
         positions = get_positions(track, current_frame, max_frames=max_frames)
+        # Rückwärts-Tracking: Reihenfolge der Positionen umkehren
         if len(positions) >= 2:
-            marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
+            pts = [(x, y) for _, (x, y) in positions]
+            pts = list(reversed(pts))
+            marker_positions[track.name] = pts
     if not marker_positions:
         return
 
