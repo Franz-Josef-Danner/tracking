@@ -97,10 +97,8 @@ def register():
         name="ΔX Threshold",
         description="Minimum ΔX difference required to detect rotation",
         default=250,
-        min=0.1,
-        soft_min=1,
-        soft_max=500,
-        precision=1,
+        min=1,
+        max=500,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_thresh_y = bpy.props.FloatProperty(
@@ -108,58 +106,47 @@ def register():
         description="Minimum ΔY difference required to detect rotation",
         default=250,
         min=0.1,
-        soft_max=500,
-        precision=1,
+        max=500,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_scale_thresh_min = bpy.props.FloatProperty(
         name="Min Scale Δ",
         description="Minimum distance change required to detect scaling",
         default=50,
-        min=0.1,
-        soft_min=1,
-        soft_max=100,
-        precision=1,
+        min=1,
+        max=100,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_scale_thresh_max = bpy.props.FloatProperty(
         name="Max Scale Δ",
         description="Maximum distance change before scaling is considered unstable",
         default=250,
-        min=0.1,
-        soft_min=1,
-        soft_max=500,
-        precision=1,
+        min=1,
+        max=500,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_rot = bpy.props.FloatProperty(
         name="Rot+Scale ΔRot",
         description="Sensitivity for combined rotation and scaling (rotation component)",
         default=50,
-        min=0.1,
-        soft_min=1,
-        soft_max=100,
-        precision=1,
+        min=1,
+        max=100,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_scale = bpy.props.FloatProperty(
         name="Rot+Scale ΔScale",
         description="Sensitivity for combined rotation and scaling (scale component)",
         default=500,
-        min=0.1,
-        soft_min=1,
-        soft_max=10000,
-        precision=1,
+        min=1,
+        max=10000,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_perspective_thresh = bpy.props.FloatProperty(
         name="Perspective Δ",
         description="Sensitivity for perspective deviation (depth/parallax)",
         default=50,
-        min=0.1,
-        soft_min=1,
-        soft_max=1000,
-        precision=1,
+        min=1,
+        max=1000,
         subtype='FACTOR',
     )
     # --- Progress Display ---
@@ -171,7 +158,6 @@ def register():
         max=100.0,
         soft_min=0.00001,
         soft_max=1,
-        precision=5,
         subtype='NONE',  # ⬅️ not 'FACTOR', otherwise clamped to 0..1
     )
 
