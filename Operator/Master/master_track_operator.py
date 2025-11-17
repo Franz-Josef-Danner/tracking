@@ -6,7 +6,6 @@ from collections import deque
 # ------------------------------------------------------------
 # Helper Imports (bestehend)
 # ------------------------------------------------------------
-from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
 from ...Helper.scene import get_end_frame
 from ...Helper.find_clip_editor_area import find_clip_editor_area
@@ -15,12 +14,12 @@ from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
+from ...Helper.motion_average import apply_on_selected_tracks
 
 # ------------------------------------------------------------
 # Neuer Korrektur-Helper
 # ------------------------------------------------------------
 from ...Helper.marker_position_forward_calibration import (
-    find_active_tracks_key,
     _resolve_reference_key,
     correct_marker_positions
 )
@@ -195,7 +194,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # 2) Adaptive Formel
         # -----------------------------------------------
         try:
-            apply_formula_on_selected_tracks(context, max_frames=5)
+            apply_on_selected_tracks(context, max_frames=5)
         except Exception:
             pass
         

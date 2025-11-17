@@ -6,7 +6,6 @@ from collections import deque
 # ------------------------------------------------------------
 # Helper Imports
 # ------------------------------------------------------------
-from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.playhead_helper import reset_to_frame
 from ...Helper.scene import get_end_frame, get_start_frame as scene_get_start_frame
 from ...Helper.find_clip_editor_area import find_clip_editor_area
@@ -15,6 +14,7 @@ from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
+from ...Helper.motion_average import apply_on_selected_tracks
 
 # ------------------------------------------------------------
 # Neuer Import: Backward-MarkerCalibration-Helper (ersetzt Forward)
@@ -212,7 +212,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         # Apply optional optimization formula
         try:
-            apply_formula_on_selected_tracks(context, max_frames=5)
+            apply_on_selected_tracks(context, max_frames=5)
         except Exception:
             pass
 
@@ -369,11 +369,11 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         # Compute marker progress
         try:
-            from ...Helper.frame_track_progress import compute_marker_progress
-            value, perc = compute_marker_progress(context.scene, update_ui=True)
+            _, perc = compute_marker_progress(context.scene, update_ui=True)
             context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
         except Exception:
             pass
+
 
         # Hand over control to forward tracking operator
         if not cancelled:
