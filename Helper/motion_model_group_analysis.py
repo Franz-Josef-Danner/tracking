@@ -81,11 +81,6 @@ def _cluster_markers_by_motion(
     periphery_names = [name for name, _ in motion_values[core_n:core_n + periphery_n]]
     outlier_names = [name for name, _ in motion_values[core_n + periphery_n:]]
 
-    print(
-        f"[GroupModel][Cluster] core={len(core_names)}, "
-        f"periphery={len(periphery_names)}, outliers={len(outlier_names)}"
-    )
-
     return core_names, periphery_names, outlier_names
 
 
@@ -141,29 +136,20 @@ def evaluate_global_model(marker_positions: Dict[str, List[Tuple[float, float]]]
     dx_ratio  = dx_var  / (abs(avg_x) + 1e-9)
     dy_ratio  = dy_var  / (abs(avg_y) + 1e-9)
 
-    print(
-        f"[GroupModel][Global] rel_ratio={rel_ratio:.6f}, "
-        f"dx_ratio={dx_ratio:.6f}, dy_ratio={dy_ratio:.6f}"
-    )
-
     # ========= Entscheidungslogik (ADAPTIV) =========
 
     # Rotation + Scale sichtbar
     if rel_ratio > 0.10 and (dx_ratio > 0.05 or dy_ratio > 0.05):
-        print("[GroupModel][Global] -> LocRotScale")
         return "LocRotScale"
 
     # reine Skalierung (radiale Ausdehnung)
     if rel_ratio > 0.10:
-        print("[GroupModel][Global] -> LocScale")
         return "LocScale"
 
     # reine Rotation (dominante seitliche Variation)
     if dx_ratio > 0.05 or dy_ratio > 0.05:
-        print("[GroupModel][Global] -> LocRot")
         return "LocRot"
 
-    print("[GroupModel][Global] -> Loc")
     return "Loc"
 
 
@@ -246,11 +232,6 @@ def detect_perspective(
     else:
         p_std = 0.0
 
-    print(
-        f"[GroupModel][Perspective] max_dev={max_dev:.6f}, "
-        f"avg_dev={mv_avg:.6f}, std={p_std:.6f}"
-    )
-
     # Rückgabe erweitert um p_std
     return center_name, max_dev, devs, mv_avg, p_std
 
@@ -282,15 +263,10 @@ def _apply_global_hysteresis(frame: int, raw_model: str) -> str:
 
     if st["effective_model"] is None:
         st["effective_model"] = raw_model
-        print(f"[GroupModel][Hysteresis] Init effective_model={raw_model}")
         return raw_model
 
     # nur bei stabiler Wiederholung umschalten
     if st["stable_count"] >= 3 and st["effective_model"] != raw_model:
-        print(
-            f"[GroupModel][Hysteresis] Switch effective_model "
-            f"{st['effective_model']} -> {raw_model} (stable_count={st['stable_count']})"
-        )
         st["effective_model"] = raw_model
 
     return st["effective_model"]
@@ -369,8 +345,6 @@ def apply_group_motion_model(context: bpy.types.Context, max_frames: int = 12) -
     if not marker_positions_xy:
         return
 
-    print(f"[GroupModel] ==== FRAME {current_frame} ====")
-
     # ---- Clusterbildung nach Bewegungsmenge ----
     core_names, periphery_names, outlier_names = _cluster_markers_by_motion(
         marker_positions_xy
@@ -398,17 +372,9 @@ def apply_group_motion_model(context: bpy.types.Context, max_frames: int = 12) -
         global_zscore = (max_dev - mv_avg) / (p_std + 1e-9)
         if global_zscore > 3.0 and global_model_raw != "Loc":
             global_model_raw = "Perspective"
-            print(f"[GroupModel] -> Perspective (global_zscore={global_zscore:.3f})")
 
     # ---- Hysterese auf globalem Modell ----
     effective_global = _apply_global_hysteresis(current_frame, global_model_raw)
-    if effective_global != global_model_raw:
-        print(
-            f"[GroupModel] effective_model={effective_global} "
-            f"(raw={global_model_raw})"
-        )
-    else:
-        print(f"[GroupModel] effective_model={effective_global}")
 
     # ---- Marker-State aufräumen ----
     _cleanup_marker_state([tr.name for tr in selected])
@@ -440,17 +406,6 @@ def apply_group_motion_model(context: bpy.types.Context, max_frames: int = 12) -
         candidate_model = effective_global
 
         if effective_global == "Perspective":
-            # global schon Perspective, aber wir loggen starke Ausreißer
-            if indiv_ratio > 2.0:
-                print(
-                    f"[GroupModel] Track='{name}' → Perspective "
-                    f"(indiv_ratio={indiv_ratio:.6f}, cluster={cluster})"
-                )
-            else:
-                print(
-                    f"[GroupModel] Track='{name}' → Perspective "
-                    f"(cluster={cluster})"
-                )
             wants_perspective = True
 
         else:
@@ -472,17 +427,6 @@ def apply_group_motion_model(context: bpy.types.Context, max_frames: int = 12) -
                 candidate_model = "Perspective"
                 wants_perspective = True
 
-            # Logging
-            if wants_perspective:
-                print(
-                    f"[GroupModel] Track='{name}' → Perspective-Kandidat "
-                    f"(indiv_ratio={indiv_ratio:.6f}, cluster={cluster})"
-                )
-            else:
-                print(
-                    f"[GroupModel] Track='{name}' → {candidate_model} "
-                    f"(cluster={cluster}, indiv_ratio={indiv_ratio:.6f})"
-                )
 
         # ---- Per-Marker-Hysterese für Perspective ----
         persp_frames = _update_marker_perspective_state(name, wants_perspective)
@@ -493,10 +437,6 @@ def apply_group_motion_model(context: bpy.types.Context, max_frames: int = 12) -
                 final_model = "Perspective"
             else:
                 final_model = effective_global
-                print(
-                    f"[GroupModel][Hysteresis] Track='{name}' "
-                    f"noch nicht stabil Perspective (persp_frames={persp_frames})"
-                )
         else:
             final_model = candidate_model
 
