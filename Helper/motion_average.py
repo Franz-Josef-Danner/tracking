@@ -245,13 +245,13 @@ def get_from_selected_tracks(
         dy_var_mean = sum(dy_var_accum) / len(dy_var_accum) if dy_var_accum else 0.0
         rel_var_mean = sum(rel_var_accum) / len(rel_var_accum) if rel_var_accum else 0.0
 
-        scene["kaiserlich_rot_thresh_x"] = max(0, min(2, 1 - ((dx_var_mean * 0.0036) )))
-        scene["kaiserlich_rot_thresh_y"] = max(0, min(2, 1 - ((dy_var_mean * 0.0067) )))
-        scene["kaiserlich_scale_thresh_min"] = max(0, min(2, 1 - ((rel_var_mean * 0.00024) )))
-        scene["kaiserlich_scale_thresh_max"] = max(0, min(2, 1 - ((rel_var_mean * 0.00012) * 1000)))
-        scene["kaiserlich_rot_scale_thresh_rot"] = max(0, min(2, 1 - ((((dx_var_mean * 0.0036) + (dy_var_mean * 0.0067)) / 2) * 100)))
-        scene["kaiserlich_rot_scale_thresh_scale"] =  max(0, min(2, 1 - ((rel_var_mean * 0.00018) * 2500)))
-        scene["kaiserlich_perspective_thresh"] = max(0, min(2, 1 - ((global_p_dev_accum_mean * 2) * 5)))
+        scene["kaiserlich_rot_thresh_x"] = max(0, min(1, 1 - ((dx_var_mean * 0.0036) )))
+        scene["kaiserlich_rot_thresh_y"] = max(0, min(1, 1 - ((dy_var_mean * 0.0067) )))
+        scene["kaiserlich_scale_thresh_min"] = max(0, min(1, 1 - ((rel_var_mean * 0.00024) )))
+        scene["kaiserlich_scale_thresh_max"] = max(0, min(1, 1 - ((rel_var_mean * 0.00012) * 10000)))
+        scene["kaiserlich_rot_scale_thresh_rot"] = max(0, min(1, 1 - ((((dx_var_mean * 0.0036) + (dy_var_mean * 0.0067)) / 2) * 100)))
+        scene["kaiserlich_rot_scale_thresh_scale"] =  max(0, min(1, 1 - ((rel_var_mean * 0.00018) * 2500)))
+        scene["kaiserlich_perspective_thresh"] = max(0, min(1, 1 - ((global_p_dev_accum_mean * 2) * 5)))
 
 
     except Exception:
