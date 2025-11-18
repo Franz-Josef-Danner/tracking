@@ -10,6 +10,7 @@ from ...Helper.filter_tracks import filter_problematic_tracks
 from ...Helper.update_default_sizes import update_default_sizes
 from ...Helper.find_clip_editor_area import find_clip_editor_area
 from ...Helper.delete import delete_tracks_by_names
+from ...Helper.threshold_stats import log_threshold_extrema
 
 # ===================================================================
 # Zentrale Hilfsfunktion: UUID-basierte Track-Speicherung in Scene
@@ -163,6 +164,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 frame = find_first_weak_frame(context)
                 if frame is None:
                     print("[MasterCycle][Filter] Kein neuer Weak Frame gefunden → starte Resolve Operator")
+                    log_threshold_extrema(bpy.context.scene)
                     bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
                     return {'FINISHED'}
 
