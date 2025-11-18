@@ -28,6 +28,14 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
                     del scene[k]
                 except Exception:
                     pass
+        # ================================================================
+        # Threshold-Extremwerte zurücksetzen
+        # ================================================================
+        try:
+            from ..Helper.threshold_stats import reset_threshold_extrema
+            reset_threshold_extrema(scene)
+        except Exception as e:
+            print(f"[MasterOperator] Fehler beim Reset der Threshold-Extrema: {e}")
 
         # ================================================================
         # Bootstrap
