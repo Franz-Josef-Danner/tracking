@@ -1,31 +1,33 @@
 # Helper/threshold_stats.py
 import bpy
 
-def ensure_threshold_properties(scene: bpy.types.Scene):
-    defaults = {
-        "kaiserlich_rot_x_min": float("inf"),
-        "kaiserlich_rot_x_max": float("-inf"),
-        "kaiserlich_rot_y_min": float("inf"),
-        "kaiserlich_rot_y_max": float("-inf"),
+# Helper/threshold_stats.py
+import bpy
 
-        "kaiserlich_scale_min_min": float("inf"),
-        "kaiserlich_scale_min_max": float("-inf"),
-        "kaiserlich_scale_max_min": float("inf"),
-        "kaiserlich_scale_max_max": float("-inf"),
+def reset_threshold_extrema(scene: bpy.types.Scene):
+    """
+    Setzt alle gespeicherten Min/Max-Werte zurück.
+    """
+    keys = [
+        "kaiserlich_rot_x_min", "kaiserlich_rot_x_max",
+        "kaiserlich_rot_y_min", "kaiserlich_rot_y_max",
 
-        "kaiserlich_rot_scale_rot_min": float("inf"),
-        "kaiserlich_rot_scale_rot_max": float("-inf"),
-        "kaiserlich_rot_scale_scale_min": float("inf"),
-        "kaiserlich_rot_scale_scale_max": float("-inf"),
+        "kaiserlich_scale_min_min", "kaiserlich_scale_min_max",
+        "kaiserlich_scale_max_min", "kaiserlich_scale_max_max",
 
-        "kaiserlich_persp_min": float("inf"),
-        "kaiserlich_persp_max": float("-inf"),
-    }
+        "kaiserlich_rot_scale_rot_min", "kaiserlich_rot_scale_rot_max",
+        "kaiserlich_rot_scale_scale_min", "kaiserlich_rot_scale_scale_max",
 
-    for key, value in defaults.items():
-        if key not in scene:
-            scene[key] = value
+        "kaiserlich_persp_min", "kaiserlich_persp_max",
+    ]
 
+    for k in keys:
+        if "min" in k:
+            scene[k] = float("inf")
+        else:
+            scene[k] = float("-inf")
+
+    print("[ThresholdStats] Extremwerte zurückgesetzt.")
 
 # -------------------------------------------------------
 # Interner Helper: Extremwerte updaten (mit 0/1-Ignore)
