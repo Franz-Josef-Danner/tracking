@@ -5,7 +5,7 @@ from bpy.types import Operator, Context
 # ---- Helper Imports ---------------------------------------------------------
 from ..Helper.low_marker_frame import find_first_weak_frame
 from ..Helper.bootstrap import run_bootstrap, apply_bootstrap_defaults  # <-- wichtig!
-
+from ..Helper.threshold_stats import reset_threshold_extrema
 
 class KAISERLICHTRACKER_OT_master_operator(Operator):
     """Starts a sequence of all functions to perform an optimized process for generating an ideal camera solve (time-consuming)."""
@@ -32,7 +32,6 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         # Threshold-Extremwerte zurücksetzen
         # ================================================================
         try:
-            from ..Helper.threshold_stats import reset_threshold_extrema
             reset_threshold_extrema(scene)
         except Exception as e:
             print(f"[MasterOperator] Fehler beim Reset der Threshold-Extrema: {e}")
