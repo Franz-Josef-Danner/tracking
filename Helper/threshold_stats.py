@@ -1,9 +1,6 @@
 # Helper/threshold_stats.py
 import bpy
 
-# Helper/threshold_stats.py
-import bpy
-
 def reset_threshold_extrema(scene: bpy.types.Scene):
     """
     Setzt alle gespeicherten Min/Max-Werte zurück.
