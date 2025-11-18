@@ -16,6 +16,7 @@ from ...Helper.frame_track_progress import compute_marker_progress
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
 from ...Helper.motion_average_backwards import get_from_selected_tracks_backwards
 from ...Helper.formula_helper_backward import apply_formula_on_selected_tracks_backwards
+from ...Helper.threshold_stats import update_threshold_extrema
 
 # ------------------------------------------------------------
 # Neuer Import: Backward-MarkerCalibration-Helper (ersetzt Forward)
@@ -215,7 +216,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         # Frames-per-track wird im Helper aus scene.kaiserlich_frames_per_track gelesen
         get_from_selected_tracks_backwards(context)
         apply_formula_on_selected_tracks_backwards(context)
-
+        update_threshold_extrema(bpy.context.scene)
 
         # -------------------------------------------------------
         # BACKWARD CALIBRATION STEP (mit Referenzwahl good/best)
