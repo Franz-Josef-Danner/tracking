@@ -98,7 +98,7 @@ def register():
         description="Minimum ΔX difference required to detect rotation",
         default=0.5,
         min=0,
-        max=2,
+        max=1,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_thresh_y = bpy.props.FloatProperty(
@@ -106,7 +106,7 @@ def register():
         description="Minimum ΔY difference required to detect rotation",
         default=0.5,
         min=0,
-        max=2,
+        max=1,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_scale_thresh_min = bpy.props.FloatProperty(
@@ -114,7 +114,7 @@ def register():
         description="Minimum distance change required to detect scaling",
         default=0.5,
         min=0,
-        max=2,
+        max=1,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_scale_thresh_max = bpy.props.FloatProperty(
@@ -122,7 +122,7 @@ def register():
         description="Maximum distance change before scaling is considered unstable",
         default=0.5,
         min=0,
-        max=2,
+        max=1,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_rot = bpy.props.FloatProperty(
@@ -130,7 +130,7 @@ def register():
         description="Sensitivity for combined rotation and scaling (rotation component)",
         default=0.5,
         min=0,
-        max=2,
+        max=1,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_scale = bpy.props.FloatProperty(
@@ -138,15 +138,15 @@ def register():
         description="Sensitivity for combined rotation and scaling (scale component)",
         default=0.5,
         min=0,
-        max=2,
+        max=1,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_perspective_thresh = bpy.props.FloatProperty(
         name="Perspective Δ",
         description="Sensitivity for perspective deviation (depth/parallax)",
-        default=20,
+        default=0.5,
         min=0,
-        max=50,
+        max=1,
         subtype='FACTOR',
     )
     # --- Progress Display ---
