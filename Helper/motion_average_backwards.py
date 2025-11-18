@@ -1,4 +1,4 @@
-8# Helper.motion_average.py
+# Helper.motion_average.py
 from __future__ import annotations
 
 import bpy
