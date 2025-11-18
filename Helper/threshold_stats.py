@@ -1,13 +1,7 @@
 # Helper/threshold_stats.py
 import bpy
 
-# -------------------------------------------------------------------
-# Sicherstellen, dass die Scene-Properties existieren
-# Wird nur einmal pro Add-on-Initialisierung benötigt,
-# schadet aber nicht wenn mehrfach ausgeführt.
-# -------------------------------------------------------------------
 def ensure_threshold_properties(scene: bpy.types.Scene):
-
     defaults = {
         "kaiserlich_rot_x_min": float("inf"),
         "kaiserlich_rot_x_max": float("-inf"),
@@ -33,15 +27,28 @@ def ensure_threshold_properties(scene: bpy.types.Scene):
             scene[key] = value
 
 
-# -------------------------------------------------------------------
-# Hauptfunktion: Thresholds lesen und Min/Max updaten
-# -------------------------------------------------------------------
+# -------------------------------------------------------
+# Interner Helper: Extremwerte updaten (mit 0/1-Ignore)
+# -------------------------------------------------------
+def _update_extrema(scene: bpy.types.Scene, min_key: str, max_key: str, value: float) -> None:
+    """
+    Aktualisiert Min/Max für einen einzelnen Wert,
+    ignoriert aber exakt 0.0 und exakt 1.0.
+    """
+    if value == 0.0 or value == 1.0:
+        # explizit ignorieren
+        return
+
+    scene[min_key] = min(scene[min_key], value)
+    scene[max_key] = max(scene[max_key], value)
+
+
 def update_threshold_extrema(scene: bpy.types.Scene):
     """
     Liest die UI-Thresholds aus und speichert permanent die
     höchsten und tiefsten jemals beobachteten Werte pro Kategorie.
+    Werte genau 0 oder 1 werden ignoriert.
     """
-
     ensure_threshold_properties(scene)
 
     # --- Werte aus UI ---
@@ -56,62 +63,14 @@ def update_threshold_extrema(scene: bpy.types.Scene):
 
     persp = scene.kaiserlich_perspective_thresh
 
-    # --- Min/Max Aktualisierung ---
-    # Rotation X
-    scene["kaiserlich_rot_x_min"] = min(scene["kaiserlich_rot_x_min"], rot_x)
-    scene["kaiserlich_rot_x_max"] = max(scene["kaiserlich_rot_x_max"], rot_x)
+    # --- Min/Max Aktualisierung mit 0/1-Ignore ---
+    _update_extrema(scene, "kaiserlich_rot_x_min", "kaiserlich_rot_x_max", rot_x)
+    _update_extrema(scene, "kaiserlich_rot_y_min", "kaiserlich_rot_y_max", rot_y)
 
-    # Rotation Y
-    scene["kaiserlich_rot_y_min"] = min(scene["kaiserlich_rot_y_min"], rot_y)
-    scene["kaiserlich_rot_y_max"] = max(scene["kaiserlich_rot_y_max"], rot_y)
+    _update_extrema(scene, "kaiserlich_scale_min_min", "kaiserlich_scale_min_max", scale_min)
+    _update_extrema(scene, "kaiserlich_scale_max_min", "kaiserlich_scale_max_max", scale_max)
 
-    # Scale Min
-    scene["kaiserlich_scale_min_min"] = min(scene["kaiserlich_scale_min_min"], scale_min)
-    scene["kaiserlich_scale_min_max"] = max(scene["kaiserlich_scale_min_max"], scale_min)
+    _update_extrema(scene, "kaiserlich_rot_scale_rot_min", "kaiserlich_rot_scale_rot_max", rot_scale_rot)
+    _update_extrema(scene, "kaiserlich_rot_scale_scale_min", "kaiserlich_rot_scale_scale_max", rot_scale_scale)
 
-    # Scale Max
-    scene["kaiserlich_scale_max_min"] = min(scene["kaiserlich_scale_max_min"], scale_max)
-    scene["kaiserlich_scale_max_max"] = max(scene["kaiserlich_scale_max_max"], scale_max)
-
-    # Rot+Scale Rot
-    scene["kaiserlich_rot_scale_rot_min"] = min(scene["kaiserlich_rot_scale_rot_min"], rot_scale_rot)
-    scene["kaiserlich_rot_scale_rot_max"] = max(scene["kaiserlich_rot_scale_rot_max"], rot_scale_rot)
-
-    # Rot+Scale Scale
-    scene["kaiserlich_rot_scale_scale_min"] = min(scene["kaiserlich_rot_scale_scale_min"], rot_scale_scale)
-    scene["kaiserlich_rot_scale_scale_max"] = max(scene["kaiserlich_rot_scale_scale_max"], rot_scale_scale)
-
-    # Perspective
-    scene["kaiserlich_persp_min"] = min(scene["kaiserlich_persp_min"], persp)
-    scene["kaiserlich_persp_max"] = max(scene["kaiserlich_persp_max"], persp)
-
-
-# -------------------------------------------------------------------
-# Logging-Funktion
-# -------------------------------------------------------------------
-def log_threshold_extrema(scene: bpy.types.Scene):
-    """
-    Gibt alle min/max Threshold-Werte als geordnetes Log aus.
-    """
-
-    ensure_threshold_properties(scene)
-
-    print("\n================ Threshold Extremwerte ================")
-    print(f"[Rotation] ΔX: min={scene['kaiserlich_rot_x_min']:.6f}  "
-          f"max={scene['kaiserlich_rot_x_max']:.6f}")
-    print(f"[Rotation] ΔY: min={scene['kaiserlich_rot_y_min']:.6f}  "
-          f"max={scene['kaiserlich_rot_y_max']:.6f}")
-
-    print(f"[Scale Min]  min={scene['kaiserlich_scale_min_min']:.6f}  "
-          f"max={scene['kaiserlich_scale_min_max']:.6f}")
-    print(f"[Scale Max]  min={scene['kaiserlich_scale_max_min']:.6f}  "
-          f"max={scene['kaiserlich_scale_max_max']:.6f}")
-
-    print(f"[LocRotScale Rot]   min={scene['kaiserlich_rot_scale_rot_min']:.6f}  "
-          f"max={scene['kaiserlich_rot_scale_rot_max']:.6f}")
-    print(f"[LocRotScale Scale] min={scene['kaiserlich_rot_scale_scale_min']:.6f}  "
-          f"max={scene['kaiserlich_rot_scale_scale_max']:.6f}")
-
-    print(f"[Perspective] min={scene['kaiserlich_persp_min']:.6f}  "
-          f"max={scene['kaiserlich_persp_max']:.6f}")
-    print("========================================================\n")
+    _update_extrema(scene, "kaiserlich_persp_min", "kaiserlich_persp_max", persp)
