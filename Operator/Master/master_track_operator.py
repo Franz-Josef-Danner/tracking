@@ -17,7 +17,7 @@ from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
 from ...Helper.motion_average import get_from_selected_tracks
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.threshold_stats import update_threshold_extrema
-
+from ...Helper.validate_motion_forward_helper import _get_positions_backward
 # ------------------------------------------------------------
 # Neuer Korrektur-Helper
 # ------------------------------------------------------------
@@ -199,6 +199,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             # Frames-per-track wird intern aus Scene gelesen
             get_from_selected_tracks(context)
             apply_formula_on_selected_tracks(context)
+            _get_positions_backward(context)
             update_threshold_extrema(bpy.context.scene)
         except Exception:
             pass
