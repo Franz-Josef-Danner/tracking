@@ -193,7 +193,7 @@ def apply_formula_on_selected_tracks_backwards(context: bpy.types.Context, max_f
                 )
                 print (scene, "kaiserlich_rot_thresh_x", getattr(scene, "kaiserlich_rot_thresh_x", 0.002))
                 print (scene, "kaiserlich_scale_thresh_max", getattr(scene, "kaiserlich_scale_thresh_max", 0.005))
-                print (scene, "kaiserlich_rot_scale_thresh_rot", getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002
+                print (scene, "kaiserlich_rot_scale_thresh_rot", getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002))
                 print (scene, "kaiserlich_rot_scale_thresh_scale", getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005))
                 # Hybrid: wenn Marker stark abweicht, nimm sein Modell, sonst global
                 motion_model = individual_model if individual_model != global_model else global_model
