@@ -22,7 +22,17 @@ from ...Helper.low_marker_frame import find_first_weak_frame
 def _solve_camera(context: Context) -> float:
     """Wrapper um solve_camera + Logging; liefert aktuellen Average Error."""
     bpy.ops.clip.solve_camera()
-    avg_error = float(get_average_error())
+    try:
+        avg_error = float(get_average_error())
+    except Exception:
+        # Nicht konvertierbar → wie > HARD_LIMIT behandeln
+        return float('inf')
+
+    # NaN oder zu kleines/negatives Chaos? → als unlösbar behandeln
+    if avg_error != avg_error or avg_error < 0:
+        print("[Resolve] Invalid avg error detected (NaN/Negative). Forcing fallback > HARD_LIMIT.")
+        return float('inf')
+
     return avg_error
 
 
