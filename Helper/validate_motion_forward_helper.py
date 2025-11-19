@@ -1,7 +1,7 @@
 # Helper.validate_motion_forward_helper.py
 from __future__ import annotations
 import bpy
-from typing import List, Tuple, Optional
+from typing import List
 
 # ------------------------------------------------------------
 # Hilfsfunktion: Marker-Positionen rückwärts holen
@@ -23,6 +23,30 @@ def _get_positions_backward(track: bpy.types.MovieTrackingTrack,
 
 
 # ------------------------------------------------------------
+# Hilfsfunktionen zum Laden der Track-Namen
+# ------------------------------------------------------------
+def _resolve_reference_track_names(scene: bpy.types.Scene) -> List[str]:
+    """Lädt best_tracks_names > good_tracks_names, gefiltert auf Strings."""
+    if scene.get("best_tracks"):
+        names = scene.get("best_tracks_names", [])
+        return [n for n in names if isinstance(n, str) and n.strip()]
+
+    if scene.get("good_tracks"):
+        names = scene.get("good_tracks_names", [])
+        return [n for n in names if isinstance(n, str) and n.strip()]
+
+    return []
+
+
+def _resolve_calibrate_track_names(scene: bpy.types.Scene) -> List[str]:
+    """Lädt calibrate_tracks_names, falls vorhanden."""
+    if not scene.get("calibrate_tracks"):
+        return []
+    names = scene.get("calibrate_tracks_names", [])
+    return [n for n in names if isinstance(n, str) and n.strip()]
+
+
+# ------------------------------------------------------------
 # Haupt-Helper
 # ------------------------------------------------------------
 def validate_calibrate_tracks_against_motion(context: bpy.types.Context) -> None:
@@ -33,28 +57,20 @@ def validate_calibrate_tracks_against_motion(context: bpy.types.Context) -> None
         return
 
     # --------------------------------------------------------
-    # Check: Existenz der Referenz-Listen
+    # Track-Listen sauber aus Scene Properties laden
     # --------------------------------------------------------
-    good = getattr(scene, "good_tracks", "")
-    best = getattr(scene, "best_tracks", "")
-
-    if not good and not best:
+    ref_list = _resolve_reference_track_names(scene)
+    if not ref_list:
         print("[ValidateMotion] Keine good/best-Tracks vorhanden → Abbruch.")
         return
 
-    # Priorität: best_tracks > good_tracks
-    ref_list = best if best else good
-    ref_list = [name.strip() for name in ref_list.split(",") if name.strip()]
-
-    # Calibrate Tracks
-    calibrate_list = getattr(scene, "calibrate_tracks", "")
+    calibrate_list = _resolve_calibrate_track_names(scene)
     if not calibrate_list:
         print("[ValidateMotion] Keine calibrate_tracks vorhanden → Abbruch.")
         return
-    calibrate_list = [name.strip() for name in calibrate_list.split(",") if name.strip()]
 
     # --------------------------------------------------------
-    # Δ-Vektoren aus best/good Tracks berechnen
+    # Δ-Vektoren aus Referenztracks berechnen
     # --------------------------------------------------------
     current_frame = scene.frame_current
     dx_values, dy_values = [], []

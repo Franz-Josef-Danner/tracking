@@ -86,17 +86,19 @@ def snapshot_all_tracks(context: bpy.types.Context, *, include_muted: bool = Tru
 # ============================================================
 # Store in Szene (UUID-basiert)
 # ============================================================
-def store_tracks_in_scene(scene: bpy.types.Scene, context: bpy.types.Context, key: str = "good_tracks"):
+def store_tracks_in_scene(
+    scene: bpy.types.Scene,
+    context: bpy.types.Context,
+    key: str = "good_tracks",
+    include_muted: bool = False
+):
     """
-    Erstellt einen vollständigen, persistenten Snapshot aller Tracks des aktiven Clips:
-      - scene['good_tracks'] = [UUIDs]
-      - scene['good_tracks_names'] = [Namen]
-      - scene['good_tracks_uuid_map'] = {uuid: name, ...}
-    Alte Einträge werden vorher entfernt.
+    Speichert UUID + Namen + UUID→Name Map nach key.
+    key kann sein: 'good_tracks', 'best_tracks', 'calibrate_tracks'
+    Löscht nur eigene Keys, nicht andere Listen.
     """
-    # Vorherige Einträge löschen
-    for k in ("good_tracks", "good_tracks_names", "good_tracks_uuid_map",
-              "best_tracks", "best_tracks_names", "best_tracks_uuid_map"):
+    # 1) Vorhandene Keys nur selektiv löschen
+    for k in (key, f"{key}_names", f"{key}_uuid_map"):
         if k in scene:
             del scene[k]
 
@@ -113,7 +115,7 @@ def store_tracks_in_scene(scene: bpy.types.Scene, context: bpy.types.Context, ke
     names: List[str] = []
 
     for t in all_tracks:
-        if getattr(t, "mute", False):
+        if not include_muted and getattr(t, "mute", False):
             continue
         uid = _ensure_uuid(t)
         uuid_map[uid] = t.name
@@ -123,9 +125,7 @@ def store_tracks_in_scene(scene: bpy.types.Scene, context: bpy.types.Context, ke
     scene[key] = uuids
     scene[f"{key}_names"] = names
 
-    # Blender kann Dicts in ID-Properties speichern, solange Keys/Values einfache Typen sind
     try:
         scene[f"{key}_uuid_map"] = uuid_map
     except TypeError:
-        # Fallback auf String, falls Blender die Dict-Struktur ablehnt
         scene[f"{key}_uuid_map"] = str(uuid_map)

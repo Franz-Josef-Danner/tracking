@@ -3,6 +3,7 @@ from bpy.types import Operator
 from bpy.props import BoolProperty
 
 
+
 def _find_active_clip(context: bpy.types.Context):
     """First try to find a clip in the Clip Editor, fallback to the active strip (Sequencer)."""
     for win in context.window_manager.windows:
@@ -111,24 +112,39 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
                         pass
 
         # ------------------------------------------------------------
-        # Store all track IDs globally (ID-basiert, wie good_tracks)
+        # Store BEST TRACKS (ID-basiert + Namen + UUID-Map)
         # ------------------------------------------------------------
         try:
-            if "good_tracks" in scene:
-                del scene["good_tracks"]
-            if "best_tracks" in scene:
-                del scene["best_tracks"]
-            if "best_track_ids" in scene:
-                del scene["best_track_ids"]
+            import uuid
+
+            # Cleanup alte Keys
+            for k in (
+                "best_tracks", "best_tracks_names", "best_tracks_uuid_map",
+                "best_track_ids"
+            ):
+                if k in scene:
+                    del scene[k]
 
             all_tracks = list(clip.tracking.tracks)
-            id_list = [str(id(t)) for t in all_tracks]
 
-            scene["best_track_ids"] = id_list
-            scene["best_tracks"] = id_list  # Alias für Kompatibilität
+            uuid_list, name_list, uuid_map = [], [], {}
+
+            for t in all_tracks:
+                uid = str(uuid.uuid4())
+                uuid_list.append(uid)
+                name_list.append(t.name)
+                uuid_map[uid] = t.name
+
+            # Speichern wie bei good_tracks
+            scene["best_tracks"] = uuid_list
+            scene["best_tracks_names"] = name_list
+            scene["best_tracks_uuid_map"] = str(uuid_map)
+
+            # Alias für ID-Kompatibilität (falls extern genutzt)
+            scene["best_track_ids"] = [str(id(t)) for t in all_tracks]
 
         except Exception as e:
-            pass
+            print(f"[Kaiserlich][BEST_TRACKS] Speicherung fehlgeschlagen: {e}")
 
         # ------------------------------------------------------------
         # Trigger next operator

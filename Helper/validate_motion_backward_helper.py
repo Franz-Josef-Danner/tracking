@@ -7,8 +7,8 @@ from typing import List
 # Hilfsfunktion: Marker-Positionen vorwärts holen
 # ------------------------------------------------------------
 def _get_positions_backward(track: bpy.types.MovieTrackingTrack,
-                           current_frame: int,
-                           max_frames: int = 4) -> List[tuple[int, tuple[float, float]]]:
+                            current_frame: int,
+                            max_frames: int = 4) -> List[tuple[int, tuple[float, float]]]:
 
     positions = []
     markers = track.markers
@@ -22,37 +22,54 @@ def _get_positions_backward(track: bpy.types.MovieTrackingTrack,
 
 
 # ------------------------------------------------------------
+# Hilfsfunktionen zum Laden der Track-Namen
+# ------------------------------------------------------------
+def _resolve_reference_track_names(scene: bpy.types.Scene) -> List[str]:
+    """Lädt best_tracks_names > good_tracks_names, gefiltert auf Strings."""
+    if scene.get("best_tracks"):
+        names = scene.get("best_tracks_names", [])
+        return [n for n in names if isinstance(n, str) and n.strip()]
+
+    if scene.get("good_tracks"):
+        names = scene.get("good_tracks_names", [])
+        return [n for n in names if isinstance(n, str) and n.strip()]
+
+    return []
+
+
+def _resolve_calibrate_track_names(scene: bpy.types.Scene) -> List[str]:
+    """Lädt calibrate_tracks_names, falls vorhanden."""
+    if not scene.get("calibrate_tracks"):
+        return []
+    names = scene.get("calibrate_tracks_names", [])
+    return [n for n in names if isinstance(n, str) and n.strip()]
+
+
+# ------------------------------------------------------------
 # Haupt-Helper (Forward-Motion-Check für Backward-Tracking)
 # ------------------------------------------------------------
 def validate_calibrate_tracks_backward_window(context: bpy.types.Context) -> None:
     scene = context.scene
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
-        print("[ValidateForwardMotion] Kein Clip gefunden.")
+        print("[ValidateBackwardMotion] Kein Clip gefunden.")
         return
 
     # --------------------------------------------------------
-    # Check: Existenz der Referenz-Listen
+    # Track-Listen sauber aus Scene Properties laden
     # --------------------------------------------------------
-    good = getattr(scene, "good_tracks", "")
-    best = getattr(scene, "best_tracks", "")
-
-    if not good and not best:
-        print("[ValidateForwardMotion] Keine good/best Tracks → Abbruch.")
+    ref_list = _resolve_reference_track_names(scene)
+    if not ref_list:
+        print("[ValidateBackwardMotion] Keine good/best Tracks → Abbruch.")
         return
 
-    ref_list = best if best else good
-    ref_list = [name.strip() for name in ref_list.split(",") if name.strip()]
-
-    calibrate_list = getattr(scene, "calibrate_tracks", "")
+    calibrate_list = _resolve_calibrate_track_names(scene)
     if not calibrate_list:
-        print("[ValidateForwardMotion] Keine calibrate_tracks → Abbruch.")
+        print("[ValidateBackwardMotion] Keine calibrate_tracks → Abbruch.")
         return
-    calibrate_list = [name.strip() for name in calibrate_list.split(",") if name.strip()]
 
     # --------------------------------------------------------
-    # Δ-Vektoren aus Referenz (Best/Good), aber rückwärts interpretiert
-    # (Frame+N → Frame), damit backward-Tracker valide bleibt
+    # Δ-Vektoren aus Referenz (Best/Good) berechnen für Zukunftsdaten
     # --------------------------------------------------------
     current_frame = scene.frame_current
     dx_values, dy_values = [], []
@@ -74,13 +91,13 @@ def validate_calibrate_tracks_backward_window(context: bpy.types.Context) -> Non
         dy_values.append(y_future - y_future2)
 
     if not dx_values or not dy_values:
-        print("[ValidateForwardMotion] Keine gültigen Bewegungsvektoren.")
+        print("[ValidateBackwardMotion] Keine gültigen Bewegungsvektoren.")
         return
 
     avg_dx = sum(dx_values) / len(dx_values)
     avg_dy = sum(dy_values) / len(dy_values)
 
-    print(f"[Reference Δ FW] avg_dx={avg_dx:.6f}, avg_dy={avg_dy:.6f}")
+    print(f"[Reference Δ BW] avg_dx={avg_dx:.6f}, avg_dy={avg_dy:.6f}")
 
     # --------------------------------------------------------
     # Threshold in Prozent
@@ -106,13 +123,13 @@ def validate_calibrate_tracks_backward_window(context: bpy.types.Context) -> Non
         dev_x = abs(dx - avg_dx)
         dev_y = abs(dy - avg_dy)
 
-        print(f"[Check FW {name}] Δx={dx:.6f} Δy={dy:.6f} | DevX={dev_x:.6f}, DevY={dev_y:.6f}")
+        print(f"[Check BW {name}] Δx={dx:.6f} Δy={dy:.6f} | DevX={dev_x:.6f}, DevY={dev_y:.6f}")
 
         if dev_x > max_dev or dev_y > max_dev:
             marker = track.markers.find_frame(current_frame, exact=True)
             if marker:
                 marker.mute = True
-                print(f" → [MUTED FW @ {current_frame}] Track {name} (abweichend!)")
+                print(f" → [MUTED BW @ {current_frame}] Track {name} (abweichend!)")
 
 
 # ------------------------------------------------------------

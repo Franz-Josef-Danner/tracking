@@ -163,13 +163,13 @@ def correct_marker_positions_backward(
     """
 
     # ------------------------------------------------------------
-    # 1. Globale Referenz aus Szene lesen (identisch zu Forward)
+    # 1. Globale Referenz aus Szene lesen (jetzt korrekt: *_names)
     # ------------------------------------------------------------
     ref_scene = None
-    if "best_tracks" in scene:
-        ref_scene = _read_scene_list(scene, "best_tracks")
-    if not ref_scene and "good_tracks" in scene:
-        ref_scene = _read_scene_list(scene, "good_tracks")
+    if scene.get("best_tracks_names"):
+        ref_scene = _read_scene_list(scene, "best_tracks_names")
+    elif scene.get("good_tracks_names"):
+        ref_scene = _read_scene_list(scene, "good_tracks_names")
 
     # Falls gar keine Referenzen existieren → keine Kalibrierung
     if not ref_scene:
@@ -179,6 +179,7 @@ def correct_marker_positions_backward(
     ref_tracks = list(set(ref_tracks) & set(ref_scene))
     if not ref_tracks:
         return
+
 
     # ------------------------------------------------------------
     # 1b. Dead-Reference Cleanup (Forward-Parität)

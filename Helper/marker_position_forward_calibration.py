@@ -214,13 +214,13 @@ def correct_marker_positions(
     """
 
     # ------------------------------------------------------------
-    # 1. Referenzquelle deterministisch wählen (identisch zu Backward)
+    # 1. Referenzquelle deterministisch wählen (jetzt korrekt: *_names)
     # ------------------------------------------------------------
     ref_scene = None
-    if "best_tracks" in scene:
-        ref_scene = _read_scene_list(scene, "best_tracks")
-    elif "good_tracks" in scene:
-        ref_scene = _read_scene_list(scene, "good_tracks")
+    if scene.get("best_tracks_names"):
+        ref_scene = _read_scene_list(scene, "best_tracks_names")
+    elif scene.get("good_tracks_names"):
+        ref_scene = _read_scene_list(scene, "good_tracks_names")
 
     if not ref_scene:
         return
@@ -229,6 +229,7 @@ def correct_marker_positions(
     ref_tracks = list(set(ref_tracks) & set(ref_scene))
     if not ref_tracks:
         return
+
 
     # ------------------------------------------------------------
     # 2. Mindestabdeckung
