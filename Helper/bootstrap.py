@@ -93,12 +93,8 @@ def apply_bootstrap_defaults(context, params: dict) -> None:
     # --- Scene-Properties ----------------------------------------------------
     if hasattr(scene, "kaiserlich_correlation_min"):
         scene.kaiserlich_correlation_min = corr
-    else:
-        print("[BootstrapApply] Scene-Property 'kaiserlich_correlation_min' nicht vorhanden
     if hasattr(scene, "kaiserlich_margin"):
         scene.kaiserlich_margin = margin
-    else:
-        print("[BootstrapApply] Scene-Property 'kaiserlich_margin' nicht vorhanden")
     # --- Tracking-Settings: default_correlation_min --------------------------
     if clip is not None:
         try:
