@@ -62,13 +62,6 @@ def reset_threshold_extrema(scene: bpy.types.Scene):
 # Interner Helper: Extremwerte updaten (mit 0/1-Ignore)
 # -------------------------------------------------------
 def _update_extrema(scene: bpy.types.Scene, min_key: str, max_key: str, value: float) -> None:
-    """
-    Aktualisiert Min/Max für einen einzelnen Wert,
-    ignoriert aber exakt 0.0 und exakt 1.0.
-    """
-    if value == 0.0 or value == 1.0:
-        # explizit ignorieren
-        return
 
     scene[min_key] = min(scene[min_key], value)
     scene[max_key] = max(scene[max_key], value)
