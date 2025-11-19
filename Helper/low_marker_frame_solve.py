@@ -4,7 +4,7 @@ from typing import Dict, Optional
 from .scene import get_scene_range
 from .playhead_helper import reset_to_frame
 
-def find_first_weak_frame(context: bpy.types.Context) -> Optional[int]:
+def find_first_weak_frame_sove(context: bpy.types.Context) -> Optional[int]:
     """
     Zählt **nur aktive** Marker:
       - Track ist nicht gemutet (track.mute == False)
@@ -12,7 +12,7 @@ def find_first_weak_frame(context: bpy.types.Context) -> Optional[int]:
     Sucht globales Minimum innerhalb der Szenenrange.
     """
     scene = context.scene
-    target_markers = getattr(scene, "kaiserlich_markers_per_frame", None) * 2
+    target_markers = getattr(scene, "kaiserlich_markers_per_frame", None)
     if target_markers is None:
         return None
 
