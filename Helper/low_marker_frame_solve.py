@@ -4,7 +4,7 @@ from typing import Dict, Optional
 from .scene import get_scene_range
 from .playhead_helper import reset_to_frame
 
-def find_first_weak_frame_sove(context: bpy.types.Context) -> Optional[int]:
+def find_first_weak_frame_solve(context: bpy.types.Context) -> Optional[int]:
     """
     Zählt **nur aktive** Marker:
       - Track ist nicht gemutet (track.mute == False)
