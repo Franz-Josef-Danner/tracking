@@ -113,17 +113,21 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
     max_dev = max(per_marker_dev.values()) if per_marker_dev else 0.0
     return center_marker, max_dev, per_marker_dev
 
-
-
-
-
+def _resolve_transformed_thresholds(scene: bpy.types.Scene) -> tuple[float, float, float, float, float]:
+    """Berechnet die transformierten Threshold-Werte für Tracking."""
+    rot =  (getattr(scene, "kaiserlich_rot_thresh_x", 0.002) + 0.25) / 500.7511267
+    scale = (getattr(scene, "kaiserlich_scale_thresh_max", 0.005) + 0.66) / 8876.523582
+    rot_scale_rot = (getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) + 0.57) / 376.2227239
+    rot_scale_scale = (getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) + 0.79) / 11111.11111
+    perspective = (getattr(scene, "kaiserlich_perspective_thresh", 0.002) + 4.70) / 657.0302234
+    return rot, scale, rot_scale_rot, rot_scale_scale, perspective
 
 # ==========================================================
 # Hauptlogik – Hybrid-Auswertung + Perspective
 # ==========================================================
 
 def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int = 10) -> None:
-    """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
+    """Analysiert Markerbewegung rückwärts und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
         return
@@ -135,8 +139,12 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             selected_tracks = [active_track]
     if not selected_tracks:
         return
+
     scene = context.scene
     current_frame = scene.frame_current
+
+    # Thresholds zentral berechnen
+    rot, scale, r_rot, r_scale, p_thresh = _resolve_transformed_thresholds(scene)
 
     # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
@@ -144,6 +152,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
         positions = get_positions(track, current_frame, max_frames=max_frames)
         if len(positions) >= 2:
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
+
     if not marker_positions:
         return
 
@@ -157,48 +166,45 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
 
         global_model = _evaluate_motion_model_pairwise(
             all_positions,
-            getattr((scene, "kaiserlich_rot_thresh_x", 0.002) + 0.25) / 500.7511267,
-            getattr((scene, "kaiserlich_scale_thresh_max", 0.005) + 0.66) / 8876.523582,
-            getattr((scene, "kaiserlich_rot_scale_thresh_rot", 0.002) + 0.57) / 376.2227239,
-            getattr((scene, "kaiserlich_rot_scale_thresh_scale", 0.005) + 0.79) / 11111.11111
+            rot,
+            scale,
+            r_rot,
+            r_scale
         )
-        # --- 2) Perspective global & per Marker einmalig berechnen ---
+
+        # --- 2) Perspective global & per Marker ---
         _, global_p_dev, per_marker_dev = _detect_perspective_motion(
             marker_positions,
-            getattr((scene, "kaiserlich_perspective_thresh", 0.002) + 4.70) / 657.0302234
+            p_thresh
         )
-        perspective_thresh = getattr((scene, "kaiserlich_perspective_thresh", 0.002)) / 657.0302234
-        if global_p_dev > perspective_thresh:
+
+        if global_p_dev > p_thresh:
             global_model = "Perspective"
-        # --- 3) Pro Track anwenden (Priorität: Perspective > LocRotScale > LocScale > LocRot > Loc) ---
+
+        # --- 3) Pro Track anwenden ---
         for track in selected_tracks:
             positions = get_positions(track, current_frame, max_frames=max_frames)
             if len(positions) < 2:
                 continue
 
-            # Perspective-Priorität prüfen
             marker_p_dev = per_marker_dev.get(track.name, 0.0)
-            if global_model == "Perspective" or marker_p_dev > perspective_thresh:
+
+            # Perspective hat Priorität
+            if global_model == "Perspective" or marker_p_dev > p_thresh:
                 motion_model = "Perspective"
             else:
                 # Pairwise für individuellen Marker
                 individual_model = _evaluate_motion_model_pairwise(
                     [(x, y) for _, (x, y) in positions],
-                    getattr((scene, "kaiserlich_rot_thresh_x", 0.002) + 0.25) / 500.7511267,
-                    getattr((scene, "kaiserlich_scale_thresh_max", 0.005) + 0.66) / 8876.523582,
-                    getattr((scene, "kaiserlich_rot_scale_thresh_rot", 0.002) + 0.57) / 376.2227239,
-                    getattr((scene, "kaiserlich_rot_scale_thresh_scale", 0.005) + 0.79) / 11111.11111
+                    rot,
+                    scale,
+                    r_rot,
+                    r_scale
                 )
 
-                # Hybrid: wenn Marker stark abweicht, nimm sein Modell, sonst global
+                # Hybrid-Regel
                 motion_model = individual_model if individual_model != global_model else global_model
 
-            # --- Lineare Regression & Anwendung ---
-            frames = [frame for frame, _ in positions]
-            xs = [co[0] for _, co in positions]
-            ys = [co[1] for _, co in positions]
-
-            # Die lineare Regression und das Logging werden entfernt, da sie nicht funktionsnotwendig sind.
             apply_motion_model(track, positions, motion_model=motion_model)
 
     except Exception:
