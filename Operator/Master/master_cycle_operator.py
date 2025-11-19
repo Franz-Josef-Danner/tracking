@@ -108,7 +108,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
         # Scene-Bereinigung (alte Daten entfernen)
         # ===============================================================
         try:
-            print("\n[MasterCycle][Scene] --- Starte Bereinigung alter Scene-Keys ---")
             keys_to_delete = [
                 "good_tracks", "good_tracks_names", "good_tracks_uuid_map",
                 "calibrate_tracks", "calibrate_tracks_names", "calibrate_tracks_uuid_map",
@@ -116,21 +115,16 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             ]
             for _k in keys_to_delete:
                 if _k in scene:
-                    print(f"[MasterCycle][Scene] Entferne Scene Key: {_k}")
                     del scene[_k]
         except Exception:
-            print("[MasterCycle][Scene] WARNUNG: Fehler beim Bereinigen der Scene-Keys")
             pass
 
-        print("[MasterCycle] Suche ersten schwachen Frame ...")
         frame = find_first_weak_frame(context)
-        print(f"[MasterCycle] Ergebnis Weak Frame: {frame}")
 
         # ===================================================================
         # Weiterer Ablauf (wie zuvor)
         # ===================================================================
         if frame is None:
-            print("[MasterCycle][Filter] Kein Weak Frame – starte Cleanup-Filterungen")
             try:
                 window, area, region, space = find_clip_editor_area(
                     getattr(getattr(context, "space_data", None), "clip", None)
@@ -155,15 +149,12 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         delete_tracks_by_names(bpy.context, flagged_names)
 
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-                    print("[MasterCycle][Filter] → Starte filter_problematic_tracks (threshold=10.0)")
                     filter_problematic_tracks(context, threshold=10.0)
-                    print("[MasterCycle][Filter] → filter_problematic_tracks abgeschlossen")
 
                 self._rebuild_good_tracks(context, reason="Post-Stage2 cleanup")
 
                 frame = find_first_weak_frame(context)
                 if frame is None:
-                    print("[MasterCycle][Filter] Kein neuer Weak Frame gefunden → starte Resolve Operator")
                     log_threshold_extrema(bpy.context.scene)
                     bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
                     return {'FINISHED'}
@@ -174,18 +165,15 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 # Cache-Keys bereinigen, aber nichts mehr überschreiben
                 for k in ("frame_value_cache", "kaiserlich_best_thresholds"):
                     if k in scene:
-                        print(f"[MasterCycle][Filter] Entferne Cache Key: {k}")
                         del scene[k]
 
             except Exception as ex:
                 self.report({'ERROR'}, f"Error during filter process: {ex}")
-                print(f"[MasterCycle][Filter] FEHLER: {ex}")
                 return {'CANCELLED'}
 
         # ------------------------------------------------------------------
         # Frame setzen + Folgeoperator starten
         # ------------------------------------------------------------------
-        print(f"[MasterCycle][NextOp] Setze Frame auf {frame}")
         scene.frame_current = frame
         try:
             space = getattr(context, "space_data", None)
@@ -196,7 +184,6 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
         bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
 
-        print("[MasterCycle] --- Prozess abgeschlossen ---")
         return {'FINISHED'}
 
 

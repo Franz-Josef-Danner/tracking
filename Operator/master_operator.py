@@ -34,8 +34,7 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         try:
             reset_threshold_extrema(scene)
         except Exception as e:
-            print(f"[MasterOperator] Fehler beim Reset der Threshold-Extrema: {e}")
-
+            pass
         # ================================================================
         # Bootstrap
         # ================================================================
@@ -44,9 +43,8 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
 
         if params:
             # --- Kritischer fehlender Schritt: jetzt nachziehen ---
-            print("[MasterOperator] Wende apply_bootstrap_defaults an ...")
             apply_bootstrap_defaults(context, params)
-            print("[MasterOperator] apply_bootstrap_defaults abgeschlossen.")
+
 
             # Speichern für spätere Zyklen
             scene["bootstrap_params"] = params
@@ -57,7 +55,6 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         frame = find_first_weak_frame(context)
 
         if frame is None:
-            print("[MasterOperator] Kein weak frame → fertig.")
             return {'FINISHED'}
 
         # ================================================================
