@@ -171,7 +171,7 @@ def apply_formula_on_selected_tracks_backwards(context: bpy.types.Context, max_f
         perspective_thresh = getattr((scene, "kaiserlich_perspective_thresh", 0.002) + 4.70) / 657.0302234
         if global_p_dev > perspective_thresh:
             global_model = "Perspective"
-
+        print (scene, "kaiserlich_perspective_thresh", perspective_thresh)
         # --- 3) Pro Track anwenden (Priorität: Perspective > LocRotScale > LocScale > LocRot > Loc) ---
         for track in selected_tracks:
             positions = get_positions_backward(track, current_frame, max_frames=max_frames)
@@ -191,6 +191,10 @@ def apply_formula_on_selected_tracks_backwards(context: bpy.types.Context, max_f
                     getattr((scene, "kaiserlich_rot_scale_thresh_rot", 0.002) + 0.57) / 376.2227239,
                     getattr((scene, "kaiserlich_rot_scale_thresh_scale", 0.005) + 0.79) / 11111.11111
                 )
+                print (scene, "kaiserlich_rot_thresh_x", getattr(scene, "kaiserlich_rot_thresh_x", 0.002))
+                print (scene, "kaiserlich_scale_thresh_max", getattr(scene, "kaiserlich_scale_thresh_max", 0.005))
+                print (scene, "kaiserlich_rot_scale_thresh_rot", getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002
+                print (scene, "kaiserlich_rot_scale_thresh_scale", getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005))
                 # Hybrid: wenn Marker stark abweicht, nimm sein Modell, sonst global
                 motion_model = individual_model if individual_model != global_model else global_model
 
