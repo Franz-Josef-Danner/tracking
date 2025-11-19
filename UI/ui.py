@@ -99,6 +99,7 @@ def register():
         default=0.5,
         min=0,
         max=1,
+        precision=5,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_thresh_y = bpy.props.FloatProperty(
@@ -107,6 +108,7 @@ def register():
         default=0.5,
         min=0,
         max=1,
+        precision=5,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_scale_thresh_min = bpy.props.FloatProperty(
@@ -115,6 +117,7 @@ def register():
         default=0.5,
         min=0,
         max=1,
+        precision=5,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_scale_thresh_max = bpy.props.FloatProperty(
@@ -123,6 +126,7 @@ def register():
         default=0.5,
         min=0,
         max=1,
+        precision=5,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_rot = bpy.props.FloatProperty(
@@ -131,6 +135,7 @@ def register():
         default=0.5,
         min=0,
         max=1,
+        precision=5,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_rot_scale_thresh_scale = bpy.props.FloatProperty(
@@ -139,6 +144,7 @@ def register():
         default=0.5,
         min=0,
         max=1,
+        precision=5,
         subtype='FACTOR',
     )
     bpy.types.Scene.kaiserlich_perspective_thresh = bpy.props.FloatProperty(
@@ -147,6 +153,7 @@ def register():
         default=0.5,
         min=0,
         max=1,
+        precision=5,
         subtype='FACTOR',
     )
     # --- Progress Display ---
