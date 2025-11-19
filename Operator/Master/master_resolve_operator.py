@@ -13,7 +13,7 @@ from ...Helper.refine_intrinsics import (
 )
 from ...Helper.get_average_error import get_average_error
 from ...Helper.clean_error_tracks import clean_error_tracks
-from ...Helper.low_marker_frame_solvd import find_first_weak_frame_solvd
+from ...Helper.low_marker_frame_solve import find_first_weak_frame_solve
 
 
 # ------------------------------------------------------------
@@ -112,7 +112,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
             # Error > 10 → Cleanup und Weak-Frame-Check
             clean_error_tracks(context)
 
-            weak_frame = find_first_weak_frame_solvd(context)
+            weak_frame = find_first_weak_frame_solve(context)
             if weak_frame is None:
                 # kein Weak Frame → zurück zu Cycle 1 (nächste Iteration)
                 continue
@@ -158,7 +158,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
             clean_error_tracks(context)
 
-            weak_frame = find_first_weak_frame_solvd(context)
+            weak_frame = find_first_weak_frame_solve(context)
             if weak_frame is not None:
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
                 return True, False
@@ -178,7 +178,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
             clean_error_tracks(context)
 
-            weak_frame = find_first_weak_frame_solvd(context)
+            weak_frame = find_first_weak_frame_solve(context)
             if weak_frame is not None:
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
                 return True, False
@@ -199,7 +199,7 @@ class KAISERLICHTRACKER_OT_master_resolve_operator(Operator):
 
             clean_error_tracks(context)
 
-            weak_frame = find_first_weak_frame_solvd(context)
+            weak_frame = find_first_weak_frame_solve(context)
             if weak_frame is not None:
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
                 return True, False
