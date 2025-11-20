@@ -305,10 +305,6 @@ def get_from_selected_tracks(
         d_var_com = (dx_var_mean + dy_var_mean) / 2.0
         rel_com = rel_var_mean * 0.25
 
-        print ("rel_var_min:", rel_var_min)
-        print ("d_var_com:", d_var_com)
-        print ("rel_com:", rel_com)
-
         # gewichtende Faktoren je nach Verteilung der Motion Models
         dx_var_mean_mult = share_loc
         dy_var_mean_mult = share_loc
@@ -317,6 +313,7 @@ def get_from_selected_tracks(
         d_var_com_mult = share_locrotscale
         rel_com_mult = share_locrotscale
         global_p_dev_accum_mean_mult = share_persp
+
 
         # Szene-Multiplikatoren und bisherige Maxima einlesen
         dx_var_multi = float(scene.get('dx_var_multi', 0.0))
@@ -381,6 +378,15 @@ def get_from_selected_tracks(
         d_var_com = d_var_com * (d_var_com_mult / 100)
         rel_com = rel_com * (rel_com_mult / 100)
         global_p_dev_accum_mean = global_p_dev_accum_mean * (global_p_dev_accum_mean_mult / 100)
+
+        print ("dx_var_mean:", dx_var_mean)
+        print ("dy_var_mean:", dy_var_mean)
+        print ("rel_var_mean:", rel_var_mean)
+        print ("rel_var_min:", rel_var_min)
+        print ("d_var_com:", d_var_com)
+        print ("rel_com:", rel_com)
+        print ("global_p_dev_accum_mean:", global_p_dev_accum_mean)
+
 
         # Multiplikatoren in Scene schreiben (inkl. Kompatibilitäts-Key für Scale)
         scene["dx_var_scala"] = dx_var_scala
