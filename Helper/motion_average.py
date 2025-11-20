@@ -186,16 +186,15 @@ def get_from_selected_tracks(
     ]
 
     # Fallback auf aktiven Track, falls nichts selektiert wurde
-    # Fallback: Active Track nur wenn gültig
     if not selected_raw and clip.tracking.tracks.active:
         t = clip.tracking.tracks.active
-        if not t.mute and t.is_valid:
+        if not getattr(t, "mute", False) and not getattr(t, "disabled", False):
             selected_raw = [t]
 
     if not selected_raw:
         return
 
-    # Nur Tracks mit ausreichender Marker-Historie (>= 2 Frames)
+    # Nur Tracks mit ausreichend Historie behalten (>=2 Frames)
     selected_tracks: list[bpy.types.MovieTrackingTrack] = []
     for track in selected_raw:
         positions = get_positions(track, current_frame, frames_per_track)
