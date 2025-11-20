@@ -18,7 +18,6 @@ from ...Helper.motion_average_backwards import get_from_selected_tracks_backward
 from ...Helper.formula_helper_backward import apply_formula_on_selected_tracks_backwards
 from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.validate_motion_backward_helper import validate_calibrate_tracks_backward_window
-from ...Helper.logging_helper import tracker_log
 
 # ------------------------------------------------------------
 # Neuer Import: Backward-MarkerCalibration-Helper (ersetzt Forward)
@@ -69,10 +68,11 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         scene["calibrate_tracks"] = list(track_names)
         scene["calibrate_tracks_uuid_map"] = str(uuid_map)
 
-        tracker_log("CALIBRATE", "STORE", f"Stored {len(track_names)} calibrate_tracks")
+        # logging removed
 
     except Exception as e:
-        tracker_log("CALIBRATE", "ERROR", f"{e}")
+        # logging removed
+        pass
 
 
 
