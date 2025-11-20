@@ -217,20 +217,20 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         # Apply optional optimization formula
         # Frames-per-track wird im Helper aus scene.kaiserlich_frames_per_track gelesen
         get_calibrate_tracks_backwards(context)
-        apply_formula_on_selected_tracks_backwards(context)
-        scene = context.scene
-        best_raw = scene.get("best_tracks")
-        good_raw = scene.get("good_tracks")
-
-        def _has_tracks(val):
-            if not val:
-                return False
-            if isinstance(val, str):
-                return bool(val.strip())
-            return True
-
-        if _has_tracks(best_raw) or _has_tracks(good_raw):
-            validate_calibrate_tracks_backward_window(context)
+#        apply_formula_on_selected_tracks_backwards(context)
+#        scene = context.scene
+#        best_raw = scene.get("best_tracks")
+#        good_raw = scene.get("good_tracks")
+#
+#        def _has_tracks(val):
+#            if not val:
+#                return False
+#            if isinstance(val, str):
+#                return bool(val.strip())
+#            return True
+#
+#        if _has_tracks(best_raw) or _has_tracks(good_raw):
+#            validate_calibrate_tracks_backward_window(context)
 
         # -------------------------------------------------------
         # BACKWARD CALIBRATION STEP (mit Referenzwahl good/best)
