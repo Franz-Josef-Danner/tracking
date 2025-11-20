@@ -1,3 +1,4 @@
+# Operator/Master/master_clean_error_operator.py
 import bpy
 from bpy.types import Operator
 from bpy.props import BoolProperty
