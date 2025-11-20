@@ -76,8 +76,8 @@ def validate_calibrate_tracks_backward_window(context: bpy.types.Context) -> Non
     # ---- Namen laden ----
     ref_list = _resolve_reference_track_names(scene)
     if not ref_list:
-        print("[ValidateBW] ❌ Keine Reference Tracks (good/best) → Abbruch.")
-        return
+    print("[ValidateBW] ⏭️ Skip BW-Check (keine Reference Tracks vorhanden).")
+        return None  # wichtig: kein Fehler, einfach Skip
 
     calibrate_list = _resolve_calibrate_track_names(scene)
     if not calibrate_list:
