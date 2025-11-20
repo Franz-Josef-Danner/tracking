@@ -4,6 +4,7 @@ from __future__ import annotations
 import bpy
 from typing import List, Tuple
 import math
+from .logging_helper import tracker_log
 
 from .marker_positions_helper import get_positions
 from .motion_model_helper import apply_motion_model
@@ -130,6 +131,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     """Analysiert Markerbewegung rückwärts und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
+        tracker_log("FORMULA", "FORWARD", "skip:no_clip")
         return
 
     # Szene und aktueller Frame müssen vor Zugriff auf calibrate_tracks vorhanden sein
@@ -147,6 +149,8 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     else:
         calibrate_names = []
 
+    tracker_log("FORMULA", "FORWARD", f"start frame={current_frame} candidates={len(calibrate_names)} span={max_frames}")
+
     selected_tracks = []
     for name in calibrate_names:
         tr = clip.tracking.tracks.get(name)
@@ -157,10 +161,12 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             selected_tracks.append(tr)
 
     if not selected_tracks:
+        tracker_log("FORMULA", "FORWARD", "skip:no_valid_calibrate_tracks")
         return   # keine gültigen calibrate_tracks im aktuellen Frame
 
     # Thresholds zentral berechnen
     rot, scale, r_rot, r_scale, p_thresh = _resolve_transformed_thresholds(scene)
+    tracker_log("FORMULA", "FORWARD", f"thresholds rot={rot:.6f} scale={scale:.6f} r_rot={r_rot:.6f} r_scale={r_scale:.6f} persp={p_thresh:.6f}")
 
     # --- Markerpositionen nur aus calibrate_tracks sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
@@ -170,6 +176,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
 
     if not marker_positions:
+        tracker_log("FORMULA", "FORWARD", "skip:no_marker_positions")
         return
 
     try:
@@ -196,8 +203,10 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
 
         if global_p_dev > p_thresh:
             global_model = "Perspective"
+        tracker_log("FORMULA", "FORWARD", f"global model={global_model} tracks={len(selected_tracks)} g_p_dev={global_p_dev:.6f}")
 
         # --- 3) Pro Track anwenden ---
+        applied = 0
         for track in selected_tracks:
             positions = get_positions(track, current_frame, max_frames=max_frames)
             if len(positions) < 2:
@@ -222,6 +231,11 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
                 motion_model = individual_model if individual_model != global_model else global_model
 
             apply_motion_model(track, positions, motion_model=motion_model)
+            tracker_log("FORMULA", "FORWARD", f"apply track={track.name} model={motion_model}")
+            applied += 1
+
+        tracker_log("FORMULA", "FORWARD", f"done applied={applied}")
 
     except Exception:
+        tracker_log("FORMULA", "FORWARD", "error:exception")
         pass

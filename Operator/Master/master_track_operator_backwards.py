@@ -18,6 +18,7 @@ from ...Helper.motion_average_backwards import get_calibrate_tracks_backwards
 from ...Helper.formula_helper_backward import apply_formula_on_selected_tracks_backwards
 from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.validate_motion_backward_helper import validate_calibrate_tracks_backward_window
+from ...Helper.logging_helper import tracker_log
 
 # ------------------------------------------------------------
 # Neuer Import: Backward-MarkerCalibration-Helper (ersetzt Forward)
@@ -68,10 +69,10 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         scene["calibrate_tracks"] = list(track_names)
         scene["calibrate_tracks_uuid_map"] = str(uuid_map)
 
-        print(f"[CALIBRATE][STORE] Stored {len(track_names)} calibrate_tracks")
+        tracker_log("CALIBRATE", "STORE", f"Stored {len(track_names)} calibrate_tracks")
 
     except Exception as e:
-        print(f"[CALIBRATE][ERROR] {e}")
+        tracker_log("CALIBRATE", "ERROR", f"{e}")
 
 
 
@@ -166,6 +167,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         try:
             scene = context.scene
             self._active_ref_key = _resolve_reference_key(scene)
+            tracker_log("BACKWARD", "INIT", f"Selected {len(self._processing_names)} tracks frames {self._start_frame}-{self._end_frame}")
         except Exception:
             # Falls kein Key bestimmt werden kann → None,
             # Backward arbeitet dann wie bisher ohne Referenz-Key.
@@ -306,6 +308,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         )
 
         if not success:
+            tracker_log("BACKWARD", "TRACK_STEP_FAIL", f"Frame {self._current_frame}")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
@@ -369,6 +372,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             metrics = compute_track_quality_metrics(context)
             quality_percent = float(metrics.get("prozent", 100.0))
             context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
+            tracker_log("BACKWARD", "FINISH", f"Quality {context.scene.kaiserlich_quality_percent}")
 
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
@@ -376,15 +380,16 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                         for region in area.regions:
                             if region.type == "UI":
                                 region.tag_redraw()
-        except Exception:
-            quality_percent = 100.0
+        except Exception as e:
+            tracker_log("BACKWARD", "FINISH_ERR", f"{e}")
 
         # Compute marker progress
         try:
             _, perc = compute_marker_progress(context.scene, update_ui=True)
             context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
-        except Exception:
-            pass
+            tracker_log("BACKWARD", "PROGRESS", f"Markers {context.scene.kaiserlich_marker_progress}")
+        except Exception as e:
+            tracker_log("BACKWARD", "PROGRESS_ERR", f"{e}")
 
 
         # Hand over control to forward tracking operator

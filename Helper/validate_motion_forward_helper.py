@@ -2,6 +2,9 @@
 from __future__ import annotations
 import bpy
 from typing import List
+from .logging_helper import tracker_log
+
+_LOG_SCOPE = "FORWARD_VAL"
 
 
 # ============================================================
@@ -15,20 +18,20 @@ def _get_positions_backward(track: bpy.types.MovieTrackingTrack,
     markers = track.markers
     start = current_frame - max_frames
 
-    print(f"[FW-GetPos] Track={track.name} Frames={current_frame}→{start}")
+    tracker_log("VALIDATE", _LOG_SCOPE, f"get_positions track={track.name} from={current_frame} to={start}")
 
     for frame in range(current_frame, start - 1, -1):
         marker = markers.find_frame(frame, exact=True)
         if not marker:
-            print(f"   • Frame {frame}: kein Marker")
+            tracker_log("VALIDATE", _LOG_SCOPE, f"frame {frame} missing_marker")
             continue
         if not marker.co:
-            print(f"   • Frame {frame}: Marker ohne Koordinaten")
+            tracker_log("VALIDATE", _LOG_SCOPE, f"frame {frame} no_coords")
             continue
 
         co = marker.co.copy()
         positions.append((frame, co))
-        print(f"   • Frame {frame}: pos=({co[0]:.6f}, {co[1]:.6f})")
+        tracker_log("VALIDATE", _LOG_SCOPE, f"frame {frame} pos=({co[0]:.6f},{co[1]:.6f})")
 
     return positions
 
@@ -40,16 +43,15 @@ def _resolve_reference_track_names(scene: bpy.types.Scene) -> List[str]:
     # Priorität: BEST
     names = scene.get("best_tracks_names", [])
     if isinstance(names, list) and names:
-        print(f"[FW-ResolveRef] best_tracks={len(names)}")
+        tracker_log("VALIDATE", _LOG_SCOPE, f"resolve_ref best_tracks={len(names)}")
         return [n for n in names if isinstance(n, str) and n.strip()]
 
     # Fallback: GOOD
     names = scene.get("good_tracks_names", [])
     if isinstance(names, list) and names:
-        print(f"[FW-ResolveRef] good_tracks={len(names)}")
+        tracker_log("VALIDATE", _LOG_SCOPE, f"resolve_ref good_tracks={len(names)}")
         return [n for n in names if isinstance(n, str) and n.strip()]
-
-    print("[FW-ResolveRef] Keine best/good Tracks gefunden.")
+    tracker_log("VALIDATE", _LOG_SCOPE, "resolve_ref none_found")
     return []
 
 
@@ -57,10 +59,9 @@ def _resolve_calibrate_track_names(scene: bpy.types.Scene) -> List[str]:
     # Ausschließlich *_names verwenden
     names = scene.get("calibrate_tracks", [])
     if isinstance(names, list) and names:
-        print(f"[FW-ResolveCal] calibrate_tracks={len(names)}")
+        tracker_log("VALIDATE", _LOG_SCOPE, f"resolve_cal calibrate_tracks={len(names)}")
         return [n for n in names if isinstance(n, str) and n.strip()]
-
-    print("[FW-ResolveCal] Keine calibrate_tracks.")
+    tracker_log("VALIDATE", _LOG_SCOPE, "resolve_cal none_found")
     return []
 
 
@@ -71,39 +72,39 @@ def validate_calibrate_tracks_against_motion(context: bpy.types.Context) -> None
     scene = context.scene
     clip = getattr(context.space_data, "clip", None)
 
-    print("\n======= [Validate Forward Motion] =======")
+    tracker_log("VALIDATE", _LOG_SCOPE, "start")
 
     if clip is None:
-        print("[ValidateFW] ❌ Kein Clip gefunden → Abbruch.")
+        tracker_log("VALIDATE", _LOG_SCOPE, "abort:no_clip")
         return
 
     # ---- Namen laden ----
     ref_list = _resolve_reference_track_names(scene)
     if not ref_list:
-        print("[ValidateFW] ❌ Keine Reference Tracks (good/best) → Abbruch.")
+        tracker_log("VALIDATE", _LOG_SCOPE, "abort:no_ref_tracks")
         return
 
     calibrate_list = _resolve_calibrate_track_names(scene)
     if not calibrate_list:
-        print("[ValidateFW] ❌ Keine calibrate_tracks → Abbruch.")
+        tracker_log("VALIDATE", _LOG_SCOPE, "abort:no_calibrate_tracks")
         return
 
     current_frame = scene.frame_current
-    print(f"[ValidateFW] CurrentFrame={current_frame}")
+    tracker_log("VALIDATE", _LOG_SCOPE, f"frame={current_frame}")
 
     # ---- Referenz-Vektoren sammeln ----
     dx_values, dy_values = [], []
 
-    print("\n--- [Reference Vector Calculation] ---")
+    tracker_log("VALIDATE", _LOG_SCOPE, "ref_calc_start")
     for name in ref_list:
         track = clip.tracking.tracks.get(name)
         if not track:
-            print(f"   • REF {name}: ❌ nicht gefunden")
+            tracker_log("VALIDATE", _LOG_SCOPE, f"ref {name} missing")
             continue
 
         pos = _get_positions_backward(track, current_frame, 4)
         if len(pos) < 2:
-            print(f"   • REF {name}: ⚠️ zu wenige Marker ({len(pos)})")
+            tracker_log("VALIDATE", _LOG_SCOPE, f"ref {name} too_few_markers={len(pos)}")
             continue
 
         (_, (x1, y1)), (_, (x2, y2)) = pos[0], pos[1]
@@ -113,31 +114,31 @@ def validate_calibrate_tracks_against_motion(context: bpy.types.Context) -> None
         dx_values.append(dx)
         dy_values.append(dy)
 
-        print(f"   • REF {name}: Δx={dx:.6f} Δy={dy:.6f}")
+        tracker_log("VALIDATE", _LOG_SCOPE, f"ref {name} dx={dx:.6f} dy={dy:.6f}")
 
     if not dx_values or not dy_values:
-        print("[ValidateFW] ❌ Keine gültigen Bewegungsvektoren → Abbruch.")
+        tracker_log("VALIDATE", _LOG_SCOPE, "abort:no_vectors")
         return
 
     avg_dx = sum(dx_values) / len(dx_values)
     avg_dy = sum(dy_values) / len(dy_values)
-    print(f"\n[REF AVG] Δx={avg_dx:.6f} Δy={avg_dy:.6f}")
+    tracker_log("VALIDATE", _LOG_SCOPE, f"ref_avg dx={avg_dx:.6f} dy={avg_dy:.6f}")
 
     # ---- Threshold bestimmen ----
     max_dev = getattr(scene, "max_error_value", 5.0) / 500.0
-    print(f"[Threshold] max_dev={max_dev:.6f} (aus scene.max_error_value)")
+    tracker_log("VALIDATE", _LOG_SCOPE, f"threshold max_dev={max_dev:.6f}")
 
     # ---- Calibrate-Tracks prüfen ----
-    print("\n--- [Calibrate Validation] ---")
+    tracker_log("VALIDATE", _LOG_SCOPE, "calibrate_check_start")
     for name in calibrate_list:
         track = clip.tracking.tracks.get(name)
         if not track:
-            print(f"   • CAL {name}: ❌ nicht gefunden")
+            tracker_log("VALIDATE", _LOG_SCOPE, f"cal {name} missing")
             continue
 
         pos = _get_positions_backward(track, current_frame, 4)
         if len(pos) < 2:
-            print(f"   • CAL {name}: ⚠️ zu wenige Marker ({len(pos)})")
+            tracker_log("VALIDATE", _LOG_SCOPE, f"cal {name} too_few_markers={len(pos)}")
             continue
 
         (_, (x1, y1)), (_, (x2, y2)) = pos[0], pos[1]
@@ -147,14 +148,14 @@ def validate_calibrate_tracks_against_motion(context: bpy.types.Context) -> None
         dev_x = abs(dx - avg_dx)
         dev_y = abs(dy - avg_dy)
 
-        print(f"   • CAL {name}: Δx={dx:.6f} Δy={dy:.6f} | DevX={dev_x:.6f}, DevY={dev_y:.6f}")
+        tracker_log("VALIDATE", _LOG_SCOPE, f"cal {name} dx={dx:.6f} dy={dy:.6f} devx={dev_x:.6f} devy={dev_y:.6f}")
 
         if dev_x > max_dev or dev_y > max_dev:
             marker = track.markers.find_frame(current_frame, exact=True)
             if marker:
                 marker.mute = True
-                print(f"     → ❌ MUTED @ {current_frame}: Track {name} (abweichend!)")
+                tracker_log("VALIDATE", _LOG_SCOPE, f"mute track={name} frame={current_frame}")
             else:
-                print(f"     → ⚠️ Kein Marker @ {current_frame}, keine Stummschaltung möglich.")
+                tracker_log("VALIDATE", _LOG_SCOPE, f"mute_failed track={name} frame={current_frame} no_marker")
 
-    print("======= [END Validate Forward Motion] =======\n")
+    tracker_log("VALIDATE", _LOG_SCOPE, "end")

@@ -2,12 +2,14 @@
 from typing import Optional, Tuple, Dict, Any, Iterable, List
 import ast
 import bpy
+from .logging_helper import tracker_log
 
 # ---------------------------------------------------------------------
 # Minimal-Logging + String-Handling + Key-Ermittlung (ohne Shift-Routine)
 # ---------------------------------------------------------------------
 
 _last_logged_values: Dict[str, str] = {}
+_LOG_SCOPE = "FORWARD_CAL"
 
 
 # ============================================================
@@ -71,9 +73,10 @@ def _stringify_value_for_log(value: Any) -> str:
 
 def _log_if_changed(key: str, value: Any) -> None:
     content = _stringify_value_for_log(value).replace('"', "'")
-    line = f"\"{key}\": \"{content}\""
+    line = f"{key}={content}"
     if _last_logged_values.get(key) != line:
         _last_logged_values[key] = line
+        tracker_log("CALIBRATE", _LOG_SCOPE, line)
 
 
 def _compare_tracks_with_scene(scene: bpy.types.Scene, key: str, names: Iterable[str]):
@@ -247,6 +250,7 @@ def correct_marker_positions(
     if calibrate_tracks is None or not calibrate_tracks:
         calibrate_tracks = _read_calibrate_list(scene)
     if not calibrate_tracks:
+        tracker_log("CALIBRATE", _LOG_SCOPE, "skip:no_calibrate_tracks")
         return
 
     # ------------------------------------------------------------
@@ -259,11 +263,13 @@ def correct_marker_positions(
         ref_scene = _read_scene_list(scene, "good_tracks_names")
 
     if not ref_scene:
+        tracker_log("CALIBRATE", _LOG_SCOPE, "skip:no_ref_scene")
         return
 
     # final verwendete Referenzliste (nur echte Szene-Referenzen)
     ref_tracks = list(set(ref_tracks) & set(ref_scene))
     if not ref_tracks:
+        tracker_log("CALIBRATE", _LOG_SCOPE, "skip:ref_intersection_empty")
         return
 
     # ------------------------------------------------------------
@@ -275,9 +281,11 @@ def correct_marker_positions(
         ref_tracks = [t for t in ref_tracks if t in real_names]
         calibrate_tracks = [t for t in calibrate_tracks if t in real_names]
     except Exception:
+        tracker_log("CALIBRATE", _LOG_SCOPE, "skip:clip_unavailable")
         return
 
     if not ref_tracks or not calibrate_tracks:
+        tracker_log("CALIBRATE", _LOG_SCOPE, "skip:dead_cleanup_empty")
         return
 
     # ------------------------------------------------------------
@@ -312,6 +320,7 @@ def correct_marker_positions(
         source = f1_good
         mode = 2
     else:
+        tracker_log("CALIBRATE", _LOG_SCOPE, "skip:coverage_insufficient")
         return
 
     # ------------------------------------------------------------
@@ -324,10 +333,12 @@ def correct_marker_positions(
         aspect_ratio = w / h if h != 0 else 1.0
     except Exception:
         aspect_ratio = 1.0
+    tracker_log("CALIBRATE", _LOG_SCOPE, f"run:tracks={len(calibrate_tracks)} ref={len(ref_tracks)} mode={mode}")
 
     # ------------------------------------------------------------
     # 4. Kalibrierung aller Ziel-Marker
     # ------------------------------------------------------------
+    corrected = 0
     for tr in calibrate_tracks:
 
         # aktuelle Marker-Position (frame_now)
@@ -417,6 +428,9 @@ def correct_marker_positions(
         final_y = blend(pred_y, y_now, wy)
 
         set_marker_position(tr, frame_now, final_x, final_y)
+        corrected += 1
+
+    tracker_log("CALIBRATE", _LOG_SCOPE, f"done:corrected={corrected}")
 
 
         # Optionales Debug-Log:

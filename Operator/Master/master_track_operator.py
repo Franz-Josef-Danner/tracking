@@ -17,6 +17,7 @@ from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
 from ...Helper.motion_average import get_calibrate_tracks
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.threshold_stats import update_threshold_extrema
+from ...Helper.logging_helper import tracker_log
 from ...Helper.validate_motion_forward_helper import _get_positions_backward
 # ------------------------------------------------------------
 # Neuer Korrektur-Helper
@@ -61,10 +62,10 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         # Map bleibt String (JSON/Python-String)
         scene["calibrate_tracks_uuid_map"] = str(uuid_map)
 
-        print(f"[CALIBRATE][STORE] Stored {len(track_names)} calibrate_tracks")
+        tracker_log("CALIBRATE", "STORE", f"Stored {len(track_names)} calibrate_tracks")
 
     except Exception as e:
-        print(f"[CALIBRATE][ERROR] {e}")
+        tracker_log("CALIBRATE", "ERROR", f"{e}")
 
 # =====================================================================
 # Hauptoperator
@@ -144,6 +145,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # Referenz-Key bestimmen
         # --------------------------------------------------------
         self._active_ref_key = _resolve_reference_key(scene)
+        tracker_log("FORWARD", "INIT", f"Selected {len(self._processing_names)} tracks frames {self._start_frame}-{self._end_frame}")
 
         # --------------------------------------------------------
         # NEU: Aktuell selektierte und aktive Tracks speichern
@@ -349,14 +351,16 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             metrics = compute_track_quality_metrics(context)
             quality_percent = float(metrics.get("prozent", 100.0))
             context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
-        except Exception:
-            pass
+            tracker_log("FORWARD", "FINISH", f"Quality {context.scene.kaiserlich_quality_percent}")
+        except Exception as e:
+            tracker_log("FORWARD", "FINISH_ERR", f"{e}")
 
         try:
             _, perc = compute_marker_progress(context.scene, update_ui=True)
             context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
-        except Exception:
-            pass
+            tracker_log("FORWARD", "PROGRESS", f"Markers {context.scene.kaiserlich_marker_progress}")
+        except Exception as e:
+            tracker_log("FORWARD", "PROGRESS_ERR", f"{e}")
 
         # Folge-Operator starten
         if not cancelled:

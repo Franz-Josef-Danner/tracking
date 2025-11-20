@@ -4,6 +4,7 @@ from __future__ import annotations
 import bpy
 from typing import List, Tuple
 import math
+from .logging_helper import tracker_log
 
 from .marker_positions_helper_backwards import get_positions_backward
 
@@ -169,6 +170,7 @@ def get_calibrate_tracks_backwards(
     """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
+        tracker_log("MOTION", "BACKWARD", "skip:no_clip")
         return
 
     scene = context.scene
@@ -186,6 +188,8 @@ def get_calibrate_tracks_backwards(
     else:
         calibrate_names = []
 
+    tracker_log("MOTION", "BACKWARD", f"start frame={current_frame} candidates={len(calibrate_names)} span={frames_per_track}")
+
     # Validieren (Track existiert + Marker im Frame)
     selected_tracks = []
     for name in calibrate_names:
@@ -197,6 +201,7 @@ def get_calibrate_tracks_backwards(
             selected_tracks.append(tr)
 
     if not selected_tracks:
+        tracker_log("MOTION", "BACKWARD", "skip:no_valid_tracks")
         return
 
     scene = context.scene
@@ -217,6 +222,7 @@ def get_calibrate_tracks_backwards(
         if len(positions) >= 2:
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
     if not marker_positions:
+        tracker_log("MOTION", "BACKWARD", "skip:no_marker_positions")
         return
 
     try:
@@ -227,20 +233,28 @@ def get_calibrate_tracks_backwards(
             mean_y = sum(y for _, y in pts) / len(pts)
             all_positions.append((mean_x, mean_y))
 
+        rot_t = getattr(scene, "kaiserlich_rot_thresh_x", 0.002)
+        scale_t = getattr(scene, "kaiserlich_scale_thresh_max", 0.005)
+        rs_rot_t = getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002)
+        rs_scale_t = getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
+        persp_t = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         global_model = _evaluate_motion_model_pairwise_backwards(
             all_positions,
-            getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
-            getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
-            getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002),
-            getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
+            rot_t,
+            scale_t,
+            rs_rot_t,
+            rs_scale_t
         )
 
         # --- 2) Perspective global & per Marker einmalig berechnen ---
         _, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
             marker_positions,
-            getattr(scene, "kaiserlich_perspective_thresh", 0.002)
+            persp_t
         )
-        perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
+        perspective_thresh = persp_t
+        if global_p_dev > perspective_thresh:
+            global_model = "Perspective"
+        tracker_log("MOTION", "BACKWARD", f"evaluate model={global_model} tracks={len(selected_tracks)} g_p_dev={global_p_dev:.6f}")
         
         global_p_dev_accum.append(global_p_dev)
         if len(global_p_dev_accum) > MAX_HISTORY: global_p_dev_accum.pop(0)
@@ -257,6 +271,9 @@ def get_calibrate_tracks_backwards(
         scene["kaiserlich_rot_scale_thresh_rot"] = max(0, min(1, 1 - (((((((1 - dx_var_mean)) + ((1 - dy_var_mean))) / 2) * 0.015670) * 376.2227239) - 0.57)))
         scene["kaiserlich_rot_scale_thresh_scale"] = max(0, min(1,  1 - ((((1 - rel_var_mean) * 0.000347) * 11111.11111) - 0.79)))
         scene["kaiserlich_perspective_thresh"] = max(0, min(1, 1 - ((((1 - global_p_dev_accum_mean) * 0.008706) * 657.0302234) - 4.70)))
+        tracker_log("MOTION", "BACKWARD", f"update dx_var_mean={dx_var_mean:.6f} dy_var_mean={dy_var_mean:.6f} rel_var_mean={rel_var_mean:.6f} g_p_dev_mean={global_p_dev_accum_mean:.6f}")
+        tracker_log("MOTION", "BACKWARD", "done:update_thresholds")
 
     except Exception:
+        tracker_log("MOTION", "BACKWARD", "error:exception")
         pass
