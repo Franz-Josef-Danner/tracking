@@ -249,6 +249,7 @@ def get_from_selected_tracks(
         rel_var_multi = float(scene.get('rel_var_multi', 0.0))
         global_p_multi = float(scene.get('global_p_multi', 0.0))
 
+    
         if dx_var_multi < dx_var_mean:
             if dx_var_mean > 0:
                 dx_var_multi = dx_var_mean
@@ -319,6 +320,54 @@ def get_from_selected_tracks(
                 pass
         else:
             pass
+
+        rot_thresh_x = dx_var_mean * dx_var_multiply
+        rot_thresh_y = dy_var_mean * dy_var_multiply
+        scale_thresh_min = rel_var_min * rel_var_min_multiply
+        scale_thresh_max = rel_var_mean * rel_var_multiply
+        rot_scale_thresh_rot = d_var_com * d_var_multiply_com
+        rot_scale_thresh_scale = rel_com * rel_var_multiply
+        perspective_thresh = global_p_dev_accum_mean * global_p_multiply
+
+        # ============================================================
+        # 3) Motion Model je Track bestimmen + Statistik erfassen
+        # ============================================================
+
+        model_counts = {"Loc": 0, "LocRot": 0, "LocScale": 0, "LocRotScale": 0, "Perspective": 0}
+
+        for track in selected_tracks:
+            pts = marker_positions.get(track.name, None)
+            if not pts:
+                continue
+
+            # Perspektive zuerst prüfen
+            dev = per_marker_dev.get(track.name, 0.0)
+            if dev > perspective_thresh:
+                track.motion_model = "Perspective"
+                model_counts["Perspective"] += 1
+                continue
+
+            # Sonst Hybrid-Modelle prüfen
+            motion_type = _evaluate_motion_model_pairwise(
+                pts,
+                rot_thresh_x,
+                scale_thresh_max,
+                rot_scale_thresh_rot,
+                rot_scale_thresh_scale,
+            )
+            track.motion_model = motion_type
+            model_counts[motion_type] += 1
+
+        # ============================================================
+        # 4) Statistik in Szene speichern (für Berechnung / UI)
+        # ============================================================
+
+        for key, val in model_counts.items():
+            scene[f"kaiserlich_model_count_{key}"] = val
+
+        # Optional Debug-Print
+        print("[Model Stats] ", model_counts)
+
 
         scene["kaiserlich_rot_thresh_x"] = dx_var_mean * dx_var_multiply
         scene["kaiserlich_rot_thresh_y"] = dy_var_mean * dy_var_multiply
