@@ -16,6 +16,32 @@ from .marker_position_forward_calibration import _read_scene_list
 
 _last_logged_values: Dict[str, str] = {}
 
+#
+# ============================================================
+# NEU: calibrate_tracks konsistent als Liste lesen
+# ============================================================
+def _read_calibrate_list(scene: bpy.types.Scene) -> List[str]:
+    """Liest calibrate_tracks konsistent als Liste (Forward/Backward-Kompatibilität)."""
+    raw = scene.get("calibrate_tracks")
+    if raw is None:
+        return []
+
+    # Bereits echte Liste / Set / Tuple → direkt verwenden
+    if isinstance(raw, (list, tuple, set)):
+        return [str(t) for t in raw]
+
+    # String versuchen zu parsen
+    if isinstance(raw, str):
+        try:
+            parsed = ast.literal_eval(raw)
+            if isinstance(parsed, (list, tuple, set)):
+                return [str(t) for t in parsed]
+            # Fallback: Komma-getrennte Liste im String
+            return [t.strip() for t in raw.split(",") if t.strip()]
+        except Exception:
+            return [t.strip() for t in raw.split(",") if t.strip()]
+
+    return []
 
 # ------------------------------------------------------------
 # Utility: Scene-Strings lesen / Logging / Track-Check
@@ -150,7 +176,7 @@ def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
 def correct_marker_positions_backward(
     scene: bpy.types.Scene,
     ref_tracks: List[str],
-    calibrate_tracks: List[str],
+    calibrate_tracks: List[str] = None,
     frame_now: int,
     frame_next: Optional[int],
     frame_next2: Optional[int] = None,
@@ -161,6 +187,14 @@ def correct_marker_positions_backward(
     - gleiche Referenzlogik („best“ bevorzugt, sonst „good“)
     - gleiche Filterlogik gegen Scene-Referenzen
     """
+
+    # ------------------------------------------------------------
+    # 0. calibrate_tracks immer aus Scene laden (nicht vom Caller)
+    # ------------------------------------------------------------
+    if calibrate_tracks is None or not calibrate_tracks:
+        calibrate_tracks = _read_calibrate_list(scene)
+    if not calibrate_tracks:
+        return
 
     # ------------------------------------------------------------
     # 1. Globale Referenz aus Szene lesen (jetzt korrekt: *_names)
@@ -182,15 +216,17 @@ def correct_marker_positions_backward(
 
 
     # ------------------------------------------------------------
-    # 1b. Dead-Reference Cleanup (Forward-Parität)
+    # 1b. Dead-Reference Cleanup für ref_tracks & calibrate_tracks
     # ------------------------------------------------------------
     try:
         clip = bpy.context.edit_movieclip or bpy.context.space_data.clip
         real_names = {t.name for t in clip.tracking.tracks}
         ref_tracks = [t for t in ref_tracks if t in real_names]
+        calibrate_tracks = [t for t in calibrate_tracks if t in real_names]
     except Exception:
         return
-    if not ref_tracks:
+
+    if not ref_tracks or not calibrate_tracks:
         return
 
     # ------------------------------------------------------------
@@ -306,4 +342,3 @@ def correct_marker_positions_backward(
         final_y = blend(pred_y, y0, wy)
 
         set_marker_position(tr, frame_now, final_x, final_y)
-
