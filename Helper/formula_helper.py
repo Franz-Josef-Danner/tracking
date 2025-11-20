@@ -132,6 +132,10 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     if clip is None:
         return
 
+    # Szene und aktueller Frame müssen vor Zugriff auf calibrate_tracks vorhanden sein
+    scene = context.scene
+    current_frame = scene.frame_current
+
     # ============================================================
     # NEU: Nur calibrate_tracks verwenden – nie Selection/Active
     # ============================================================
@@ -154,9 +158,6 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
 
     if not selected_tracks:
         return   # keine gültigen calibrate_tracks im aktuellen Frame
-
-    scene = context.scene
-    current_frame = scene.frame_current
 
     # Thresholds zentral berechnen
     rot, scale, r_rot, r_scale, p_thresh = _resolve_transformed_thresholds(scene)
