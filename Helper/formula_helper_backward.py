@@ -4,7 +4,6 @@ from __future__ import annotations
 import bpy
 from typing import List, Tuple
 import math
-from .logging_helper import tracker_log
 
 from .marker_positions_helper_backwards import get_positions_backward
 from .motion_model_helper import apply_motion_model
@@ -131,44 +130,23 @@ def apply_formula_on_selected_tracks_backwards(context: bpy.types.Context, max_f
     """Analysiert Markerbewegung rückwärts und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
-        tracker_log("FORMULA", "BACKWARD", "skip:no_clip")
         return
 
-    # Szene und aktueller Frame müssen vor Zugriff auf calibrate_tracks vorhanden sein
+    selected_tracks = [t for t in clip.tracking.tracks if t.select]
+    if not selected_tracks:
+        active_track = clip.tracking.tracks.active
+        if active_track:
+            selected_tracks = [active_track]
+    if not selected_tracks:
+        return
+
     scene = context.scene
     current_frame = scene.frame_current
 
-    # ============================================================
-    # NEU: Nur calibrate_tracks verwenden – nie Selection/Active
-    # ============================================================
-    calibrate_raw = scene.get("calibrate_tracks", [])
-    if isinstance(calibrate_raw, str):
-        calibrate_names = [t.strip() for t in calibrate_raw.split(",") if t.strip()]
-    elif isinstance(calibrate_raw, (list, tuple)):
-        calibrate_names = [t for t in calibrate_raw]
-    else:
-        calibrate_names = []
-
-    tracker_log("FORMULA", "BACKWARD", f"start frame={current_frame} candidates={len(calibrate_names)} span={max_frames}")
-
-    selected_tracks = []
-    for name in calibrate_names:
-        tr = clip.tracking.tracks.get(name)
-        if not tr:
-            continue
-        pos = get_positions_backward(tr, current_frame, max_frames=max_frames)
-        if len(pos) >= 2:
-            selected_tracks.append(tr)
-
-    if not selected_tracks:
-        tracker_log("FORMULA", "BACKWARD", "skip:no_valid_calibrate_tracks")
-        return   # keine gültigen calibrate_tracks im aktuellen Frame
-
     # Thresholds zentral berechnen
     rot, scale, r_rot, r_scale, p_thresh = _resolve_transformed_thresholds_backward(scene)
-    tracker_log("FORMULA", "BACKWARD", f"thresholds rot={rot:.6f} scale={scale:.6f} r_rot={r_rot:.6f} r_scale={r_scale:.6f} persp={p_thresh:.6f}")
 
-    # --- Markerpositionen nur aus calibrate_tracks sammeln ---
+    # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
     for track in selected_tracks:
         positions = get_positions_backward(track, current_frame, max_frames=max_frames)
@@ -176,7 +154,6 @@ def apply_formula_on_selected_tracks_backwards(context: bpy.types.Context, max_f
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
 
     if not marker_positions:
-        tracker_log("FORMULA", "BACKWARD", "skip:no_marker_positions")
         return
 
     try:
@@ -196,18 +173,15 @@ def apply_formula_on_selected_tracks_backwards(context: bpy.types.Context, max_f
         )
 
         # --- 2) Perspective global & per Marker ---
-        # Backward-Version verwendet eigenen Perspektiv-Helper
-        _, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
+        _, global_p_dev, per_marker_dev = _detect_perspective_motion(
             marker_positions,
             p_thresh
         )
 
         if global_p_dev > p_thresh:
             global_model = "Perspective"
-        tracker_log("FORMULA", "BACKWARD", f"global model={global_model} tracks={len(selected_tracks)} g_p_dev={global_p_dev:.6f}")
 
         # --- 3) Pro Track anwenden ---
-        applied = 0
         for track in selected_tracks:
             positions = get_positions_backward(track, current_frame, max_frames=max_frames)
             if len(positions) < 2:
@@ -232,20 +206,6 @@ def apply_formula_on_selected_tracks_backwards(context: bpy.types.Context, max_f
                 motion_model = individual_model if individual_model != global_model else global_model
 
             apply_motion_model(track, positions, motion_model=motion_model)
-            tracker_log("FORMULA", "BACKWARD", f"apply track={track.name} model={motion_model}")
-            applied += 1
 
-        tracker_log("FORMULA", "BACKWARD", f"done applied={applied}")
-
-    except Exception as e:
-        try:
-            import traceback
-            tracker_log("FORMULA", "BACKWARD", f"error:{type(e).__name__}:{e}")
-            tb = traceback.format_exc(limit=5)
-            # Zeilen vereinfachen, damit Log kompakt bleibt
-            compact = " | ".join(line.strip() for line in tb.splitlines() if line.strip())
-            tracker_log("FORMULA", "BACKWARD", f"trace:{compact}")
-        except Exception:
-            tracker_log("FORMULA", "BACKWARD", "error:trace_failed")
-        # Fehler nicht erneut werfen, um Modal-Fluss nicht zu stoppen
+    except Exception:
         pass
