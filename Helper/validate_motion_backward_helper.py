@@ -95,17 +95,23 @@ def validate_calibrate_tracks_backward_window(context: bpy.types.Context) -> Non
 
     # ---- Referenz-Vektoren sammeln ----
     dx_values, dy_values = [], []
+    refs_total = len(ref_list)
+    refs_used = 0
+    refs_missing = 0
+    refs_too_few = 0
 
     tracker_log("VALIDATE", _LOG_SCOPE, "ref_calc_start")
     for name in ref_list:
         track = clip.tracking.tracks.get(name)
         if not track:
             tracker_log("VALIDATE", _LOG_SCOPE, f"ref {name} missing")
+            refs_missing += 1
             continue
 
         pos = _get_positions_backward(track, current_frame, 4)
         if len(pos) < 2:
             tracker_log("VALIDATE", _LOG_SCOPE, f"ref {name} too_few_markers={len(pos)}")
+            refs_too_few += 1
             continue
 
         (_, (x1, y1)), (_, (x2, y2)) = pos[0], pos[1]
@@ -114,11 +120,13 @@ def validate_calibrate_tracks_backward_window(context: bpy.types.Context) -> Non
 
         dx_values.append(dx)
         dy_values.append(dy)
+        refs_used += 1
 
         tracker_log("VALIDATE", _LOG_SCOPE, f"ref {name} dx={dx:.6f} dy={dy:.6f}")
 
     if not dx_values or not dy_values:
         tracker_log("VALIDATE", _LOG_SCOPE, "abort:no_vectors")
+        tracker_log("VALIDATE", _LOG_SCOPE, f"ref_summary total={refs_total} used={refs_used} missing={refs_missing} too_few={refs_too_few}")
         return
 
     avg_dx = sum(dx_values) / len(dx_values)
@@ -131,15 +139,23 @@ def validate_calibrate_tracks_backward_window(context: bpy.types.Context) -> Non
 
     # ---- Calibrate-Tracks prüfen ----
     tracker_log("VALIDATE", _LOG_SCOPE, "calibrate_check_start")
+    cals_total = len(calibrate_list)
+    cals_checked = 0
+    cals_missing = 0
+    cals_too_few = 0
+    cals_muted = 0
+    cals_ok = 0
     for name in calibrate_list:
         track = clip.tracking.tracks.get(name)
         if not track:
             tracker_log("VALIDATE", _LOG_SCOPE, f"cal {name} missing")
+            cals_missing += 1
             continue
 
         pos = _get_positions_backward(track, current_frame, 4)
         if len(pos) < 2:
             tracker_log("VALIDATE", _LOG_SCOPE, f"cal {name} too_few_markers={len(pos)}")
+            cals_too_few += 1
             continue
 
         (_, (x1, y1)), (_, (x2, y2)) = pos[0], pos[1]
@@ -151,12 +167,18 @@ def validate_calibrate_tracks_backward_window(context: bpy.types.Context) -> Non
 
         tracker_log("VALIDATE", _LOG_SCOPE, f"cal {name} dx={dx:.6f} dy={dy:.6f} devx={dev_x:.6f} devy={dev_y:.6f}")
 
+        cals_checked += 1
         if dev_x > max_dev or dev_y > max_dev:
             marker = track.markers.find_frame(current_frame, exact=True)
             if marker:
                 marker.mute = True
                 tracker_log("VALIDATE", _LOG_SCOPE, f"mute track={name} frame={current_frame}")
+                cals_muted += 1
             else:
                 tracker_log("VALIDATE", _LOG_SCOPE, f"mute_failed track={name} frame={current_frame} no_marker")
+        else:
+            cals_ok += 1
 
+    tracker_log("VALIDATE", _LOG_SCOPE, f"ref_summary total={refs_total} used={refs_used} missing={refs_missing} too_few={refs_too_few}")
+    tracker_log("VALIDATE", _LOG_SCOPE, f"cal_summary total={cals_total} checked={cals_checked} ok={cals_ok} muted={cals_muted} missing={cals_missing} too_few={cals_too_few}")
     tracker_log("VALIDATE", _LOG_SCOPE, "end")
