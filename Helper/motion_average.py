@@ -168,31 +168,33 @@ def get_from_selected_tracks(
 
     scene = context.scene
     current_frame = scene.frame_current
-    frames_per_track = _resolve_frames_per_track(scene, max_frames if (max_frames is not None and max_frames > 0) else 5)
+    frames_per_track = _resolve_frames_per_track(
+        scene,
+        max_frames if (max_frames is not None and max_frames > 0) else 5
+    )
 
-    candidate_tracks = []
-    for track in clip.tracking.tracks:
-        positions = get_positions(track, current_frame, frames_per_track)
-        if len(positions) >= 2:
-            candidate_tracks.append(track)
-
-    if candidate_tracks:
-        selected_tracks = candidate_tracks
-    else:
-        # Fallback: bisherige Logik
-        selected_tracks = [t for t in clip.tracking.tracks if t.select]
-        if not selected_tracks and clip.tracking.tracks.active:
-            selected_tracks = [clip.tracking.tracks.active]
+    # ------------------------------------------------------
+    # Nur selektierte Tracks verwenden (plus Active-Fallback)
+    # ------------------------------------------------------
+    selected_tracks: list[bpy.types.MovieTrackingTrack] = [
+        t for t in clip.tracking.tracks if t.select
+    ]
+    if not selected_tracks and clip.tracking.tracks.active:
+        selected_tracks = [clip.tracking.tracks.active]
 
     if not selected_tracks:
         return
 
-    scene = context.scene
-    current_frame = scene.frame_current
+    # Nur Tracks mit ausreichend Positionen behalten
+    filtered_tracks: list[bpy.types.MovieTrackingTrack] = []
+    for track in selected_tracks:
+        positions = get_positions(track, current_frame, frames_per_track)
+        if len(positions) >= 2:
+            filtered_tracks.append(track)
 
-    # Frames-per-Track aus Szene beziehen (Fallback: max_frames oder 5)
-    default_frames = max_frames if (max_frames is not None and max_frames > 0) else 5
-    frames_per_track = _resolve_frames_per_track(scene, default_frames)
+    selected_tracks = filtered_tracks
+    if not selected_tracks:
+        return
 
     # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
