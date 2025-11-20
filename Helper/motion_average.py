@@ -379,15 +379,6 @@ def get_from_selected_tracks(
         rel_com = rel_com * (rel_com_mult / 100)
         global_p_dev_accum_mean = global_p_dev_accum_mean * (global_p_dev_accum_mean_mult / 100)
 
-        print ("dx_var_mean:", dx_var_mean)
-        print ("dy_var_mean:", dy_var_mean)
-        print ("rel_var_mean:", rel_var_mean)
-        print ("rel_var_min:", rel_var_min)
-        print ("d_var_com:", d_var_com)
-        print ("rel_com:", rel_com)
-        print ("global_p_dev_accum_mean:", global_p_dev_accum_mean)
-
-
         # Multiplikatoren in Scene schreiben (inkl. Kompatibilitäts-Key für Scale)
         scene["dx_var_scala"] = dx_var_scala
         scene["dy_var_scala"] = dy_var_scala
@@ -406,6 +397,15 @@ def get_from_selected_tracks(
         scene["kaiserlich_rot_scale_thresh_rot"] = d_var_com * d_var_com_scala
         scene["kaiserlich_rot_scale_thresh_scale"] = rel_com * rel_com_scala
         scene["kaiserlich_perspective_thresh"] = global_p_dev_accum_mean * global_p_scala
+
+        print ("kaiserlich_rot_thresh_x:", scene["kaiserlich_rot_thresh_x"],
+               "kaiserlich_rot_thresh_y:", scene["kaiserlich_rot_thresh_y"],
+               "kaiserlich_scale_thresh_min:", scene["kaiserlich_scale_thresh_min"],
+               "kaiserlich_scale_thresh_max:", scene["kaiserlich_scale_thresh_max"],
+               "kaiserlich_rot_scale_thresh_rot:", scene["kaiserlich_rot_scale_thresh_rot"],
+               "kaiserlich_rot_scale_thresh_scale:", scene["kaiserlich_rot_scale_thresh_scale"],
+               "kaiserlich_perspective_thresh:", scene["kaiserlich_perspective_thresh"]
+               )
 
     except Exception:
         pass
