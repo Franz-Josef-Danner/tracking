@@ -347,13 +347,13 @@ def get_from_selected_tracks(
                 global_p_scala = 1.0 / global_p_dev_accum_mean
 
         # gewichtete Werte anwenden
-        dx_var_mean = dx_var_mean * dx_var_mean_mult
-        dy_var_mean = dy_var_mean * dy_var_mean_mult
-        rel_var_mean = rel_var_mean * rel_var_mean_mult
-        rel_var_min = rel_var_min * rel_var_min_mult
-        d_var_com = d_var_com * d_var_com_mult
-        rel_com = rel_com * rel_com_mult
-        global_p_dev_accum_mean = global_p_dev_accum_mean * global_p_dev_accum_mean_mult
+        dx_var_mean = dx_var_mean * (dx_var_mean_mult / 100)
+        dy_var_mean = dy_var_mean * (dy_var_mean_mult / 100)
+        rel_var_mean = rel_var_mean * (rel_var_mean_mult / 100)
+        rel_var_min = rel_var_min * (rel_var_min_mult / 100)
+        d_var_com = d_var_com * (d_var_com_mult / 100)
+        rel_com = rel_com * (rel_com_mult / 100)
+        global_p_dev_accum_mean = global_p_dev_accum_mean * (global_p_dev_accum_mean_mult / 100)
 
         # Multiplikatoren in Scene schreiben (inkl. Kompatibilitäts-Key für Scale)
         scene["dx_var_scala"] = dx_var_scala
