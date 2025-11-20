@@ -398,6 +398,6 @@ def get_from_selected_tracks(
         scene["kaiserlich_rot_scale_thresh_rot"] = d_var_com * d_var_multiply_com
         scene["kaiserlich_rot_scale_thresh_scale"] = rel_com * rel_var_multiply
         scene["kaiserlich_perspective_thresh"] = global_p_dev_accum_mean * global_p_multiply
-        
+
     except Exception:
         pass
