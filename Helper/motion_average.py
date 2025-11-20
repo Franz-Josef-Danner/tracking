@@ -199,8 +199,19 @@ def get_from_selected_tracks(
             current_frame,
             max_frames=frames_per_track,
         )
-        if len(positions) >= 2:
-            marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
+        # Mindestanzahl prüfen & Marker-Mute filtern
+        if not positions or len(positions) < 2:
+            continue
+
+        valid_pts: list[tuple[float, float]] = []
+        for frame, (x, y) in positions:
+            marker = track.markers.find_frame(frame, exact=True)
+            if marker and not getattr(marker, "mute", False):
+                valid_pts.append((x, y))
+
+        # Nur speichern, wenn nach Mute-Check mindestens 2 Punkte bleiben
+        if len(valid_pts) >= 2:
+            marker_positions[track.name] = valid_pts
     if not marker_positions:
         return
 
