@@ -196,7 +196,8 @@ def apply_formula_on_selected_tracks_backwards(context: bpy.types.Context, max_f
         )
 
         # --- 2) Perspective global & per Marker ---
-        _, global_p_dev, per_marker_dev = _detect_perspective_motion(
+        # Backward-Version verwendet eigenen Perspektiv-Helper
+        _, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
             marker_positions,
             p_thresh
         )
