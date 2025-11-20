@@ -266,10 +266,19 @@ def get_from_selected_tracks(
         locrotscale = float(model_counts["LocRotScale"])
         persp = float(model_counts["Perspective"])
 
-        mo_full = loc + locrot + locscale + locrotscale + persp
-        if mo_full <= 0.0:
-            mo_full = 1.0
+        if loc == 0
+            loc = 1
+        if locrot == 0
+            locrot = 1
+        if locscale == 0
+            locscale = 1
+        if locrotscale == 0
+            locrotscale = 1
+        if persp == 0
+            persp = 1
 
+        mo_full = loc + locrot + locscale + locrotscale + persp
+        
         # Anteile je Motion-Model
         share_loc = loc / mo_full
         share_locrot = locrot / mo_full
