@@ -290,22 +290,22 @@ def get_from_selected_tracks(
         mo_full_loc_x = (100 / mo_full_loc) * th_full_dx
         mo_full_loc_y = (100 / mo_full_loc) * th_full_dy
 
-        dx_var_mean = dx_var_mean * (th_full_dx / mo_full_loc_x)
-        dy_var_mean = dy_var_mean * (th_full_dy / mo_full_loc_y)
+        dx_var_mean_mult = dx_var_mean * (th_full_dx / mo_full_loc_x)
+        dy_var_mean_mult = dy_var_mean * (th_full_dy / mo_full_loc_y)
 
         mo_full_rel_max = (100 / mo_full_locrot) * th_full_rel
         mo_full_rel_min = (100 / mo_full_locrot) * th_full_rel_min
 
-        rel_var_mean = rel_var_mean * (th_full_rel / mo_full_rel_max)
-        rel_var_min = rel_var_min * (th_full_rel_min / mo_full_rel_min)
+        rel_var_mean_mult = rel_var_mean * (th_full_rel / mo_full_rel_max)
+        rel_var_min_mult = rel_var_min * (th_full_rel_min / mo_full_rel_min)
 
         mo_full_locrotscale_rot = (100 / mo_full_locrotscale) * th_full_dcom
         mo_full_locrotscale_scale = (100 / mo_full_locrotscale) * th_full_relcom
 
-        d_var_com = d_var_com * (th_full_dcom / mo_full_locrotscale_rot)
-        rel_com = rel_com * (th_full_relcom / mo_full_locrotscale_scale)
+        d_var_com_mult = d_var_com * (th_full_dcom / mo_full_locrotscale_rot)
+        rel_com_mult = rel_com * (th_full_relcom / mo_full_locrotscale_scale)
 
-        global_p_dev_accum_mean = global_p_dev_accum_mean * (th_full_perspective / mo_full_perspective)
+        global_p_dev_accum_mean_mult = global_p_dev_accum_mean * (th_full_perspective / mo_full_perspective)
 
         # Szene-Multiplikatoren einlesen (numerisch, Fallback 0.0)
         dx_var_multi = float(scene.get('dx_var_multi', 0.0))
@@ -376,6 +376,20 @@ def get_from_selected_tracks(
                 pass
         else:
             pass
+
+        dx_var_mean = dx_var_mean * dx_var_mean_mult
+        dy_var_mean = dy_var_mean * dy_var_mean_mult
+        rel_var_mean = rel_var_mean * rel_var_mean_mult
+        rel_var_min = rel_var_min * rel_var_min_mult
+        d_var_com = d_var_com * d_var_com_mult
+        rel_com = rel_com * rel_com_mult
+        global_p_dev_accum_mean = global_p_dev_accum_mean * global_p_dev_accum_mean_mult
+
+        scene["dx_var_multiply"] = dx_var_multiply
+        scene["rel_var_multiply"] = rel_var_multiply
+        scene["d_var_multiply_com"] = d_var_multiply_com
+        scene["rel_var_multiply"] = rel_var_multiply
+        scene["global_p_multiply"] = global_p_multiply
 
         scene["kaiserlich_rot_thresh_x"] = dx_var_mean * dx_var_multiply
         scene["kaiserlich_rot_thresh_y"] = dy_var_mean * dy_var_multiply

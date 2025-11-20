@@ -115,12 +115,22 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
 
 def _resolve_transformed_thresholds(scene: bpy.types.Scene) -> tuple[float, float, float, float, float]:
     """Berechnet die transformierten Threshold-Werte für Tracking."""
-    rot =  ((1 - getattr(scene, "kaiserlich_rot_thresh_x", 0.002)) + 0.25) / 500.7511267
-    scale = ((1 - getattr(scene, "kaiserlich_scale_thresh_max", 0.005)) + 0.66) / 8876.523582
-    rot_scale_rot = ((1 - getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002)) + 0.57) / 376.2227239
-    rot_scale_scale = ((1 - getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)) + 0.79) / 11111.11111
-    perspective = ((1 - getattr(scene, "kaiserlich_perspective_thresh", 0.002)) + 4.70) / 657.0302234
+
+    dx_var_multiply = float(scene.get('dx_var_multiply', 1.0))
+    rel_var_multiply = float(scene.get('rel_var_multiply', 1.0))
+    d_var_multiply_com = float(scene.get('d_var_multiply_com', 1.0))
+    srel_var_multiply = float(scene.get('srel_var_multiply', 1.0))
+    global_p_multiply = float(scene.get('global_p_multiply', 1.0))
+
+    rot =  getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / dx_var_multiply
+    scale = getattr(scene, "kaiserlich_scale_thresh_max", 0.005) / rel_var_multiply
+    rot_scale_rot = getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002) / d_var_multiply_com
+    rot_scale_scale = getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005) / srel_var_multiply
+    perspective = getattr(scene, "kaiserlich_perspective_thresh", 0.002) / global_p_multiply
     return rot, scale, rot_scale_rot, rot_scale_scale, perspective
+
+
+
 
 # ==========================================================
 # Hauptlogik – Hybrid-Auswertung + Perspective
