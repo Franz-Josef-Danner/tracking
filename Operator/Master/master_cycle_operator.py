@@ -28,12 +28,13 @@ def store_tracks_in_scene(scene, context, key="good_tracks"):
     tracking = clip.tracking
     all_tracks = list(tracking.tracks)
 
-    for k in (
-        "good_tracks", "good_tracks_names", "good_tracks_uuid_map",
-        "best_tracks", "best_tracks_names", "best_tracks_uuid_map"
-    ):
-        if k in scene:
-            del scene[k]
+    # ------------------------------------------------------------
+    # Lösche nur die eigenen GOOD_TRACKS Keys, wenn wir GOOD erzeugen
+    # ------------------------------------------------------------
+    if key == "good_tracks":
+        for k in ("good_tracks", "good_tracks_names", "good_tracks_uuid_map"):
+            if k in scene:
+                del scene[k]
 
     uuid_list, name_list, uuid_map = [], [], {}
     for t in all_tracks:
