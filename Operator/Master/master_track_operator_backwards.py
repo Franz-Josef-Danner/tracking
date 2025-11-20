@@ -237,57 +237,57 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             scene = context.scene
 
             # calibrate_tracks aus Scene lesen
-            calibrate_raw = scene.get("calibrate_tracks", "")
-            if isinstance(calibrate_raw, str):
-                calibrate_tracks = [
-                    t.strip() for t in calibrate_raw.split(",") if t.strip()
-                ]
-            else:
-                calibrate_tracks = []
-
-            if not calibrate_tracks:
-                pass
-            else:
+#            calibrate_raw = scene.get("calibrate_tracks", "")
+#            if isinstance(calibrate_raw, str):
+#                calibrate_tracks = [
+#                    t.strip() for t in calibrate_raw.split(",") if t.strip()
+#                ]
+#            else:
+#                calibrate_tracks = []
+#
+#            if not calibrate_tracks:
+#                pass
+#            else:
                 # -------------------------------------------------------
                 # Referenz über zentrales Referenz-Key-System
                 # -------------------------------------------------------
-                ref_names = get_reference_tracks(scene)
-                ref_names = filter_existing_tracks(context, ref_names)
+#                ref_names = get_reference_tracks(scene)
+#                ref_names = filter_existing_tracks(context, ref_names)
 
-                # --- Dead-Reference Cleanup (neu, Punkt 4) ---
-                clip = getattr(context.space_data, "clip", None)
-                if not clip:
-                    return {"CANCELLED"}
+#                # --- Dead-Reference Cleanup (neu, Punkt 4) ---
+#                clip = getattr(context.space_data, "clip", None)
+#                if not clip:
+#                    return {"CANCELLED"}
 
-                tracking = clip.tracking
+#                tracking = clip.tracking
 
-                calibrate_tracks = [t for t in calibrate_tracks if t in tracking.tracks]
-                ref_names = [t for t in ref_names if t in tracking.tracks]
+#                calibrate_tracks = [t for t in calibrate_tracks if t in tracking.tracks]
+#                ref_names = [t for t in ref_names if t in tracking.tracks]
 
                 # Wenn nach Cleanup keine gültigen Tracks mehr existieren → skip
-                if not ref_names or not calibrate_tracks:
-                    pass
-                else:
+#                if not ref_names or not calibrate_tracks:
+#                    pass
+#                else:
                     # Frame-Kontexte für rückwärts Tracking
-                    f_now = int(self._current_frame)
+#                    f_now = int(self._current_frame)
 
-                    f_next  = int(f_now) + 1
-                    f_next2 = int(f_now) + 2
-                    f_next3 = int(f_now) + 3
+#                    f_next  = int(f_now) + 1
+#                    f_next2 = int(f_now) + 2
+#                    f_next3 = int(f_now) + 3
 
                     # Clip-Limits
-                    if f_next > self._end_frame:  f_next = None
-                    if f_next2 > self._end_frame: f_next2 = None
-                    if f_next3 > self._end_frame: f_next3 = None
+#                    if f_next > self._end_frame:  f_next = None
+#                    if f_next2 > self._end_frame: f_next2 = None
+#                    if f_next3 > self._end_frame: f_next3 = None
 
-                    if f_next is not None:
-                        correct_marker_positions_backward(
-                            scene,
-                            ref_names,
-                            calibrate_tracks,
-                            f_now,
-                            f_next, f_next2, f_next3
-                        )
+#                    if f_next is not None:
+#                        correct_marker_positions_backward(
+#                            scene,
+#                            ref_names,
+#                            calibrate_tracks,
+#                            f_now,
+#                            f_next, f_next2, f_next3
+#                        )
 
 
         except Exception:
