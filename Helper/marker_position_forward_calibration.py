@@ -9,34 +9,34 @@ import bpy
 
 _last_logged_values: Dict[str, str] = {}
 
-+
-+# ============================================================
-+# NEU: calibrate_tracks konsistent als Liste lesen
-+# (identisch zu Backward-Version, Forward/Backward Parität)
-+# ============================================================
-+def _read_calibrate_list(scene: bpy.types.Scene) -> List[str]:
-+    """Liest calibrate_tracks konsistent als Liste (Forward/Backward-Kompatibilität)."""
-+    raw = scene.get("calibrate_tracks")
-+    if raw is None:
-+        return []
-+
-+    # Bereits echte Liste / Set / Tuple → direkt übernehmen
-+    if isinstance(raw, (list, tuple, set)):
-+        return [str(t) for t in raw]
-+
-+    # String → versuchen zu parsen
-+    if isinstance(raw, str):
-+        try:
-+            parsed = ast.literal_eval(raw)
-+            if isinstance(parsed, (list, tuple, set)):
-+                return [str(t) for t in parsed]
-+            # Fallback CSV
-+            return [t.strip() for t in raw.split(",") if t.strip()]
-+        except Exception:
-+            return [t.strip() for t in raw.split(",") if t.strip()]
-+
-+    return []
-+
+
+# ============================================================
+# NEU: calibrate_tracks konsistent als Liste lesen
+# (identisch zu Backward-Version, Forward/Backward Parität)
+# ============================================================
+def _read_calibrate_list(scene: bpy.types.Scene) -> List[str]:
+    """Liest calibrate_tracks konsistent als Liste (Forward/Backward-Kompatibilität)."""
+    raw = scene.get("calibrate_tracks")
+    if raw is None:
+        return []
+
+    # Bereits echte Liste / Set / Tuple → direkt übernehmen
+    if isinstance(raw, (list, tuple, set)):
+        return [str(t) for t in raw]
+
+    # String → versuchen zu parsen
+    if isinstance(raw, str):
+        try:
+            parsed = ast.literal_eval(raw)
+            if isinstance(parsed, (list, tuple, set)):
+                return [str(t) for t in parsed]
+            # Fallback CSV
+            return [t.strip() for t in raw.split(",") if t.strip()]
+        except Exception:
+            return [t.strip() for t in raw.split(",") if t.strip()]
+
+    return []
+
 
 def _read_scene_string(scene: bpy.types.Scene, key: str) -> Tuple[Optional[Any], int]:
     raw = scene.get(key)
