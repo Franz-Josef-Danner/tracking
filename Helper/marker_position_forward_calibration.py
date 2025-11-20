@@ -226,7 +226,7 @@ def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
 # Spiegelbild der Backward-Version, ohne Sonderwege / Fehlerquellen
 # =====================================================================
 
-def correct_marker_positions_backward(
+def correct_marker_positions(
     scene: bpy.types.Scene,
     ref_tracks: List[str],
     frame_now: int,
