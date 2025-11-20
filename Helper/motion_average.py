@@ -4,7 +4,6 @@ from __future__ import annotations
 import bpy
 from typing import List, Tuple
 import math
-from .logging_helper import tracker_log
 
 from .marker_positions_helper import get_positions
 
@@ -162,7 +161,7 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
 # Hauptlogik – Hybrid-Auswertung + Perspective
 # ==========================================================
 
-def get_calibrate_tracks(
+def get_from_selected_tracks(
     context: bpy.types.Context,
     max_frames: int | None = None,
 ) -> None:
@@ -170,37 +169,27 @@ def get_calibrate_tracks(
     """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
-        tracker_log("MOTION", "FORWARD", "skip:no_clip")
         return
 
     scene = context.scene
     current_frame = scene.frame_current
     frames_per_track = _resolve_frames_per_track(scene, max_frames if (max_frames is not None and max_frames > 0) else 5)
 
-    # ============================================================
-    # NEU: Nur calibrate_tracks verwenden – nie Selection/Active
-    # ============================================================
-    calibrate_raw = scene.get("calibrate_tracks", [])
-    if isinstance(calibrate_raw, str):
-        calibrate_names = [t.strip() for t in calibrate_raw.split(",") if t.strip()]
-    elif isinstance(calibrate_raw, (list, tuple)):
-        calibrate_names = [t for t in calibrate_raw]
+    candidate_tracks = []
+    for track in clip.tracking.tracks:
+        positions = get_positions(track, current_frame, frames_per_track)
+        if len(positions) >= 2:
+            candidate_tracks.append(track)
+
+    if candidate_tracks:
+        selected_tracks = candidate_tracks
     else:
-        calibrate_names = []
-
-    tracker_log("MOTION", "FORWARD", f"start frame={current_frame} candidates={len(calibrate_names)} span={frames_per_track}")
-
-    selected_tracks = []
-    for name in calibrate_names:
-        tr = clip.tracking.tracks.get(name)
-        if not tr:
-            continue
-        pos = get_positions(tr, current_frame, frames_per_track)
-        if len(pos) >= 2:
-            selected_tracks.append(tr)
+        # Fallback: bisherige Logik
+        selected_tracks = [t for t in clip.tracking.tracks if t.select]
+        if not selected_tracks and clip.tracking.tracks.active:
+            selected_tracks = [clip.tracking.tracks.active]
 
     if not selected_tracks:
-        tracker_log("MOTION", "FORWARD", "skip:no_valid_tracks")
         return
 
     scene = context.scene
@@ -221,7 +210,6 @@ def get_calibrate_tracks(
         if len(positions) >= 2:
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
     if not marker_positions:
-        tracker_log("MOTION", "FORWARD", "skip:no_marker_positions")
         return
 
     try:
@@ -232,28 +220,20 @@ def get_calibrate_tracks(
             mean_y = sum(y for _, y in pts) / len(pts)
             all_positions.append((mean_x, mean_y))
 
-        rot_t = getattr(scene, "kaiserlich_rot_thresh_x", 0.002)
-        scale_t = getattr(scene, "kaiserlich_scale_thresh_max", 0.005)
-        rs_rot_t = getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002)
-        rs_scale_t = getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
-        persp_t = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         global_model = _evaluate_motion_model_pairwise(
             all_positions,
-            rot_t,
-            scale_t,
-            rs_rot_t,
-            rs_scale_t
+            getattr(scene, "kaiserlich_rot_thresh_x", 0.002),
+            getattr(scene, "kaiserlich_scale_thresh_max", 0.005),
+            getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002),
+            getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
         )
 
         # --- 2) Perspective global & per Marker einmalig berechnen ---
         _, global_p_dev, per_marker_dev = _detect_perspective_motion(
             marker_positions,
-            persp_t
+            getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         )
-        perspective_thresh = persp_t
-        if global_p_dev > perspective_thresh:
-            global_model = "Perspective"
-        tracker_log("MOTION", "FORWARD", f"evaluate model={global_model} tracks={len(selected_tracks)} g_p_dev={global_p_dev:.6f}")
+        perspective_thresh = getattr(scene, "kaiserlich_perspective_thresh", 0.002)
         
         global_p_dev_accum.append(global_p_dev)
         if len(global_p_dev_accum) > MAX_HISTORY: global_p_dev_accum.pop(0)
@@ -270,9 +250,6 @@ def get_calibrate_tracks(
         scene["kaiserlich_rot_scale_thresh_rot"] = max(0, min(1, 1 - (((((((1 - dx_var_mean)) + ((1 - dy_var_mean))) / 2) * 0.015670) * 376.2227239) - 0.57)))
         scene["kaiserlich_rot_scale_thresh_scale"] = max(0, min(1,  1 - ((((1 - rel_var_mean) * 0.000347) * 11111.11111) - 0.79)))
         scene["kaiserlich_perspective_thresh"] = max(0, min(1, 1 - ((((1 - global_p_dev_accum_mean) * 0.008706) * 657.0302234) - 4.70)))
-        tracker_log("MOTION", "FORWARD", f"update dx_var_mean={dx_var_mean:.6f} dy_var_mean={dy_var_mean:.6f} rel_var_mean={rel_var_mean:.6f} g_p_dev_mean={global_p_dev_accum_mean:.6f}")
-        tracker_log("MOTION", "FORWARD", "done:update_thresholds")
         
     except Exception:
-        tracker_log("MOTION", "FORWARD", "error:exception")
         pass
