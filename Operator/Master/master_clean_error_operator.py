@@ -107,24 +107,23 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
         # ------------------------------------------------------------
         # Remove GOOD_TRACKS (Clean Error darf diese ersetzen)
         # ------------------------------------------------------------
-        print("[Kaiserlich][GOOD_TRACKS] Löschung gestartet...")
+        # logging entfernt
 
         for k in ("good_tracks", "good_tracks_names", "good_tracks_uuid_map"):
             if k in scene:
                 try:
-                    print(f"[Kaiserlich][GOOD_TRACKS] Entferne Key: {k} | Wert: {scene.get(k)}")
+                    pass
                 except Exception:
-                    print(f"[Kaiserlich][GOOD_TRACKS] Entferne Key: {k} | Wert nicht lesbar")
+                    pass
                 del scene[k]
 
-        print("[Kaiserlich][GOOD_TRACKS] Säuberung abgeschlossen.")
+        # logging entfernt
 
 
         # ------------------------------------------------------------
         # Store BEST TRACKS (ID-basiert + Namen + UUID-Map)
         # ------------------------------------------------------------
-        print("[Kaiserlich][BEST_TRACKS] Erstellung gestartet...")
-        print(f"[Kaiserlich][BEST_TRACKS] Anzahl aktuell vorhandener Tracks: {len(list(clip.tracking.tracks))}")
+        # logging entfernt
 
         try:
             import uuid
@@ -146,9 +145,7 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
                 name_list.append(t.name)
                 uuid_map[uid] = t.name
 
-            print(f"[Kaiserlich][BEST_TRACKS] UUIDs gespeichert: {uuid_list}")
-            print(f"[Kaiserlich][BEST_TRACKS] Namen gespeichert: {name_list}")
-            print(f"[Kaiserlich][BEST_TRACKS] UUID-Map: {uuid_map}")
+            # logging entfernt
 
             # Speichern wie bei good_tracks
             scene["best_tracks"] = uuid_list
@@ -158,14 +155,14 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
             # Alias für ID-Kompatibilität (falls extern genutzt)
             scene["best_track_ids"] = [str(id(t)) for t in all_tracks]
 
-            print("[Kaiserlich][BEST_TRACKS] Speicherung abgeschlossen.")
+            # logging entfernt
 
             # Konsistenzcheck
             if len(scene.get("best_tracks", [])) != len(scene.get("best_tracks_names", [])):
-                print("[Kaiserlich][BEST_TRACKS][WARNUNG] UUID-Liste und Namensliste haben unterschiedliche Länge!")
+                pass
 
         except Exception as e:
-            print(f"[Kaiserlich][BEST_TRACKS] Speicherung fehlgeschlagen: {e}")
+            pass
 
         # ------------------------------------------------------------
         # Trigger next operator

@@ -151,8 +151,8 @@ def get_average_error(clip: bpy.types.MovieClip | None = None,
 if __name__ == "__main__":
     # Kamera-Solve:
     err_cam = get_average_error()
-    print(f"[get_average_error] Camera Error (weighted): {err_cam}")
+    # logging entfernt
 
     # Object-Solve (Name aus dem Tracking-Panel, z.B. 'Object'):
     err_obj = get_average_error(object_name="Object")
-    print(f"[get_average_error] Object Error (weighted): {err_obj}")
+    # logging entfernt

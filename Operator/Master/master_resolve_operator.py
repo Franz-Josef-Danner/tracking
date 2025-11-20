@@ -30,7 +30,7 @@ def _solve_camera(context: Context) -> float:
 
     # NaN oder zu kleines/negatives Chaos? → als unlösbar behandeln
     if avg_error != avg_error or avg_error < 0:
-        print("[Resolve] Invalid avg error detected (NaN/Negative). Forcing fallback > HARD_LIMIT.")
+        # logging entfernt
         return float('inf')
 
     return avg_error

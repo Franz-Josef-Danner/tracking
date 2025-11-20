@@ -30,7 +30,7 @@ def _find_active_clip(context: Context):
         if strip and getattr(strip, "clip", None):
             return strip.clip
 
-    print("[CleanError] Kein aktiver Clip gefunden.")
+    # logging entfernt
     return None
 
 
@@ -63,12 +63,12 @@ def clean_error_tracks(context: Context, sort_desc: bool = True) -> int:
     scene = context.scene
     clip = _find_active_clip(context)
     if not clip:
-        print("[CleanError] Kein aktiver Clip → ABORT")
+        # logging entfernt
         return 0
 
     tracks = getattr(clip.tracking, "tracks", [])
     if not tracks:
-        print("[CleanError] Keine Tracks → ABORT")
+        # logging entfernt
         return 0
 
     results = []
@@ -92,12 +92,10 @@ def clean_error_tracks(context: Context, sort_desc: bool = True) -> int:
     avg_error = sum(valid) / len(valid) if valid else None
     max_error_value = getattr(scene, "max_error_value", None)
 
-    print("-------------------------------------------------")
-    print(f"[CleanError] AVG_ERR={avg_error}, MAX_ERR={max_error_value}")
-    print("-------------------------------------------------")
+    # logging entfernt
 
     if avg_error is None or max_error_value is None:
-        print("[CleanError] Kein durchschnittlicher Fehler oder kein max_error_value → EXIT")
+        # logging entfernt
         return 0
 
     deleted = 0
@@ -106,23 +104,20 @@ def clean_error_tracks(context: Context, sort_desc: bool = True) -> int:
 
     if avg_error > max_error_value:
         limit = avg_error * 2.0
-
-        print(f"[CleanError] LIMIT für Löschung = {limit:.4f}")
-        print("[CleanError] Kandidaten:")
+        # logging entfernt
 
         try:
             from .delete import delete_track_by_name
         except Exception as e:
-            print(f"[CleanError] delete_track_by_name Importfehler → EXIT ({e})")
+            # logging entfernt
             return 0
 
         # Kandidaten sammeln + loggen
         for r in results:
             if r["error"] is not None and r["error"] > limit:
                 candidates_log.append(r)
-                print(f" → DEL-Candidate: {r['name']} (Err={r['error']:.4f}, Len={r['length']})")
-
-        print("[CleanError] Löschvorgang startet …")
+            # logging entfernt
+        # logging entfernt
 
         # Tatsächlich löschen + Log
         for r in candidates_log:
@@ -130,12 +125,12 @@ def clean_error_tracks(context: Context, sort_desc: bool = True) -> int:
                 delete_track_by_name(context, r["name"])
                 deleted += 1
                 deleted_log.append(r)
-                print(f" ✔ GELÖSCHT: {r['name']} (Err={r['error']:.4f})")
+                # logging entfernt
             except Exception as e:
-                print(f" ✖ FEHLGESCHLAGEN: {r['name']} ({e})")
+                # logging entfernt
 
     else:
-        print("[CleanError] Kein Cleaning nötig (avg_error <= max_error_value).")
+        # logging entfernt
         return 0
 
     # Scene-Cache aktualisieren
@@ -144,13 +139,9 @@ def clean_error_tracks(context: Context, sort_desc: bool = True) -> int:
         scene["best_track_ids"] = id_list
         scene["best_tracks"] = id_list
     except Exception as e:
-        print(f"[CleanError] Fehler beim Aktualisieren von best_tracks: {e}")
+        # logging entfernt
 
-    print("-------------------------------------------------")
-    print(f"[CleanError] RESULT: Deleted={deleted}")
-    print("[CleanError] Übrig gebliebene Tracks:",
-          len(clip.tracking.tracks))
-    print("-------------------------------------------------")
+    # logging entfernt
 
     time.sleep(0.5)
     return deleted

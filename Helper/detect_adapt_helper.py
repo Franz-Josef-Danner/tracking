@@ -64,11 +64,10 @@ def run_detect_adapt(context: bpy.types.Context) -> None:
 
         if tracking_settings_margin is not None and hasattr(tracking_settings_margin, "default_margin"):
             ma = int(tracking_settings_margin.default_margin)
-            print(f"[DetectAdapt] margin aus default_margin übernommen: {ma}")
         else:
-            print("[DetectAdapt] INFO: default_margin nicht vorhanden – verwende bisherigen ma-Wert.")
+            pass
     except Exception as e:
-        print(f"[DetectAdapt] WARN: Fehler beim Lesen von default_margin: {e}")
+        pass
 
     pre_snapshot = snapshot_active_markers(context)
 

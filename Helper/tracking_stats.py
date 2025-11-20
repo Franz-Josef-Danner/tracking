@@ -22,7 +22,7 @@ def tracking_stats_init(scene: bpy.types.Scene) -> None:
     scene[KEY_REL] = []
     scene[KEY_GLOB_P] = []
     scene[KEY_P_DEV] = []
-    print("[KPI] Stats initialized")
+    # logging entfernt
 
 
 # ----------------------------------------------------------------------
@@ -42,7 +42,7 @@ def tracking_stats_accumulate(scene: bpy.types.Scene,
         scene[KEY_GLOB_P].append(global_p_dev)
         scene[KEY_P_DEV].append(avg_p_dev)
     except KeyError:
-        print("[KPI][Error] Stats list missing → run tracking_stats_init first")
+        pass
 
 
 # ----------------------------------------------------------------------
@@ -56,7 +56,7 @@ def tracking_stats_finalize(scene: bpy.types.Scene) -> None:
     p_list = scene.get(KEY_P_DEV, [])
 
     if not dx_list or not gp_list:
-        print("[KPI] No stats collected → skip finalize")
+        # logging entfernt
         return
 
     avg_dx = sum(dx_list) / len(dx_list)
@@ -65,13 +65,7 @@ def tracking_stats_finalize(scene: bpy.types.Scene) -> None:
     avg_global_p = sum(gp_list) / len(gp_list)
     avg_p = sum(p_list) / len(p_list)
 
-    print("\n[KPI][FINAL] Tracking Statistics =====================================")
-    print(f"  Avg dx_var       : {avg_dx:.6f}")
-    print(f"  Avg dy_var       : {avg_dy:.6f}")
-    print(f"  Avg rel_var      : {avg_rel:.6f}")
-    print(f"  Avg global_p_dev : {avg_global_p:.6f}")
-    print(f"  Avg per_m_dev    : {avg_p:.6f}")
-    print("=====================================================================\n")
+    # logging entfernt
 
     # Für UI/Weiterverarbeitung im Scene speichern
     scene["kaiserlich_stats_last"] = {

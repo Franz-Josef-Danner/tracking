@@ -106,12 +106,12 @@ def apply_bootstrap_defaults(context, params: dict) -> None:
 
 
         except Exception as e:
-            print(f"[BootstrapApply] FEHLER beim Setzen von settings.default_correlation_min: {e}")
+            pass
     else:
-        print("[BootstrapApply] Kein Clip gefunden – Tracking-Settings werden nicht gesetzt.")
+        pass
 
     # --- Params in Scene-ID-Property speichern ------------------------------
     try:
         scene["bootstrap_params"] = dict(params)
     except Exception as e:
-        print(f"[BootstrapApply] FEHLER beim Setzen von scene['bootstrap_params']: {e}")
+        pass

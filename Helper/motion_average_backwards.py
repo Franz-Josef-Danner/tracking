@@ -94,7 +94,6 @@ def _evaluate_motion_model_pairwise_backwards(all_positions: list[tuple[float, f
     else:
         return "Loc"
 
-
 # ==========================================================
 # Perspective-Erkennung (Mittelpunktanalyse)
 # ==========================================================
@@ -152,11 +151,6 @@ def _detect_perspective_motion_backwards(marker_positions: dict[str, list[tuple[
 
     max_dev = max(per_marker_dev.values()) if per_marker_dev else 0.0
     return center_marker, max_dev, per_marker_dev
-
-
-
-
-
 
 # ==========================================================
 # Hauptlogik – Hybrid-Auswertung + Perspective
