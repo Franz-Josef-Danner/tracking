@@ -81,6 +81,8 @@ def _evaluate_motion_model_pairwise_backwards(all_positions: list[tuple[float, f
     dy_var_mean = sum(dy_var_accum) / len(dy_var_accum)
     rel_var_mean = sum(rel_var_accum) / len(rel_var_accum)
 
+    tracker_log("MOTION", "BACKWARD", f"model_pairwise dx_var={dx_var:.6f} dy_var={dy_var:.6f} rel_var={rel_var:.6f} dx_mean={dx_var_mean:.6f} dy_mean={dy_var_mean:.6f} rel_mean={rel_var_mean:.6f}")
+
     # Klassifikation ohne Veränderung
     if (
         rel_var > thresh_rot_scale_scale
@@ -150,6 +152,7 @@ def _detect_perspective_motion_backwards(marker_positions: dict[str, list[tuple[
         per_marker_dev[name] = abs(mv_i - mvth)
 
     max_dev = max(per_marker_dev.values()) if per_marker_dev else 0.0
+    tracker_log("MOTION", "BACKWARD", f"perspective center={center_marker} max_dev={max_dev:.6f} markers={len(per_marker_dev)}")
     return center_marker, max_dev, per_marker_dev
 
 # ==========================================================
@@ -182,21 +185,34 @@ def get_calibrate_tracks_backwards(
     else:
         calibrate_names = []
 
-    tracker_log("MOTION", "BACKWARD", f"start frame={current_frame} candidates={len(calibrate_names)} span={frames_per_track}")
+    cand_total = len(calibrate_names)
+    missing_count = 0
+    too_few_count = 0
+    valid_count = 0
+    tracker_log("MOTION", "BACKWARD", f"start frame={current_frame} candidates={cand_total} span={frames_per_track}")
 
     # Validieren (Track existiert + Marker im Frame)
     selected_tracks = []
     for name in calibrate_names:
         tr = clip.tracking.tracks.get(name)
         if not tr:
+            missing_count += 1
+            tracker_log("MOTION", "BACKWARD", f"track_missing name={name}")
             continue
         pos = get_positions_backward(tr, current_frame, max_frames=frames_per_track)
         if len(pos) >= 2:
             selected_tracks.append(tr)
+            valid_count += 1
+            tracker_log("MOTION", "BACKWARD", f"track_ok name={name} markers={len(pos)}")
+        else:
+            too_few_count += 1
+            tracker_log("MOTION", "BACKWARD", f"track_skip_too_few name={name} markers={len(pos)}")
 
     if not selected_tracks:
-        tracker_log("MOTION", "BACKWARD", "skip:no_valid_tracks")
+        tracker_log("MOTION", "BACKWARD", f"abort:no_valid_tracks cand_total={cand_total} missing={missing_count} too_few={too_few_count} valid={valid_count}")
         return
+
+    tracker_log("MOTION", "BACKWARD", f"selection_summary cand_total={cand_total} valid={valid_count} missing={missing_count} too_few={too_few_count}")
 
     scene = context.scene
     current_frame = scene.frame_current
@@ -215,6 +231,8 @@ def get_calibrate_tracks_backwards(
         )
         if len(positions) >= 2:
             marker_positions[track.name] = [(x, y) for _, (x, y) in positions]
+            first_x, first_y = marker_positions[track.name][0]
+            tracker_log("MOTION", "BACKWARD", f"positions name={track.name} count={len(marker_positions[track.name])} first=({first_x:.6f},{first_y:.6f})")
     if not marker_positions:
         tracker_log("MOTION", "BACKWARD", "skip:no_marker_positions")
         return
@@ -241,14 +259,16 @@ def get_calibrate_tracks_backwards(
         )
 
         # --- 2) Perspective global & per Marker einmalig berechnen ---
-        _, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
+        center_marker, global_p_dev, per_marker_dev = _detect_perspective_motion_backwards(
             marker_positions,
             persp_t
         )
         perspective_thresh = persp_t
         if global_p_dev > perspective_thresh:
             global_model = "Perspective"
-        tracker_log("MOTION", "BACKWARD", f"evaluate model={global_model} tracks={len(selected_tracks)} g_p_dev={global_p_dev:.6f}")
+        top_devs = sorted(per_marker_dev.items(), key=lambda x: x[1], reverse=True)[:3]
+        top_str = ",".join(f"{n}:{d:.6f}" for n, d in top_devs)
+        tracker_log("MOTION", "BACKWARD", f"evaluate model={global_model} tracks={len(selected_tracks)} center={center_marker} g_p_dev={global_p_dev:.6f} top_dev=[{top_str}]")
         
         global_p_dev_accum.append(global_p_dev)
         if len(global_p_dev_accum) > MAX_HISTORY: global_p_dev_accum.pop(0)
@@ -265,9 +285,11 @@ def get_calibrate_tracks_backwards(
         scene["kaiserlich_rot_scale_thresh_rot"] = max(0, min(1, 1 - (((((((1 - dx_var_mean)) + ((1 - dy_var_mean))) / 2) * 0.015670) * 376.2227239) - 0.57)))
         scene["kaiserlich_rot_scale_thresh_scale"] = max(0, min(1,  1 - ((((1 - rel_var_mean) * 0.000347) * 11111.11111) - 0.79)))
         scene["kaiserlich_perspective_thresh"] = max(0, min(1, 1 - ((((1 - global_p_dev_accum_mean) * 0.008706) * 657.0302234) - 4.70)))
-        tracker_log("MOTION", "BACKWARD", f"update dx_var_mean={dx_var_mean:.6f} dy_var_mean={dy_var_mean:.6f} rel_var_mean={rel_var_mean:.6f} g_p_dev_mean={global_p_dev_accum_mean:.6f}")
-        tracker_log("MOTION", "BACKWARD", "done:update_thresholds")
+        tracker_log("MOTION", "BACKWARD", f"update_means dx_var_mean={dx_var_mean:.6f} dy_var_mean={dy_var_mean:.6f} rel_var_mean={rel_var_mean:.6f} g_p_dev_mean={global_p_dev_accum_mean:.6f}")
+        tracker_log("MOTION", "BACKWARD", f"thresholds rot_x={scene['kaiserlich_rot_thresh_x']:.6f} rot_y={scene['kaiserlich_rot_thresh_y']:.6f} scale_min={scene['kaiserlich_scale_thresh_min']:.6f} scale_max={scene['kaiserlich_scale_thresh_max']:.6f} rs_rot={scene['kaiserlich_rot_scale_thresh_rot']:.6f} rs_scale={scene['kaiserlich_rot_scale_thresh_scale']:.6f} persp={scene['kaiserlich_perspective_thresh']:.6f}")
+        tracker_log("MOTION", "BACKWARD", "end:update_thresholds")
+        tracker_log("MOTION", "BACKWARD", f"summary model={global_model} tracks_valid={valid_count} markersets={len(marker_positions)}")
 
-    except Exception:
-        tracker_log("MOTION", "BACKWARD", "error:exception")
+    except Exception as e:
+        tracker_log("MOTION", "BACKWARD", f"error:exception msg={e}")
         pass
