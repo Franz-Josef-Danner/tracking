@@ -243,19 +243,19 @@ def get_from_selected_tracks(
         dy_var_mean = sum(dy_var_accum) / len(dy_var_accum) if dy_var_accum else 0.0
         rel_var_mean = sum(rel_var_accum) / len(rel_var_accum) if rel_var_accum else 0.0
 
-        if dx_var_multi < dx_var_mean
+        if dx_var_multi < dx_var_mean:
             dx_var_multi = dx_var_mean
             dx_var_multi = 1 / dx_var_multi
 
-        if dy_var_multi < dy_var_mean
+        if dy_var_multi < dy_var_mean:
             dy_var_multi = dy_var_mean
             dy_var_multi = 1 / dy_var_multi
 
-        if rel_var_multi < rel_var_mean
+        if rel_var_multi < rel_var_mean:
             rel_var_multi = rel_var_mean
             rel_var_multi = 1 / rel_var_multi
 
-        if global_p_multi < global_p_dev_accum_mean
+        if global_p_multi < global_p_dev_accum_mean:
             global_p_multi = global_p_dev_accum_mean
             global_p_multi = 1 / global_p_multi
 
