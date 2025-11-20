@@ -44,10 +44,6 @@ from ...Helper.marker_position_forward_calibration import _resolve_reference_key
 # Interner Helper: Speicherung aktiver Tracks in Scene-String
 # ------------------------------------------------------------
 def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
-    """
-    Speichert die aktuell selektierten und aktiven Tracks
-    im Scene-String 'calibrate_tracks' und 'calibrate_tracks_uuid_map'.
-    """
     scene = context.scene
     if not track_names:
         return
@@ -62,18 +58,21 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         if not clip or not getattr(clip, "tracking", None):
             return
 
-        # UUID-Map erzeugen (keine Attribute an Track-Objekten!)
+        # UUID-Map erzeugen
         import uuid as _uuid
         uuid_map: Dict[str, str] = {}
         for name in track_names:
             uuid_map[str(_uuid.uuid4())] = name
 
-        # Speicherung in Szene
-        scene["calibrate_tracks"] = ",".join(track_names)
+        # WICHTIG: jetzt als LISTE speichern, nicht als String
+        scene["calibrate_tracks"] = list(track_names)
         scene["calibrate_tracks_uuid_map"] = str(uuid_map)
 
+        print(f"[CALIBRATE][STORE] Stored {len(track_names)} calibrate_tracks")
+
     except Exception as e:
-        pass
+        print(f"[CALIBRATE][ERROR] {e}")
+
 
 
 # ------------------------------------------------------------

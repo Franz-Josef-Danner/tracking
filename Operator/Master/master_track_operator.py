@@ -31,38 +31,40 @@ from ...Helper.marker_position_forward_calibration import (
 # ------------------------------------------------------------
 def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
     """
-    Speichert die aktuell selektierten und aktiven Tracks
-    im Scene-String 'calibrate_tracks' und 'calibrate_tracks_uuid_map'.
-    UUIDs werden ausschließlich in einer temporären Map verwaltet,
-    nicht als Attribut an den MovieTrackingTrack-Objekten.
+    Speichert aktive Kalibrierungs-Tracks in der Szene:
+      calibrate_tracks        → reine Namen (LISTE)
+      calibrate_tracks_uuid_map → UUID→Name Mapping (STRING)
     """
     scene = context.scene
     if not track_names:
         return
 
     try:
-        # Alte Einträge bereinigen
+        # Alte Keys entfernen
         for key in ("calibrate_tracks", "calibrate_tracks_uuid_map"):
             if key in scene:
                 del scene[key]
 
         clip = getattr(context.space_data, "clip", None)
-        if not clip or not getattr(clip, "tracking", None):
+        if not clip or not hasattr(clip, "tracking"):
             return
 
+        # UUID Map erzeugen (nur im Scene-String, nicht im Track)
         import uuid as _uuid
-        uuid_map: Dict[str, str] = {}
+        uuid_map: Dict[str, str] = {
+            str(_uuid.uuid4()): name for name in track_names
+        }
 
-        # UUIDs neu erzeugen – keine Attribute am Track selbst
-        for name in track_names:
-            uuid_map[str(_uuid.uuid4())] = name
+        # WICHTIG: Namen als LISTE speichern, nicht als String
+        scene["calibrate_tracks"] = list(track_names)
 
-        # Speicherung als Scene-Strings
-        scene["calibrate_tracks"] = ",".join(track_names)
+        # Map bleibt String (JSON/Python-String)
         scene["calibrate_tracks_uuid_map"] = str(uuid_map)
 
+        print(f"[CALIBRATE][STORE] Stored {len(track_names)} calibrate_tracks")
+
     except Exception as e:
-        pass
+        print(f"[CALIBRATE][ERROR] {e}")
 
 # =====================================================================
 # Hauptoperator
