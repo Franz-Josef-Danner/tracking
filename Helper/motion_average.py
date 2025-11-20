@@ -289,7 +289,6 @@ def get_from_selected_tracks(
         if persp == 0:
             persp = 1
 
-        print ("Motion Model Counts - Loc:", loc, "LocRot:", locrot, "LocScale:", locscale, "LocRotScale:", locrotscale, "Perspective:", persp)
 
         mo_full = loc + locrot + locscale + locrotscale + persp
         
