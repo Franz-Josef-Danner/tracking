@@ -177,18 +177,18 @@ def get_from_selected_tracks(
     # Nur selektierte, aktive, ungemutete, nicht deaktivierte Tracks
     # Fallback: nur Active, wenn dieser gültig ist
     # ------------------------------------------------------
-    # Streng filtern: selektiert, nicht gemutet, gültig
     selected_raw = [
         t for t in clip.tracking.tracks
         if t.select
-        and not t.mute
-        and t.is_valid
+        and not getattr(t, "mute", False)
+        and not getattr(t, "disabled", False)
     ]
 
     # Fallback auf aktiven Track, falls nichts selektiert wurde
+    # Fallback: Active Track nur wenn gültig
     if not selected_raw and clip.tracking.tracks.active:
         t = clip.tracking.tracks.active
-        if not getattr(t, "mute", False) and not getattr(t, "disabled", False):
+        if not t.mute and t.is_valid:
             selected_raw = [t]
 
     if not selected_raw:
