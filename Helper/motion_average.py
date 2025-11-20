@@ -228,46 +228,7 @@ def get_from_selected_tracks(
             getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)
         )
 
-        # ============================================================
-        # 2) Motion Model je Track bestimmen + Statistik erfassen
-        # ============================================================
-
-        model_counts = {"Loc": 0, "LocRot": 0, "LocScale": 0, "LocRotScale": 0, "Perspective": 0}
-
-        for track in selected_tracks:
-            pts = marker_positions.get(track.name, None)
-            if not pts:
-                continue
-
-            # Perspektive zuerst prüfen
-            dev = per_marker_dev.get(track.name, 0.0)
-            if dev > perspective_thresh:
-                track.motion_model = "Perspective"
-                model_counts["Perspective"] += 1
-                continue
-
-            # Sonst Hybrid-Modelle prüfen
-            motion_type = _evaluate_motion_model_pairwise(
-                pts,
-                rot_thresh_x,
-                scale_thresh_max,
-                rot_scale_thresh_rot,
-                rot_scale_thresh_scale,
-            )
-            track.motion_model = motion_type
-            model_counts[motion_type] += 1
-
-        # ============================================================
-        # 3) Statistik in Szene speichern (für Berechnung / UI)
-        # ============================================================
-
-        for key, val in model_counts.items():
-            scene[f"kaiserlich_model_count_{key}"] = val
-
-        # Optional Debug-Print
-        print("[Model Stats] ", model_counts)
-
-        # --- 4) Perspective global & per Marker einmalig berechnen ---
+        # --- 2) Perspective global & per Marker einmalig berechnen ---
         _, global_p_dev, per_marker_dev = _detect_perspective_motion(
             marker_positions,
             getattr(scene, "kaiserlich_perspective_thresh", 0.002)
@@ -281,6 +242,70 @@ def get_from_selected_tracks(
         dx_var_mean = sum(dx_var_accum) / len(dx_var_accum) if dx_var_accum else 0.0
         dy_var_mean = sum(dy_var_accum) / len(dy_var_accum) if dy_var_accum else 0.0
         rel_var_mean = sum(rel_var_accum) / len(rel_var_accum) if rel_var_accum else 0.0
+
+        # ============================================================
+        # Aktuelle Motion Models der selektierten Tracks auslesen
+        # und Anzahl je Typ in Szene-Variablen speichern
+        # ============================================================
+        model_counts = {
+            "Loc": 0,
+            "LocRot": 0,
+            "LocScale": 0,
+            "LocRotScale": 0,
+            "Perspective": 0,
+        }
+
+        for track in selected_tracks:
+            mm = getattr(track, "motion_model", None)
+            if mm in model_counts:
+                model_counts[mm] += 1
+
+        for key, val in model_counts.items():
+            scene[f"kaiserlich_model_count_{key}"] = val
+
+        rel_var_min = rel_var_mean * 0.5
+        rel_var_multi_min = rel_var_multi * 0.5
+
+        d_var_com = (dx_var_mean + dy_var_mean) / 2
+        d_var_multi_com = (dx_var_multi + dy_var_multi) / 2
+
+        rel_com = rel_var_mean * 0.25
+
+        mo_full = loc + LocRot + LocScale + LocRotScale + Perspective
+        mo_full_loc = (100 / mo_full) * loc
+        mo_full_locrot = (100 / mo_full) * LocRot
+        mo_full_locscale = (100 / mo_full) * LocScale
+        mo_full_locrotscale = (100 / mo_full) * LocRotScale
+        mo_full_perspective = (100 / mo_full) * Perspective
+
+        th_full = dx_var_mean + dy_var_mean + rel_var_mean + rel_var_min + d_var_com + rel_com + global_p_dev_accum_mean
+        th_full_dx = (100 / th_full) * dx_var_mean
+        th_full_dy = (100 / th_full) * dy_var_mean
+        th_full_rel = (100 / th_full) * rel_var_mean
+        th_full_rel_min = (100 / th_full) * rel_var_min
+        th_full_dcom = (100 / th_full) * d_var_com
+        th_full_relcom = (100 / th_full) * rel_com
+        th_full_perspective = (100 / th_full) * global_p_dev_accum_mean
+
+        mo_full_loc_x = (100 / mo_full_loc) * th_full_dx
+        mo_full_loc_y = (100 / mo_full_loc) * th_full_dy
+
+        dx_var_mean = dx_var_mean * (th_full_dx / mo_full_loc_x)
+        dy_var_mean = dy_var_mean * (th_full_dy / mo_full_loc_y)
+
+        mo_full_rel_max = (100 / mo_full_locrot) * th_full_rel
+        mo_full_rel_min = (100 / mo_full_locrot) * th_full_rel_min
+
+        rel_var_mean = rel_var_mean * (th_full_rel / mo_full_rel_max)
+        rel_var_min = rel_var_min * (th_full_rel_min / mo_full_rel_min)
+
+        mo_full_locrotscale_rot = (100 / mo_full_locrotscale) * th_full_dcom
+        mo_full_locrotscale_scale = (100 / mo_full_locrotscale) * th_full_relcom
+
+        d_var_com = d_var_com * (th_full_dcom / mo_full_locrotscale_rot)
+        rel_com = rel_com * (th_full_relcom / mo_full_locrotscale_scale)
+
+        global_p_dev_accum_mean = global_p_dev_accum_mean * (th_full_perspective / mo_full_perspective)
 
         # Szene-Multiplikatoren einlesen (numerisch, Fallback 0.0)
         dx_var_multi = float(scene.get('dx_var_multi', 0.0))
@@ -307,8 +332,14 @@ def get_from_selected_tracks(
         else:
             pass
 
-        rel_var_min = rel_var_mean * 0.5
-        rel_var_multi_min = rel_var_multi * 0.5
+        if rel_var_multi < rel_var_mean:
+            if rel_var_mean > 0:
+                rel_var_multi = rel_var_mean
+                rel_var_multiply = 1.0 / rel_var_mean
+            else:
+                pass
+        else:
+            pass
 
         if rel_var_multi_min < rel_var_min:
             if rel_var_min > 0:
@@ -319,18 +350,6 @@ def get_from_selected_tracks(
         else:
             pass
 
-        if rel_var_multi < rel_var_mean:
-            if rel_var_mean > 0:
-                rel_var_multi = rel_var_mean
-                rel_var_multiply = 1.0 / rel_var_mean
-            else:
-                pass
-        else:
-            pass
-
-        d_var_com = (dx_var_mean + dy_var_mean) / 2
-        d_var_multi_com = (dx_var_multi + dy_var_multi) / 2
-
         if d_var_multi_com < d_var_com:
             if d_var_com > 0:
                 d_var_multi_com = d_var_com
@@ -339,8 +358,6 @@ def get_from_selected_tracks(
                 pass
         else:
             pass
-
-        rel_com = rel_var_mean * 0.25
 
         if rel_var_multi < rel_com:
             if rel_com > 0:
@@ -359,17 +376,6 @@ def get_from_selected_tracks(
                 pass
         else:
             pass
-
-        rot_thresh_x = dx_var_mean * dx_var_multiply
-        rot_thresh_y = dy_var_mean * dy_var_multiply
-        scale_thresh_min = rel_var_min * rel_var_min_multiply
-        scale_thresh_max = rel_var_mean * rel_var_multiply
-        rot_scale_thresh_rot = d_var_com * d_var_multiply_com
-        rot_scale_thresh_scale = rel_com * rel_var_multiply
-        perspective_thresh = global_p_dev_accum_mean * global_p_multiply
-
-
-
 
         scene["kaiserlich_rot_thresh_x"] = dx_var_mean * dx_var_multiply
         scene["kaiserlich_rot_thresh_y"] = dy_var_mean * dy_var_multiply
