@@ -5,7 +5,7 @@ import ast
 from bpy.types import Operator, Context
 
 # ---- Helper Imports ---------------------------------------------------------
-from ...Helper.low_marker_frame import find_first_weak_frame
+from ...Helper.low_marker_frame_solve import find_first_weak_frame_solve
 from ...Helper.filter_tracks import filter_problematic_tracks
 from ...Helper.update_default_sizes import update_default_sizes
 from ...Helper.find_clip_editor_area import find_clip_editor_area
@@ -176,7 +176,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
             print(f"[SCENE][CLEANUP][ERROR] Exception during initial cleanup: {e}")
             pass
 
-        frame = find_first_weak_frame(context)
+        frame = find_first_weak_frame_solve(context)
 
         # ===================================================================
         # Weiterer Ablauf (wie zuvor)
@@ -215,7 +215,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                 print("[GOOD_TRACKS][REBUILD] Triggered from execute() after filter/cleanup (Stage2)")
                 self._rebuild_good_tracks(context, reason="Post-Stage2 cleanup")
 
-                frame = find_first_weak_frame(context)
+                frame = find_first_weak_frame_solve(context)
                 if frame is None:
                     print("[MASTER_CYCLE][INFO] No weak frame found after Stage2 cleanup – resolving camera.")
                     log_threshold_extrema(bpy.context.scene)
