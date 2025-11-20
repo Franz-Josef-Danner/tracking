@@ -34,6 +34,8 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
             "calibrate_tracks", "calibrate_tracks_uuid_map",
             # Progress / Metrics
             "kaiserlich_quality_percent", "kaiserlich_marker_progress",
+            # Neue Varianz / Probability Multi Werte
+            "dx_var_multi", "dy_var_multi", "rel_var_multi", "global_p_multi"
         )
 
         for k in keys_to_clear:
@@ -42,6 +44,21 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
                     del scene[k]
                 except Exception:
                     pass
+
+        # ================================================================
+        # Neue Scene-Variablen einrichten (numerische Defaults) – jetzt existieren sie garantiert
+        # ================================================================
+        try:
+            defaults_new = {
+                "dx_var_multi": 0.0,
+                "dy_var_multi": 0.0,
+                "rel_var_multi": 0.0,
+                "global_p_multi": 0.0,
+            }
+            for key, default in defaults_new.items():
+                scene[key] = default
+        except Exception:
+            pass
 
         # ================================================================
         # Threshold-Extremwerte zurücksetzen
