@@ -1,3 +1,4 @@
+# Operator/Master/master_clean_error_operator.py
 import bpy
 from bpy.types import Operator
 from bpy.props import BoolProperty
@@ -101,22 +102,21 @@ class KAISERLICHTRACKER_OT_clean_error_operator(Operator):
                 from ...Helper.delete import delete_track_by_name
             except Exception:
                 return {'CANCELLED'}
+            ...
+            # (delete loop ends here)
 
-            deleted = 0
-            for r in results:
-                if r["error"] is not None and r["error"] > limit:
-                    try:
-                        delete_track_by_name(context, r["name"])
-                        deleted += 1
-                    except Exception:
-                        pass
+        # ------------------------------------------------------------
+        # Remove GOOD_TRACKS (Clean Error darf diese ersetzen)
+        # ------------------------------------------------------------
+        for k in ("good_tracks", "good_tracks_names", "good_tracks_uuid_map"):
+            if k in scene:
+                del scene[k]
 
         # ------------------------------------------------------------
         # Store BEST TRACKS (ID-basiert + Namen + UUID-Map)
         # ------------------------------------------------------------
         try:
             import uuid
-
             # Cleanup alte Keys
             for k in (
                 "best_tracks", "best_tracks_names", "best_tracks_uuid_map",
