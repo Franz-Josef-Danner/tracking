@@ -266,15 +266,15 @@ def get_from_selected_tracks(
         locrotscale = float(model_counts["LocRotScale"])
         persp = float(model_counts["Perspective"])
 
-        if loc == 0
+        if loc == 0:
             loc = 1
-        if locrot == 0
+        if locrot == 0:
             locrot = 1
-        if locscale == 0
+        if locscale == 0:
             locscale = 1
-        if locrotscale == 0
+        if locrotscale == 0:
             locrotscale = 1
-        if persp == 0
+        if persp == 0:
             persp = 1
 
         mo_full = loc + locrot + locscale + locrotscale + persp
