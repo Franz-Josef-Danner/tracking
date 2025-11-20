@@ -34,16 +34,18 @@ def _get_positions_backward(track: bpy.types.MovieTrackingTrack,
 
 
 # ============================================================
-# Track-Lister
+# Track-Lister (robust against UUID lists / empty placeholders)
 # ============================================================
 def _resolve_reference_track_names(scene: bpy.types.Scene) -> List[str]:
-    if scene.get("best_tracks"):
-        names = scene.get("best_tracks_names", [])
+    # Best-Track Names immer priorisieren
+    names = scene.get("best_tracks_names", [])
+    if isinstance(names, list) and names:
         print(f"[BW-ResolveRef] best_tracks={len(names)}")
         return [n for n in names if isinstance(n, str) and n.strip()]
 
-    if scene.get("good_tracks"):
-        names = scene.get("good_tracks_names", [])
+    # Fallback → Good-Track Names
+    names = scene.get("good_tracks_names", [])
+    if isinstance(names, list) and names:
         print(f"[BW-ResolveRef] good_tracks={len(names)}")
         return [n for n in names if isinstance(n, str) and n.strip()]
 
@@ -52,12 +54,15 @@ def _resolve_reference_track_names(scene: bpy.types.Scene) -> List[str]:
 
 
 def _resolve_calibrate_track_names(scene: bpy.types.Scene) -> List[str]:
-    if not scene.get("calibrate_tracks"):
-        print("[BW-ResolveCal] Keine calibrate_tracks.")
-        return []
+    # Es wird ausschließlich der *_names Key gelesen
     names = scene.get("calibrate_tracks_names", [])
-    print(f"[BW-ResolveCal] calibrate_tracks={len(names)}")
-    return [n for n in names if isinstance(n, str) and n.strip()]
+    if isinstance(names, list) and names:
+        print(f"[BW-ResolveCal] calibrate_tracks={len(names)}")
+        return [n for n in names if isinstance(n, str) and n.strip()]
+
+    print("[BW-ResolveCal] Keine calibrate_tracks_names.")
+    return []
+
 
 
 # ============================================================
