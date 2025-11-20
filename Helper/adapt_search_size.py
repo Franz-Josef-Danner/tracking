@@ -14,19 +14,33 @@ import bpy
 from mathutils import Vector
 
 
-def _load_calibrate_tracks(scene):
+def _load_calibrate_tracks(scene) -> list:
     """
-    Lädt die Liste der Kalibrations-Track-Namen aus scene['calibrate_tracks']
+    Lädt die Liste der Kalibrations-Track-Namen.
+    Unterstützt:
+      1) scene['calibrate_tracks'] als echte Python-Liste
+      2) scene['calibrate_tracks'] als kommaseparierter String (Legacy)
     """
-    try:
-        s = scene.get("calibrate_tracks", "")
-        if not s:
-            return []
-        names = [t.strip() for t in s.split(",") if t.strip()]
-        return names
-    except Exception:
+    val = scene.get("calibrate_tracks", None)
+    if not val:
         return []
 
+    # === Fall 1: Neue Speicherung als Liste ===
+    if isinstance(val, (list, tuple)):
+        # nur Strings zulassen
+        return [str(t).strip() for t in val if isinstance(t, (str, int))]
+
+    # === Fall 2: Legacy-String ===
+    if isinstance(val, str):
+        parts = [t.strip() for t in val.split(",") if t.strip()]
+        return parts
+
+    # === Fallback ===
+    try:
+        # z. B. wenn jemand fälschlich einen anderen Typ speichert
+        return list(val)
+    except Exception:
+        return []
 
 def _compute_pattern_size(marker) -> Vector:
     """
