@@ -176,11 +176,11 @@ def _resolve_reference_key(scene: bpy.types.Scene) -> Optional[str]:
 def correct_marker_positions_backward(
     scene: bpy.types.Scene,
     ref_tracks: List[str],
-    calibrate_tracks: List[str] = None,
     frame_now: int,
     frame_next: Optional[int],
     frame_next2: Optional[int] = None,
-    frame_next3: Optional[int] = None
+    frame_next3: Optional[int] = None,
+    calibrate_tracks: Optional[List[str]] = None,
 ):
     """
     Rückwärts-Kalibrierung – jetzt vollständig symmetrisch zu Forward:
