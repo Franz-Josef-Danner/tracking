@@ -236,6 +236,15 @@ def apply_formula_on_selected_tracks_backwards(context: bpy.types.Context, max_f
 
         tracker_log("FORMULA", "BACKWARD", f"done applied={applied}")
 
-    except Exception:
-        tracker_log("FORMULA", "BACKWARD", "error:exception")
+    except Exception as e:
+        try:
+            import traceback
+            tracker_log("FORMULA", "BACKWARD", f"error:{type(e).__name__}:{e}")
+            tb = traceback.format_exc(limit=5)
+            # Zeilen vereinfachen, damit Log kompakt bleibt
+            compact = " | ".join(line.strip() for line in tb.splitlines() if line.strip())
+            tracker_log("FORMULA", "BACKWARD", f"trace:{compact}")
+        except Exception:
+            tracker_log("FORMULA", "BACKWARD", "error:trace_failed")
+        # Fehler nicht erneut werfen, um Modal-Fluss nicht zu stoppen
         pass

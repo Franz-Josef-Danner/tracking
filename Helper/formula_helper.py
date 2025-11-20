@@ -236,6 +236,13 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
 
         tracker_log("FORMULA", "FORWARD", f"done applied={applied}")
 
-    except Exception:
-        tracker_log("FORMULA", "FORWARD", "error:exception")
+    except Exception as e:
+        try:
+            import traceback
+            tracker_log("FORMULA", "FORWARD", f"error:{type(e).__name__}:{e}")
+            tb = traceback.format_exc(limit=5)
+            compact = " | ".join(line.strip() for line in tb.splitlines() if line.strip())
+            tracker_log("FORMULA", "FORWARD", f"trace:{compact}")
+        except Exception:
+            tracker_log("FORMULA", "FORWARD", "error:trace_failed")
         pass
