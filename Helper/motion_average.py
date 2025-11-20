@@ -161,54 +161,35 @@ def get_from_selected_tracks(
     max_frames: int | None = None,
 ) -> None:
     global dx_var_accum, dy_var_accum, rel_var_accum, global_p_dev_accum, MAX_HISTORY
-    """Analysiert Markerbewegung und setzt Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
+    """Analysiert Markerbewegung nur auf Basis der aktuell selektierten, nicht gemuteten Tracks
+    und setzt daraus die Thresholds (Loc / LocRot / LocScale / LocRotScale / Perspective)."""
     clip = getattr(context.space_data, "clip", None)
     if clip is None:
         return
 
-    scene = context.scene
-    current_frame = scene.frame_current
-    frames_per_track = _resolve_frames_per_track(
-        scene,
-        max_frames if (max_frames is not None and max_frames > 0) else 5
-    )
-
     # ------------------------------------------------------
-    # Nur selektierte, ungemutete, nicht "disabled" Tracks
+    # Nur selektierte UND nicht gemutete Tracks zulassen
     # ------------------------------------------------------
-    selected_raw = [
+    selected_tracks = [
         t for t in clip.tracking.tracks
-        if t.select
-        and not getattr(t, "mute", False)
-        and not getattr(t, "disabled", False)
+        if getattr(t, "select", False) and not getattr(t, "mute", False)
     ]
 
-    # Fallback: aktiver Track, wenn er die gleichen Bedingungen erfüllt
-    if not selected_raw and clip.tracking.tracks.active:
-        t = clip.tracking.tracks.active
-        if (not getattr(t, "mute", False)
-                and not getattr(t, "disabled", False)):
-            selected_raw = [t]
-
-    if not selected_raw:
-        print("[MOTION_AVG] keine gültigen selektierten Tracks gefunden.")
-        return
-
-    # Nur Tracks mit ausreichend Historie behalten (>= 2 Frames)
-    selected_tracks: list[bpy.types.MovieTrackingTrack] = []
-    for t in selected_raw:
-        positions = get_positions(t, current_frame, frames_per_track)
-        if len(positions) >= 2:
-            selected_tracks.append(t)
-        else:
-            print(f"[MOTION_AVG] skip {t.name}: nur {len(positions)} Frames.")
+    # Fallback: nur aktiver Track, falls nicht gemutet
+    if not selected_tracks:
+        active = getattr(clip.tracking.tracks, "active", None)
+        if active and not getattr(active, "mute", False):
+            selected_tracks = [active]
 
     if not selected_tracks:
-        print("[MOTION_AVG] alle selektierten Tracks hatten < 2 Frames → Abbruch.")
         return
 
-    print("[MOTION_AVG] ausgewählte Tracks:",
-          [t.name for t in selected_tracks])
+    scene = context.scene
+    current_frame = scene.frame_current
+
+    # Frames-per-Track aus Szene beziehen (Fallback: max_frames oder 5)
+    default_frames = max_frames if (max_frames is not None and max_frames > 0) else 5
+    frames_per_track = _resolve_frames_per_track(scene, default_frames)
 
     # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
