@@ -260,123 +260,98 @@ def get_from_selected_tracks(
             if mm in model_counts:
                 model_counts[mm] += 1
 
+        # Zähler in Scene schreiben (Debug/Monitoring)
         for key, val in model_counts.items():
             scene[f"kaiserlich_model_count_{key}"] = val
 
+        # Model-Counts auf lokale Variablen mappen
+        loc = float(model_counts["Loc"])
+        locrot = float(model_counts["LocRot"])
+        locscale = float(model_counts["LocScale"])
+        locrotscale = float(model_counts["LocRotScale"])
+        persp = float(model_counts["Perspective"])
+
+        mo_full = loc + locrot + locscale + locrotscale + persp
+        if mo_full <= 0.0:
+            mo_full = 1.0
+
+        # Anteile je Motion-Model
+        share_loc = loc / mo_full
+        share_locrot = locrot / mo_full
+        share_locscale = locscale / mo_full
+        share_locrotscale = locrotscale / mo_full
+        share_persp = persp / mo_full
+
+        # Basisgrößen
         rel_var_min = rel_var_mean * 0.5
-        rel_var_multi_min = rel_var_multi * 0.5
-
-        d_var_com = (dx_var_mean + dy_var_mean) / 2
-        d_var_multi_com = (dx_var_multi + dy_var_multi) / 2
-
+        d_var_com = (dx_var_mean + dy_var_mean) / 2.0
         rel_com = rel_var_mean * 0.25
 
-        mo_full = loc + LocRot + LocScale + LocRotScale + Perspective
-        mo_full_loc = (100 / mo_full) * loc
-        mo_full_locrot = (100 / mo_full) * LocRot
-        mo_full_locscale = (100 / mo_full) * LocScale
-        mo_full_locrotscale = (100 / mo_full) * LocRotScale
-        mo_full_perspective = (100 / mo_full) * Perspective
+        # gewichtende Faktoren je nach Verteilung der Motion Models
+        dx_var_mean_mult = share_loc
+        dy_var_mean_mult = share_loc
+        rel_var_mean_mult = share_locrot
+        rel_var_min_mult = share_locrot
+        d_var_com_mult = share_locrotscale
+        rel_com_mult = share_locrotscale
+        global_p_dev_accum_mean_mult = share_persp
 
-        th_full = dx_var_mean + dy_var_mean + rel_var_mean + rel_var_min + d_var_com + rel_com + global_p_dev_accum_mean
-        th_full_dx = (100 / th_full) * dx_var_mean
-        th_full_dy = (100 / th_full) * dy_var_mean
-        th_full_rel = (100 / th_full) * rel_var_mean
-        th_full_rel_min = (100 / th_full) * rel_var_min
-        th_full_dcom = (100 / th_full) * d_var_com
-        th_full_relcom = (100 / th_full) * rel_com
-        th_full_perspective = (100 / th_full) * global_p_dev_accum_mean
-
-        mo_full_loc_x = (100 / mo_full_loc) * th_full_dx
-        mo_full_loc_y = (100 / mo_full_loc) * th_full_dy
-
-        dx_var_mean_mult = dx_var_mean * (th_full_dx / mo_full_loc_x)
-        dy_var_mean_mult = dy_var_mean * (th_full_dy / mo_full_loc_y)
-
-        mo_full_rel_max = (100 / mo_full_locrot) * th_full_rel
-        mo_full_rel_min = (100 / mo_full_locrot) * th_full_rel_min
-
-        rel_var_mean_mult = rel_var_mean * (th_full_rel / mo_full_rel_max)
-        rel_var_min_mult = rel_var_min * (th_full_rel_min / mo_full_rel_min)
-
-        mo_full_locrotscale_rot = (100 / mo_full_locrotscale) * th_full_dcom
-        mo_full_locrotscale_scale = (100 / mo_full_locrotscale) * th_full_relcom
-
-        d_var_com_mult = d_var_com * (th_full_dcom / mo_full_locrotscale_rot)
-        rel_com_mult = rel_com * (th_full_relcom / mo_full_locrotscale_scale)
-
-        global_p_dev_accum_mean_mult = global_p_dev_accum_mean * (th_full_perspective / mo_full_perspective)
-
-        # Szene-Multiplikatoren einlesen (numerisch, Fallback 0.0)
+        # Szene-Multiplikatoren und bisherige Maxima einlesen
         dx_var_multi = float(scene.get('dx_var_multi', 0.0))
         dy_var_multi = float(scene.get('dy_var_multi', 0.0))
         rel_var_multi = float(scene.get('rel_var_multi', 0.0))
+        rel_var_multi_min = float(scene.get('rel_var_multi_min', 0.0))
+        d_var_com_multi = float(scene.get('d_var_com_multi', 0.0))
+        rel_com_multi = float(scene.get('rel_com_multi', 0.0))
         global_p_multi = float(scene.get('global_p_multi', 0.0))
+
+        # Multiplikatoren mit Defaults initialisieren
+        dx_var_scala = float(scene.get('dx_var_scala', 1.0))
+        dy_var_scala = float(scene.get('dy_var_scala', 1.0))
+        rel_var_scala = float(scene.get('rel_var_scala', 1.0))
+        rel_var_min_scala = float(scene.get('rel_var_min_scala', 1.0))
+        d_var_com_scala = float(scene.get('d_var_com_scala', 1.0))
+        rel_com_scala = float(scene.get('rel_com_scala', 1.0))
+        global_p_scala = float(scene.get('global_p_scala', 1.0))
 
     
         if dx_var_multi < dx_var_mean:
             if dx_var_mean > 0:
                 dx_var_multi = dx_var_mean
-                dx_var_multiply = 1.0 / dx_var_mean
-            else:
-                pass
-        else:
-            pass
+                dx_var_scala = 1.0 / dx_var_mean
 
         if dy_var_multi < dy_var_mean:
             if dy_var_mean > 0:
                 dy_var_multi = dy_var_mean
-                dy_var_multiply = 1.0 / dy_var_mean
-            else:
-                pass
-        else:
-            pass
+                dy_var_scala = 1.0 / dy_var_mean
 
         if rel_var_multi < rel_var_mean:
             if rel_var_mean > 0:
                 rel_var_multi = rel_var_mean
-                rel_var_multiply = 1.0 / rel_var_mean
-            else:
-                pass
-        else:
-            pass
+                rel_var_scala = 1.0 / rel_var_mean
 
         if rel_var_multi_min < rel_var_min:
             if rel_var_min > 0:
                 rel_var_multi_min = rel_var_min
-                rel_var_min_multiply = 1.0 / rel_var_min
-            else:
-                pass
-        else:
-            pass
+                rel_var_min_scala = 1.0 / rel_var_min
+        # else: vorhandenen rel_var_min_scala beibehaltens
 
-        if d_var_multi_com < d_var_com:
+        if d_var_com_multi < d_var_com:
             if d_var_com > 0:
-                d_var_multi_com = d_var_com
-                d_var_multiply_com = 1.0 / d_var_com
-            else:
-                pass
-        else:
-            pass
+                d_var_com_multi = d_var_com
+                d_var_com_scala = 1.0 / d_var_com
 
-        if rel_var_multi < rel_com:
+        if rel_com_multi < rel_com:
             if rel_com > 0:
-                rel_var_multi = rel_com
-                rel_var_multiply = 1.0 / rel_com
-            else:
-                pass
-        else:
-            pass
+                rel_com_multi = rel_com
+                rel_com_scala = 1.0 / rel_com
 
         if global_p_multi < global_p_dev_accum_mean:
             if global_p_dev_accum_mean > 0:
                 global_p_multi = global_p_dev_accum_mean
-                global_p_multiply = 1.0 / global_p_dev_accum_mean
-            else:
-                pass
-        else:
-            pass
+                global_p_scala = 1.0 / global_p_dev_accum_mean
 
+        # gewichtete Werte anwenden
         dx_var_mean = dx_var_mean * dx_var_mean_mult
         dy_var_mean = dy_var_mean * dy_var_mean_mult
         rel_var_mean = rel_var_mean * rel_var_mean_mult
@@ -385,19 +360,24 @@ def get_from_selected_tracks(
         rel_com = rel_com * rel_com_mult
         global_p_dev_accum_mean = global_p_dev_accum_mean * global_p_dev_accum_mean_mult
 
-        scene["dx_var_multiply"] = dx_var_multiply
-        scene["rel_var_multiply"] = rel_var_multiply
-        scene["d_var_multiply_com"] = d_var_multiply_com
-        scene["rel_var_multiply"] = rel_var_multiply
-        scene["global_p_multiply"] = global_p_multiply
+        # Multiplikatoren in Scene schreiben (inkl. Kompatibilitäts-Key für Scale)
+        scene["dx_var_scala"] = dx_var_scala
+        scene["dy_var_scala"] = dy_var_scala
+        scene["rel_var_scala"] = rel_var_scala
+        scene["srel_var_scala"] = rel_var_scala  # für formula_helper
+        scene["rel_var_min_scala"] = rel_var_min_scala
+        scene["d_var_com_scala"] = d_var_com_scala
+        scene["rel_com_scala"] = rel_com_scala
+        scene["global_p_scala"] = global_p_scala
 
-        scene["kaiserlich_rot_thresh_x"] = dx_var_mean * dx_var_multiply
-        scene["kaiserlich_rot_thresh_y"] = dy_var_mean * dy_var_multiply
-        scene["kaiserlich_scale_thresh_min"] = rel_var_min * rel_var_min_multiply
-        scene["kaiserlich_scale_thresh_max"] = rel_var_mean * rel_var_multiply
-        scene["kaiserlich_rot_scale_thresh_rot"] = d_var_com * d_var_multiply_com
-        scene["kaiserlich_rot_scale_thresh_scale"] = rel_com * rel_var_multiply
-        scene["kaiserlich_perspective_thresh"] = global_p_dev_accum_mean * global_p_multiply
+        # finale Thresholds in Szene ablegen
+        scene["kaiserlich_rot_thresh_x"] = dx_var_mean * dx_var_scala
+        scene["kaiserlich_rot_thresh_y"] = dy_var_mean * dy_var_scala
+        scene["kaiserlich_scale_thresh_min"] = rel_var_min * rel_var_min_scala
+        scene["kaiserlich_scale_thresh_max"] = rel_var_mean * rel_var_scala
+        scene["kaiserlich_rot_scale_thresh_rot"] = d_var_com * d_var_com_scala
+        scene["kaiserlich_rot_scale_thresh_scale"] = rel_com * rel_com_scala
+        scene["kaiserlich_perspective_thresh"] = global_p_dev_accum_mean * global_p_scala
 
     except Exception:
         pass
