@@ -253,11 +253,19 @@ def get_from_selected_tracks(
             if dx_var_mean > 0:
                 dx_var_multi = dx_var_mean
                 dx_var_multiply = 1.0 / dx_var_mean
+            else:
+                pass
+        else:
+            pass
 
         if dy_var_multi < dy_var_mean:
             if dy_var_mean > 0:
                 dy_var_multi = dy_var_mean
                 dy_var_multiply = 1.0 / dy_var_mean
+            else:
+                pass
+        else:
+            pass
 
         rel_var_min = rel_var_mean * 0.5
         rel_var_multi_min = rel_var_multi * 0.5
@@ -266,11 +274,19 @@ def get_from_selected_tracks(
             if rel_var_min > 0:
                 rel_var_multi_min = rel_var_min
                 rel_var_min_multiply = 1.0 / rel_var_min
+            else:
+                pass
+        else:
+            pass
 
         if rel_var_multi < rel_var_mean:
             if rel_var_mean > 0:
                 rel_var_multi = rel_var_mean
                 rel_var_multiply = 1.0 / rel_var_mean
+            else:
+                pass
+        else:
+            pass
 
         d_var_com = (dx_var_mean + dy_var_mean) / 2
         d_var_multi_com = (dx_var_multi + dy_var_multi) / 2
@@ -279,6 +295,10 @@ def get_from_selected_tracks(
             if d_var_com > 0:
                 d_var_multi_com = d_var_com
                 d_var_multiply_com = 1.0 / d_var_com
+            else:
+                pass
+        else:
+            pass
 
         rel_com = rel_var_mean * 0.25
 
@@ -286,11 +306,19 @@ def get_from_selected_tracks(
             if rel_com > 0:
                 rel_var_multi = rel_com
                 rel_var_multiply = 1.0 / rel_com
+            else:
+                pass
+        else:
+            pass
 
         if global_p_multi < global_p_dev_accum_mean:
             if global_p_dev_accum_mean > 0:
                 global_p_multi = global_p_dev_accum_mean
                 global_p_multiply = 1.0 / global_p_dev_accum_mean
+            else:
+                pass
+        else:
+            pass
 
         scene["kaiserlich_rot_thresh_x"] = dx_var_mean * dx_var_multiply
         scene["kaiserlich_rot_thresh_y"] = dy_var_mean * dy_var_multiply
