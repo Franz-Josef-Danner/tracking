@@ -152,11 +152,6 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
     max_dev = max(per_marker_dev.values()) if per_marker_dev else 0.0
     return center_marker, max_dev, per_marker_dev
 
-
-
-
-
-
 # ==========================================================
 # Hauptlogik – Hybrid-Auswertung + Perspective
 # ==========================================================

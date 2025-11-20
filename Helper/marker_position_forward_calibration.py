@@ -123,33 +123,31 @@ def _compare_tracks_with_scene(scene: bpy.types.Scene, key: str, names: Iterable
 def _read_scene_list(scene: bpy.types.Scene, key: str) -> Optional[List[str]]:
     raw = scene.get(key)
     if raw is None:
-        return None
+        return []
 
-    # Falls String → versuchen literal_eval
+    # 1) Wenn String → versuchen zu parsen
     if isinstance(raw, str):
         try:
             parsed = ast.literal_eval(raw)
-            # Liste direkt übernehmen
-            if isinstance(parsed, list):
-                return [str(x).strip() for x in parsed if str(x).strip()]
-            # Dict → Werte extrahieren
-            if isinstance(parsed, dict):
-                return [str(v).strip() for v in parsed.values() if str(v).strip()]
-            # Fallback CSV
-            return [s.strip() for s in raw.split(",") if s.strip()]
         except Exception:
-            # Fallback CSV
-            return [s.strip() for s in raw.split(",") if s.strip()]
+            parsed = raw
+    else:
+        parsed = raw
 
-    # Falls Liste
-    if isinstance(raw, list):
-        return [str(x).strip() for x in raw if str(x).strip()]
+    # 2) Direkt listenartige Typen
+    if isinstance(parsed, (list, tuple, set)):
+        return [str(x).strip() for x in parsed if str(x).strip()]
 
-    # Falls Dict
-    if isinstance(raw, dict):
-        return [str(v).strip() for v in raw.values() if str(v).strip()]
+    # 3) Dict → Werte auslesen
+    if isinstance(parsed, dict):
+        return [str(v).strip() for v in parsed.values() if str(v).strip()]
 
-    return None
+    # 4) Fallback CSV-String
+    if isinstance(parsed, str):
+        return [s.strip() for s in parsed.split(",") if s.strip()]
+
+    # 5) Fallback einzelner Wert → Einzel-Liste
+    return [str(parsed).strip()] if str(parsed).strip() else []
 
 
 def find_active_tracks_key(scene: bpy.types.Scene) -> Tuple[Optional[str], Dict[str, Any]]:
