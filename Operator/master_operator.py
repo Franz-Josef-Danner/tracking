@@ -16,8 +16,13 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
     )
     bl_options = {'REGISTER', 'UNDO'}
 
-    def execute(self, context: Context):
-        keys_to_clear = (
+def execute(self, context: Context):
+    scene = context.scene
+
+    # ================================================================
+    # GLOBAL SCENE CLEANUP – harte Reset-Pflicht
+    # ================================================================
+    keys_to_clear = (
         # Motion + Threshold-Learn
         "motion_list", "motion_value", "kaiserlich_best_thresholds", "frame_value_cache",
         # Bootstrap + Detect
@@ -44,92 +49,69 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
         reset_threshold_extrema(scene)
     except Exception:
         pass
-        
-        scene = context.scene
 
-        # ================================================================
-        # Motion-Daten zurücksetzen
-        # ================================================================
-        for k in ("motion_list", "motion_value"):
-            if k in scene:
-                try:
-                    del scene[k]
-                except Exception:
-                    pass
-        # ================================================================
-        # Threshold-Extremwerte zurücksetzen
-        # ================================================================
-        try:
-            reset_threshold_extrema(scene)
-        except Exception as e:
-            pass
-        # ================================================================
-        # Bootstrap
-        # ================================================================
-        ef_target = int(getattr(scene, "kaiserlich_markers_per_frame", 25))
-        params = run_bootstrap(context, ef_target)
+    # ================================================================
+    # Bootstrap
+    # ================================================================
+    ef_target = int(getattr(scene, "kaiserlich_markers_per_frame", 25))
+    params = run_bootstrap(context, ef_target)
 
-        if params:
-            # --- Kritischer fehlender Schritt: jetzt nachziehen ---
-            apply_bootstrap_defaults(context, params)
+    if params:
+        apply_bootstrap_defaults(context, params)
+        scene["bootstrap_params"] = params
 
+    # ================================================================
+    # Schwachen Frame finden
+    # ================================================================
+    frame = find_first_weak_frame(context)
 
-            # Speichern für spätere Zyklen
-            scene["bootstrap_params"] = params
-
-        # ================================================================
-        # Schwachen Frame finden
-        # ================================================================
-        frame = find_first_weak_frame(context)
-
-        if frame is None:
-            return {'FINISHED'}
-
-        # ================================================================
-        # Playhead setzen
-        # ================================================================
-        scene.frame_current = frame
-        try:
-            space = getattr(context, "space_data", None)
-            if space and getattr(space, "clip_user", None):
-                space.clip_user.frame_current = frame
-        except Exception:
-            pass
-
-        # ================================================================
-        # DeepTest starten
-        # ================================================================
-        try:
-            bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-        except Exception:
-            pass
-
-        # ================================================================
-        # Marker-Progress
-        # ================================================================
-        try:
-            from ..Helper.frame_track_progress import compute_marker_progress
-            value, perc = compute_marker_progress(context.scene, update_ui=True)
-        except Exception:
-            pass
-
-        # ================================================================
-        # Quality-Metrics
-        # ================================================================
-        try:
-            from ..Helper.track_quality_metrics import compute_track_quality_metrics
-            metrics = compute_track_quality_metrics(context)
-            percent = f"{int(round(metrics['prozent']))}%"
-            context.scene.kaiserlich_quality_percent = percent
-
-            # UI refresh
-            for window in bpy.context.window_manager.windows:
-                for area in window.screen.areas:
-                    if area.type == 'CLIP_EDITOR':
-                        for region in area.regions:
-                            if region.type == 'UI':
-                                region.tag_redraw()
-        except Exception:
-            pass
-
+    if frame is None:
         return {'FINISHED'}
+
+    # ================================================================
+    # Playhead setzen
+    # ================================================================
+    scene.frame_current = frame
+    try:
+        space = getattr(context, "space_data", None)
+        if space and getattr(space, "clip_user", None):
+            space.clip_user.frame_current = frame
+    except Exception:
+        pass
+
+    # ================================================================
+    # DeepTest starten
+    # ================================================================
+    try:
+        bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+    except Exception:
+        pass
+
+    # ================================================================
+    # Marker-Progress
+    # ================================================================
+    try:
+        from ..Helper.frame_track_progress import compute_marker_progress
+        _, perc = compute_marker_progress(context.scene, update_ui=True)
+    except Exception:
+        pass
+
+    # ================================================================
+    # Quality-Metrics
+    # ================================================================
+    try:
+        from ..Helper.track_quality_metrics import compute_track_quality_metrics
+        metrics = compute_track_quality_metrics(context)
+        context.scene.kaiserlich_quality_percent = f"{int(round(metrics['prozent']))}%"
+
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'UI':
+                            region.tag_redraw()
+    except Exception:
+        pass
+
+    return {'FINISHED'}
+
