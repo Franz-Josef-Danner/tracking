@@ -55,12 +55,12 @@ def _resolve_reference_track_names(scene: bpy.types.Scene) -> List[str]:
 
 def _resolve_calibrate_track_names(scene: bpy.types.Scene) -> List[str]:
     # Ausschließlich *_names verwenden
-    names = scene.get("calibrate_tracks_names", [])
+    names = scene.get("calibrate_tracks", [])
     if isinstance(names, list) and names:
         print(f"[FW-ResolveCal] calibrate_tracks={len(names)}")
         return [n for n in names if isinstance(n, str) and n.strip()]
 
-    print("[FW-ResolveCal] Keine calibrate_tracks_names.")
+    print("[FW-ResolveCal] Keine calibrate_tracks.")
     return []
 
 
