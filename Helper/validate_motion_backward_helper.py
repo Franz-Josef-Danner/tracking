@@ -125,7 +125,7 @@ def validate_calibrate_tracks_backward_window(context: bpy.types.Context) -> Non
     print(f"\n[REF AVG] Δx={avg_dx:.6f} Δy={avg_dy:.6f}")
 
     # ---- Threshold bestimmen ----
-    max_dev = getattr(scene, "max_error_value", 5.0) / 100.0
+    max_dev = getattr(scene, "max_error_value", 5.0) / 500.0
     print(f"[Threshold] max_dev={max_dev:.6f} (aus scene.max_error_value)")
 
     # ---- Calibrate-Tracks prüfen ----
