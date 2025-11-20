@@ -14,7 +14,7 @@ from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
-from ...Helper.motion_average import get_from_selected_tracks
+from ...Helper.motion_average import get_calibrate_tracks
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.validate_motion_forward_helper import _get_positions_backward
@@ -199,10 +199,22 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # -----------------------------------------------
         try:
             # Frames-per-track wird intern aus Scene gelesen
-            get_from_selected_tracks(context)
+            get_calibrate_tracks(context)
             apply_formula_on_selected_tracks(context)
-            _get_positions_backward(context)
-            update_threshold_extrema(bpy.context.scene)
+            scene = context.scene
+            best_raw = scene.get("best_tracks")
+            good_raw = scene.get("good_tracks")
+
+            def _has_tracks(val):
+                if not val:
+                    return False
+                if isinstance(val, str):
+                    return bool(val.strip())
+                return True
+
+            if _has_tracks(best_raw) or _has_tracks(good_raw):
+                _get_positions_backward(context)
+
         except Exception:
             pass
         

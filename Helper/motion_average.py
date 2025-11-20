@@ -161,7 +161,7 @@ def _detect_perspective_motion(marker_positions: dict[str, list[tuple[float, flo
 # Hauptlogik – Hybrid-Auswertung + Perspective
 # ==========================================================
 
-def get_from_selected_tracks(
+def get_calibrate_tracks(
     context: bpy.types.Context,
     max_frames: int | None = None,
 ) -> None:
@@ -175,19 +175,25 @@ def get_from_selected_tracks(
     current_frame = scene.frame_current
     frames_per_track = _resolve_frames_per_track(scene, max_frames if (max_frames is not None and max_frames > 0) else 5)
 
-    candidate_tracks = []
-    for track in clip.tracking.tracks:
-        positions = get_positions(track, current_frame, frames_per_track)
-        if len(positions) >= 2:
-            candidate_tracks.append(track)
-
-    if candidate_tracks:
-        selected_tracks = candidate_tracks
+    # ============================================================
+    # NEU: Nur calibrate_tracks verwenden – nie Selection/Active
+    # ============================================================
+    calibrate_raw = scene.get("calibrate_tracks", [])
+    if isinstance(calibrate_raw, str):
+        calibrate_names = [t.strip() for t in calibrate_raw.split(",") if t.strip()]
+    elif isinstance(calibrate_raw, (list, tuple)):
+        calibrate_names = [t for t in calibrate_raw]
     else:
-        # Fallback: bisherige Logik
-        selected_tracks = [t for t in clip.tracking.tracks if t.select]
-        if not selected_tracks and clip.tracking.tracks.active:
-            selected_tracks = [clip.tracking.tracks.active]
+        calibrate_names = []
+
+    selected_tracks = []
+    for name in calibrate_names:
+        tr = clip.tracking.tracks.get(name)
+        if not tr:
+            continue
+        pos = get_positions(tr, current_frame, frames_per_track)
+        if len(pos) >= 2:
+            selected_tracks.append(tr)
 
     if not selected_tracks:
         return

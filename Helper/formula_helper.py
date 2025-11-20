@@ -132,13 +132,28 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     if clip is None:
         return
 
-    selected_tracks = [t for t in clip.tracking.tracks if t.select]
+    # ============================================================
+    # NEU: Nur calibrate_tracks verwenden – nie Selection/Active
+    # ============================================================
+    calibrate_raw = scene.get("calibrate_tracks", [])
+    if isinstance(calibrate_raw, str):
+        calibrate_names = [t.strip() for t in calibrate_raw.split(",") if t.strip()]
+    elif isinstance(calibrate_raw, (list, tuple)):
+        calibrate_names = [t for t in calibrate_raw]
+    else:
+        calibrate_names = []
+
+    selected_tracks = []
+    for name in calibrate_names:
+        tr = clip.tracking.tracks.get(name)
+        if not tr:
+            continue
+        pos = get_positions(tr, current_frame, max_frames=max_frames)
+        if len(pos) >= 2:
+            selected_tracks.append(tr)
+
     if not selected_tracks:
-        active_track = clip.tracking.tracks.active
-        if active_track:
-            selected_tracks = [active_track]
-    if not selected_tracks:
-        return
+        return   # keine gültigen calibrate_tracks im aktuellen Frame
 
     scene = context.scene
     current_frame = scene.frame_current
@@ -146,7 +161,7 @@ def apply_formula_on_selected_tracks(context: bpy.types.Context, max_frames: int
     # Thresholds zentral berechnen
     rot, scale, r_rot, r_scale, p_thresh = _resolve_transformed_thresholds(scene)
 
-    # --- Markerpositionen sammeln ---
+    # --- Markerpositionen nur aus calibrate_tracks sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
     for track in selected_tracks:
         positions = get_positions(track, current_frame, max_frames=max_frames)
