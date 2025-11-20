@@ -17,6 +17,34 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context: Context):
+        keys_to_clear = (
+        # Motion + Threshold-Learn
+        "motion_list", "motion_value", "kaiserlich_best_thresholds", "frame_value_cache",
+        # Bootstrap + Detect
+        "bootstrap_params", "min_distance_values",
+        # Track-Sets
+        "good_tracks", "good_tracks_names", "good_tracks_uuid_map",
+        "best_tracks", "best_tracks_names", "best_tracks_uuid_map", "best_track_ids",
+        "calibrate_tracks", "calibrate_tracks_uuid_map",
+        # Progress / Metrics
+        "kaiserlich_quality_percent", "kaiserlich_marker_progress",
+    )
+
+    for k in keys_to_clear:
+        if k in scene:
+            try:
+                del scene[k]
+            except Exception:
+                pass
+
+    # ================================================================
+    # Reset Threshold-Extrema separat (hat eigenen Helper)
+    # ================================================================
+    try:
+        reset_threshold_extrema(scene)
+    except Exception:
+        pass
+        
         scene = context.scene
 
         # ================================================================
