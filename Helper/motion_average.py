@@ -221,6 +221,7 @@ def get_from_selected_tracks(
         )
 
         # --- 2) Perspective global & per Marker einmalig berechnen ---
+        # Perspektive nur auf valide Tracks anwenden
         _, global_p_dev, per_marker_dev = _detect_perspective_motion(
             marker_positions,
             getattr(scene, "kaiserlich_perspective_thresh", 0.002)
@@ -247,7 +248,10 @@ def get_from_selected_tracks(
             "Perspective": 0,
         }
 
+        # Nur Tracks zählen, die valide Positionsdaten besitzen!
         for track in selected_tracks:
+            if track.name not in marker_positions:
+                continue  # kein positionsbasiertes Modell → ignorieren
             mm = getattr(track, "motion_model", None)
             if mm in model_counts:
                 model_counts[mm] += 1
