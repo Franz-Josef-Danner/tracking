@@ -174,33 +174,41 @@ def get_from_selected_tracks(
     )
 
     # ------------------------------------------------------
-    # Nur selektierte, aktive, ungemutete, nicht deaktivierte Tracks
-    # Fallback: nur Active, wenn dieser gültig ist
+    # Nur selektierte, ungemutete, nicht "disabled" Tracks
     # ------------------------------------------------------
     selected_raw = [
         t for t in clip.tracking.tracks
         if t.select
-        and not t.mute    # kein gemuteter Track
+        and not getattr(t, "mute", False)
+        and not getattr(t, "disabled", False)
     ]
 
-    # Fallback auf aktiven Track, falls nichts selektiert wurde
-    # Fallback: Active Track nur wenn gültig
+    # Fallback: aktiver Track, wenn er die gleichen Bedingungen erfüllt
     if not selected_raw and clip.tracking.tracks.active:
         t = clip.tracking.tracks.active
-        if not t.mute and t.is_valid:
+        if (not getattr(t, "mute", False)
+                and not getattr(t, "disabled", False)):
             selected_raw = [t]
 
     if not selected_raw:
+        print("[MOTION_AVG] keine gültigen selektierten Tracks gefunden.")
         return
 
-    # Nur Tracks mit ausreichend Historie behalten (>=2 Frames)
-    selected_tracks = [
-        t for t in selected_raw
-        if _is_track_usable(t, current_frame, frames_per_track)
-    ]
+    # Nur Tracks mit ausreichend Historie behalten (>= 2 Frames)
+    selected_tracks: list[bpy.types.MovieTrackingTrack] = []
+    for t in selected_raw:
+        positions = get_positions(t, current_frame, frames_per_track)
+        if len(positions) >= 2:
+            selected_tracks.append(t)
+        else:
+            print(f"[MOTION_AVG] skip {t.name}: nur {len(positions)} Frames.")
 
     if not selected_tracks:
+        print("[MOTION_AVG] alle selektierten Tracks hatten < 2 Frames → Abbruch.")
         return
+
+    print("[MOTION_AVG] ausgewählte Tracks:",
+          [t.name for t in selected_tracks])
 
     # --- Markerpositionen sammeln ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
