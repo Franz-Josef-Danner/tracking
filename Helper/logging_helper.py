@@ -1,15 +1,12 @@
-# Helper/logging_helper.py
-"""Einfaches Logging: direkte print-Ausgabe in Blender-Konsole.
+"""
+Helper/logging_helper.py
 
-Kein Filter, keine Umgebungsvariablen, keine Spielereien.
-Alle Aufrufer nutzen weiterhin `tracker_log(category, event, message, *extra)`.
+Logging wurde vollständig deaktiviert. Die Funktion `tracker_log` ist ein No-Op,
+damit bestehende Aufrufer ohne Änderungen weiter funktionieren, aber keinerlei
+Ausgaben mehr erzeugt werden.
 """
 from typing import Any
 
-_DEF_PREFIX = "[TRACK]"
-
 def tracker_log(category: str, event: str, message: str, *extra: Any) -> None:
-    if extra:
-        print(f"{_DEF_PREFIX}|{category}|{event}|{message}", *extra)
-    else:
-        print(f"{_DEF_PREFIX}|{category}|{event}|{message}")
+    # Logging ist bewusst deaktiviert (No-Op)
+    return
