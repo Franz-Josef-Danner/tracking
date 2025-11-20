@@ -300,10 +300,14 @@ def get_from_selected_tracks(
         share_locrotscale = locrotscale / mo_full
         share_persp = persp / mo_full
 
+        print ("Motion Model Shares - Loc:", share_loc, "LocRot:", share_locrot, "LocScale:", share_locscale, "LocRotScale:", share_locrotscale, "Perspective:", share_persp)   
+
         # Basisgrößen
         rel_var_min = rel_var_mean * 0.5
         d_var_com = (dx_var_mean + dy_var_mean) / 2.0
         rel_com = rel_var_mean * 0.25
+
+
 
         # gewichtende Faktoren je nach Verteilung der Motion Models
         dx_var_mean_mult = share_loc
