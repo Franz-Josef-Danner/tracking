@@ -148,35 +148,33 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
         print("[GOOD_TRACKS][REBUILD] Rebuild completed.")
 
-    # ------------------------------------------------------------------
-    # Execute
-    # ------------------------------------------------------------------
-    def execute(self, context: Context):
-        scene = context.scene
+        # ------------------------------------------------------------------
+        # Execute
+        # ------------------------------------------------------------------
+        def execute(self, context: Context):
+            scene = context.scene
 
-        # ===============================================================
-        # Scene-Bereinigung (alte Daten entfernen)
-        # ===============================================================
-        try:
-            keys_to_delete = [
-                "good_tracks", "good_tracks_names", "good_tracks_uuid_map",
-                "calibrate_tracks", "calibrate_tracks_names", "calibrate_tracks_uuid_map",
-                "frame_value_cache", "kaiserlich_best_thresholds"
-            ]
-            for _k in keys_to_delete:
-                if _k in scene:
-                    if _k.startswith("good_tracks"):
-                        print(f"[GOOD_TRACKS][DELETE] Removing scene['{_k}'] in execute()-cleanup")
-                    elif _k.startswith("best_tracks"):
-                        print(f"[BEST_TRACKS][DELETE] Removing scene['{_k}'] in execute()-cleanup")
-                    else:
-                        print(f"[SCENE][CLEANUP] Removing scene['{_k}'] in execute()-cleanup")
-                    del scene[_k]
-        except Exception as e:
-            print(f"[SCENE][CLEANUP][ERROR] Exception during initial cleanup: {e}")
-            pass
+            # ===============================================================
+            # Scene-Bereinigung (alte Daten entfernen)
+            # ===============================================================
+            try:
+                # good_tracks* wurden hier entfernt – jetzt bleiben sie erhalten
+                keys_to_delete = [
+                    "calibrate_tracks", "calibrate_tracks_names", "calibrate_tracks_uuid_map",
+                    "frame_value_cache", "kaiserlich_best_thresholds"
+                ]
+                for _k in keys_to_delete:
+                    if _k in scene:
+                        if _k.startswith("best_tracks"):
+                            print(f"[BEST_TRACKS][DELETE] Removing scene['{_k}'] in execute()-cleanup")
+                        else:
+                            print(f"[SCENE][CLEANUP] Removing scene['{_k}'] in execute()-cleanup")
+                        del scene[_k]
+            except Exception as e:
+                print(f"[SCENE][CLEANUP][ERROR] Exception during initial cleanup: {e}")
+                pass
 
-        frame = find_first_weak_frame_solve(context)
+            frame = find_first_weak_frame_solve(context)
 
         # ===================================================================
         # Weiterer Ablauf (wie zuvor)
