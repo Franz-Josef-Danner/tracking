@@ -128,6 +128,7 @@ def clean_error_tracks(context: Context, sort_desc: bool = True) -> int:
                 # logging entfernt
             except Exception as e:
                 # logging entfernt
+                pass
 
     else:
         # logging entfernt
@@ -140,6 +141,7 @@ def clean_error_tracks(context: Context, sort_desc: bool = True) -> int:
         scene["best_tracks"] = id_list
     except Exception as e:
         # logging entfernt
+        pass
 
     # logging entfernt
 
