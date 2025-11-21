@@ -351,7 +351,6 @@ def get_from_selected_tracks(
         # max_val als Scene-Variable verfügbar machen (für Debug/Auswertung)
         
         
-        print ("Max-Normalisierungswert:", max_val)
 
 
         # Prozentuale, multiplikative Normalisierung (sanft)
@@ -367,7 +366,8 @@ def get_from_selected_tracks(
             rel_com *= inv
             global_p_dev_accum_mean *= inv
 
-            scene["kaiserlich_threshold_max_val"] = float(inv)
+        scene["kaiserlich_threshold_inv"] = float(inv)
+        print ("Setze kaiserlich_threshold_inv auf ", inv)
 
         scene["kaiserlich_rot_thresh_x"]          = dx_var_mean
         scene["kaiserlich_rot_thresh_y"]          = dy_var_mean
