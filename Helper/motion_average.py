@@ -338,7 +338,38 @@ def get_from_selected_tracks(
         global_p_dev_accum_mean = th_persp /    mo_share_persp
 
         print ("===================================================")
-        print("Angepasste Basisgrößen:")
+        print("Angepasste Basisgrößen (vor MAX-Normalisierung):")
+        print(" dx_var_mean:", dx_var_mean)
+        print(" dy_var_mean:", dy_var_mean)
+        print(" rel_var_mean:", rel_var_mean)
+        print(" rel_var_min:", rel_var_min)
+        print(" d_var_com:", d_var_com)
+        print(" rel_com:", rel_com)
+        print(" global_p_dev_accum_mean:", global_p_dev_accum_mean)
+
+        # ---------------------------------------------------------
+        # FINALE NORMALISIERUNG AUF MAX=1 (keine Clamps, nur Scale)
+        # ---------------------------------------------------------
+        max_val = max(
+            dx_var_mean,
+            dy_var_mean,
+            rel_var_min,
+            rel_var_mean,
+            d_var_com,
+            rel_com,
+            global_p_dev_accum_mean
+        )
+        if max_val > 0:
+            dx_var_mean /= max_val
+            dy_var_mean /= max_val
+            rel_var_min /= max_val
+            rel_var_mean /= max_val
+            d_var_com /= max_val
+            rel_com /= max_val
+            global_p_dev_accum_mean /= max_val
+
+        print ("===================================================")
+        print("Angepasste Basisgrößen (nach MAX-Normalisierung):")
         print(" dx_var_mean:", dx_var_mean)
         print(" dy_var_mean:", dy_var_mean)
         print(" rel_var_mean:", rel_var_mean)
