@@ -367,6 +367,9 @@ def get_from_selected_tracks(
             rel_com,
             global_p_dev_accum_mean
         )
+        # max_val als Scene-Variable verfügbar machen (für Debug/Auswertung)
+        scene["kaiserlich_threshold_max_val"] = float(max_val)
+
         if max_val > 0:
             dx_var_mean /= max_val
             dy_var_mean /= max_val
