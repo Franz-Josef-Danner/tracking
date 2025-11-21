@@ -191,9 +191,13 @@ def get_from_selected_tracks(
     default_frames = max_frames if (max_frames is not None and max_frames > 0) else 5
     frames_per_track = _resolve_frames_per_track(scene, default_frames)
 
-    # --- Markerpositionen sammeln ---
+    # --- Markerpositionen sammeln: ALLE aktiven Tracks nutzen ---
     marker_positions: dict[str, list[tuple[float, float]]] = {}
-    for track in selected_tracks:
+    for track in clip.tracking.tracks:
+        # Nur nicht gemutete Marker erlauben (Track-Mute ok, Marker-Mute relevant)
+        if getattr(track, "mute", False):
+            continue
+        # Positionsdaten unabhängig von Selektion sammeln
         positions = get_positions(
             track,
             current_frame,
@@ -206,12 +210,14 @@ def get_from_selected_tracks(
         valid_pts: list[tuple[float, float]] = []
         for frame, (x, y) in positions:
             marker = track.markers.find_frame(frame, exact=True)
+            # Marker-Mute Check
             if marker and not getattr(marker, "mute", False):
                 valid_pts.append((x, y))
 
         # Nur speichern, wenn nach Mute-Check mindestens 2 Punkte bleiben
         if len(valid_pts) >= 2:
             marker_positions[track.name] = valid_pts
+    # Wenn keine Marker (global), abbrechen
     if not marker_positions:
         return
 
