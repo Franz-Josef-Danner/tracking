@@ -298,7 +298,9 @@ def get_from_selected_tracks(
         share_locscale = (1 / mo_full) * locscale
         share_locrotscale = (1 / mo_full) * locrotscale
         share_persp = (1 / mo_full) * persp
-
+        print ("===================================================")
+        print ("===================================================")
+        print ("===================================================")
         print("Motion Model Anteile:")
         print(" Loc:", share_loc)
         print(" LocRot:", share_locrot)
