@@ -80,17 +80,19 @@ def _evaluate_motion_model_pairwise(all_positions: list[tuple[float, float]],
     dy_var_mean = sum(dy_var_accum) / len(dy_var_accum)
     rel_var_mean = sum(rel_var_accum) / len(rel_var_accum)
 
-    # Klassifikation ohne Veränderung
+    # Klassifikation neu: Thresholds als Obergrenze (klein = streng, groß = tolerant)
+    # Weniger Bewegung <= Threshold ⇒ strenger; mehr Bewegung ⇒ anderes Modell
     if (
-        rel_var > thresh_rot_scale_scale
-        and (dx_var > thresh_rot_scale_rot or dy_var > thresh_rot_scale_rot)
+        rel_var <= thresh_rot_scale_scale
+        and (dx_var <= thresh_rot_scale_rot or dy_var <= thresh_rot_scale_rot)
     ):
         return "LocRotScale"
-    elif rel_var > thresh_scale:
+    elif rel_var <= thresh_scale:
         return "LocScale"
-    elif dx_var > thresh_rot or dy_var > thresh_rot:
+    elif dx_var <= thresh_rot or dy_var <= thresh_rot:
         return "LocRot"
     else:
+        # Wenn nichts "ruhig genug" ist, bleibt nur LOC (viel Bewegung)
         return "Loc"
 
 
