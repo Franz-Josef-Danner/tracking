@@ -315,7 +315,7 @@ def get_from_selected_tracks_backwards(
         )
 
         scene["kaiserlich_threshold_max_val"] = float(max_val)
-        max_val = max_val * 1.05
+        max_val = max_val * 1.01
 
         if max_val > 0:
             dx_var_mean /= max_val
