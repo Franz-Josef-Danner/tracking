@@ -293,18 +293,11 @@ def get_from_selected_tracks(
         mo_full = loc + locrot + locscale + locrotscale + persp
         
         # Anteile je Motion-Model
-        share_loc = (100 / mo_full) * loc
-        share_locrot = (100 / mo_full) * locrot
-        share_locscale = (100 / mo_full) * locscale
-        share_locrotscale = (100 / mo_full) * locrotscale
-        share_persp = (100 / mo_full) * persp
-
-        print ("share_loc:", share_loc,
-               "share_locrot:", share_locrot,
-               "share_locscale:", share_locscale,
-               "share_locrotscale:", share_locrotscale,
-               "share_persp:", share_persp
-               )
+        share_loc = (1 / mo_full) * loc
+        share_locrot = (1 / mo_full) * locrot
+        share_locscale = (1 / mo_full) * locscale
+        share_locrotscale = (1 / mo_full) * locrotscale
+        share_persp = (1 / mo_full) * persp
 
         # Basisgrößen
         rel_var_min = rel_var_mean * 0.5
@@ -319,6 +312,25 @@ def get_from_selected_tracks(
         d_var_com_mult = share_locrotscale
         rel_com_mult = share_locrotscale
         global_p_dev_accum_mean_mult = share_persp
+
+        th_prec = dx_var_mean + dy_var_mean + rel_var_mean + rel_var_min + d_var_com + rel_com + global_p_dev_accum_mean
+
+        dx_var_perc = (1 / th_prec) * dx_var_mean
+        dy_var_perc = (1 / th_prec) * dy_var_mean
+        rel_var_mean_perc = (1 / th_prec) * rel_var_mean
+        rel_var_min_perc = (1 / th_prec) * rel_var_min
+        d_var_perc = (1 / th_prec) * d_var_com
+        rel_perc = (1 / th_prec) * rel_com
+        global_p_dev_accum_perc = (1 / th_prec) * global_p_dev_accum_mean
+
+        # gewichtete Werte anwenden
+        dx_var_mean = dx_var_mean * (dx_var_perc / dx_var_mean_mult)
+        dy_var_mean = dy_var_mean * (dy_var_perc / dy_var_mean_mult)
+        rel_var_mean = rel_var_mean * (rel_var_mean_perc / rel_var_mean_mult)
+        rel_var_min = rel_var_min * (rel_var_min_perc / rel_var_min_mult)
+        d_var_com = d_var_com * (d_var_perc / d_var_com_mult)
+        rel_com = rel_com * (rel_perc / rel_com_mult)
+        global_p_dev_accum_mean = global_p_dev_accum_mean * (global_p_dev_accum_perc / global_p_dev_accum_mean_mult)
 
 
         # Szene-Multiplikatoren und bisherige Maxima einlesen
@@ -339,7 +351,7 @@ def get_from_selected_tracks(
         rel_com_scala = float(scene.get('rel_com_scala', 1.0))
         global_p_scala = float(scene.get('global_p_scala', 1.0))
 
-    
+        # skalierungs anteile anpassen, falls neue Maxima erreicht wurden
         if dx_var_multi < dx_var_mean:
             if dx_var_mean > 0:
                 dx_var_multi = dx_var_mean
@@ -359,7 +371,6 @@ def get_from_selected_tracks(
             if rel_var_min > 0:
                 rel_var_multi_min = rel_var_min
                 rel_var_min_scala = 1.0 / rel_var_min
-        # else: vorhandenen rel_var_min_scala beibehaltens
 
         if d_var_com_multi < d_var_com:
             if d_var_com > 0:
@@ -375,15 +386,6 @@ def get_from_selected_tracks(
             if global_p_dev_accum_mean > 0:
                 global_p_multi = global_p_dev_accum_mean
                 global_p_scala = 1.0 / global_p_dev_accum_mean
-
-        # gewichtete Werte anwenden
-        dx_var_mean = dx_var_mean * (dx_var_mean_mult / 100)
-        dy_var_mean = dy_var_mean * (dy_var_mean_mult / 100)
-        rel_var_mean = rel_var_mean * (rel_var_mean_mult / 100)
-        rel_var_min = rel_var_min * (rel_var_min_mult / 100)
-        d_var_com = d_var_com * (d_var_com_mult / 100)
-        rel_com = rel_com * (rel_com_mult / 100)
-        global_p_dev_accum_mean = global_p_dev_accum_mean * (global_p_dev_accum_mean_mult / 100)
 
         # Multiplikatoren in Scene schreiben (inkl. Kompatibilitäts-Key für Scale)
         scene["dx_var_scala"] = dx_var_scala
@@ -404,14 +406,13 @@ def get_from_selected_tracks(
         scene["kaiserlich_rot_scale_thresh_scale"] = rel_com * rel_com_scala
         scene["kaiserlich_perspective_thresh"] = global_p_dev_accum_mean * global_p_scala
 
-        print ("kaiserlich_rot_thresh_x:", scene["kaiserlich_rot_thresh_x"],
-               "kaiserlich_rot_thresh_y:", scene["kaiserlich_rot_thresh_y"],
-               "kaiserlich_scale_thresh_min:", scene["kaiserlich_scale_thresh_min"],
-               "kaiserlich_scale_thresh_max:", scene["kaiserlich_scale_thresh_max"],
-               "kaiserlich_rot_scale_thresh_rot:", scene["kaiserlich_rot_scale_thresh_rot"],
-               "kaiserlich_rot_scale_thresh_scale:", scene["kaiserlich_rot_scale_thresh_scale"],
-               "kaiserlich_perspective_thresh:", scene["kaiserlich_perspective_thresh"]
-               )
+        print ("kaiserlich_rot_thresh_x:", scene["kaiserlich_rot_thresh_x"])
+        print ("kaiserlich_rot_thresh_y:", scene["kaiserlich_rot_thresh_y"])
+        print ("kaiserlich_scale_thresh_min:", scene["kaiserlich_scale_thresh_min"])
+        print ("kaiserlich_scale_thresh_max:", scene["kaiserlich_scale_thresh_max"])
+        print ("kaiserlich_rot_scale_thresh_rot:", scene["kaiserlich_rot_scale_thresh_rot"])
+        print ("kaiserlich_rot_scale_thresh_scale:", scene["kaiserlich_rot_scale_thresh_scale"])
+        print ("kaiserlich_perspective_thresh:", scene["kaiserlich_perspective_thresh"])
 
     except Exception:
         pass
