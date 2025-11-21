@@ -114,14 +114,20 @@ def _detect_perspective_motion_backwards(marker_positions: dict[str, list[tuple[
     return center_marker, max_dev, per_marker_dev
 
 def _resolve_transformed_thresholds_backward(scene: bpy.types.Scene) -> tuple[float, float, float, float, float]:
-    """Berechnet die transformierten Threshold-Werte für Backward-Tracking."""
-    rot =  ((1 - getattr(scene, "kaiserlich_rot_thresh_x", 0.002)) + 0.25) / 500.7511267
-    scale = ((1 - getattr(scene, "kaiserlich_scale_thresh_max", 0.005)) + 0.66) / 8876.523582
-    rot_scale_rot = ((1 - getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002)) + 0.57) / 376.2227239
-    rot_scale_scale = ((1 - getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)) + 0.79) / 11111.11111
-    perspective = ((1 - getattr(scene, "kaiserlich_perspective_thresh", 0.002)) + 4.70) / 657.0302234
-    return rot, scale, rot_scale_rot, rot_scale_scale, perspective
+    """Berechnet die transformierten Threshold-Werte für Tracking."""
 
+    # Globaler MAX-Normierungswert aus motion_average
+    max_val = float(scene.get("kaiserlich_threshold_max_val", 1.0))
+    if max_val == 0.0:
+        max_val = 1.0
+
+    # Rot-Threshold jetzt gegen die globale MAX-Normierung skalieren
+    rot = getattr(scene, "kaiserlich_rot_thresh_x", 0.002) * max_val
+    scale = (1 - getattr(scene, "kaiserlich_scale_thresh_max", 0.005)) * max_val
+    rot_scale_rot = (1 - getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002)) * max_val
+    rot_scale_scale = (1 - getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)) * max_val
+    perspective = (1 - getattr(scene, "kaiserlich_perspective_thresh", 0.002)) * max_val
+    return rot, scale, rot_scale_rot, rot_scale_scale, perspective
 # ==========================================================
 # Hauptlogik – Hybrid-Auswertung + Perspective
 # ==========================================================

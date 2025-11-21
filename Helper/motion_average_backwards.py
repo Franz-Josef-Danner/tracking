@@ -243,13 +243,112 @@ def get_from_selected_tracks_backwards(
         dy_var_mean = sum(dy_var_accum) / len(dy_var_accum) if dy_var_accum else 0.0
         rel_var_mean = sum(rel_var_accum) / len(rel_var_accum) if rel_var_accum else 0.0
 
-        scene["kaiserlich_rot_thresh_x"] = max(0, min(1, 1 - ((((1 - dx_var_mean) * 0.009781) * 500.7511267) - 0.25)))
-        scene["kaiserlich_rot_thresh_y"] = max(0, min(1, 1 - ((((1 - dy_var_mean) * 0.017600) * 279.0957298) - 0.48)))
-        scene["kaiserlich_scale_thresh_min"] = max(0, min(1, 1 - ((((1 - rel_var_mean) * 0.000330) * 9803.921569) - 0.66)))
-        scene["kaiserlich_scale_thresh_max"] = max(0, min(1, 1 - ((((1 - rel_var_mean) * 0.000364) * 8876.523582) - 0.66)))
-        scene["kaiserlich_rot_scale_thresh_rot"] = max(0, min(1, 1 - (((((((1 - dx_var_mean)) + ((1 - dy_var_mean))) / 2) * 0.015670) * 376.2227239) - 0.57)))
-        scene["kaiserlich_rot_scale_thresh_scale"] = max(0, min(1,  1 - ((((1 - rel_var_mean) * 0.000347) * 11111.11111) - 0.79)))
-        scene["kaiserlich_perspective_thresh"] = max(0, min(1, 1 - ((((1 - global_p_dev_accum_mean) * 0.008706) * 657.0302234) - 4.70)))
+        # ============================================================
+        # Model Count (wie Vorwärts)
+        # ============================================================
+        model_counts = {"Loc":0,"LocRot":0,"LocScale":0,"LocRotScale":0,"Perspective":0}
+
+        for track in selected_tracks:
+            if track.name not in marker_positions:
+                continue
+            mm = getattr(track,"motion_model",None)
+            if mm in model_counts:
+                model_counts[mm] += 1
+
+        for key,val in model_counts.items():
+            scene[f"kaiserlich_model_count_{key}"] = val
+
+        loc = float(model_counts["Loc"]) or 1.0
+        locrot = float(model_counts["LocRot"]) or 1.0
+        locscale = float(model_counts["LocScale"]) or 1.0
+        locrotscale = float(model_counts["LocRotScale"]) or 1.0
+        persp = float(model_counts["Perspective"]) or 1.0
+        mo_full = loc + locrot + locscale + locrotscale + persp
+        mo_teil = 1 / mo_full
+
+        mo_share_loc = mo_teil * loc
+        mo_share_locrot = mo_teil * locrot
+        mo_share_locscale = mo_teil * locscale
+        mo_share_locrotscale = mo_teil * locrotscale
+        mo_share_persp = mo_teil * persp
+
+        # ============================================================
+        # Rohbasis aus Variance | identisch wie Vorwärts
+        # ============================================================
+        rel_var_min = rel_var_mean * 0.5
+        d_var_com = (dx_var_mean + dy_var_mean) / 2.0
+        rel_com = rel_var_mean * 0.25
+
+        norm_sum = dx_var_mean + dy_var_mean + rel_var_mean + rel_var_min + d_var_com + rel_com + global_p_dev_accum_mean
+        if norm_sum == 0:
+            return
+        th_dx = dx_var_mean / norm_sum
+        th_dy = dy_var_mean / norm_sum
+        th_rel = rel_var_mean / norm_sum
+        th_rel_min = rel_var_min / norm_sum
+        th_rot = d_var_com / norm_sum
+        th_rel_com = rel_com / norm_sum
+        th_persp = global_p_dev_accum_mean / norm_sum if global_p_dev_accum_mean != 0 else 0.0
+
+        # ============================================================
+        # BOOST / INVERT Anpassung über Model-Häufigkeit
+        # ============================================================
+        dx_var_mean = th_dx / mo_share_loc
+        dy_var_mean = th_dy / mo_share_loc
+        rel_var_min = th_rel_min / mo_share_locrot
+        rel_var_mean = th_rel / mo_share_locscale
+        d_var_com   = th_rot / mo_share_locrotscale
+        rel_com     = th_rel_com / mo_share_locrotscale
+        global_p_dev_accum_mean = th_persp / mo_share_persp
+
+        # ============================================================
+        # CLAMP | Dämpfung | Symmetrie zu Vorwärts
+        # ============================================================
+        CLAMP_MIN = 0.5
+        CLAMP_MAX = 1.5
+        dx_var_mean = max(min(dx_var_mean, CLAMP_MAX), CLAMP_MIN)
+        dy_var_mean = max(min(dy_var_mean, CLAMP_MAX), CLAMP_MIN)
+        rel_var_min = max(min(rel_var_min, CLAMP_MAX), CLAMP_MIN)
+        rel_var_mean = max(min(rel_var_mean, CLAMP_MAX), CLAMP_MIN)
+        d_var_com   = max(min(d_var_com,   CLAMP_MAX), CLAMP_MIN)
+        rel_com     = max(min(rel_com,     CLAMP_MAX), CLAMP_MIN)
+        global_p_dev_accum_mean = max(min(global_p_dev_accum_mean, CLAMP_MAX), CLAMP_MIN)
+
+        # ============================================================
+        # FINAL NORMALIZE (MAX=1) + BUFFER
+        # ============================================================
+        max_val = max(
+            dx_var_mean,
+            dy_var_mean,
+            rel_var_min,
+            rel_var_mean,
+            d_var_com,
+            rel_com,
+            global_p_dev_accum_mean
+        )
+
+        scene["kaiserlich_threshold_max_val"] = float(max_val)
+        max_val = max_val * 1.25
+
+        if max_val > 0:
+            dx_var_mean /= max_val
+            dy_var_mean /= max_val
+            rel_var_min /= max_val
+            rel_var_mean /= max_val
+            d_var_com /= max_val
+            rel_com /= max_val
+            global_p_dev_accum_mean /= max_val
+
+        # ============================================================
+        # STORE IN SCENE (Backwards = Forward-Equalized)
+        # ============================================================
+        scene["kaiserlich_rot_thresh_x"]          = dx_var_mean
+        scene["kaiserlich_rot_thresh_y"]          = dy_var_mean
+        scene["kaiserlich_scale_thresh_min"]      = rel_var_min
+        scene["kaiserlich_scale_thresh_max"]      = rel_var_mean
+        scene["kaiserlich_rot_scale_thresh_rot"]  = d_var_com
+        scene["kaiserlich_rot_scale_thresh_scale"]= rel_com
+        scene["kaiserlich_perspective_thresh"]    = global_p_dev_accum_mean
 
     except Exception:
         pass
