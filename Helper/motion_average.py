@@ -328,13 +328,29 @@ def get_from_selected_tracks(
         th_persp = global_p_dev_accum_mean / norm_sum if global_p_dev_accum_mean != 0 else 0.0
 
         # 2) Anpassung durch Häufigkeit der Motion Models
-        dx_var_mean = th_dx                /    mo_share_loc       # Rot wirkt auf LocRot / Loc
+        dx_var_mean = th_dx                /    mo_share_loc
         dy_var_mean = th_dy                /    mo_share_loc
-        rel_var_min = th_rel_min           /    mo_share_locrot    # Scale-min hängt an LocRot
-        rel_var_mean = th_rel              /    mo_share_locscale  # Scale-max hängt an LocScale
+        rel_var_min = th_rel_min           /    mo_share_locrot
+        rel_var_mean = th_rel              /    mo_share_locscale
         d_var_com   = th_rot               /    mo_share_locrotscale
         rel_com     = th_rel_com           /    mo_share_locrotscale
         global_p_dev_accum_mean = th_persp /    mo_share_persp
+
+        # ---------------------------------------------------------
+        # CLAMP (Dämpfung der automatischen Anpassung)
+        # verhindert extreme Über- oder Unterkorrektur
+        # ---------------------------------------------------------
+        CLAMP_MIN = 0.1
+        CLAMP_MAX = 1.1
+
+        dx_var_mean = max(min(dx_var_mean, CLAMP_MAX), CLAMP_MIN)
+        dy_var_mean = max(min(dy_var_mean, CLAMP_MAX), CLAMP_MIN)
+        rel_var_min = max(min(rel_var_min, CLAMP_MAX), CLAMP_MIN)
+        rel_var_mean = max(min(rel_var_mean, CLAMP_MAX), CLAMP_MIN)
+        d_var_com   = max(min(d_var_com,   CLAMP_MAX), CLAMP_MIN)
+        rel_com     = max(min(rel_com,     CLAMP_MAX), CLAMP_MIN)
+        global_p_dev_accum_mean = max(min(global_p_dev_accum_mean, CLAMP_MAX), CLAMP_MIN)
+
 
         # ---------------------------------------------------------
         # FINALE NORMALISIERUNG AUF MAX=1 (keine Clamps, nur Scale)
@@ -348,26 +364,12 @@ def get_from_selected_tracks(
             rel_com,
             global_p_dev_accum_mean
         )
-
-        # ----------------------------------------------
-        # MIN/MAX-Schutz (globale Stabilisierung)
-        # ----------------------------------------------
-        # Logisch sinnvolle Grenzwerte:
-        # min verhindert explosive Teilung → Werte werden nicht "ultra-scharf"
-        # max verhindert verwaschene Über-Toleranz
-        MIN_CLAMP = 0.1     # nicht kleiner als 10% des vollen Bereichs
-        MAX_CLAMP = 1.1      # nicht größer als 110% des Bereichs (verhindert Überkorrektur)
-
-        if max_val < MIN_CLAMP:
-            max_val = MIN_CLAMP
-        elif max_val > MAX_CLAMP:
-            max_val = MAX_CLAMP
-
-        # geclampter max_val als Szene-Wert ablegen
+        # max_val als Scene-Variable verfügbar machen (für Debug/Auswertung)
         scene["kaiserlich_threshold_max_val"] = float(max_val)
-        print(f"[THRESH-MAX] Normierungswert (geclamped): {max_val}")
+        
+        print ("Max-Normalisierungswert:", max_val)
 
-
+        
 
         if max_val > 0:
             dx_var_mean /= max_val
