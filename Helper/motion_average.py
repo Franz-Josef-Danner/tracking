@@ -293,12 +293,18 @@ def get_from_selected_tracks(
         mo_full = loc + locrot + locscale + locrotscale + persp
         
         # Anteile je Motion-Model
-        share_loc = loc / mo_full
-        share_locrot = locrot / mo_full
-        share_locscale = locscale / mo_full
-        share_locrotscale = locrotscale / mo_full
-        share_persp = persp / mo_full
+        share_loc = (100 / mo_full) * loc
+        share_locrot = (100 / mo_full) * locrot
+        share_locscale = (100 / mo_full) * locscale
+        share_locrotscale = (100 / mo_full) * locrotscale
+        share_persp = (100 / mo_full) * persp
 
+        print ("share_loc:", share_loc,
+               "share_locrot:", share_locrot,
+               "share_locscale:", share_locscale,
+               "share_locrotscale:", share_locrotscale,
+               "share_persp:", share_persp
+               )
 
         # Basisgrößen
         rel_var_min = rel_var_mean * 0.5
