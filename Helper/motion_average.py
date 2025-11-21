@@ -355,8 +355,8 @@ def get_from_selected_tracks(
         # Logisch sinnvolle Grenzwerte:
         # min verhindert explosive Teilung → Werte werden nicht "ultra-scharf"
         # max verhindert verwaschene Über-Toleranz
-        MIN_CLAMP = 0.5     # nicht kleiner als 50% des vollen Bereichs
-        MAX_CLAMP = 1.5      # nicht größer als 150% des Bereichs (verhindert Überkorrektur)
+        MIN_CLAMP = 0.1     # nicht kleiner als 10% des vollen Bereichs
+        MAX_CLAMP = 1.1      # nicht größer als 110% des Bereichs (verhindert Überkorrektur)
 
         if max_val < MIN_CLAMP:
             max_val = MIN_CLAMP
