@@ -123,12 +123,10 @@ def _resolve_transformed_thresholds(scene: bpy.types.Scene) -> tuple[float, floa
 
     # Rot-Threshold jetzt gegen die globale MAX-Normierung skalieren
     rot = getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / max_val
-
-    # Rest wie gehabt über die bisherigen Skalen
-    scale = (1 - getattr(scene, "kaiserlich_scale_thresh_max", 0.005)) * max_val
-    rot_scale_rot = (1 - getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002)) * max_val
-    rot_scale_scale = (1 - getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)) * max_val
-    perspective = (1 - getattr(scene, "kaiserlich_perspective_thresh", 0.002)) * max_val
+    scale = (1 - getattr(scene, "kaiserlich_scale_thresh_max", 0.005)) / max_val
+    rot_scale_rot = (1 - getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002)) / max_val
+    rot_scale_scale = (1 - getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)) / max_val
+    perspective = (1 - getattr(scene, "kaiserlich_perspective_thresh", 0.002)) / max_val
     return rot, scale, rot_scale_rot, rot_scale_scale, perspective
 
 
