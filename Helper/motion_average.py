@@ -292,21 +292,23 @@ def get_from_selected_tracks(
 
         mo_full = loc + locrot + locscale + locrotscale + persp
         
+        mo_teil = 1 / mo_full
+
         # Anteile je Motion-Model
-        share_loc = (1 / mo_full) * loc
-        share_locrot = (1 / mo_full) * locrot
-        share_locscale = (1 / mo_full) * locscale
-        share_locrotscale = (1 / mo_full) * locrotscale
-        share_persp = (1 / mo_full) * persp
+        mo_share_loc = mo_teil * loc
+        mo_share_locrot = mo_teil * locrot
+        mo_share_locscale = mo_teil * locscale
+        mo_share_locrotscale = mo_teil * locrotscale
+        mo_share_persp = mo_teil * persp
         print ("===================================================")
         print ("===================================================")
         print ("===================================================")
         print("Motion Model Anteile:")
-        print(" Loc:", share_loc)
-        print(" LocRot:", share_locrot)
-        print(" LocScale:", share_locscale) 
-        print(" LocRotScale:", share_locrotscale)
-        print(" Perspective:", share_persp)
+        print(" Loc:", mo_share_loc)
+        print(" LocRot:", mo_share_locrot)
+        print(" LocScale:", mo_share_locscale) 
+        print(" LocRotScale:", mo_share_locrotscale)
+        print(" Perspective:", mo_share_persp)
 
         # Basisgrößen
         rel_var_min = rel_var_mean * 0.5
@@ -314,24 +316,26 @@ def get_from_selected_tracks(
         rel_com = rel_var_mean * 0.25
 
         # gewichtende Faktoren je nach Verteilung der Motion Models
-        dx_var_mean_mult = share_loc
-        dy_var_mean_mult = share_loc
-        rel_var_mean_mult = share_locrot
-        rel_var_min_mult = share_locrot
-        d_var_com_mult = share_locrotscale
-        rel_com_mult = share_locrotscale
-        global_p_dev_accum_mean_mult = share_persp
+        dx_var_mean_mult = mo_share_loc
+        dy_var_mean_mult = mo_share_loc
+        rel_var_mean_mult = mo_share_locrot
+        rel_var_min_mult = mo_share_locrot
+        d_var_com_mult = mo_share_locrotscale
+        rel_com_mult = mo_share_locrotscale
+        global_p_dev_accum_mean_mult = mo_share_persp
 
-        th_prec = dx_var_mean + dy_var_mean + rel_var_mean + rel_var_min + d_var_com + rel_com + global_p_dev_accum_mean
+        th_full = dx_var_mean + dy_var_mean + rel_var_mean + rel_var_min + d_var_com + rel_com + global_p_dev_accum_mean
+
+        th_teil = 1 / th_full
 
         # anteile je THRESHOLD
-        dx_var_perc = (1 / th_prec) * dx_var_mean
-        dy_var_perc = (1 / th_prec) * dy_var_mean
-        rel_var_mean_perc = (1 / th_prec) * rel_var_mean
-        rel_var_min_perc = (1 / th_prec) * rel_var_min
-        d_var_perc = (1 / th_prec) * d_var_com
-        rel_perc = (1 / th_prec) * rel_com
-        global_p_dev_accum_perc = (1 / th_prec) * global_p_dev_accum_mean
+        dx_var_perc = th_teil * dx_var_mean
+        dy_var_perc = th_teil * dy_var_mean
+        rel_var_mean_perc = th_teil * rel_var_mean
+        rel_var_min_perc = th_teil * rel_var_min
+        d_var_perc = th_teil * d_var_com
+        rel_perc = th_teil * rel_com
+        global_p_dev_accum_perc = th_teil * global_p_dev_accum_mean
         print ("===================================================")
         print("Threshold Anteile:")
         print(" dx_var_perc:", dx_var_perc)
@@ -343,13 +347,13 @@ def get_from_selected_tracks(
         print(" global_p_dev_accum_perc:", global_p_dev_accum_perc)
 
         # gewichtete Werte anwenden
-        dx_var_mean = dx_var_mean * (dx_var_perc / dx_var_mean_mult)
-        dy_var_mean = dy_var_mean * (dy_var_perc / dy_var_mean_mult)
-        rel_var_mean = rel_var_mean * (rel_var_mean_perc / rel_var_mean_mult)
-        rel_var_min = rel_var_min * (rel_var_min_perc / rel_var_min_mult)
-        d_var_com = d_var_com * (d_var_perc / d_var_com_mult)
-        rel_com = rel_com * (rel_perc / rel_com_mult)
-        global_p_dev_accum_mean = global_p_dev_accum_mean * (global_p_dev_accum_perc / global_p_dev_accum_mean_mult)
+        dx_var_mean = dx_var_mean * (dx_var_perc / mo_share_loc)
+        dy_var_mean = dy_var_mean * (dy_var_perc / mo_share_loc)
+        rel_var_mean = rel_var_mean * (rel_var_mean_perc / mo_share_locrot)
+        rel_var_min = rel_var_min * (rel_var_min_perc / mo_share_locrot)
+        d_var_com = d_var_com * (d_var_perc / mo_share_locscale)
+        rel_com = rel_com * (rel_perc / mo_share_locrotscale)
+        global_p_dev_accum_mean = global_p_dev_accum_mean * (global_p_dev_accum_perc / mo_share_persp)
 
         print ("===================================================")
         print("Angepasste Basisgrößen:")
