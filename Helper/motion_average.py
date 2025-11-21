@@ -349,7 +349,7 @@ def get_from_selected_tracks(
             global_p_dev_accum_mean
         )
         # max_val als Scene-Variable verfügbar machen (für Debug/Auswertung)
-        scene["kaiserlich_threshold_max_val"] = float(max_val)
+        
         
         print ("Max-Normalisierungswert:", max_val)
 
@@ -366,6 +366,8 @@ def get_from_selected_tracks(
             d_var_com *= inv
             rel_com *= inv
             global_p_dev_accum_mean *= inv
+
+            scene["kaiserlich_threshold_max_val"] = float(inv)
 
         scene["kaiserlich_rot_thresh_x"]          = dx_var_mean
         scene["kaiserlich_rot_thresh_y"]          = dy_var_mean

@@ -117,16 +117,16 @@ def _resolve_transformed_thresholds(scene: bpy.types.Scene) -> tuple[float, floa
     """Berechnet die transformierten Threshold-Werte für Tracking."""
 
     # Globaler MAX-Normierungswert aus motion_average
-    max_val = float(scene.get("kaiserlich_threshold_max_val", 1.0))
-    if max_val == 0.0:
-        max_val = 1.0
+    inv = float(scene.get("kaiserlich_threshold_inv", 1.0))
+    if inv == 0.0:
+        inv = 1.0
 
     # Rot-Threshold jetzt gegen die globale MAX-Normierung skalieren
-    rot = getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / max_val
-    scale = (1 - getattr(scene, "kaiserlich_scale_thresh_max", 0.005)) / max_val
-    rot_scale_rot = (1 - getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002)) / max_val
-    rot_scale_scale = (1 - getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)) / max_val
-    perspective = (1 - getattr(scene, "kaiserlich_perspective_thresh", 0.002)) / max_val
+    rot = getattr(scene, "kaiserlich_rot_thresh_x", 0.002) / inv
+    scale = (1 - getattr(scene, "kaiserlich_scale_thresh_max", 0.005)) / inv
+    rot_scale_rot = (1 - getattr(scene, "kaiserlich_rot_scale_thresh_rot", 0.002)) / inv
+    rot_scale_scale = (1 - getattr(scene, "kaiserlich_rot_scale_thresh_scale", 0.005)) / inv
+    perspective = (1 - getattr(scene, "kaiserlich_perspective_thresh", 0.002)) / inv
     return rot, scale, rot_scale_rot, rot_scale_scale, perspective
 
 
