@@ -348,26 +348,35 @@ def get_from_selected_tracks(
             rel_com,
             global_p_dev_accum_mean
         )
-        # max_val als Scene-Variable verfügbar machen (für Debug/Auswertung)
-        
-        
+
+        # ----------------------------------------------
+        # MIN/MAX-Schutz (globale Stabilisierung)
+        # ----------------------------------------------
+        # Logisch sinnvolle Grenzwerte:
+        # min verhindert explosive Teilung → Werte werden nicht "ultra-scharf"
+        # max verhindert verwaschene Über-Toleranz
+        MIN_CLAMP = 0.5     # nicht kleiner als 50% des vollen Bereichs
+        MAX_CLAMP = 1.5      # nicht größer als 150% des Bereichs (verhindert Überkorrektur)
+
+        if max_val < MIN_CLAMP:
+            max_val = MIN_CLAMP
+        elif max_val > MAX_CLAMP:
+            max_val = MAX_CLAMP
+
+        # geclampter max_val als Szene-Wert ablegen
+        scene["kaiserlich_threshold_max_val"] = float(max_val)
+        print(f"[THRESH-MAX] Normierungswert (geclamped): {max_val}")
 
 
-        # Prozentuale, multiplikative Normalisierung (sanft)
+
         if max_val > 0:
-            k = 0.9  # Stärke der Normalisierung
-            inv = (1.0 / max_val) ** k
-
-            dx_var_mean *= inv
-            dy_var_mean *= inv
-            rel_var_min *= inv
-            rel_var_mean *= inv
-            d_var_com *= inv
-            rel_com *= inv
-            global_p_dev_accum_mean *= inv
-
-        scene["kaiserlich_threshold_inv"] = float(inv)
-        print ("Setze kaiserlich_threshold_inv auf ", inv)
+            dx_var_mean /= max_val
+            dy_var_mean /= max_val
+            rel_var_min /= max_val
+            rel_var_mean /= max_val
+            d_var_com /= max_val
+            rel_com /= max_val
+            global_p_dev_accum_mean /= max_val
 
         scene["kaiserlich_rot_thresh_x"]          = dx_var_mean
         scene["kaiserlich_rot_thresh_y"]          = dy_var_mean
