@@ -340,8 +340,8 @@ def get_from_selected_tracks(
         # CLAMP (Dämpfung der automatischen Anpassung)
         # verhindert extreme Über- oder Unterkorrektur
         # ---------------------------------------------------------
-        CLAMP_MIN = 0.1
-        CLAMP_MAX = 1.1
+        CLAMP_MIN = 0.5
+        CLAMP_MAX = 1.5
 
         dx_var_mean = max(min(dx_var_mean, CLAMP_MAX), CLAMP_MIN)
         dy_var_mean = max(min(dy_var_mean, CLAMP_MAX), CLAMP_MIN)
