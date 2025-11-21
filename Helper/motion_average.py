@@ -354,14 +354,18 @@ def get_from_selected_tracks(
         print ("Max-Normalisierungswert:", max_val)
 
 
+        # Prozentuale, multiplikative Normalisierung (sanft)
         if max_val > 0:
-            dx_var_mean /= max_val
-            dy_var_mean /= max_val
-            rel_var_min /= max_val
-            rel_var_mean /= max_val
-            d_var_com /= max_val
-            rel_com /= max_val
-            global_p_dev_accum_mean /= max_val
+            k = 0.5  # Stärke der Normalisierung
+            inv = (1.0 / max_val) ** k
+
+            dx_var_mean *= inv
+            dy_var_mean *= inv
+            rel_var_min *= inv
+            rel_var_mean *= inv
+            d_var_com *= inv
+            rel_com *= inv
+            global_p_dev_accum_mean *= inv
 
         scene["kaiserlich_rot_thresh_x"]          = dx_var_mean
         scene["kaiserlich_rot_thresh_y"]          = dy_var_mean
