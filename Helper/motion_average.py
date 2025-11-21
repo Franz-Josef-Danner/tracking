@@ -330,7 +330,7 @@ def get_from_selected_tracks(
         d_var_perc = (1 / th_prec) * d_var_com
         rel_perc = (1 / th_prec) * rel_com
         global_p_dev_accum_perc = (1 / th_prec) * global_p_dev_accum_mean
-
+        print ("===================================================")
         print("Threshold Anteile:")
         print(" dx_var_perc:", dx_var_perc)
         print(" dy_var_perc:", dy_var_perc)
@@ -349,6 +349,7 @@ def get_from_selected_tracks(
         rel_com = rel_com * (rel_perc / rel_com_mult)
         global_p_dev_accum_mean = global_p_dev_accum_mean * (global_p_dev_accum_perc / global_p_dev_accum_mean_mult)
 
+        print ("===================================================")
         print("Angepasste Basisgrößen:")
         print(" dx_var_mean:", dx_var_mean)
         print(" dy_var_mean:", dy_var_mean)
@@ -412,6 +413,16 @@ def get_from_selected_tracks(
                 global_p_multi = global_p_dev_accum_mean
                 global_p_scala = 1.0 / global_p_dev_accum_mean
 
+        print ("===================================================")
+        print("Aktuelle Maxima:")
+        print("dx_var_multi:", dx_var_multi)
+        print("dy_var_multi:", dy_var_multi)
+        print("rel_var_multi:", rel_var_multi)
+        print("rel_var_multi_min:", rel_var_multi_min)
+        print("d_var_com_multi:", d_var_com_multi)
+        print("rel_com_multi:", rel_com_multi)
+        print("global_p_multi:", global_p_multi)
+
         # Multiplikatoren in Scene schreiben (inkl. Kompatibilitäts-Key für Scale)
         scene["dx_var_scala"] = dx_var_scala
         scene["dy_var_scala"] = dy_var_scala
@@ -422,6 +433,16 @@ def get_from_selected_tracks(
         scene["rel_com_scala"] = rel_com_scala
         scene["global_p_scala"] = global_p_scala
 
+        print ("===================================================")
+        print("Aktuelle Skalierungsfaktoren:")
+        print("dx_var_scala:", dx_var_scala)
+        print("dy_var_scala:", dy_var_scala)
+        print("rel_var_scala:", rel_var_scala)
+        print("rel_var_min_scala:", rel_var_min_scala)
+        print("d_var_com_scala:", d_var_com_scala)
+        print("rel_com_scala:", rel_com_scala)
+        print("global_p_scala:", global_p_scala)
+
         # finale Thresholds in Szene ablegen
         scene["kaiserlich_rot_thresh_x"] = dx_var_mean * dx_var_scala
         scene["kaiserlich_rot_thresh_y"] = dy_var_mean * dy_var_scala
@@ -430,7 +451,8 @@ def get_from_selected_tracks(
         scene["kaiserlich_rot_scale_thresh_rot"] = d_var_com * d_var_com_scala
         scene["kaiserlich_rot_scale_thresh_scale"] = rel_com * rel_com_scala
         scene["kaiserlich_perspective_thresh"] = global_p_dev_accum_mean * global_p_scala
-
+        
+        print ("===================================================")
         print ("kaiserlich_rot_thresh_x:", scene["kaiserlich_rot_thresh_x"])
         print ("kaiserlich_rot_thresh_y:", scene["kaiserlich_rot_thresh_y"])
         print ("kaiserlich_scale_thresh_min:", scene["kaiserlich_scale_thresh_min"])
