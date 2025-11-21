@@ -299,6 +299,13 @@ def get_from_selected_tracks(
         share_locrotscale = (1 / mo_full) * locrotscale
         share_persp = (1 / mo_full) * persp
 
+        print("Motion Model Anteile:")
+        print(" Loc:", share_loc)
+        print(" LocRot:", share_locrot)
+        print(" LocScale:", share_locscale) 
+        print(" LocRotScale:", share_locrotscale)
+        print(" Perspective:", share_persp)
+
         # Basisgrößen
         rel_var_min = rel_var_mean * 0.5
         d_var_com = (dx_var_mean + dy_var_mean) / 2.0
@@ -315,6 +322,7 @@ def get_from_selected_tracks(
 
         th_prec = dx_var_mean + dy_var_mean + rel_var_mean + rel_var_min + d_var_com + rel_com + global_p_dev_accum_mean
 
+        # anteile je THRESHOLD
         dx_var_perc = (1 / th_prec) * dx_var_mean
         dy_var_perc = (1 / th_prec) * dy_var_mean
         rel_var_mean_perc = (1 / th_prec) * rel_var_mean
@@ -322,6 +330,15 @@ def get_from_selected_tracks(
         d_var_perc = (1 / th_prec) * d_var_com
         rel_perc = (1 / th_prec) * rel_com
         global_p_dev_accum_perc = (1 / th_prec) * global_p_dev_accum_mean
+
+        print("Threshold Anteile:")
+        print(" dx_var_perc:", dx_var_perc)
+        print(" dy_var_perc:", dy_var_perc)
+        print(" rel_var_mean_perc:", rel_var_mean_perc)
+        print(" rel_var_min_perc:", rel_var_min_perc)
+        print(" d_var_perc:", d_var_perc)
+        print(" rel_perc:", rel_perc)
+        print(" global_p_dev_accum_perc:", global_p_dev_accum_perc)
 
         # gewichtete Werte anwenden
         dx_var_mean = dx_var_mean * (dx_var_perc / dx_var_mean_mult)
@@ -332,6 +349,14 @@ def get_from_selected_tracks(
         rel_com = rel_com * (rel_perc / rel_com_mult)
         global_p_dev_accum_mean = global_p_dev_accum_mean * (global_p_dev_accum_perc / global_p_dev_accum_mean_mult)
 
+        print("Angepasste Basisgrößen:")
+        print(" dx_var_mean:", dx_var_mean)
+        print(" dy_var_mean:", dy_var_mean)
+        print(" rel_var_mean:", rel_var_mean)
+        print(" rel_var_min:", rel_var_min)
+        print(" d_var_com:", d_var_com)
+        print(" rel_com:", rel_com)
+        print(" global_p_dev_accum_mean:", global_p_dev_accum_mean)
 
         # Szene-Multiplikatoren und bisherige Maxima einlesen
         dx_var_multi = float(scene.get('dx_var_multi', 0.0))
