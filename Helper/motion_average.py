@@ -308,15 +308,6 @@ def get_from_selected_tracks(
         mo_share_locscale = mo_teil * locscale
         mo_share_locrotscale = mo_teil * locrotscale
         mo_share_persp = mo_teil * persp
-        print ("===================================================")
-        print ("===================================================")
-        print ("===================================================")
-        print("Motion Model Anteile:")
-        print(" Loc:", mo_share_loc)
-        print(" LocRot:", mo_share_locrot)
-        print(" LocScale:", mo_share_locscale) 
-        print(" LocRotScale:", mo_share_locrotscale)
-        print(" Perspective:", mo_share_persp)
 
         # Basisgrößen (Rohwerte)
         rel_var_min = rel_var_mean * 0.5
@@ -345,16 +336,6 @@ def get_from_selected_tracks(
         rel_com     = th_rel_com           /    mo_share_locrotscale
         global_p_dev_accum_mean = th_persp /    mo_share_persp
 
-        print ("===================================================")
-        print("Angepasste Basisgrößen (vor MAX-Normalisierung):")
-        print(" dx_var_mean:", dx_var_mean)
-        print(" dy_var_mean:", dy_var_mean)
-        print(" rel_var_mean:", rel_var_mean)
-        print(" rel_var_min:", rel_var_min)
-        print(" d_var_com:", d_var_com)
-        print(" rel_com:", rel_com)
-        print(" global_p_dev_accum_mean:", global_p_dev_accum_mean)
-
         # ---------------------------------------------------------
         # FINALE NORMALISIERUNG AUF MAX=1 (keine Clamps, nur Scale)
         # ---------------------------------------------------------
@@ -369,6 +350,9 @@ def get_from_selected_tracks(
         )
         # max_val als Scene-Variable verfügbar machen (für Debug/Auswertung)
         scene["kaiserlich_threshold_max_val"] = float(max_val)
+        
+        print ("Max-Normalisierungswert:", max_val)
+
 
         if max_val > 0:
             dx_var_mean /= max_val
@@ -379,16 +363,6 @@ def get_from_selected_tracks(
             rel_com /= max_val
             global_p_dev_accum_mean /= max_val
 
-        print ("===================================================")
-        print("Angepasste Basisgrößen (nach MAX-Normalisierung):")
-        print(" dx_var_mean:", dx_var_mean)
-        print(" dy_var_mean:", dy_var_mean)
-        print(" rel_var_mean:", rel_var_mean)
-        print(" rel_var_min:", rel_var_min)
-        print(" d_var_com:", d_var_com)
-        print(" rel_com:", rel_com)
-        print(" global_p_dev_accum_mean:", global_p_dev_accum_mean)
-
         scene["kaiserlich_rot_thresh_x"]          = dx_var_mean
         scene["kaiserlich_rot_thresh_y"]          = dy_var_mean
         scene["kaiserlich_scale_thresh_min"]      = rel_var_min
@@ -397,14 +371,5 @@ def get_from_selected_tracks(
         scene["kaiserlich_rot_scale_thresh_scale"]= rel_com
         scene["kaiserlich_perspective_thresh"]    = global_p_dev_accum_mean
         
-        print ("===================================================")
-        print ("kaiserlich_rot_thresh_x:", scene["kaiserlich_rot_thresh_x"])
-        print ("kaiserlich_rot_thresh_y:", scene["kaiserlich_rot_thresh_y"])
-        print ("kaiserlich_scale_thresh_min:", scene["kaiserlich_scale_thresh_min"])
-        print ("kaiserlich_scale_thresh_max:", scene["kaiserlich_scale_thresh_max"])
-        print ("kaiserlich_rot_scale_thresh_rot:", scene["kaiserlich_rot_scale_thresh_rot"])
-        print ("kaiserlich_rot_scale_thresh_scale:", scene["kaiserlich_rot_scale_thresh_scale"])
-        print ("kaiserlich_perspective_thresh:", scene["kaiserlich_perspective_thresh"])
-
     except Exception:
         pass
