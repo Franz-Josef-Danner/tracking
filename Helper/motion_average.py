@@ -310,50 +310,32 @@ def get_from_selected_tracks(
         print(" LocRotScale:", mo_share_locrotscale)
         print(" Perspective:", mo_share_persp)
 
-        # Basisgrößen
+        # Basisgrößen (Rohwerte)
         rel_var_min = rel_var_mean * 0.5
-        d_var_com = (dx_var_mean + dy_var_mean) / 2.0
-        rel_com = rel_var_mean * 0.25
+        d_var_com  = (dx_var_mean + dy_var_mean) / 2.0
+        rel_com    = rel_var_mean * 0.25
 
-        # gewichtende Faktoren je nach Verteilung der Motion Models
-        dx_var_mean_mult = mo_share_loc
-        dy_var_mean_mult = mo_share_loc
-        rel_var_mean_mult = mo_share_locrot
-        rel_var_min_mult = mo_share_locrot
-        d_var_com_mult = mo_share_locrotscale
-        rel_com_mult = mo_share_locrotscale
-        global_p_dev_accum_mean_mult = mo_share_persp
+        # 1) Thresholds relativ zur Szene normalisieren (0–1)
+        norm_sum = dx_var_mean + dy_var_mean + rel_var_mean + rel_var_min + d_var_com + rel_com + global_p_dev_accum_mean
+        if norm_sum == 0:
+            return
 
-        th_full = dx_var_mean + dy_var_mean + rel_var_mean + rel_var_min + d_var_com + rel_com + global_p_dev_accum_mean
+        th_dx   = dx_var_mean              / norm_sum
+        th_dy   = dy_var_mean              / norm_sum
+        th_rel  = rel_var_mean             / norm_sum
+        th_rel_min = rel_var_min           / norm_sum
+        th_rot  = d_var_com                / norm_sum
+        th_rel_com = rel_com               / norm_sum
+        th_persp = global_p_dev_accum_mean / norm_sum if global_p_dev_accum_mean != 0 else 0.0
 
-        th_teil = 1 / th_full
-
-        # anteile je THRESHOLD
-        dx_var_perc = th_teil * dx_var_mean
-        dy_var_perc = th_teil * dy_var_mean
-        rel_var_mean_perc = th_teil * rel_var_mean
-        rel_var_min_perc = th_teil * rel_var_min
-        d_var_perc = th_teil * d_var_com
-        rel_perc = th_teil * rel_com
-        global_p_dev_accum_perc = th_teil * global_p_dev_accum_mean
-        print ("===================================================")
-        print("Threshold Anteile:")
-        print(" dx_var_perc:", dx_var_perc)
-        print(" dy_var_perc:", dy_var_perc)
-        print(" rel_var_mean_perc:", rel_var_mean_perc)
-        print(" rel_var_min_perc:", rel_var_min_perc)
-        print(" d_var_perc:", d_var_perc)
-        print(" rel_perc:", rel_perc)
-        print(" global_p_dev_accum_perc:", global_p_dev_accum_perc)
-
-        # gewichtete Werte anwenden
-        dx_var_mean = dx_var_mean * (dx_var_perc / mo_share_loc)
-        dy_var_mean = dy_var_mean * (dy_var_perc / mo_share_loc)
-        rel_var_mean = rel_var_mean * (rel_var_mean_perc / mo_share_locrot)
-        rel_var_min = rel_var_min * (rel_var_min_perc / mo_share_locrot)
-        d_var_com = d_var_com * (d_var_perc / mo_share_locscale)
-        rel_com = rel_com * (rel_perc / mo_share_locrotscale)
-        global_p_dev_accum_mean = global_p_dev_accum_mean * (global_p_dev_accum_perc / mo_share_persp)
+        # 2) Anpassung durch Häufigkeit der Motion Models
+        dx_var_mean = th_dx                /    mo_share_loc       # Rot wirkt auf LocRot / Loc
+        dy_var_mean = th_dy                /    mo_share_loc
+        rel_var_min = th_rel_min           /    mo_share_locrot    # Scale-min hängt an LocRot
+        rel_var_mean = th_rel              /    mo_share_locscale  # Scale-max hängt an LocScale
+        d_var_com   = th_rot               /    mo_share_locrotscale
+        rel_com     = th_rel_com           /    mo_share_locrotscale
+        global_p_dev_accum_mean = th_persp /    mo_share_persp
 
         print ("===================================================")
         print("Angepasste Basisgrößen:")
@@ -365,98 +347,13 @@ def get_from_selected_tracks(
         print(" rel_com:", rel_com)
         print(" global_p_dev_accum_mean:", global_p_dev_accum_mean)
 
-        # Szene-Multiplikatoren und bisherige Maxima einlesen
-        dx_var_multi = float(scene.get('dx_var_multi', 0.0))
-        dy_var_multi = float(scene.get('dy_var_multi', 0.0))
-        rel_var_multi = float(scene.get('rel_var_multi', 0.0))
-        rel_var_multi_min = float(scene.get('rel_var_multi_min', 0.0))
-        d_var_com_multi = float(scene.get('d_var_com_multi', 0.0))
-        rel_com_multi = float(scene.get('rel_com_multi', 0.0))
-        global_p_multi = float(scene.get('global_p_multi', 0.0))
-
-        # Multiplikatoren mit Defaults initialisieren
-        dx_var_scala = float(scene.get('dx_var_scala', 1.0))
-        dy_var_scala = float(scene.get('dy_var_scala', 1.0))
-        rel_var_scala = float(scene.get('rel_var_scala', 1.0))
-        rel_var_min_scala = float(scene.get('rel_var_min_scala', 1.0))
-        d_var_com_scala = float(scene.get('d_var_com_scala', 1.0))
-        rel_com_scala = float(scene.get('rel_com_scala', 1.0))
-        global_p_scala = float(scene.get('global_p_scala', 1.0))
-
-        # skalierungs anteile anpassen, falls neue Maxima erreicht wurden
-        if dx_var_multi < dx_var_mean:
-            if dx_var_mean > 0:
-                dx_var_multi = dx_var_mean
-                dx_var_scala = 1.0 / dx_var_mean
-
-        if dy_var_multi < dy_var_mean:
-            if dy_var_mean > 0:
-                dy_var_multi = dy_var_mean
-                dy_var_scala = 1.0 / dy_var_mean
-
-        if rel_var_multi < rel_var_mean:
-            if rel_var_mean > 0:
-                rel_var_multi = rel_var_mean
-                rel_var_scala = 1.0 / rel_var_mean
-
-        if rel_var_multi_min < rel_var_min:
-            if rel_var_min > 0:
-                rel_var_multi_min = rel_var_min
-                rel_var_min_scala = 1.0 / rel_var_min
-
-        if d_var_com_multi < d_var_com:
-            if d_var_com > 0:
-                d_var_com_multi = d_var_com
-                d_var_com_scala = 1.0 / d_var_com
-
-        if rel_com_multi < rel_com:
-            if rel_com > 0:
-                rel_com_multi = rel_com
-                rel_com_scala = 1.0 / rel_com
-
-        if global_p_multi < global_p_dev_accum_mean:
-            if global_p_dev_accum_mean > 0:
-                global_p_multi = global_p_dev_accum_mean
-                global_p_scala = 1.0 / global_p_dev_accum_mean
-
-        print ("===================================================")
-        print("Aktuelle Maxima:")
-        print("dx_var_multi:", dx_var_multi)
-        print("dy_var_multi:", dy_var_multi)
-        print("rel_var_multi:", rel_var_multi)
-        print("rel_var_multi_min:", rel_var_multi_min)
-        print("d_var_com_multi:", d_var_com_multi)
-        print("rel_com_multi:", rel_com_multi)
-        print("global_p_multi:", global_p_multi)
-
-        # Multiplikatoren in Scene schreiben (inkl. Kompatibilitäts-Key für Scale)
-        scene["dx_var_scala"] = dx_var_scala
-        scene["dy_var_scala"] = dy_var_scala
-        scene["rel_var_scala"] = rel_var_scala
-        scene["srel_var_scala"] = rel_var_scala  # für formula_helper
-        scene["rel_var_min_scala"] = rel_var_min_scala
-        scene["d_var_com_scala"] = d_var_com_scala
-        scene["rel_com_scala"] = rel_com_scala
-        scene["global_p_scala"] = global_p_scala
-
-        print ("===================================================")
-        print("Aktuelle Skalierungsfaktoren:")
-        print("dx_var_scala:", dx_var_scala)
-        print("dy_var_scala:", dy_var_scala)
-        print("rel_var_scala:", rel_var_scala)
-        print("rel_var_min_scala:", rel_var_min_scala)
-        print("d_var_com_scala:", d_var_com_scala)
-        print("rel_com_scala:", rel_com_scala)
-        print("global_p_scala:", global_p_scala)
-
-        # finale Thresholds in Szene ablegen
-        scene["kaiserlich_rot_thresh_x"] = dx_var_mean * dx_var_scala
-        scene["kaiserlich_rot_thresh_y"] = dy_var_mean * dy_var_scala
-        scene["kaiserlich_scale_thresh_min"] = rel_var_min * rel_var_min_scala
-        scene["kaiserlich_scale_thresh_max"] = rel_var_mean * rel_var_scala
-        scene["kaiserlich_rot_scale_thresh_rot"] = d_var_com * d_var_com_scala
-        scene["kaiserlich_rot_scale_thresh_scale"] = rel_com * rel_com_scala
-        scene["kaiserlich_perspective_thresh"] = global_p_dev_accum_mean * global_p_scala
+        scene["kaiserlich_rot_thresh_x"]          = dx_var_mean
+        scene["kaiserlich_rot_thresh_y"]          = dy_var_mean
+        scene["kaiserlich_scale_thresh_min"]      = rel_var_min
+        scene["kaiserlich_scale_thresh_max"]      = rel_var_mean
+        scene["kaiserlich_rot_scale_thresh_rot"]  = d_var_com
+        scene["kaiserlich_rot_scale_thresh_scale"]= rel_com
+        scene["kaiserlich_perspective_thresh"]    = global_p_dev_accum_mean
         
         print ("===================================================")
         print ("kaiserlich_rot_thresh_x:", scene["kaiserlich_rot_thresh_x"])
