@@ -355,7 +355,7 @@ def get_from_selected_tracks(
 
         # Prozentuale, multiplikative Normalisierung (sanft)
         if max_val > 0:
-            k = 0.01  # Stärke der Normalisierung
+            k = 0.9  # Stärke der Normalisierung
             inv = (1.0 / max_val) ** k
 
             dx_var_mean *= inv
