@@ -336,21 +336,6 @@ def get_from_selected_tracks(
         rel_com     = th_rel_com           /    mo_share_locrotscale
         global_p_dev_accum_mean = th_persp /    mo_share_persp
 
-        # ---------------------------------------------------------
-        # CLAMP (Dämpfung der automatischen Anpassung)
-        # verhindert extreme Über- oder Unterkorrektur
-        # ---------------------------------------------------------
-        CLAMP_MIN = 0.5
-        CLAMP_MAX = 1.5
-
-        dx_var_mean = max(min(dx_var_mean, CLAMP_MAX), CLAMP_MIN)
-        dy_var_mean = max(min(dy_var_mean, CLAMP_MAX), CLAMP_MIN)
-        rel_var_min = max(min(rel_var_min, CLAMP_MAX), CLAMP_MIN)
-        rel_var_mean = max(min(rel_var_mean, CLAMP_MAX), CLAMP_MIN)
-        d_var_com   = max(min(d_var_com,   CLAMP_MAX), CLAMP_MIN)
-        rel_com     = max(min(rel_com,     CLAMP_MAX), CLAMP_MIN)
-        global_p_dev_accum_mean = max(min(global_p_dev_accum_mean, CLAMP_MAX), CLAMP_MIN)
-
 
         # ---------------------------------------------------------
         # FINALE NORMALISIERUNG AUF MAX=1 (keine Clamps, nur Scale)
