@@ -485,10 +485,16 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                             try:
                                 bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
                                 print("[TRACK_SNAPSHOT][RECOVERY] 🚀 Weiterleitung → master_detect_adapt_operator")
+                                # ----------------------------------------------------
+                                # HARD EXIT: Dieser Operator muss komplett beendet werden
+                                # keine Weitergabe an master_cycle_operator!
+                                # ----------------------------------------------------
+                                self._timer = None
+                                return {'FINISHED'}
                             except Exception:
                                 print("[TRACK_SNAPSHOT][RECOVERY] ❌ Übergabe fehlgeschlagen: master_detect_adapt_operator")
 
-                            return  # WICHTIG: _finish() nicht weiter ausführen, keine weitere Chain!
+                                return {'CANCELLED'}  # Sicherheitsfallback
                         else:
                             print(f"[TRACK_SNAPSHOT] ✔ Überlebende ursprüngliche Tracks: {', '.join(surviving_tracks)}")
 
