@@ -105,8 +105,22 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     # --------------------------------------------------------
 
     def execute(self, context):
-        run_bootstrap(context)  # <-- Wichtig: Bootstrap vor Tracking-Cycle ausführen
-        apply_bootstrap_defaults(context, context.scene.get("bootstrap_params", {})) # <-- Wichtig: Bootstrap-Werte übernehmen
+        # ================================================================
+        # Bootstrap korrekt mit 'ef' (gewünschte Markeranzahl) ausführen
+        # ================================================================
+        scene = context.scene
+        try:
+            ef = getattr(scene, "kaiserlich_markers_per_frame", None)
+            if ef is None:
+                ef = scene.get("kaiserlich_markers_per_frame", 0)
+            ef = int(ef) if isinstance(ef, (int, float, str)) else 0
+            if ef <= 0:
+                ef = 50  # Fallback: 50 Marker Zielwert
+        except Exception:
+            ef = 50
+
+        run_bootstrap(context, ef)  # <-- ef übergeben!
+        apply_bootstrap_defaults(context, scene.get("bootstrap_params", {}))
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
