@@ -11,15 +11,15 @@ from typing import Optional
 def _get_ui_min_frames(context: bpy.types.Context, fallback: int = 25) -> int:
     """
     Liest die Mindestanzahl an Frames pro Track aus der Scene-Property
-    'max_error_value'. Fällt robust auf 'fallback' zurück.
+    'kaiserlich_frames_per_track'. Fällt robust auf 'fallback' zurück.
     """
     try:
         scene = context.scene
         if scene is None:
             raise AttributeError("context.scene is None")
 
-        # Neuer UI-Wert aus dem Panel
-        value = getattr(scene, "max_error_value", None)
+        # Neuer UI-Wert aus dem Panel (aktualisierte Property)
+        value = getattr(scene, "kaiserlich_frames_per_track", None)
 
         if value is None:
             return int(fallback)
@@ -80,7 +80,7 @@ def filter_problematic_tracks(
         tracking_settings = clip.tracking.settings
         tracking_settings.clean_action = 'DELETE_TRACK'  # Alternativen: 'SELECT', 'DELETE_SEGMENTS'
         tracking_settings.clean_error = 0.0              # nur Frames-Kriterium nutzen
-        # clean_frames kommt jetzt direkt von max_error_value (UI)
+        # clean_frames kommt jetzt direkt von kaiserlich_frames_per_track (UI)
         tracking_settings.clean_frames = resolved_min_frames
 
         bpy.ops.clip.clean_tracks()
