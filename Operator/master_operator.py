@@ -66,7 +66,19 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
             reset_threshold_extrema(scene)
         except Exception as e:
             pass
+        # ================================================================
+        # Bootstrap
+        # ================================================================
+        ef_target = int(getattr(scene, "kaiserlich_markers_per_frame", 25))
+        params = run_bootstrap(context, ef_target)
 
+        if params:
+            # --- Kritischer fehlender Schritt: jetzt nachziehen ---
+            apply_bootstrap_defaults(context, params)
+
+
+            # Speichern für spätere Zyklen
+            scene["bootstrap_params"] = params
         # ================================================================
         # Schwachen Frame finden
         # ================================================================
