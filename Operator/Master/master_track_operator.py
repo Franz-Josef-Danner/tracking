@@ -18,7 +18,7 @@ from ...Helper.motion_average import get_from_selected_tracks
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.validate_motion_forward_helper import _get_positions_backward
-from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
+from ...Helper.update_default_sizes import update_default_sizes
 from ...Helper.bootstrap import run_bootstrap, apply_bootstrap_defaults  # <-- wichtig!
 
 # ------------------------------------------------------------
@@ -476,10 +476,10 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
                             # 2) Search-Size Recovery anwenden
                             try:
-                                adapt_search_size_for_calibrate_tracks(context)
-                                print("[TRACK_SNAPSHOT][RECOVERY] ✔ adapt_search_size_for_calibrate_tracks ausgeführt.")
+                                update_default_sizes(context)
+                                print("[TRACK_SNAPSHOT][RECOVERY] ✔ update_default_sizes ausgeführt.")
                             except Exception:
-                                print("[TRACK_SNAPSHOT][RECOVERY] ❌ Fehlgeschlagen: adapt_search_size_for_calibrate_tracks")
+                                print("[TRACK_SNAPSHOT][RECOVERY] ❌ Fehlgeschlagen: update_default_sizes")
 
                             # 3) Weiterleitung an den Master Detect-Adapt Operator
                             try:
