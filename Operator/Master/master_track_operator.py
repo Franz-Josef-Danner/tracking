@@ -461,7 +461,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                 # Wenn aktueller Pattern-Size nicht größer → TR um 10 % reduzieren
                                 if current_pz <= last_pz:
                                     old_tr = float(params.get("tr", 0.0001))
-                                    new_tr = max(0.0000001, old_tr * 0.9)  # 10% Reduktion
+                                    new_tr = min(1, old_tr * 10) # TR um Faktor 10 erhöhen (also weniger restriktiv)
                 
                                     # Update in Szene-Params
                                     params["tr"] = new_tr
