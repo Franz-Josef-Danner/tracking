@@ -468,46 +468,51 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                             try:
                                 scene = context.scene
 
-                                # Aktuellen Clip holen
-                                clip_local = getattr(context.space_data, "clip", None)
-                                if clip_local is None and hasattr(scene, "tracking"):
-                                    clip_local = getattr(scene.tracking, "active", None)
+                                # 🟦 Clip sicher holen (unabhängig vom UI-Kontext)
+                                clip_local = None
+                                try:
+                                    if hasattr(context.scene, "tracking"):
+                                        tracking_obj = getattr(context.scene, "tracking", None)
+                                        if tracking_obj and hasattr(tracking_obj, "active"):
+                                            clip_local = getattr(tracking_obj, "active", None)
+                                except Exception:
+                                    clip_local = None
 
+                                # 🟦 Default-Pattern-Size korrekt auslesen
                                 current_pz = None
-                                if clip_local and hasattr(clip_local, "tracking"):
-                                    settings = getattr(clip_local.tracking, "settings", None)
-                                    if settings is not None and hasattr(settings, "pattern_size"):
-                                        current_pz = int(settings.pattern_size)
+                                try:
+                                    if clip_local and hasattr(clip_local, "tracking"):
+                                        settings = getattr(clip_local.tracking, "settings", None)
+                                        if settings and hasattr(settings, "default_pattern_size"):
+                                            current_pz = int(settings.default_pattern_size)
+                                except Exception:
+                                    current_pz = None
 
                                 if current_pz is not None:
-                                    # Letzten Pattern-Size aus der Szene holen (Default 0)
-                                    last_pz = 0
+                                    # Letzten gespeicherten Wert holen (optional)
                                     try:
                                         last_pz = int(scene.get("kaiserlich_last_pattern_size_recovery", 0))
                                     except Exception:
                                         last_pz = 0
 
-                                    # Nur wenn der aktuelle Pattern-Size NICHT größer ist als der letzte
-                                    # → tr in den bootstrap_params um Faktor 10 erhöhen
+                                    # 🟥 Stagnation → Threshold anheben
                                     if current_pz <= last_pz:
                                         params = scene.get("bootstrap_params", None)
                                         if isinstance(params, dict):
                                             try:
-                                                base_tr = float(params.get("tr", 0.5))
+                                                base_tr = float(params.get("tr", 0.0001))
                                             except Exception:
-                                                base_tr = 0.5
+                                                base_tr = 0.0001
 
                                             new_tr = base_tr * 10.0
                                             params["tr"] = new_tr
-                                            # geänderte Params zurück in die Szene schreiben
                                             scene["bootstrap_params"] = dict(params)
-                                            print(
-                                                f"[TRACK_SNAPSHOT][RECOVERY] ⚙ tr auf {new_tr} erhöht "
-                                                f"(pattern_size stagnierte: {current_pz} <= {last_pz})"
-                                            )
+                                            print(f"[TRACK_SNAPSHOT][RECOVERY] ⚙ tr auf {new_tr} erhöht (pattern stagnation {current_pz} <= {last_pz})")
 
-                                    # Aktuellen Pattern-Size als Referenz für den nächsten Durchgang speichern
-                                    scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
+                                    # 🟩 Nur speichern, wenn neuer Wert tatsächlich GRÖSSER ist
+                                    if current_pz > last_pz:
+                                        scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
+                                        print(f"[TRACK_SNAPSHOT][RECOVERY] 📌 pattern reference aktualisiert → {current_pz}")
                             except Exception as e:
                                 print(f"[TRACK_SNAPSHOT][RECOVERY] ⚠ Pattern-Size-Check fehlgeschlagen: {e}")
 
