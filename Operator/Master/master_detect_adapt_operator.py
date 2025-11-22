@@ -18,7 +18,7 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        ef_target = int(scene.kaiserlich_markers_per_frame)
+        ef_target = int(scene.kaiserlich_markers_per_frame) * 2
 
         import math
         params = scene.get("bootstrap_params", None)
