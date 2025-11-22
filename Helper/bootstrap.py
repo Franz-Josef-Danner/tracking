@@ -29,7 +29,7 @@ def run_bootstrap(context, ef: int):
     # Basis-Parameter
     ma = hz * 0.025          # max area
     md = hz * 0.025          # min distance
-    pz = int(hz * 0.01)      # pattern size
+    pz = int(hz * 0.005)      # pattern size
     sz = pz * 2              # search size
     tr = 0.0001              # threshold
     za = ef * 4              # Zielanzahl intern

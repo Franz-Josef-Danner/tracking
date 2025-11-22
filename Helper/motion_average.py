@@ -352,7 +352,7 @@ def get_from_selected_tracks(
         # max_val als Scene-Variable verfügbar machen (für Debug/Auswertung)
         scene["kaiserlich_threshold_max_val"] = float(max_val)
         
-        max_val = max_val * 1.000009
+        max_val = max_val * 1.000001
 
         if max_val > 0:
             dx_var_mean /= max_val
