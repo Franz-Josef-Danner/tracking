@@ -198,26 +198,69 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         pass
 
                     flagged_names = []
-                    deleted_info = []  # (name, length)
-                    kept_info = []     # (name, length)
+                    deleted_info = []  # (name, active_length)
+                    kept_info = []     # (name, active_length)
+
+                    def _is_marker_disabled(track, marker) -> bool:
+                        """Kapselt die Logik, wann ein Marker als 'inaktiv' gilt."""
+                        # kompletter Track gemutet → alles inaktiv
+                        if getattr(track, "mute", False):
+                            return True
+
+                        # Marker-spezifisches Mute-Flag (falls vorhanden)
+                        if getattr(marker, "mute", False):
+                            return True
+
+                        # Custom-ID-Property "disabled" (z. B. aus Add-on-Logik)
+                        try:
+                            if "disabled" in marker and bool(marker["disabled"]):
+                                return True
+                        except Exception:
+                            pass
+
+                        return False
+
                     if min_frames > 0:
                         for t in tracking.tracks:
                             try:
-                                marker_frames = {m.frame for m in t.markers if hasattr(m, 'frame')}
-                                length = len(marker_frames)
-                                if length < min_frames:
+                                all_frames = set()
+                                active_frames = set()
+
+                                for m in t.markers:
+                                    if not hasattr(m, "frame"):
+                                        continue
+
+                                    f = m.frame
+                                    all_frames.add(f)
+
+                                    # nur wirklich aktive Marker zählen
+                                    if _is_marker_disabled(t, m):
+                                        continue
+
+                                    active_frames.add(f)
+
+                                active_length = len(active_frames)
+
+                                # Wenn nichts aktiv, wird der Track faktisch als 0 bewertet
+                                if active_length < min_frames:
                                     flagged_names.append(t.name)
-                                    deleted_info.append((t.name, length))
+                                    deleted_info.append((t.name, active_length))
                                 else:
-                                    kept_info.append((t.name, length))
+                                    kept_info.append((t.name, active_length))
                             except Exception:
                                 pass
-                    # Falls min_frames == 0 einfach alle als "kept" zählen für Übersicht
+                    # Falls min_frames == 0 einfach alle als "kept" zählen (aber dennoch nur aktive Frames loggen)
                     else:
                         for t in tracking.tracks:
                             try:
-                                marker_frames = {m.frame for m in t.markers if hasattr(m, 'frame')}
-                                kept_info.append((t.name, len(marker_frames)))
+                                active_frames = set()
+                                for m in t.markers:
+                                    if not hasattr(m, "frame"):
+                                        continue
+                                    if _is_marker_disabled(t, m):
+                                        continue
+                                    active_frames.add(m.frame)
+                                kept_info.append((t.name, len(active_frames)))
                             except Exception:
                                 pass
 
@@ -225,7 +268,9 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         delete_tracks_by_names(bpy.context, flagged_names)
 
                     try:
-                        print(f"[TRACK_LENGTH_VALIDATION] min_frames={min_frames} deleted={len(deleted_info)} kept={len(kept_info)}")
+                        print(f"[TRACK_LENGTH_VALIDATION] min_frames={min_frames} "
+                              f"deleted={len(deleted_info)} kept={len(kept_info)} "
+                              f"(active frames only)")
                         if deleted_info:
                             print("  Deleted Tracks:", ", ".join(f"{n}:{l}" for n, l in deleted_info))
                         else:
