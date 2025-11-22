@@ -198,18 +198,44 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                         pass
 
                     flagged_names = []
+                    deleted_info = []  # (name, length)
+                    kept_info = []     # (name, length)
                     if min_frames > 0:
                         for t in tracking.tracks:
                             try:
-                                # Anzahl distinct Marker-Frames bestimmen
                                 marker_frames = {m.frame for m in t.markers if hasattr(m, 'frame')}
-                                if len(marker_frames) < min_frames:
+                                length = len(marker_frames)
+                                if length < min_frames:
                                     flagged_names.append(t.name)
+                                    deleted_info.append((t.name, length))
+                                else:
+                                    kept_info.append((t.name, length))
+                            except Exception:
+                                pass
+                    # Falls min_frames == 0 einfach alle als "kept" zählen für Übersicht
+                    else:
+                        for t in tracking.tracks:
+                            try:
+                                marker_frames = {m.frame for m in t.markers if hasattr(m, 'frame')}
+                                kept_info.append((t.name, len(marker_frames)))
                             except Exception:
                                 pass
 
                     if flagged_names:
                         delete_tracks_by_names(bpy.context, flagged_names)
+
+                    try:
+                        print(f"[TRACK_LENGTH_VALIDATION] min_frames={min_frames} deleted={len(deleted_info)} kept={len(kept_info)}")
+                        if deleted_info:
+                            print("  Deleted Tracks:", ", ".join(f"{n}:{l}" for n, l in deleted_info))
+                        else:
+                            print("  Deleted Tracks: None")
+                        if kept_info:
+                            print("  Kept Tracks:", ", ".join(f"{n}:{l}" for n, l in kept_info))
+                        else:
+                            print("  Kept Tracks: None")
+                    except Exception:
+                        pass
 
                 self._rebuild_good_tracks(context, reason="Post-Stage2 cleanup")
 
