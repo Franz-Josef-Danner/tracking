@@ -10,7 +10,7 @@ from ...Helper.filter_tracks import filter_problematic_tracks
 from ...Helper.update_default_sizes import update_default_sizes
 from ...Helper.find_clip_editor_area import find_clip_editor_area
 from ...Helper.delete import delete_tracks_by_names
-from ...Helper.threshold_stats import log_threshold_extrema
+from ...Helper.solve_validation import has_solve_basis, get_solve_basis_stats
 
 # ===================================================================
 # Zentrale Hilfsfunktion: UUID-basierte Track-Speicherung in Scene
@@ -193,7 +193,28 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
 
                 frame = find_first_weak_frame_solve(context)
                 if frame is None:
-                    log_threshold_extrema(bpy.context.scene)
+                    # ----------------- Solve-Guard -----------------
+                    if not has_solve_basis(context):
+                        # Solve-Basis fehlt → Suche Weak-Frame mit *2 Marker-Schwelle
+                        from ...Helper.low_marker_frame import find_first_weak_frame
+                        new_frame = find_first_weak_frame(context)
+
+                        if new_frame is None:
+                            # auch mit erhöhtem Target nichts gefunden → dennoch abbrechen
+                            valid, spans = get_solve_basis_stats(context)
+                            self.report({'ERROR'},
+                                        f"Keine solve-fähige Basis vorhanden "
+                                        f"(gültige={valid}, Spannen={spans}).")
+                            return {'CANCELLED'}
+
+                        # Playhead setzen und Low-Marker-Cycle erneut starten
+                        self.report({'INFO'},
+                                    "Solve-Basis zu schwach → fokussierter Weak-Frame-Retry (×2 Marker-Ziel).")
+                        bpy.context.scene.frame_current = new_frame
+
+                        bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                        return {'FINISHED'}
+                    # Solve möglich → jetzt Resolve starten
                     bpy.ops.kaiserlich_tracker.master_resolve_operator('INVOKE_DEFAULT')
                     return {'FINISHED'}
 
