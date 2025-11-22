@@ -444,38 +444,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                             t.name for t in tracking.tracks
                             if t.name in getattr(self, "_snapshot_tracks", [])
                         }
-                        # ----------------------------------------------------
-                        # 🔎 NEU: Pattern-Size-Vergleich & Threshold-Abstufung
-                        # ----------------------------------------------------
-                        try:
-                            scene = context.scene
-                            clip = getattr(context.space_data, "clip", None)
-                            if clip and hasattr(clip, "tracking"):
-                                settings = clip.tracking.settings
-                                current_pz = int(settings.pattern_size)
-                
-                                # letzten PZ aus bootstrap_params holen
-                                params = scene.get("bootstrap_params", {})
-                                last_pz = int(params.get("pz", current_pz))
-                
-                                # Wenn aktueller Pattern-Size nicht größer → TR um 10 % reduzieren
-                                if current_pz <= last_pz:
-                                    old_tr = float(params.get("tr", 0.0001))
-                                    new_tr = min(1, old_tr * 10) # TR um Faktor 10 erhöhen (also weniger restriktiv)
-                
-                                    # Update in Szene-Params
-                                    params["tr"] = new_tr
-                                    params["pz"] = current_pz  # neuen PZ ebenfalls speichern
-                                    scene["bootstrap_params"] = dict(params)
-                
-                                    print(f"[PATTERN_EVOLVE] current={current_pz} last={last_pz} → tr: {old_tr:.6f} → {new_tr:.6f}")
-                                else:
-                                    # Wachstum registrieren
-                                    params["pz"] = current_pz
-                                    scene["bootstrap_params"] = dict(params)
-                                    print(f"[PATTERN_EVOLVE] ✔ growth detected {last_pz} → {current_pz}")
-                        except Exception as e:
-                            print(f"[PATTERN_EVOLVE] ⚠️ Fehler: {e}")
+
                         if not surviving_tracks:
                             print("[TRACK_SNAPSHOT] ❌ Alle ursprünglichen Marker wurden entfernt.")
                             print(f"[TRACK_SNAPSHOT] Ursprünglich: {self._snapshot_tracks}")
@@ -495,6 +464,53 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                 print("[TRACK_SNAPSHOT][RECOVERY] ✔ update_default_sizes ausgeführt.")
                             except Exception:
                                 print("[TRACK_SNAPSHOT][RECOVERY] ❌ Fehlgeschlagen: update_default_sizes")
+
+                            # 2b) Pattern-Size-Verlauf prüfen und ggf. Threshold anheben
+                            try:
+                                scene = context.scene
+
+                                # Aktuellen Clip holen
+                                clip_local = getattr(context.space_data, "clip", None)
+                                if clip_local is None and hasattr(scene, "tracking"):
+                                    clip_local = getattr(scene.tracking, "active", None)
+
+                                current_pz = None
+                                if clip_local and hasattr(clip_local, "tracking"):
+                                    settings = getattr(clip_local.tracking, "settings", None)
+                                    if settings is not None and hasattr(settings, "pattern_size"):
+                                        current_pz = int(settings.pattern_size)
+
+                                if current_pz is not None:
+                                    # Letzten Pattern-Size aus der Szene holen (Default 0)
+                                    last_pz = 0
+                                    try:
+                                        last_pz = int(scene.get("kaiserlich_last_pattern_size_recovery", 0))
+                                    except Exception:
+                                        last_pz = 0
+
+                                    # Nur wenn der aktuelle Pattern-Size NICHT größer ist als der letzte
+                                    # → tr in den bootstrap_params um Faktor 10 erhöhen
+                                    if current_pz <= last_pz:
+                                        params = scene.get("bootstrap_params", None)
+                                        if isinstance(params, dict):
+                                            try:
+                                                base_tr = float(params.get("tr", 0.5))
+                                            except Exception:
+                                                base_tr = 0.5
+
+                                            new_tr = base_tr * 10.0
+                                            params["tr"] = new_tr
+                                            # geänderte Params zurück in die Szene schreiben
+                                            scene["bootstrap_params"] = dict(params)
+                                            print(
+                                                f"[TRACK_SNAPSHOT][RECOVERY] ⚙ tr auf {new_tr} erhöht "
+                                                f"(pattern_size stagnierte: {current_pz} <= {last_pz})"
+                                            )
+
+                                    # Aktuellen Pattern-Size als Referenz für den nächsten Durchgang speichern
+                                    scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
+                            except Exception as e:
+                                print(f"[TRACK_SNAPSHOT][RECOVERY] ⚠ Pattern-Size-Check fehlgeschlagen: {e}")
 
                             # 3) Weiterleitung an den Master Detect-Adapt Operator
                             try:
