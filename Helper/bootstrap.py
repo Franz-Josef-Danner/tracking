@@ -50,8 +50,34 @@ def run_bootstrap(context, ef: int):
         except Exception:
             pass
 
+    # ------------------------------------------------------------
+    # 🔢 Solve-basierte Marker-Pro-Frame-Schätzung
+    # (wird direkt in die Scene geschrieben)
+    # ------------------------------------------------------------
+    try:
+        if scene is not None and frame_start is not None and frame_end is not None:
+            F = max(1, int(frame_end - frame_start + 1))       # Clip-Länge (Frames)
+            v = max(10, int(F * 0.12))                         # initial angenommene Tracklänge (≈12 %)
+            r = 2.0                                             # Redundanz (2× Constraint)
+            k = 5                                               # Intrinsics-Parameter
+            safety = 3.0                                        # Sicherheit gegen Occlusion & Drift
 
+            denom = (2 * v - 3 * r)
+            if denom > 0:
+                N = (6 * r * F + r * k) / denom
+                theoretical = (N * v) / F
+                practical = theoretical * safety
+                est_markers = int(max(10, min(practical, 120))) # clamp: 10–120
+            else:
+                est_markers = 30  # Fallback, wenn v zu klein ist
 
+            # In Szene schreiben
+            if hasattr(scene, "kaiserlich_markers_per_frame"):
+                scene.kaiserlich_markers_per_frame = est_markers
+            else:
+                scene["kaiserlich_markers_per_frame"] = est_markers
+    except Exception:
+        pass
 
     # Neue Defaults
     default_correlation_min = 0.97
