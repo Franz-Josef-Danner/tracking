@@ -105,7 +105,11 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     # --------------------------------------------------------
 
     def execute(self, context):
-
+        scene = context.scene
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'ERROR'}, "No active clip found.")
+            return {"CANCELLED"}
 
         # Start- und End-Frame
         self._start_frame = ph_get_start_frame(context)
