@@ -2,6 +2,7 @@
 # ---------------------------------------------------------------------
 import bpy
 import math
+from .scene import get_scene_range
 
 from .marker_size import apply_marker_sizes
 
@@ -34,6 +35,23 @@ def run_bootstrap(context, ef: int):
     za = ef * 4              # Zielanzahl intern
     og = math.ceil(za * 1.1) # Obergrenze
     ug = math.floor(za * 0.9)# Untergrenze
+
+    scene = getattr(context, "scene", None)
+    frame_start, frame_end = get_scene_range(context)
+    target_markers = None
+    if scene is not None and frame_start is not None and frame_end is not None:
+        length = max(0, frame_end - frame_start + 1)
+        target_markers = max(1, int(length * 0.25))
+        try:
+            if hasattr(scene, "kaiserlich_markers_per_frame"):
+                scene.kaiserlich_markers_per_frame = target_markers
+            else:
+                scene["kaiserlich_markers_per_frame"] = target_markers
+        except Exception:
+            pass
+
+
+
 
     # Neue Defaults
     default_correlation_min = 0.97
