@@ -6,7 +6,6 @@ from bpy.types import Operator, Context
 
 # ---- Helper Imports ---------------------------------------------------------
 from ...Helper.low_marker_frame_solve import find_first_weak_frame_solve
-from ...Helper.filter_tracks import filter_problematic_tracks
 from ...Helper.update_default_sizes import update_default_sizes
 from ...Helper.find_clip_editor_area import find_clip_editor_area
 from ...Helper.delete import delete_tracks_by_names
@@ -178,16 +177,25 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     raise RuntimeError("No active clip in current context")
 
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-                    bpy.ops.clip.filter_tracks(track_threshold=30.0)
+                    # Threshold dynamisch aus scene.kaiserlich_frames_per_track entnehmen (Fallback 30.0)
+                    dynamic_threshold = 30.0
+                    try:
+                        # Property kann als Attribut oder im Scene-Map existieren
+                        if hasattr(scene, "kaiserlich_frames_per_track"):
+                            val = getattr(scene, "kaiserlich_frames_per_track", None)
+                        else:
+                            val = scene.get("kaiserlich_frames_per_track", None)
+                        if isinstance(val, (int, float)) and val > 0:
+                            dynamic_threshold = float(val)
+                    except Exception:
+                        pass
+                    bpy.ops.clip.filter_tracks(track_threshold=dynamic_threshold)
                     tracking = clip_obj.tracking
                     flagged_names = [t.name for t in tracking.tracks if t.select]
                     if flagged_names:
                         delete_tracks_by_names(bpy.context, flagged_names)
                     else:
                         pass
-
-                with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-                    filter_problematic_tracks(context, threshold=10.0)
 
                 self._rebuild_good_tracks(context, reason="Post-Stage2 cleanup")
 
