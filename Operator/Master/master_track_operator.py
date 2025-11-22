@@ -444,7 +444,38 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                             t.name for t in tracking.tracks
                             if t.name in getattr(self, "_snapshot_tracks", [])
                         }
-
+                        # ----------------------------------------------------
+                        # 🔎 NEU: Pattern-Size-Vergleich & Threshold-Abstufung
+                        # ----------------------------------------------------
+                        try:
+                            scene = context.scene
+                            clip = getattr(context.space_data, "clip", None)
+                            if clip and hasattr(clip, "tracking"):
+                                settings = clip.tracking.settings
+                                current_pz = int(settings.pattern_size)
+                
+                                # letzten PZ aus bootstrap_params holen
+                                params = scene.get("bootstrap_params", {})
+                                last_pz = int(params.get("pz", current_pz))
+                
+                                # Wenn aktueller Pattern-Size nicht größer → TR um 10 % reduzieren
+                                if current_pz <= last_pz:
+                                    old_tr = float(params.get("tr", 0.0001))
+                                    new_tr = max(0.0000001, old_tr * 0.9)  # 10% Reduktion
+                
+                                    # Update in Szene-Params
+                                    params["tr"] = new_tr
+                                    params["pz"] = current_pz  # neuen PZ ebenfalls speichern
+                                    scene["bootstrap_params"] = dict(params)
+                
+                                    print(f"[PATTERN_EVOLVE] current={current_pz} last={last_pz} → tr: {old_tr:.6f} → {new_tr:.6f}")
+                                else:
+                                    # Wachstum registrieren
+                                    params["pz"] = current_pz
+                                    scene["bootstrap_params"] = dict(params)
+                                    print(f"[PATTERN_EVOLVE] ✔ growth detected {last_pz} → {current_pz}")
+                        except Exception as e:
+                            print(f"[PATTERN_EVOLVE] ⚠️ Fehler: {e}")
                         if not surviving_tracks:
                             print("[TRACK_SNAPSHOT] ❌ Alle ursprünglichen Marker wurden entfernt.")
                             print(f"[TRACK_SNAPSHOT] Ursprünglich: {self._snapshot_tracks}")
