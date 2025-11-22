@@ -483,7 +483,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
                             # 3) Weiterleitung an den Master Detect-Adapt Operator
                             try:
-                                bpy.ops.kaiserlich_tracker.master_detect_adapt_operator('INVOKE_DEFAULT')
+                                bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
                                 print("[TRACK_SNAPSHOT][RECOVERY] 🚀 Weiterleitung → master_detect_adapt_operator")
                             except Exception:
                                 print("[TRACK_SNAPSHOT][RECOVERY] ❌ Übergabe fehlgeschlagen: master_detect_adapt_operator")
