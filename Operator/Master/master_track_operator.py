@@ -119,8 +119,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         except Exception:
             ef = 50
 
-        run_bootstrap(context, ef)  # <-- ef übergeben!
-        apply_bootstrap_defaults(context, scene.get("bootstrap_params", {}))
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
