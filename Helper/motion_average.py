@@ -355,8 +355,8 @@ def get_from_selected_tracks(
         max_val = max_val
 
         if max_val > 0:
-            dx_var_mean *= max_val
-            dy_var_mean *= max_val
+            dx_var_mean /= max_val
+            dy_var_mean /= max_val
             rel_var_min /= max_val
             rel_var_mean /= max_val
             d_var_com /= max_val
