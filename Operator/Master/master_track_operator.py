@@ -467,6 +467,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                             # 2b) Pattern-Size-Verlauf prüfen und ggf. Threshold anheben
                             try:
                                 scene = context.scene
+                                print("\n[TRACE][PATTERN_CHECK] ---- BEGIN STATS ----")
 
                                 # 🟦 Clip sicher holen (unabhängig vom UI-Kontext)
                                 clip_local = None
@@ -487,6 +488,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                             current_pz = int(settings.default_pattern_size)
                                 except Exception:
                                     current_pz = None
+                                print(f"[TRACE][PATTERN_CHECK] current default_pattern_size = {current_pz}")
 
                                 if current_pz is not None:
                                     # Letzten gespeicherten Wert holen (optional)
@@ -494,6 +496,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                         last_pz = int(scene.get("kaiserlich_last_pattern_size_recovery", 0))
                                     except Exception:
                                         last_pz = 0
+                                    print(f"[TRACE][PATTERN_CHECK] last saved reference = {last_pz}")
 
                                     # 🟥 Stagnation → Threshold anheben
                                     if current_pz <= last_pz:
@@ -507,13 +510,18 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                             new_tr = base_tr * 10.0
                                             params["tr"] = new_tr
                                             scene["bootstrap_params"] = dict(params)
-                                            print(f"[TRACK_SNAPSHOT][RECOVERY] ⚙ tr auf {new_tr} erhöht (pattern stagnation {current_pz} <= {last_pz})")
+                                            print(f"[TRACE][PATTERN_CHECK] ⚠ STAGNATION detected! Threshold raised to {new_tr} (prev={base_tr})")
 
                                     # 🟩 Nur speichern, wenn neuer Wert tatsächlich GRÖSSER ist
                                     if current_pz > last_pz:
                                         scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
-                                        print(f"[TRACK_SNAPSHOT][RECOVERY] 📌 pattern reference aktualisiert → {current_pz}")
-                            except Exception as e:
+                                        print(f"[TRACE][PATTERN_CHECK] 📌 NEW pattern reference saved → {current_pz}")
+
+                                else:
+                                    print("[TRACE][PATTERN_CHECK] ❌ current_pz could not be read → No threshold change")
+
+                                print("[TRACE][PATTERN_CHECK] ---- END STATS ----\n")
+                                                except Exception as e:
                                 print(f"[TRACK_SNAPSHOT][RECOVERY] ⚠ Pattern-Size-Check fehlgeschlagen: {e}")
 
                             # 3) Weiterleitung an den Master Detect-Adapt Operator
