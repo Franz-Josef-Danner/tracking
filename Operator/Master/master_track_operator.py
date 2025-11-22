@@ -516,6 +516,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                             try:
                                 bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
                                 print("[TRACK_SNAPSHOT][RECOVERY] 🚀 Weiterleitung → master_detect_adapt_operator")
+                                # Logging aktuell eingesetzter Schwellenwerte
+                                try:
+                                    p = context.scene.get("bootstrap_params", {})
+                                    if isinstance(p, dict) and "tr" in p:
+                                        print(f"[THRESHOLD][HANDOVER] tr={p.get('tr')} (handover to detect_adapt)")
+                                except Exception:
+                                    pass
                                 # ----------------------------------------------------
                                 # HARD EXIT: Dieser Operator muss komplett beendet werden
                                 # keine Weitergabe an master_cycle_operator!
