@@ -18,6 +18,9 @@ from ...Helper.motion_average import get_from_selected_tracks
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.validate_motion_forward_helper import _get_positions_backward
+from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
+from ..Helper.bootstrap import run_bootstrap, apply_bootstrap_defaults  # <-- wichtig!
+
 # ------------------------------------------------------------
 # Neuer Korrektur-Helper
 # ------------------------------------------------------------
@@ -102,6 +105,8 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     # --------------------------------------------------------
 
     def execute(self, context):
+        run_bootstrap(context)  # <-- Wichtig: Bootstrap vor Tracking-Cycle ausführen
+        apply_bootstrap_defaults(context, context.scene.get("bootstrap_params", {})) # <-- Wichtig: Bootstrap-Werte übernehmen
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
@@ -150,7 +155,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # NEU: Aktuell selektierte und aktive Tracks speichern
         # --------------------------------------------------------
         store_calibrate_tracks_in_scene(context, self._processing_names)
-
+        # ============================================================
+        # SNAPSHOT DER SELEKTIERTEN TRACKS SPEICHERN
+        # ============================================================
+        # Diese Liste dient später zur Überprüfung, ob nach Cleanup noch
+        # mindestens ein ursprünglicher Marker übrig ist.
+        self._snapshot_tracks = list(self._processing_names)
         # --------------------------------------------------------
         # Timer starten
         # --------------------------------------------------------
@@ -358,7 +368,131 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
         except Exception:
             pass
+        # ============================================================
+        # NEU: Marker-Längenvalidierung (aktive Marker pro Track)
+        # ============================================================
+        try:
+            scene = context.scene
+            clip_obj = getattr(context.space_data, "clip", None)
+            if clip_obj:
+                from ...Helper.find_clip_editor_area import find_clip_editor_area
+                from ...Helper.delete import delete_tracks_by_names
 
+                window, area, region, space = find_clip_editor_area(clip_obj)
+                if window and area and region and space:
+                    with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+                        tracking = clip_obj.tracking
+
+                        # Mindestanzahl Frames pro Track
+                        min_frames = 0
+                        try:
+                            if hasattr(scene, "kaiserlich_frames_per_track"):
+                                val = getattr(scene, "kaiserlich_frames_per_track", None)
+                            else:
+                                val = scene.get("kaiserlich_frames_per_track", None)
+                            if isinstance(val, (int, float)) and val > 0:
+                                min_frames = int(val)
+                        except Exception:
+                            pass
+
+                        flagged_names = []
+                        deleted_info = []
+                        kept_info = []
+
+                        def _is_marker_disabled(track, marker) -> bool:
+                            if getattr(track, "mute", False):
+                                return True
+                            if getattr(marker, "mute", False):
+                                return True
+                            try:
+                                if "disabled" in marker and bool(marker["disabled"]):
+                                    return True
+                            except Exception:
+                                pass
+                            return False
+
+                        if min_frames > 0:
+                            for t in tracking.tracks:
+                                try:
+                                    active_frames = {
+                                        m.frame for m in t.markers
+                                        if hasattr(m, "frame") and not _is_marker_disabled(t, m)
+                                    }
+                                    active_length = len(active_frames)
+                                    if active_length < min_frames:
+                                        flagged_names.append(t.name)
+                                        deleted_info.append((t.name, active_length))
+                                    else:
+                                        kept_info.append((t.name, active_length))
+                                except Exception:
+                                    pass
+                        else:
+                            for t in tracking.tracks:
+                                try:
+                                    active_frames = {
+                                        m.frame for m in t.markers
+                                        if hasattr(m, "frame") and not _is_marker_disabled(t, m)
+                                    }
+                                    kept_info.append((t.name, len(active_frames)))
+                                except Exception:
+                                    pass
+
+                        if flagged_names:
+                            delete_tracks_by_names(bpy.context, flagged_names)
+                        # ----------------------------------------------------
+                        # NEU: Snapshot-Überlebensprüfung
+                        # ----------------------------------------------------
+                        surviving_tracks = {
+                            t.name for t in tracking.tracks
+                            if t.name in getattr(self, "_snapshot_tracks", [])
+                        }
+
+                        if not surviving_tracks:
+                            print("[TRACK_SNAPSHOT] ❌ Alle ursprünglichen Marker wurden entfernt.")
+                            print(f"[TRACK_SNAPSHOT] Ursprünglich: {self._snapshot_tracks}")
+                            print(f"[TRACK_SNAPSHOT] Überlebend:   (keiner)")
+
+                            print("[TRACK_SNAPSHOT][RECOVERY] 🔄 Keine ursprünglichen Tracks überlebt → Search Size erweitern & Detect neu starten.")
+
+                            # 1) Clean Reset auf Startframe
+                            try:
+                                reset_to_frame(context, self._start_frame)
+                            except Exception:
+                                pass
+
+                            # 2) Search-Size Recovery anwenden
+                            try:
+                                adapt_search_size_for_calibrate_tracks(context)
+                                print("[TRACK_SNAPSHOT][RECOVERY] ✔ adapt_search_size_for_calibrate_tracks ausgeführt.")
+                            except Exception:
+                                print("[TRACK_SNAPSHOT][RECOVERY] ❌ Fehlgeschlagen: adapt_search_size_for_calibrate_tracks")
+
+                            # 3) Weiterleitung an den Master Detect-Adapt Operator
+                            try:
+                                bpy.ops.kaiserlich_tracker.master_detect_adapt_operator('INVOKE_DEFAULT')
+                                print("[TRACK_SNAPSHOT][RECOVERY] 🚀 Weiterleitung → master_detect_adapt_operator")
+                            except Exception:
+                                print("[TRACK_SNAPSHOT][RECOVERY] ❌ Übergabe fehlgeschlagen: master_detect_adapt_operator")
+
+                            return  # WICHTIG: _finish() nicht weiter ausführen, keine weitere Chain!
+                        else:
+                            print(f"[TRACK_SNAPSHOT] ✔ Überlebende ursprüngliche Tracks: {', '.join(surviving_tracks)}")
+
+                        try:
+                            print(f"[TRACK_LENGTH_VALIDATION] min_frames={min_frames} "
+                                  f"deleted={len(deleted_info)} kept={len(kept_info)} (active frames only)")
+                            if deleted_info:
+                                print("  Deleted Tracks:", ", ".join(f"{n}:{l}" for n, l in deleted_info))
+                            else:
+                                print("  Deleted Tracks: None")
+                            if kept_info:
+                                print("  Kept Tracks:", ", ".join(f"{n}:{l}" for n, l in kept_info))
+                            else:
+                                print("  Kept Tracks: None")
+                        except Exception:
+                            pass
+        except Exception:
+            pass
         # Folge-Operator starten
         if not cancelled:
             try:
