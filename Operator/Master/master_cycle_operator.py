@@ -10,6 +10,7 @@ from ...Helper.update_default_sizes import update_default_sizes
 from ...Helper.find_clip_editor_area import find_clip_editor_area
 from ...Helper.delete import delete_tracks_by_names
 from ...Helper.solve_validation import has_solve_basis, get_solve_basis_stats
+from ...Helper.bootstrap import run_bootstrap, apply_bootstrap_defaults  # <-- wichtig!
 
 # ===================================================================
 # Zentrale Hilfsfunktion: UUID-basierte Track-Speicherung in Scene
