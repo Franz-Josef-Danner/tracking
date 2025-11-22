@@ -43,10 +43,10 @@ def run_bootstrap(context, ef: int):
         length = max(0, frame_end - frame_start + 1)
         target_markers = max(1, int(length * 0.25))
         try:
-            if hasattr(scene, "kaiserlich_markers_per_frame"):
-                scene.kaiserlich_markers_per_frame = target_markers
+            if hasattr(scene, "kaiserlich_frames_per_track"):
+                scene.kaiserlich_frames_per_track = target_markers
             else:
-                scene["kaiserlich_markers_per_frame"] = target_markers
+                scene["kaiserlich_frames_per_track"] = target_markers
         except Exception:
             pass
 
