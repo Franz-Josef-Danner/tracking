@@ -177,25 +177,39 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     raise RuntimeError("No active clip in current context")
 
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-                    # Threshold dynamisch aus scene.kaiserlich_frames_per_track entnehmen (Fallback 30.0)
-                    dynamic_threshold = 30.0
+                    # Zuerst Standard-Filter (konstanter Threshold 30.0, nicht mehr dynamisch)
                     try:
-                        # Property kann als Attribut oder im Scene-Map existieren
+                        bpy.ops.clip.filter_tracks(track_threshold=30.0)
+                    except Exception:
+                        pass
+
+                    tracking = clip_obj.tracking
+
+                    # Mindestanzahl Frames pro Track aus scene.kaiserlich_frames_per_track holen
+                    min_frames = 0
+                    try:
                         if hasattr(scene, "kaiserlich_frames_per_track"):
                             val = getattr(scene, "kaiserlich_frames_per_track", None)
                         else:
                             val = scene.get("kaiserlich_frames_per_track", None)
                         if isinstance(val, (int, float)) and val > 0:
-                            dynamic_threshold = float(val)
+                            min_frames = int(val)
                     except Exception:
                         pass
-                    bpy.ops.clip.filter_tracks(track_threshold=dynamic_threshold)
-                    tracking = clip_obj.tracking
-                    flagged_names = [t.name for t in tracking.tracks if t.select]
+
+                    flagged_names = []
+                    if min_frames > 0:
+                        for t in tracking.tracks:
+                            try:
+                                # Anzahl distinct Marker-Frames bestimmen
+                                marker_frames = {m.frame for m in t.markers if hasattr(m, 'frame')}
+                                if len(marker_frames) < min_frames:
+                                    flagged_names.append(t.name)
+                            except Exception:
+                                pass
+
                     if flagged_names:
                         delete_tracks_by_names(bpy.context, flagged_names)
-                    else:
-                        pass
 
                 self._rebuild_good_tracks(context, reason="Post-Stage2 cleanup")
 
