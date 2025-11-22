@@ -19,7 +19,6 @@ from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.validate_motion_forward_helper import _get_positions_backward
 from ...Helper.update_default_sizes import update_default_sizes
-from ...Helper.bootstrap import run_bootstrap, apply_bootstrap_defaults  # <-- wichtig!
 
 # ------------------------------------------------------------
 # Neuer Korrektur-Helper

@@ -31,7 +31,7 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             # ma wird weiter unten aus MovieTrackingSettings.default_margin überschrieben
             ma = int(round(float(params.get('ma', 100)) * 1.1))
             tr = float(params.get('tr', 0.5))
-            print(f"[THRESHOLD] tr={tr} (bootstrap_params)")
+            print(f"[THRESHOLD] tr={tr}")
             pz = int(params.get('pz', 50))
             sz = int(params.get('sz', 0))
             hz = int(params.get('hz', 1))
