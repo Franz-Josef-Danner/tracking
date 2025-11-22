@@ -177,11 +177,7 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     raise RuntimeError("No active clip in current context")
 
                 with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-                    # Zuerst Standard-Filter (konstanter Threshold 30.0, nicht mehr dynamisch)
-                    try:
-                        bpy.ops.clip.filter_tracks(track_threshold=30.0)
-                    except Exception:
-                        pass
+                    # Entfernt: automatischer Standard-Filter der Tracks (track_threshold=30.0)
 
                     tracking = clip_obj.tracking
 
