@@ -5,6 +5,7 @@ from bpy.types import Operator, Context
 # ---- Helper Imports ---------------------------------------------------------
 from ..Helper.low_marker_frame import find_first_weak_frame
 from ..Helper.threshold_stats import reset_threshold_extrema
+from ..Helper.bootstrap import run_bootstrap, apply_bootstrap_defaults  # <-- wichtig!
 
 class KAISERLICHTRACKER_OT_master_operator(Operator):
     """Starts a sequence of all functions to perform an optimized process for generating an ideal camera solve (time-consuming)."""
