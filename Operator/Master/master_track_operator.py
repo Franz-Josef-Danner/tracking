@@ -572,6 +572,18 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                 print(f"[TRACK_SNAPSHOT][RECOVERY] ⚠ Pattern-Size-Check fehlgeschlagen: {e}")
                             # 3) Weiterleitung an den Master Detect-Adapt Operator
                             try:
+                                # 🔐 Threshold-Fix: neuen Wert sicher in bootstrap_params speichern
+                                try:
+                                    params = scene.get("bootstrap_params", {})
+                                    if isinstance(params, dict):
+                                        # ergibt sich aus Pattern-Check (base_tr wurde überschrieben)
+                                        base_tr = float(params.get('tr', 0.0001))
+                                        # bei Bedarf könnte hier weitere Logik greifen → aber wichtig ist: schreiben!
+                                        scene["bootstrap_params"] = dict(params)
+                                        print(f"[THRESHOLD][STORE] tr={base_tr}")
+                                except Exception as e:
+                                    print(f"[THRESHOLD][STORE] ⚠ Speichern fehlgeschlagen: {e}")
+        
                                 bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
                                 print("[TRACK_SNAPSHOT][RECOVERY] 🚀 Weiterleitung → master_detect_adapt_operator")
                                 # Logging aktuell eingesetzter Schwellenwerte
