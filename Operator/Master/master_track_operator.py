@@ -529,24 +529,22 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                     # 🟥 FALL 1: Pattern fällt nach Maximalstand → Threshold hart erhöhen (×10)
                                     if current_pz < last_pz:
                                         params = scene.get("bootstrap_params", None)
-                                        if isinstance(params, dict):
-                                            try:
-                                                base_tr = float(params.get("tr", 0.0001))
-                                            except Exception:
-                                                base_tr = 0.0001
+                                        try:
+                                            base_tr = float(params.get("tr", 0.0001))
+                                        except Exception:
+                                            base_tr = 0.0001
 
-                                            new_tr = base_tr * 10.0
-                                            params["tr"] = new_tr
-                                            scene["bootstrap_params"] = dict(params)
-                                            print(f"[TRACE][PATTERN_CHECK] 🔻 Pattern DROP detected! Threshold boosted to {new_tr} (prev={base_tr})")
-    
-                                            # 💾 Persistenter Threshold-Wert (überlebt Operatorwechsel)
-                                            try:
-                                                scene["kaiserlich_threshold_tr"] = float(new_tr)
-                                                print(f"[THRESHOLD][PERSIST] tr → {new_tr}")
-                                            except Exception:
-                                                print("[THRESHOLD][PERSIST] ❌ Konnte nicht gespeichert werden")
+                                        new_tr = base_tr * 10.0
+                                        params["tr"] = new_tr
+                                        scene["bootstrap_params"] = dict(params)
+                                        print(f"[TRACE][PATTERN_CHECK] 🔻 Pattern DROP detected! Threshold boosted to {new_tr} (prev={base_tr})")
 
+                                        # 💾 Persistenter Threshold-Wert (überlebt Operatorwechsel)
+                                        try:
+                                            scene["kaiserlich_threshold_tr"] = float(new_tr)
+                                            print(f"[THRESHOLD][PERSIST] tr → {new_tr}")
+                                        except Exception:
+                                            print("[THRESHOLD][PERSIST] ❌ Konnte nicht gespeichert werden")
                                         # Kein Speichern des neuen kleineren Pattern-Werts!
                                         print("[TRACE][PATTERN_CHECK] ❗ pattern drop → reference kept (no update)")
                                         print("[TRACE][PATTERN_CHECK] ---- END STATS ----\n")
