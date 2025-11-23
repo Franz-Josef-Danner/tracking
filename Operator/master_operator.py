@@ -80,6 +80,15 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
 
             # Speichern für spätere Zyklen
             scene["bootstrap_params"] = params
+        # ----------------------------------------------------
+        # 🔁 Marker-Multiplier vor Übergabe zurücksetzen
+        # ----------------------------------------------------
+        try:
+            prev_mult = float(scene.get("kaiserlich_marker_multiplier", 2.0))
+            scene["kaiserlich_marker_multiplier"] = 2.0
+            print(f"[TRACE][MULTIPLIER] 🔄 Reset multiplier {prev_mult} ➜ 2.0 (handover)")
+        except Exception:
+            print("[TRACE][MULTIPLIER] ⚠ Multiplier reset failed")
         # ================================================================
         # Schwachen Frame finden
         # ================================================================
