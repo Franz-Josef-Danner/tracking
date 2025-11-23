@@ -599,8 +599,18 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             pass
         # Folge-Operator starten
         if not cancelled:
-            last_pz = 0
             try:
+                # ----------------------------------------------------
+                # 🌐 Forward-Cycle erfolgreich → Reset Pattern-Peak
+                # ----------------------------------------------------
+                scene = context.scene
+                if "kaiserlich_last_pattern_size_recovery" in scene:
+                    try:
+                        del scene["kaiserlich_last_pattern_size_recovery"]
+                        print("[TRACE][PATTERN_CHECK] 🔄 Reset last_pz (successful cycle)")
+                    except Exception:
+                        pass
+
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
             except Exception:
                 pass
