@@ -526,7 +526,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                         last_pz = 0
                                     print(f"[TRACE][PATTERN_CHECK] last saved reference = {last_pz}")
 
-                                    # 🟥 FALL 1: Pattern fällt nach Maximalstand → Threshold hart erhöhen (×10)
+                                    # 🟥 FALL 1: Pattern fällt nach letztem Wert → Threshold hart erhöhen (×10)
                                     if current_pz < last_pz:
                                         params = scene.get("bootstrap_params", None)
                                         try:
@@ -545,16 +545,17 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                             print(f"[THRESHOLD][PERSIST] tr → {new_tr}")
                                         except Exception:
                                             print("[THRESHOLD][PERSIST] ❌ Konnte nicht gespeichert werden")
-                                        # Kein Speichern des neuen kleineren Pattern-Werts!
-                                        print("[TRACE][PATTERN_CHECK] ❗ pattern drop → reference kept (no update)")
+
+                                        # 👉 Immer den aktuellen Pattern-Size als Referenz speichern
+                                        scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
+                                        print(f"[TRACE][PATTERN_CHECK] 💾 pattern reference updated → {current_pz}")
                                         print("[TRACE][PATTERN_CHECK] ---- END STATS ----\n")
-                                        # WICHTIG: Skip normal logic → direkt zurück
+                                        # WICHTIG: Skip restliche Normal-Logik → direkt zurück
                                         raise StopIteration  # harte Abkürzung
 
-                                    # 🟩 Nur speichern, wenn neuer Wert tatsächlich GRÖSSER ist
-                                    if current_pz > last_pz:
-                                        scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
-                                        print(f"[TRACE][PATTERN_CHECK] 📌 NEW pattern reference saved → {current_pz}")
+                                    # Kein Drop (gleich oder größer) → trotzdem immer Referenz aktualisieren
+                                    scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
+                                    print(f"[TRACE][PATTERN_CHECK] 💾 pattern reference updated → {current_pz}")
 
                                 else:
                                     print("[TRACE][PATTERN_CHECK] ❌ current_pz could not be read → No threshold change")
