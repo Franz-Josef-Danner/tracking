@@ -620,15 +620,15 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                         print("[TRACE][PATTERN_CHECK] 🔄 Reset last_pz (successful cycle)")
                     except Exception:
                         pass
-            # ----------------------------------------------------
-            # 🔁 Marker-Multiplier vor Übergabe zurücksetzen
-            # ----------------------------------------------------
-            try:
-                prev_mult = float(scene.get("kaiserlich_marker_multiplier", 2.0))
-                scene["kaiserlich_marker_multiplier"] = 2.0
-                print(f"[TRACE][MULTIPLIER] 🔄 Reset multiplier {prev_mult} ➜ 2.0 (handover)")
-            except Exception:
-                print("[TRACE][MULTIPLIER] ⚠ Multiplier reset failed")
+                # ----------------------------------------------------
+                # 🔁 Marker-Multiplier vor Übergabe zurücksetzen
+                # ----------------------------------------------------
+                try:
+                    prev_mult = float(scene.get("kaiserlich_marker_multiplier", 2.0))
+                    scene["kaiserlich_marker_multiplier"] = 2.0
+                    print(f"[TRACE][MULTIPLIER] 🔄 Reset multiplier {prev_mult} ➜ 2.0 (handover)")
+                except Exception:
+                    print("[TRACE][MULTIPLIER] ⚠ Multiplier reset failed")
                 
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
             except Exception:
