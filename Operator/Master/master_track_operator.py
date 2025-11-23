@@ -539,6 +539,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                             params["tr"] = new_tr
                                             scene["bootstrap_params"] = dict(params)
                                             print(f"[TRACE][PATTERN_CHECK] 🔻 Pattern DROP detected! Threshold boosted to {new_tr} (prev={base_tr})")
+    
+                                            # 💾 Persistenter Threshold-Wert (überlebt Operatorwechsel)
+                                            try:
+                                                scene["kaiserlich_threshold_tr"] = float(new_tr)
+                                                print(f"[THRESHOLD][PERSIST] tr → {new_tr}")
+                                            except Exception:
+                                                print("[THRESHOLD][PERSIST] ❌ Konnte nicht gespeichert werden")
 
                                         # Kein Speichern des neuen kleineren Pattern-Werts!
                                         print("[TRACE][PATTERN_CHECK] ❗ pattern drop → reference kept (no update)")
