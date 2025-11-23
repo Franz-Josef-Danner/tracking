@@ -555,9 +555,14 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                     print("[TRACE][PATTERN_CHECK] ❌ current_pz could not be read → No threshold change")
 
                                 print("[TRACE][PATTERN_CHECK] ---- END STATS ----\n")
+                            # ⚠ StopIteration = gezieltes Abbrechen nach Threshold-Boost,
+                            # kein Fehler, Recovery läuft normal weiter
+                            except StopIteration:
+                                pass
+
+                            # ⚠ Alle anderen Fehler melden
                             except Exception as e:
                                 print(f"[TRACK_SNAPSHOT][RECOVERY] ⚠ Pattern-Size-Check fehlgeschlagen: {e}")
-
                             # 3) Weiterleitung an den Master Detect-Adapt Operator
                             try:
                                 bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
