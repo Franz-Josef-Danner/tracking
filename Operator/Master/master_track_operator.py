@@ -479,26 +479,47 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                 except Exception:
                                     clip_local = None
 
-                                # 🟦 Default-Pattern-Size aus MovieTrackingSettings sicher auslesen
+                                # 🟦 Default-Pattern-Size robust aus aktiven TrackingSettings ermitteln (inline ohne Funktion)
                                 current_pz = None
+                                tracking_settings = None
                                 try:
-                                    if clip_local and hasattr(clip_local, "tracking"):
-                                        settings = getattr(clip_local.tracking, "settings", None)
-                                        if settings:
-                                            raw_val = getattr(settings, "default_pattern_size", None)
-                                            if isinstance(raw_val, int):
-                                                # API: int in [5, 1000], default 0 (0 gilt als uninitialisiert)
-                                                if 5 <= raw_val <= 1000:
-                                                    current_pz = raw_val
-                                                else:
-                                                    # Außerhalb erlaubter Range → ignorieren / None lassen
-                                                    print(f"[TRACE][PATTERN_CHECK] out-of-range default_pattern_size={raw_val} (ignored)")
+                                    scr = getattr(context, "screen", None)
+                                    if scr and hasattr(scr, "areas"):
+                                        for _area in scr.areas:
+                                            if _area.type == 'CLIP_EDITOR':
+                                                for _space in _area.spaces:
+                                                    if _space.type == 'CLIP_EDITOR' and getattr(_space, "clip", None):
+                                                        _clip = _space.clip
+                                                        if getattr(_clip, "tracking", None) and getattr(_clip.tracking, "settings", None):
+                                                            tracking_settings = _clip.tracking.settings
+                                                            break
+                                                if tracking_settings:
+                                                    break
+                                    if not tracking_settings:
+                                        _space_clip = getattr(getattr(context, "space_data", None), "clip", None)
+                                        if _space_clip and getattr(_space_clip, "tracking", None) and getattr(_space_clip.tracking, "settings", None):
+                                            tracking_settings = _space_clip.tracking.settings
+                                    if not tracking_settings:
+                                        _scene_clip = getattr(getattr(context, "scene", None), "clip", None)
+                                        if _scene_clip and getattr(_scene_clip, "tracking", None) and getattr(_scene_clip.tracking, "settings", None):
+                                            tracking_settings = _scene_clip.tracking.settings
+                                except Exception:
+                                    tracking_settings = None
+
+                                try:
+                                    if tracking_settings:
+                                        raw_val = getattr(tracking_settings, "default_pattern_size", None)
+                                        if isinstance(raw_val, int):
+                                            if 5 <= raw_val <= 1000:
+                                                current_pz = raw_val
+                                            else:
+                                                print(f"[TRACE][PATTERN_CHECK] out-of-range default_pattern_size={raw_val} (ignored)")
                                 except Exception:
                                     current_pz = None
+
                                 print(f"[TRACE][PATTERN_CHECK] current default_pattern_size = {current_pz}")
 
                                 if current_pz is not None:
-                                    # Letzten gespeicherten Wert holen (optional)
                                     try:
                                         last_pz = int(scene.get("kaiserlich_last_pattern_size_recovery", 0))
                                     except Exception:
