@@ -154,29 +154,23 @@ class KAISERLICHTRACKER_OT_master_cycle_operator(Operator):
                     del scene[_k]
         except Exception as e:
             pass
+        # ================================================================
+        # Bootstrap
+        # ================================================================
+        ef_target = int(getattr(scene, "kaiserlich_markers_per_frame", 25))
+        params = run_bootstrap(context, ef_target)
 
+        if params:
+            # --- Kritischer fehlender Schritt: jetzt nachziehen ---
+            apply_bootstrap_defaults(context, params)
+
+
+            # Speichern für spätere Zyklen
+            scene["bootstrap_params"] = params
+
+        
         frame = find_first_weak_frame_solve(context)
-        # ================================================================
-        # Bootstrap korrekt mit 'ef' (gewünschte Markeranzahl) ausführen
-        # ================================================================
-        scene = context.scene
-        try:
-            ef = getattr(scene, "kaiserlich_markers_per_frame", None)
-            if ef is None:
-                ef = scene.get("kaiserlich_markers_per_frame", 0)
-            ef = int(ef) if isinstance(ef, (int, float, str)) else 0
-            if ef <= 0:
-                ef = 50  # Fallback: 50 Marker Zielwert
-        except Exception:
-            ef = 50
 
-        run_bootstrap(context, ef)  # <-- ef übergeben!
-        apply_bootstrap_defaults(context, scene.get("bootstrap_params", {}))
-        scene = context.scene
-        clip = getattr(context.space_data, "clip", None)
-        if clip is None:
-            self.report({'ERROR'}, "No active clip found.")
-            return {"CANCELLED"}
         # ===================================================================
         # Weiterer Ablauf (wie zuvor)
         # ===================================================================
