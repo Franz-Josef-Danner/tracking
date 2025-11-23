@@ -19,6 +19,7 @@ from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.validate_motion_forward_helper import _get_positions_backward
 from ...Helper.update_default_sizes import update_default_sizes
+from ...Helper.pattern_threshold_recovery import run_pattern_threshold_recovery
 
 # ------------------------------------------------------------
 # Neuer Korrektur-Helper
@@ -461,111 +462,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                             except Exception:
                                 print("[TRACK_SNAPSHOT][RECOVERY] ❌ Fehlgeschlagen: update_default_sizes")
 
-                            # 2b) Pattern-Size-Verlauf prüfen und ggf. Threshold anheben
-                            try:
-                                scene = context.scene
-                                print("\n[TRACE][PATTERN_CHECK] ---- BEGIN STATS ----")
-
-                                # 🟦 Clip sicher holen (unabhängig vom UI-Kontext)
-                                clip_local = None
-                                try:
-                                    if hasattr(context.scene, "tracking"):
-                                        tracking_obj = getattr(context.scene, "tracking", None)
-                                        if tracking_obj and hasattr(tracking_obj, "active"):
-                                            clip_local = getattr(tracking_obj, "active", None)
-                                except Exception:
-                                    clip_local = None
-
-                                # 🟦 Default-Pattern-Size robust aus aktiven TrackingSettings ermitteln (inline ohne Funktion)
-                                current_pz = None
-                                tracking_settings = None
-                                try:
-                                    scr = getattr(context, "screen", None)
-                                    if scr and hasattr(scr, "areas"):
-                                        for _area in scr.areas:
-                                            if _area.type == 'CLIP_EDITOR':
-                                                for _space in _area.spaces:
-                                                    if _space.type == 'CLIP_EDITOR' and getattr(_space, "clip", None):
-                                                        _clip = _space.clip
-                                                        if getattr(_clip, "tracking", None) and getattr(_clip.tracking, "settings", None):
-                                                            tracking_settings = _clip.tracking.settings
-                                                            break
-                                                if tracking_settings:
-                                                    break
-                                    if not tracking_settings:
-                                        _space_clip = getattr(getattr(context, "space_data", None), "clip", None)
-                                        if _space_clip and getattr(_space_clip, "tracking", None) and getattr(_space_clip.tracking, "settings", None):
-                                            tracking_settings = _space_clip.tracking.settings
-                                    if not tracking_settings:
-                                        _scene_clip = getattr(getattr(context, "scene", None), "clip", None)
-                                        if _scene_clip and getattr(_scene_clip, "tracking", None) and getattr(_scene_clip.tracking, "settings", None):
-                                            tracking_settings = _scene_clip.tracking.settings
-                                except Exception:
-                                    tracking_settings = None
-
-                                try:
-                                    if tracking_settings:
-                                        raw_val = getattr(tracking_settings, "default_pattern_size", None)
-                                        if isinstance(raw_val, int):
-                                            if 5 <= raw_val <= 1000:
-                                                current_pz = raw_val
-                                            else:
-                                                print(f"[TRACE][PATTERN_CHECK] out-of-range default_pattern_size={raw_val} (ignored)")
-                                except Exception:
-                                    current_pz = None
-
-                                print(f"[TRACE][PATTERN_CHECK] current default_pattern_size = {current_pz}")
-
-                                if current_pz is not None:
-                                    try:
-                                        last_pz = int(scene.get("kaiserlich_last_pattern_size_recovery", 0))
-                                    except Exception:
-                                        last_pz = 0
-                                    print(f"[TRACE][PATTERN_CHECK] last saved reference = {last_pz}")
-
-                                    # 🟥 FALL 1: Pattern fällt nach letztem Wert → Threshold hart erhöhen (×10)
-                                    if current_pz < last_pz:
-                                        params = scene.get("bootstrap_params", None)
-                                        try:
-                                            base_tr = float(params.get("tr", 0.0001))
-                                        except Exception:
-                                            base_tr = 0.0001
-
-                                        new_tr = base_tr * 10.0
-                                        params["tr"] = new_tr
-                                        scene["bootstrap_params"] = dict(params)
-                                        print(f"[TRACE][PATTERN_CHECK] 🔻 Pattern DROP detected! Threshold boosted to {new_tr} (prev={base_tr})")
-
-                                        # 💾 Persistenter Threshold-Wert (überlebt Operatorwechsel)
-                                        try:
-                                            scene["kaiserlich_threshold_tr"] = float(new_tr)
-                                            print(f"[THRESHOLD][PERSIST] tr → {new_tr}")
-                                        except Exception:
-                                            print("[THRESHOLD][PERSIST] ❌ Konnte nicht gespeichert werden")
-
-                                        # 👉 Immer den aktuellen Pattern-Size als Referenz speichern
-                                        scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
-                                        print(f"[TRACE][PATTERN_CHECK] 💾 pattern reference updated → {current_pz}")
-                                        print("[TRACE][PATTERN_CHECK] ---- END STATS ----\n")
-                                        # WICHTIG: Skip restliche Normal-Logik → direkt zurück
-                                        raise StopIteration  # harte Abkürzung
-
-                                    # Kein Drop (gleich oder größer) → trotzdem immer Referenz aktualisieren
-                                    scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
-                                    print(f"[TRACE][PATTERN_CHECK] 💾 pattern reference updated → {current_pz}")
-
-                                else:
-                                    print("[TRACE][PATTERN_CHECK] ❌ current_pz could not be read → No threshold change")
-
-                                print("[TRACE][PATTERN_CHECK] ---- END STATS ----\n")
-                            # ⚠ StopIteration = gezieltes Abbrechen nach Threshold-Boost,
-                            # kein Fehler, Recovery läuft normal weiter
-                            except StopIteration:
-                                pass
-
-                            # ⚠ Alle anderen Fehler melden
-                            except Exception as e:
-                                print(f"[TRACK_SNAPSHOT][RECOVERY] ⚠ Pattern-Size-Check fehlgeschlagen: {e}")
+                            # 2b) Pattern/Threshold-Recovery (Helper)
+                            result = run_pattern_threshold_recovery(context)
+                            if result == "SKIP":
+                                bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
+                                self._timer = None
+                                return {'FINISHED'}
                             # 3) Weiterleitung an den Master Detect-Adapt Operator
                             try:
                                 # 🔐 Threshold-Fix: neuen Wert sicher in bootstrap_params speichern
