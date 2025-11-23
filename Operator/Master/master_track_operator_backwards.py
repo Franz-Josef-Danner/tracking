@@ -228,9 +228,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                 return bool(val.strip())
             return True
 
-        if _has_tracks(best_raw) or _has_tracks(good_raw):
-            validate_calibrate_tracks_backward_window(context)
-
         # -------------------------------------------------------
         # BACKWARD CALIBRATION STEP (mit Referenzwahl good/best)
         # -------------------------------------------------------
