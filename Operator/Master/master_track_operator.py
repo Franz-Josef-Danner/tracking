@@ -622,23 +622,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             pass
         # Folge-Operator starten
         if not cancelled:
-            params = scene.get("bootstrap_params", None)
-            try:
-                base_tr = float(params.get("tr", 0.0001))
-            except Exception:
-                base_tr = 0.0001
-
-            new_tr = base_tr
-            params["tr"] = new_tr
-            scene["bootstrap_params"] = dict(params)
-            print(f"[TRACE][PATTERN_CHECK] 🔻 Pattern DROP detected! Threshold boosted to {new_tr} (prev={base_tr})")
-
-            # 💾 Persistenter Threshold-Wert (überlebt Operatorwechsel)
-            try:
-                scene["kaiserlich_threshold_tr"] = float(new_tr)
-                print(f"[THRESHOLD][PERSIST] tr → {new_tr}")
-            except Exception:
-                print("[THRESHOLD][PERSIST] ❌ Konnte nicht gespeichert werden")
             try:
                 # ----------------------------------------------------
                 # 🌐 Forward-Cycle erfolgreich → Reset Pattern-Peak
@@ -650,6 +633,22 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                         print("[TRACE][PATTERN_CHECK] 🔄 Reset last_pz (successful cycle)")
                     except Exception:
                         pass
+                # ============================================================
+                # 🔁 Threshold-Reset: BOOST zurück auf Normalwert 0.0001
+                # ============================================================
+                try:
+                    params = scene.get("bootstrap_params", {})
+                    if isinstance(params, dict):
+                        params["tr"] = 0.0001  # Reset
+                        scene["bootstrap_params"] = dict(params)
+                        print("[THRESHOLD][RESET] tr → 0.0001 (pattern boost cleared)")
+                    else:
+                        # Falls beschädigt: Neu aufsetzen
+                        scene["bootstrap_params"] = {"tr": 0.0001}
+                        print("[THRESHOLD][RESET] bootstrap_params recreated (tr=0.0001)")
+                
+                except Exception as e:
+                    print(f"[THRESHOLD][RESET] ❌ Fehlgeschlagen: {e}")
 
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
             except Exception:
