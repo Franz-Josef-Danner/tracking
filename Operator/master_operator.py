@@ -27,7 +27,7 @@ class KAISERLICHTRACKER_OT_master_operator(Operator):
             # Motion + Threshold-Learn
             "motion_list", "motion_value", "kaiserlich_best_thresholds", "frame_value_cache",
             # Bootstrap + Detect
-            "bootstrap_params", "min_distance_values",
+            "bootstrap_params", "min_distance_values", "tr_values",
             # Track-Sets
             "good_tracks", "good_tracks_names", "good_tracks_uuid_map",
             "best_tracks", "best_tracks_names", "best_tracks_uuid_map", "best_track_ids",
