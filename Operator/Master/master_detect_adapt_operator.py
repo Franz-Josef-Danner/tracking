@@ -66,7 +66,6 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             sz = getattr(tracking_settings, "search_size", 100) if tracking_settings else 100
 
             md = hz * 0.025
-            tr = 0.0001
             za = ef_target * 4
             og = math.ceil(za * 1.1)
             ug = math.floor(za * 0.9)
