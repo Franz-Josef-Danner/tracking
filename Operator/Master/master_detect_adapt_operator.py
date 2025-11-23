@@ -18,8 +18,17 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        ef_target = int(scene.kaiserlich_markers_per_frame) * 2
+        # --------------------------------------------------------------
+        # Zielwert dynamisch über Szenen-Multiplikator steuern
+        # --------------------------------------------------------------
+        try:
+            mult = float(scene.get("kaiserlich_marker_multiplier", 2.0))
+        except Exception:
+            mult = 2.0
 
+        ef_base = int(scene.kaiserlich_markers_per_frame)
+        ef_target = max(1, int(ef_base * mult))
+        print(f"[DETECT_TARGET] markers_per_frame={ef_base}, multiplier={mult}, ef_target={ef_target}")
         import math
         params = scene.get("bootstrap_params", None)
 
