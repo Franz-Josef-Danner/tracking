@@ -525,30 +525,20 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
                                     # 🟥 FALL 1: Pattern fällt nach letztem Wert → Threshold hart erhöhen (×10)
                                     if current_pz < last_pz:
-                                        params = scene.get("bootstrap_params", None)
-                                        try:
-                                            base_tr = float(params.get("tr", 0.0001))
-                                        except Exception:
-                                            base_tr = 0.0001
-
-                                        new_tr = base_tr * 10.0
-                                        params["tr"] = new_tr
-                                        scene["bootstrap_params"] = dict(params)
-                                        print(f"[TRACE][PATTERN_CHECK] 🔻 Pattern DROP detected! Threshold boosted to {new_tr} (prev={base_tr})")
-
-                                        # 💾 Persistenter Threshold-Wert (überlebt Operatorwechsel)
-                                        try:
-                                            scene["kaiserlich_threshold_tr"] = float(new_tr)
-                                            print(f"[THRESHOLD][PERSIST] tr → {new_tr}")
-                                        except Exception:
-                                            print("[THRESHOLD][PERSIST] ❌ Konnte nicht gespeichert werden")
+                                        # 🔧 Nur Marker-Multiplikator erhöhen
+                                        mult = float(scene.get("kaiserlich_marker_multiplier", 2.0))
+                                        new_mult = mult + 0.1
+                                        scene["kaiserlich_marker_multiplier"] = new_mult
+                                
+                                        print(f"[TRACE][PATTERN_CHECK] 🔻 Pattern DROP detected! Marker multiplier raised "
+                                              f"{mult} ➜ {new_mult} (+0.1)")
 
                                         # 👉 Immer den aktuellen Pattern-Size als Referenz speichern
                                         scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
                                         print(f"[TRACE][PATTERN_CHECK] 💾 pattern reference updated → {current_pz}")
                                         print("[TRACE][PATTERN_CHECK] ---- END STATS ----\n")
-                                        # WICHTIG: Skip restliche Normal-Logik → direkt zurück
-                                        raise StopIteration  # harte Abkürzung
+                                        # WICHTIG: Keine TR-Änderung, aber Recovery weiterführen
+                                        # Kein StopIteration, normale Recovery-Kette
 
                                     # Kein Drop (gleich oder größer) → trotzdem immer Referenz aktualisieren
                                     scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
