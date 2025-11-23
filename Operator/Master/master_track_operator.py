@@ -479,13 +479,21 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                 except Exception:
                                     clip_local = None
 
+                                # Ensure MovieTrackingSettings class reference (stub if missing outside Blender)
+                                if not hasattr(bpy.types, "MovieTrackingSettings"):
+                                    class MovieTrackingSettings:  # type: ignore
+                                        default_pattern_size: int = 0
+
                                 # 🟦 Default-Pattern-Size korrekt auslesen
                                 current_pz = None
                                 try:
                                     if clip_local and hasattr(clip_local, "tracking"):
                                         settings = getattr(clip_local.tracking, "settings", None)
-                                        if settings and hasattr(settings, "default_pattern_size"):
-                                            current_pz = int(settings.default_pattern_size)
+                                        if settings and (
+                                            (hasattr(bpy.types, "MovieTrackingSettings") and isinstance(settings, bpy.types.MovieTrackingSettings))
+                                            or hasattr(settings, "default_pattern_size")
+                                        ):
+                                            current_pz = int(getattr(settings, "default_pattern_size", 0))
                                 except Exception:
                                     current_pz = None
                                 print(f"[TRACE][PATTERN_CHECK] current default_pattern_size = {current_pz}")
