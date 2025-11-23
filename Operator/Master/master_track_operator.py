@@ -220,9 +220,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                     return bool(val.strip())
                 return True
 
-            if _has_tracks(best_raw) or _has_tracks(good_raw):
-                _get_positions_backward(context)
-
         except Exception:
             pass
         
