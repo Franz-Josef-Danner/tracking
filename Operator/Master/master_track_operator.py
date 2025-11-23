@@ -479,21 +479,20 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                 except Exception:
                                     clip_local = None
 
-                                # Ensure MovieTrackingSettings class reference (stub if missing outside Blender)
-                                if not hasattr(bpy.types, "MovieTrackingSettings"):
-                                    class MovieTrackingSettings:  # type: ignore
-                                        default_pattern_size: int = 0
-
-                                # 🟦 Default-Pattern-Size korrekt auslesen
+                                # 🟦 Default-Pattern-Size aus MovieTrackingSettings sicher auslesen
                                 current_pz = None
                                 try:
                                     if clip_local and hasattr(clip_local, "tracking"):
                                         settings = getattr(clip_local.tracking, "settings", None)
-                                        if settings and (
-                                            (hasattr(bpy.types, "MovieTrackingSettings") and isinstance(settings, bpy.types.MovieTrackingSettings))
-                                            or hasattr(settings, "default_pattern_size")
-                                        ):
-                                            current_pz = int(getattr(settings, "default_pattern_size", 0))
+                                        if settings:
+                                            raw_val = getattr(settings, "default_pattern_size", None)
+                                            if isinstance(raw_val, int):
+                                                # API: int in [5, 1000], default 0 (0 gilt als uninitialisiert)
+                                                if 5 <= raw_val <= 1000:
+                                                    current_pz = raw_val
+                                                else:
+                                                    # Außerhalb erlaubter Range → ignorieren / None lassen
+                                                    print(f"[TRACE][PATTERN_CHECK] out-of-range default_pattern_size={raw_val} (ignored)")
                                 except Exception:
                                     current_pz = None
                                 print(f"[TRACE][PATTERN_CHECK] current default_pattern_size = {current_pz}")
