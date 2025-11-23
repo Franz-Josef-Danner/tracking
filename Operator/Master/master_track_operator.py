@@ -622,6 +622,23 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             pass
         # Folge-Operator starten
         if not cancelled:
+            params = scene.get("bootstrap_params", None)
+            try:
+                base_tr = float(params.get("tr", 0.0001))
+            except Exception:
+                base_tr = 0.0001
+
+            new_tr = base_tr
+            params["tr"] = new_tr
+            scene["bootstrap_params"] = dict(params)
+            print(f"[TRACE][PATTERN_CHECK] 🔻 Pattern DROP detected! Threshold boosted to {new_tr} (prev={base_tr})")
+
+            # 💾 Persistenter Threshold-Wert (überlebt Operatorwechsel)
+            try:
+                scene["kaiserlich_threshold_tr"] = float(new_tr)
+                print(f"[THRESHOLD][PERSIST] tr → {new_tr}")
+            except Exception:
+                print("[THRESHOLD][PERSIST] ❌ Konnte nicht gespeichert werden")
             try:
                 # ----------------------------------------------------
                 # 🌐 Forward-Cycle erfolgreich → Reset Pattern-Peak
