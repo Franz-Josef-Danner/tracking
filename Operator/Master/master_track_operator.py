@@ -527,7 +527,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                     if current_pz < last_pz:
                                         # 🔧 Nur Marker-Multiplikator erhöhen
                                         mult = float(scene.get("kaiserlich_marker_multiplier", 2.0))
-                                        new_mult = mult + 0.1
+                                        new_mult = mult + 0.2
                                         scene["kaiserlich_marker_multiplier"] = new_mult
                                 
                                         print(f"[TRACE][PATTERN_CHECK] 🔻 Pattern DROP detected! Marker multiplier raised "
