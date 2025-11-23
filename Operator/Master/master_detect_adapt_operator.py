@@ -32,6 +32,40 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
         if stored_tr > 0.0 and params and float(params.get('tr', 0.0)) < stored_tr:
             params['tr'] = stored_tr
             print(f"[THRESHOLD][RESTORE] tr={stored_tr} für Frame {frame_num} (persistiert)")
+
+        # --------------------------------------------------------------
+        # Nachbar-Interpolation basierend auf kaiserlich_frames_per_track
+        # --------------------------------------------------------------
+        try:
+            fpt = int(scene.get("kaiserlich_frames_per_track", 0))
+        except Exception:
+            fpt = 0
+
+        if fpt > 1 and tr_dict:
+            # Bekannte Keys in Integer-Liste konvertieren
+            known_tr_frames = [int(k) for k in tr_dict.keys() if k.isdigit()]
+            if known_tr_frames:
+                known_tr_frames = sorted(known_tr_frames)
+                # Nachbar-Frames finden (vor/hinter)
+                prev_frames = [f for f in known_tr_frames if f < frame_num]
+                next_frames = [f for f in known_tr_frames if f > frame_num]
+
+                # Prüfen ob im Abstand von fpt ein Wert existiert
+                f_prev = max(prev_frames) if prev_frames else None
+                f_next = min(next_frames) if next_frames else None
+
+                # Interpolations-Bedingung gültig?
+                if f_prev is not None and f_next is not None:
+                    if abs(f_next - f_prev) <= (fpt + 1):  # +1 Toleranz
+                        v1 = float(tr_dict.get(str(f_prev), 0.0))
+                        v2 = float(tr_dict.get(str(f_next), 0.0))
+                        if frame_num in range(f_prev, f_next):
+                            t = (frame_num - f_prev) / float(f_next - f_prev)
+                            interp_tr = v1 + (v2 - v1) * t
+                            # Nur übernehmen wenn stärker
+                            if interp_tr > float(params.get('tr', 0.0)):
+                                params["tr"] = interp_tr
+                                print(f"[THRESHOLD][INTERPOLATE] Frame {frame_num}: tr={interp_tr:.6f} aus {f_prev}->{f_next}")
         # ------------------------------------------------------------------
         # Parameter initialization: use bootstrap if available, else fallback
         # ------------------------------------------------------------------
