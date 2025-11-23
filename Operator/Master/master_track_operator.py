@@ -526,8 +526,8 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                         last_pz = 0
                                     print(f"[TRACE][PATTERN_CHECK] last saved reference = {last_pz}")
 
-                                    # 🟥 Stagnation → Threshold anheben
-                                    if current_pz <= last_pz:
+                                    # 🟥 FALL 1: Pattern fällt nach Maximalstand → Threshold hart erhöhen (×10)
+                                    if current_pz < last_pz:
                                         params = scene.get("bootstrap_params", None)
                                         if isinstance(params, dict):
                                             try:
@@ -538,7 +538,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
                                             new_tr = base_tr * 10.0
                                             params["tr"] = new_tr
                                             scene["bootstrap_params"] = dict(params)
-                                            print(f"[TRACE][PATTERN_CHECK] ⚠ STAGNATION detected! Threshold raised to {new_tr} (prev={base_tr})")
+                                            print(f"[TRACE][PATTERN_CHECK] 🔻 Pattern DROP detected! Threshold boosted to {new_tr} (prev={base_tr})")
+
+                                        # Kein Speichern des neuen kleineren Pattern-Werts!
+                                        print("[TRACE][PATTERN_CHECK] ❗ pattern drop → reference kept (no update)")
+                                        print("[TRACE][PATTERN_CHECK] ---- END STATS ----\n")
+                                        # WICHTIG: Skip normal logic → direkt zurück
+                                        raise StopIteration  # harte Abkürzung
 
                                     # 🟩 Nur speichern, wenn neuer Wert tatsächlich GRÖSSER ist
                                     if current_pz > last_pz:
@@ -593,6 +599,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             pass
         # Folge-Operator starten
         if not cancelled:
+            last_pz = 0
             try:
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
             except Exception:
