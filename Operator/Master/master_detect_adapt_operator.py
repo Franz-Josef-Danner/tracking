@@ -22,7 +22,16 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
 
         import math
         params = scene.get("bootstrap_params", None)
-
+        # --------------------------------------------------------------
+        # Persistente TR Werte pro Frame verarbeiten
+        # --------------------------------------------------------------
+        frame_num = context.scene.frame_current
+        tr_dict = scene.get("tr_values", {})
+        stored_tr = float(tr_dict.get(str(frame_num), 0.0))
+        # Wenn für diesen Frame bereits ein höherer TR gespeichert ist → überschreiben
+        if stored_tr > 0.0 and params and float(params.get('tr', 0.0)) < stored_tr:
+            params['tr'] = stored_tr
+            print(f"[THRESHOLD][RESTORE] tr={stored_tr} für Frame {frame_num} (persistiert)")
         # ------------------------------------------------------------------
         # Parameter initialization: use bootstrap if available, else fallback
         # ------------------------------------------------------------------
@@ -254,7 +263,25 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                     t = (f - f_start) / float(f_end - f_start)
                     interp_val = v_start + (v_end - v_start) * t
                     md_dict[str(f)] = interp_val
+        # ------------------------------------------------------------------
+        # Persistente Speicherung des Threshold-Wertes für diesen Frame
+        # ------------------------------------------------------------------
+        # Nur speichern, wenn aktueller TR höher ist als der gespeicherte.
+        try:
+            cur_tr = float(params.get('tr', tr))
+        except Exception:
+            cur_tr = float(tr)
 
+        # Hole bestehendes Dictionary
+        tr_dict = scene.get("tr_values", {})
+        old_tr = float(tr_dict.get(str(frame_num), 0.0))
+
+        if cur_tr > old_tr:
+            tr_dict[str(frame_num)] = cur_tr
+            scene["tr_values"] = tr_dict
+            print(f"[THRESHOLD][STORE] Frame {frame_num} → tr={cur_tr} (vorher={old_tr})")
+        else:
+            print(f"[THRESHOLD][KEEP] Frame {frame_num} behält tr={old_tr} (aktueller={cur_tr})")
         # ------------------------------------------------------------------
         # Automatically trigger backward tracking cycle
         # ------------------------------------------------------------------
