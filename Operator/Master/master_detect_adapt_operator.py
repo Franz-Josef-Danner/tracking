@@ -20,6 +20,16 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
         scene = context.scene
         ef_target = int(scene.kaiserlich_markers_per_frame) * 2
 
+        # 📌 Persistenter Threshold-Wert aus Szene priorisieren
+        #    → stammt aus Pattern-Drop-Recovery
+        persistent_tr = None
+        try:
+            if "kaiserlich_threshold_tr" in scene:
+                persistent_tr = float(scene["kaiserlich_threshold_tr"])
+                print(f"[THRESHOLD][PERSIST] tr={persistent_tr} (persist scene)")
+        except Exception:
+            persistent_tr = None
+
         import math
         params = scene.get("bootstrap_params", None)
 
@@ -30,7 +40,14 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             md = float(params.get('md', 100))
             # ma wird weiter unten aus MovieTrackingSettings.default_margin überschrieben
             ma = int(round(float(params.get('ma', 100)) * 1.1))
-            tr = float(params.get('tr', 0.5))
+            # 🥇 persistenter Wert vor Bootstrap
+            if persistent_tr is not None:
+                tr = persistent_tr
+                params["tr"] = persistent_tr
+            else:
+                tr = float(params.get('tr', 0.5))
+
+            print(f"[THRESHOLD] tr={tr}")
             print(f"[THRESHOLD] tr={tr}")
             pz = int(params.get('pz', 50))
             sz = int(params.get('sz', 0))
@@ -59,7 +76,12 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             za = ef_target * 4
             og = math.ceil(za * 1.1)
             ug = math.floor(za * 0.9)
-            print(f"[THRESHOLD] tr={tr} (fallback default)")
+            # Wenn persistenter Wert existiert → nutze ihn auch im Fallback
+            if persistent_tr is not None:
+                tr = persistent_tr
+                print(f"[THRESHOLD] tr={tr} (fallback+persist)")
+            else:
+                print(f"[THRESHOLD] tr={tr} (fallback default)")
 
         # ------------------------------------------------------------------
         # Margin immer aus MovieTrackingSettings.default_margin holen
