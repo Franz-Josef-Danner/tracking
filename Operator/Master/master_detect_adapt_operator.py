@@ -30,8 +30,19 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
             md = float(params.get('md', 100))
             # ma wird weiter unten aus MovieTrackingSettings.default_margin überschrieben
             ma = int(round(float(params.get('ma', 100)) * 1.1))
-            tr = float(params.get('tr', 0.5))
-            print(f"[THRESHOLD] tr={tr}")
+            # -------------------------------------------------------------
+            # Threshold bevorzugt PERSISTENT aus Szene lesen
+            # (falls durch Pattern-Drop-Recovery erhöht)
+            # -------------------------------------------------------------
+            try:
+                if "kaiserlich_threshold_tr" in scene:
+                    tr = float(scene["kaiserlich_threshold_tr"])
+                else:
+                    tr = float(params.get('tr', 0.5))
+            except Exception:
+                tr = float(params.get('tr', 0.5))
+
+            print(f"[THRESHOLD] tr={tr} (loaded persistent={ 'kaiserlich_threshold_tr' in scene })")
             pz = int(params.get('pz', 50))
             sz = int(params.get('sz', 0))
             hz = int(params.get('hz', 1))
