@@ -18,64 +18,11 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        # --------------------------------------------------------------
-        # Zielwert dynamisch über Szenen-Multiplikator steuern
-        # --------------------------------------------------------------
-        try:
-            mult = float(scene.get("kaiserlich_marker_multiplier", 2.0))
-        except Exception:
-            mult = 2.0
-
-        ef_base = int(scene.kaiserlich_markers_per_frame)
-        ef_target = max(1, int(ef_base * mult))
-        print(f"[DETECT_TARGET] markers_per_frame={ef_base}, multiplier={mult}, ef_target={ef_target}")
+        ef_target = int(scene.kaiserlich_markers_per_frame) * 2
 
         import math
         params = scene.get("bootstrap_params", None)
-        # --------------------------------------------------------------
-        # Persistente TR Werte pro Frame verarbeiten
-        # --------------------------------------------------------------
-        frame_num = context.scene.frame_current
-        tr_dict = scene.get("tr_values", {})
-        stored_tr = float(tr_dict.get(str(frame_num), 0.0))
-        # Wenn für diesen Frame bereits ein höherer TR gespeichert ist → überschreiben
-        if stored_tr > 0.0 and params and float(params.get('tr', 0.0)) < stored_tr:
-            params['tr'] = stored_tr
-            print(f"[THRESHOLD][RESTORE] tr={stored_tr} für Frame {frame_num} (persistiert)")
 
-        # --------------------------------------------------------------
-        # Nachbar-Interpolation basierend auf kaiserlich_frames_per_track
-        # --------------------------------------------------------------
-        try:
-            fpt = int(scene.get("kaiserlich_frames_per_track", 0))
-        except Exception:
-            fpt = 0
-
-        if fpt > 1 and tr_dict:
-            # Bekannte Keys in Integer-Liste konvertieren
-            known_tr_frames = [int(k) for k in tr_dict.keys() if k.isdigit()]
-            if known_tr_frames:
-                known_tr_frames = sorted(known_tr_frames)
-                # Nachbar-Frames finden (vor/hinter)
-                prev_frames = [f for f in known_tr_frames if f < frame_num]
-                next_frames = [f for f in known_tr_frames if f > frame_num]
-
-                # Prüfen ob im Abstand von fpt ein Wert existiert
-                f_prev = max(prev_frames) if prev_frames else None
-                f_next = min(next_frames) if next_frames else None
-
-                # Interpolations-Bedingung gültig?
-                if f_prev is not None and f_next is not None:
-                    if abs(f_next - f_prev) <= (fpt + 1):  # +1 Toleranz
-                        v1 = float(tr_dict.get(str(f_prev), 0.0))
-                        v2 = float(tr_dict.get(str(f_next), 0.0))
-                        if frame_num in range(f_prev, f_next):
-                            t = (frame_num - f_prev) / float(f_next - f_prev)
-                            interp_tr = v1 + (v2 - v1) * t
-                            # Nur übernehmen wenn stärker
-                            if interp_tr > float(params.get('tr', 0.0)):
-                                params["tr"] = interp_tr
-                                print(f"[THRESHOLD][INTERPOLATE] Frame {frame_num}: tr={interp_tr:.6f} aus {f_prev}->{f_next}")
         # ------------------------------------------------------------------
         # Parameter initialization: use bootstrap if available, else fallback
         # ------------------------------------------------------------------
@@ -307,25 +254,7 @@ class KAISERLICHTRACKER_OT_master_detect_adapt(bpy.types.Operator):
                     t = (f - f_start) / float(f_end - f_start)
                     interp_val = v_start + (v_end - v_start) * t
                     md_dict[str(f)] = interp_val
-        # ------------------------------------------------------------------
-        # Persistente Speicherung des Threshold-Wertes für diesen Frame
-        # ------------------------------------------------------------------
-        # Nur speichern, wenn aktueller TR höher ist als der gespeicherte.
-        try:
-            cur_tr = float(params.get('tr', tr))
-        except Exception:
-            cur_tr = float(tr)
 
-        # Hole bestehendes Dictionary
-        tr_dict = scene.get("tr_values", {})
-        old_tr = float(tr_dict.get(str(frame_num), 0.0))
-
-        if cur_tr > old_tr:
-            tr_dict[str(frame_num)] = cur_tr
-            scene["tr_values"] = tr_dict
-            print(f"[THRESHOLD][STORE] Frame {frame_num} → tr={cur_tr} (vorher={old_tr})")
-        else:
-            print(f"[THRESHOLD][KEEP] Frame {frame_num} behält tr={old_tr} (aktueller={cur_tr})")
         # ------------------------------------------------------------------
         # Automatically trigger backward tracking cycle
         # ------------------------------------------------------------------
