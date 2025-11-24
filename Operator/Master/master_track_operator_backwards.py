@@ -13,7 +13,7 @@ from ...Helper.selection_helper import collect_selected_track_names
 from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
-from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
+from ...Helper.adapt_search_size_backward import adapt_search_size_for_calibrate_tracks_backward
 from ...Helper.motion_average_backwards import get_from_selected_tracks_backwards
 from ...Helper.formula_helper_backward import apply_formula_on_selected_tracks_backwards
 from ...Helper.threshold_stats import update_threshold_extrema
@@ -293,7 +293,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         # adapt search size
         try:
-            adapt_search_size_for_calibrate_tracks(context)
+            adapt_search_size_for_calibrate_tracks_backward(context)
         except Exception:
             pass
         
