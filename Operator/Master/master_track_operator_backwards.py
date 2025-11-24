@@ -18,7 +18,7 @@ from ...Helper.motion_average_backwards import get_from_selected_tracks_backward
 from ...Helper.formula_helper_backward import apply_formula_on_selected_tracks_backwards
 from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.validate_motion_backward_helper import validate_calibrate_tracks_backward_window
-
+from ..Helper.correct_selected_by_ref_motion_backward import correct_motion_by_reference_backward
 # ------------------------------------------------------------
 # Neuer Import: Backward-MarkerCalibration-Helper (ersetzt Forward)
 # ------------------------------------------------------------
@@ -231,7 +231,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         # -------------------------------------------------------
         # BACKWARD CALIBRATION STEP (mit Referenzwahl good/best)
         # -------------------------------------------------------
-        try:
+        try: correct_motion_by_reference_backward(context)
             scene = context.scene
 
             # calibrate_tracks aus Scene lesen
