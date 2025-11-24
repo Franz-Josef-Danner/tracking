@@ -19,6 +19,7 @@ from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.validate_motion_forward_helper import _get_positions_backward
 from ...Helper.update_default_sizes import update_default_sizes
+from ..Helper.correct_selected_by_ref_motion import correct_motion_by_reference
 
 # ------------------------------------------------------------
 # Neuer Korrektur-Helper
@@ -198,7 +199,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # 1) Vor jedem Calibration-Step sichern
         # -----------------------------------------------
         store_calibrate_tracks_in_scene(context, self._processing_names)
-
+correct_motion_by_reference(context)
         # Danach würde marker_position_forward_calibration.py aufgerufen werden
         # (hier nur vorbereitend, damit calibrate_tracks aktuell ist)
 
