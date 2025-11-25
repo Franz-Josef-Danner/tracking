@@ -48,15 +48,8 @@ from ...Helper.update_default_sizes import update_default_sizes
 from ..Helper.correct_selected_by_ref_motion import correct_motion_by_reference
 # correct_motion_by_reference analysiert für den aktuellen Frame f die Bewegungsvektoren der drei nächstgelegenen, nicht selektierten Referenz-Tracks (Marker aktiv bei f, f-1, f-2) und korrigiert die Position selektierter Marker nur dann, wenn deren Bewegungsvektor signifikant (> min_vec_diff) von der gemittelten Referenzbewegung abweicht, wobei nur Referenzen innerhalb max_near_dist berücksichtigt werden.
 
-# ------------------------------------------------------------
-# Neuer Korrektur-Helper
-# ------------------------------------------------------------
-from ...Helper.marker_position_forward_calibration import (
-    _resolve_reference_key,
-    correct_marker_positions
-)
+from ...Helper.marker_position_forward_calibration import (_resolve_reference_key, correct_marker_positions)
 
-# ------------------------------------------------------------
 # Interner Helper: Speicherung aktiver Tracks in Scene-String
 # ------------------------------------------------------------
 def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
