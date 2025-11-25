@@ -36,6 +36,8 @@ from ...Helper.threshold_stats import update_threshold_extrema
 # Dieser Helper initialisiert und verwaltet alle Scene-Custom-Properties für die Threshold-Extrema (Rotation, Scale, Rot+Scale, Perspektive), bietet einen Hard-Reset der gespeicherten Min/Max-Werte, aktualisiert diese bei jedem Aufruf anhand der aktuellen UI-Thresholds und stellt optional eine Log-Ausgabe der aktuell gelernten Schwellenbereiche bereit.
 
 from ...Helper.validate_motion_forward_helper import _get_positions_backward
+# Validiert in der aktuellen Szene die Vorwärtsbewegung der calibrate_tracks, indem rückwärts gerichtete Bewegungsvektoren (dx, dy) über mehrere Frames aus den best- bzw. good_tracks als Referenzmittelwert berechnet werden und alle Kalibrier-Marker, deren Bewegungsabweichung über einem aus scene.max_error_value abgeleiteten Schwellwert liegt, im aktuellen Frame gezielt gemutet werden; sämtliche Schritte (Track-Auflösung, Vektorerzeugung, Threshold, Mute-Aktionen, Statistiken) werden detailliert geloggt.
+
 from ...Helper.update_default_sizes import update_default_sizes
 from ..Helper.correct_selected_by_ref_motion import correct_motion_by_reference
 
