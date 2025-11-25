@@ -15,6 +15,8 @@ from ...Helper.selection_helper import collect_selected_track_names
 #Liest den aktuellen Clip aus dem Movie-Clip-Editor-Kontext. Holt dessen Tracking-Daten. Filtert alle Tracks mit t.select == True. Gibt ausschließlich die Track-Namen als List[str] zurück. Rückgabe bei fehlendem Clip/Tracking: leere Liste.
 
 from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
+# ermittelt für einen gegebenen Frame alle noch „aktiv“ nutzbaren Tracks aus einer übergebenen Track-Namen-Liste, indem es pro Track den Marker im Ziel-Frame sucht und nur solche Tracks zurückgibt, deren Marker existiert und nicht gemutet ist. Zusätzlich liefert die Funktion die Anzahl der dadurch aussortierten (inaktiven oder nicht gefundenen) Tracks zurück.
+
 from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
