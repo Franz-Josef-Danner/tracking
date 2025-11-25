@@ -9,6 +9,8 @@ from collections import deque
 from ...Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
 from ...Helper.scene import get_end_frame
 from ...Helper.find_clip_editor_area import find_clip_editor_area
+# Scannt alle offenen Blender-Fenster. Sucht den ersten CLIP_EDITOR, der entweder: schon genau den gewünschten Clip zeigt, oder noch keinen Clip gesetzt hat. Liefert dir (window, area, region, space_clip) für Context Overrides. Wenn nichts passt: (None, None, None, None) → Pflicht zur Fehlerbehandlung im aufrufenden Code.
+
 from ...Helper.selection_helper import collect_selected_track_names
 from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
