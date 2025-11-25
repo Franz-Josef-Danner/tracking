@@ -33,6 +33,8 @@ from ...Helper.formula_helper import apply_formula_on_selected_tracks
 # Setzt für alle ausgewählten Tracks im aktuellen Frame das passende Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective), basierend auf einer rückwärtsgerichteten Analyse der Markerbewegung über mehrere Frames. Die Funktion berechnet dafür zunächst transformierte Thresholds aus der Szene, ermittelt ein globales Bewegungsmodell, prüft zusätzlich perspektivische Abweichungen (global und pro Marker) und weist anschließend jedem Track das resultierende Modell via apply_motion_model zu.
 
 from ...Helper.threshold_stats import update_threshold_extrema
+# Dieser Helper initialisiert und verwaltet alle Scene-Custom-Properties für die Threshold-Extrema (Rotation, Scale, Rot+Scale, Perspektive), bietet einen Hard-Reset der gespeicherten Min/Max-Werte, aktualisiert diese bei jedem Aufruf anhand der aktuellen UI-Thresholds und stellt optional eine Log-Ausgabe der aktuell gelernten Schwellenbereiche bereit.
+
 from ...Helper.validate_motion_forward_helper import _get_positions_backward
 from ...Helper.update_default_sizes import update_default_sizes
 from ..Helper.correct_selected_by_ref_motion import correct_motion_by_reference
