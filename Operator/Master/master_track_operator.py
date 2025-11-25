@@ -39,6 +39,8 @@ from ...Helper.validate_motion_forward_helper import _get_positions_backward
 # Validiert in der aktuellen Szene die Vorwärtsbewegung der calibrate_tracks, indem rückwärts gerichtete Bewegungsvektoren (dx, dy) über mehrere Frames aus den best- bzw. good_tracks als Referenzmittelwert berechnet werden und alle Kalibrier-Marker, deren Bewegungsabweichung über einem aus scene.max_error_value abgeleiteten Schwellwert liegt, im aktuellen Frame gezielt gemutet werden; sämtliche Schritte (Track-Auflösung, Vektorerzeugung, Threshold, Mute-Aktionen, Statistiken) werden detailliert geloggt.
 
 from ...Helper.update_default_sizes import update_default_sizes
+# Dieser Helper liest die aktuellen Tracking-Defaultwerte (Pattern-, Search-Size und Margin) des aktiven MovieClips, skaliert die Pattern-Size schrittweise nach oben (×1,1, geclamped auf 30–100), setzt Search-Size (= 2×Pattern) und default_margin entsprechend nach, schreibt die neuen Defaults zurück und triggert automatisch run_bootstrap, sobald die Pattern-Size das definierte Maximum erreicht.
+
 from ..Helper.correct_selected_by_ref_motion import correct_motion_by_reference
 
 # ------------------------------------------------------------
