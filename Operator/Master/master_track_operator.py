@@ -24,8 +24,7 @@ from ...Helper.frame_track_progress import compute_marker_progress
 # compute_marker_progress berechnet für den aktuellen Movie Clip den Tracking-Fortschritt über die gesamte Szenenlänge: Pro Frame werden die aktiven, nicht gemuteten Marker gezählt (gecappt auf scene.kaiserlich_markers_per_frame), daraus wird ein prozentueller Roh-Fortschritt ermittelt und mit einem Qualitätsfaktor aus compute_track_quality_metrics multipliziert. Das Ergebnis wird als effektiver Fortschritt (value, perc_effektiv) zurückgegeben, in scene.kaiserlich_marker_progress geschrieben und optional die CLIP_EDITOR-UI per Redraw aktualisiert.
 
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
-# Dieser Helper passt im aktuellen Frame die search_min/search_max aller in scene["calibrate_tracks"] hinterlegten Tracks dynamisch an:
-Er ermittelt dafür Referenz-Tracks mit gültigen Markern in F, F+1 und F+2, berechnet aus deren Bewegung (F → F+2) eine mittlere Distanz der drei nächstgelegenen Referenz-Tracks pro Kalibrations-Marker und setzt daraus eine bewegungsbasierte Search-Size im Pixelraum, wobei die pattern-basierte Größe (2 * pattern_size) als Mindestwert dient und die effektive Search-Size pro Achse auf 200 px gekappt wird.
+# Dieser Helper passt im aktuellen Frame die search_min/search_max aller in scene["calibrate_tracks"] hinterlegten Tracks dynamisch an: Er ermittelt dafür Referenz-Tracks mit gültigen Markern in F, F+1 und F+2, berechnet aus deren Bewegung (F → F+2) eine mittlere Distanz der drei nächstgelegenen Referenz-Tracks pro Kalibrations-Marker und setzt daraus eine bewegungsbasierte Search-Size im Pixelraum, wobei die pattern-basierte Größe (2 * pattern_size) als Mindestwert dient und die effektive Search-Size pro Achse auf 200 px gekappt wird.
 
 from ...Helper.motion_average import get_from_selected_tracks
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
