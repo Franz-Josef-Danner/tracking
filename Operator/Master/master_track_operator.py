@@ -12,6 +12,8 @@ from ...Helper.find_clip_editor_area import find_clip_editor_area
 # Scannt alle offenen Blender-Fenster. Sucht den ersten CLIP_EDITOR, der entweder: schon genau den gewünschten Clip zeigt, oder noch keinen Clip gesetzt hat. Liefert dir (window, area, region, space_clip) für Context Overrides. Wenn nichts passt: (None, None, None, None) → Pflicht zur Fehlerbehandlung im aufrufenden Code.
 
 from ...Helper.selection_helper import collect_selected_track_names
+#Liest den aktuellen Clip aus dem Movie-Clip-Editor-Kontext. Holt dessen Tracking-Daten. Filtert alle Tracks mit t.select == True. Gibt ausschließlich die Track-Namen als List[str] zurück. Rückgabe bei fehlendem Clip/Tracking: leere Liste.
+
 from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 from ...Helper.track_markers_helper import track_markers_with_override
 from ...Helper.frame_track_progress import compute_marker_progress
