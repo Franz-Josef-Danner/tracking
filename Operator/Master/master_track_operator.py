@@ -42,6 +42,7 @@ from ...Helper.update_default_sizes import update_default_sizes
 # Dieser Helper liest die aktuellen Tracking-Defaultwerte (Pattern-, Search-Size und Margin) des aktiven MovieClips, skaliert die Pattern-Size schrittweise nach oben (×1,1, geclamped auf 30–100), setzt Search-Size (= 2×Pattern) und default_margin entsprechend nach, schreibt die neuen Defaults zurück und triggert automatisch run_bootstrap, sobald die Pattern-Size das definierte Maximum erreicht.
 
 from ..Helper.correct_selected_by_ref_motion import correct_motion_by_reference
+# correct_motion_by_reference analysiert für den aktuellen Frame f die Bewegungsvektoren der drei nächstgelegenen, nicht selektierten Referenz-Tracks (Marker aktiv bei f, f-1, f-2) und korrigiert die Position selektierter Marker nur dann, wenn deren Bewegungsvektor signifikant (> min_vec_diff) von der gemittelten Referenzbewegung abweicht, wobei nur Referenzen innerhalb max_near_dist berücksichtigt werden.
 
 # ------------------------------------------------------------
 # Neuer Korrektur-Helper
