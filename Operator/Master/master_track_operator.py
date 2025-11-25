@@ -30,8 +30,7 @@ from ...Helper.motion_average import get_from_selected_tracks
 # Dieser Helper wertet die Bewegung der (selektierten, nicht gemuteten) Tracks im aktuellen Frame-Fenster aus, bestimmt daraus ein globales Motion-Model (Loc / LocRot / LocScale / LocRotScale + Perspective) und berechnet normalisierte, szenenweite Threshold-Werte. Dabei werden Bewegungs- und Perspektivmetriken historisiert (rolling MAX_HISTORY), Motion-Model-Häufigkeiten berücksichtigt und die finalen Schwellen in Scene-Properties (kaiserlich_*_thresh*, kaiserlich_model_count_*, kaiserlich_threshold_max_val) für nachgelagerte Operatoren bereitgestellt.
 
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
-# Setzt für alle ausgewählten Tracks im aktuellen Frame das passende Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective), basierend auf einer rückwärtsgerichteten Analyse der Markerbewegung über mehrere Frames.
-Die Funktion berechnet dafür zunächst transformierte Thresholds aus der Szene, ermittelt ein globales Bewegungsmodell, prüft zusätzlich perspektivische Abweichungen (global und pro Marker) und weist anschließend jedem Track das resultierende Modell via apply_motion_model zu.
+# Setzt für alle ausgewählten Tracks im aktuellen Frame das passende Motion Model (Loc / LocRot / LocScale / LocRotScale / Perspective), basierend auf einer rückwärtsgerichteten Analyse der Markerbewegung über mehrere Frames. Die Funktion berechnet dafür zunächst transformierte Thresholds aus der Szene, ermittelt ein globales Bewegungsmodell, prüft zusätzlich perspektivische Abweichungen (global und pro Marker) und weist anschließend jedem Track das resultierende Modell via apply_motion_model zu.
 
 from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.validate_motion_forward_helper import _get_positions_backward
