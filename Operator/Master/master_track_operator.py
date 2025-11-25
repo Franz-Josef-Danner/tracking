@@ -21,6 +21,8 @@ from ...Helper.track_markers_helper import track_markers_with_override
 # Stellt eine kapselnde Helper-Funktion für bpy.ops.clip.track_markers bereit, die den nötigen Movie-Clip-Editor-Context per temp_override setzt und optional vorwärts/rückwärts sowie im Sequence-Modus tracked. Gibt einen booleschen Erfolgsstatus zurück, anstatt Exceptions nach außen durchzureichen.
 
 from ...Helper.frame_track_progress import compute_marker_progress
+# compute_marker_progress berechnet für den aktuellen Movie Clip den Tracking-Fortschritt über die gesamte Szenenlänge: Pro Frame werden die aktiven, nicht gemuteten Marker gezählt (gecappt auf scene.kaiserlich_markers_per_frame), daraus wird ein prozentueller Roh-Fortschritt ermittelt und mit einem Qualitätsfaktor aus compute_track_quality_metrics multipliziert. Das Ergebnis wird als effektiver Fortschritt (value, perc_effektiv) zurückgegeben, in scene.kaiserlich_marker_progress geschrieben und optional die CLIP_EDITOR-UI per Redraw aktualisiert.
+
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
 from ...Helper.motion_average import get_from_selected_tracks
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
