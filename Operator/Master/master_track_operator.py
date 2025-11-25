@@ -7,8 +7,7 @@ from collections import deque
 # Helper Imports (bestehend)
 # ------------------------------------------------------------
 from ...Helper.playhead_helper import get_start_frame as ph_get_start_frame, reset_to_frame
-# Dieser Helper kapselt das Playhead-Handling:
-Er klemmt beliebige Frame-Werte hart auf die Szenenrange, liefert die aktuelle (geclampte) Playhead-Position und setzt mit reset_to_frame Szene und alle CLIP_EDITOR-Spaces, die den aktiven Clip anzeigen, synchron auf denselben Ziel-Frame.
+# Dieser Helper kapselt das Playhead-Handling: Er klemmt beliebige Frame-Werte hart auf die Szenenrange, liefert die aktuelle (geclampte) Playhead-Position und setzt mit reset_to_frame Szene und alle CLIP_EDITOR-Spaces, die den aktiven Clip anzeigen, synchron auf denselben Ziel-Frame.
 
 from ...Helper.scene import get_end_frame
 from ...Helper.find_clip_editor_area import find_clip_editor_area
