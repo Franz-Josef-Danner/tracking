@@ -18,6 +18,8 @@ from ...Helper.filter_active_tracks import filter_active_tracks_at_frame
 # ermittelt für einen gegebenen Frame alle noch „aktiv“ nutzbaren Tracks aus einer übergebenen Track-Namen-Liste, indem es pro Track den Marker im Ziel-Frame sucht und nur solche Tracks zurückgibt, deren Marker existiert und nicht gemutet ist. Zusätzlich liefert die Funktion die Anzahl der dadurch aussortierten (inaktiven oder nicht gefundenen) Tracks zurück.
 
 from ...Helper.track_markers_helper import track_markers_with_override
+# Stellt eine kapselnde Helper-Funktion für bpy.ops.clip.track_markers bereit, die den nötigen Movie-Clip-Editor-Context per temp_override setzt und optional vorwärts/rückwärts sowie im Sequence-Modus tracked. Gibt einen booleschen Erfolgsstatus zurück, anstatt Exceptions nach außen durchzureichen.
+
 from ...Helper.frame_track_progress import compute_marker_progress
 from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
 from ...Helper.motion_average import get_from_selected_tracks
