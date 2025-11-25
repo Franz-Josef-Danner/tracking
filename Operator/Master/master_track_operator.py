@@ -27,6 +27,8 @@ from ...Helper.adapt_search_size import adapt_search_size_for_calibrate_tracks
 # Dieser Helper passt im aktuellen Frame die search_min/search_max aller in scene["calibrate_tracks"] hinterlegten Tracks dynamisch an: Er ermittelt dafür Referenz-Tracks mit gültigen Markern in F, F+1 und F+2, berechnet aus deren Bewegung (F → F+2) eine mittlere Distanz der drei nächstgelegenen Referenz-Tracks pro Kalibrations-Marker und setzt daraus eine bewegungsbasierte Search-Size im Pixelraum, wobei die pattern-basierte Größe (2 * pattern_size) als Mindestwert dient und die effektive Search-Size pro Achse auf 200 px gekappt wird.
 
 from ...Helper.motion_average import get_from_selected_tracks
+# Dieser Helper wertet die Bewegung der (selektierten, nicht gemuteten) Tracks im aktuellen Frame-Fenster aus, bestimmt daraus ein globales Motion-Model (Loc / LocRot / LocScale / LocRotScale + Perspective) und berechnet normalisierte, szenenweite Threshold-Werte. Dabei werden Bewegungs- und Perspektivmetriken historisiert (rolling MAX_HISTORY), Motion-Model-Häufigkeiten berücksichtigt und die finalen Schwellen in Scene-Properties (kaiserlich_*_thresh*, kaiserlich_model_count_*, kaiserlich_threshold_max_val) für nachgelagerte Operatoren bereitgestellt.
+
 from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.validate_motion_forward_helper import _get_positions_backward
