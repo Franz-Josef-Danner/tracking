@@ -39,21 +39,14 @@ from ...Helper.formula_helper import apply_formula_on_selected_tracks
 from ...Helper.threshold_stats import update_threshold_extrema
 # Dieser Helper initialisiert und verwaltet alle Scene-Custom-Properties für die Threshold-Extrema (Rotation, Scale, Rot+Scale, Perspektive), bietet einen Hard-Reset der gespeicherten Min/Max-Werte, aktualisiert diese bei jedem Aufruf anhand der aktuellen UI-Thresholds und stellt optional eine Log-Ausgabe der aktuell gelernten Schwellenbereiche bereit.
 
-from ...Helper.validate_motion_forward_helper import _get_positions_backward
-# Validiert in der aktuellen Szene die Vorwärtsbewegung der calibrate_tracks, indem rückwärts gerichtete Bewegungsvektoren (dx, dy) über mehrere Frames aus den best- bzw. good_tracks als Referenzmittelwert berechnet werden und alle Kalibrier-Marker, deren Bewegungsabweichung über einem aus scene.max_error_value abgeleiteten Schwellwert liegt, im aktuellen Frame gezielt gemutet werden; sämtliche Schritte (Track-Auflösung, Vektorerzeugung, Threshold, Mute-Aktionen, Statistiken) werden detailliert geloggt.
-
 from ...Helper.update_default_sizes import update_default_sizes
 # Dieser Helper liest die aktuellen Tracking-Defaultwerte (Pattern-, Search-Size und Margin) des aktiven MovieClips, skaliert die Pattern-Size schrittweise nach oben (×1,1, geclamped auf 30–100), setzt Search-Size (= 2×Pattern) und default_margin entsprechend nach, schreibt die neuen Defaults zurück und triggert automatisch run_bootstrap, sobald die Pattern-Size das definierte Maximum erreicht.
 
-from ..Helper.correct_selected_by_ref_motion import correct_motion_by_reference
+from ..Helper.correct.correct_selected_by_ref_motion import correct_motion_by_reference
 # correct_motion_by_reference analysiert für den aktuellen Frame f die Bewegungsvektoren der drei nächstgelegenen, nicht selektierten Referenz-Tracks (Marker aktiv bei f, f-1, f-2) und korrigiert die Position selektierter Marker nur dann, wenn deren Bewegungsvektor signifikant (> min_vec_diff) von der gemittelten Referenzbewegung abweicht, wobei nur Referenzen innerhalb max_near_dist berücksichtigt werden.
 
-from ...Helper.marker_position_forward_calibration import (_resolve_reference_key, correct_marker_positions)
-# Dieser Helper übernimmt die Forward-Kalibrierung von Tracking-Marker-Positionen auf Basis der aktuellen „best/good_tracks“: Er liest calibrate_tracks und Referenz-Tracklisten robust aus der Szene, filtert tote/fehlende Tracks, prüft eine Mindestabdeckung aktiver Referenzmarker über mehrere vorangegangene Frames und schätzt daraus eine lokal gewichtete Durchschnittsbewegung (Velocity). Auf Basis dieser Velocity wird für jeden Kalibrier-Track eine Vorhersageposition berechnet, mit der gemessenen Position adaptiv verblendet (aspektkorrekt) und der Marker im aktuellen Frame korrigiert. Begleitend werden alle relevanten Scene-Keys und Abweichungen minimal, aber differenziert geloggt.
+from ...Helper.correct.correct_selected_by_ref_dynamic import correct_motion_by_dynamic_reference
 
-from ...Helper.correct_selected_by_ref_dynamic import (
-    correct_motion_by_dynamic_reference
-)
 
 # Interner Helper: Speicherung aktiver Tracks in Scene-String
 # ------------------------------------------------------------
@@ -168,12 +161,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         tracking = clip.tracking
         for tr in tracking.tracks:
             tr.select = (tr.name in self._original_selected)
-
-        # --------------------------------------------------------
-        # Referenz-Key bestimmen
-        # --------------------------------------------------------
-        self._active_ref_key = _resolve_reference_key(scene)
-
         # --------------------------------------------------------
         # NEU: Aktuell selektierte und aktive Tracks speichern
         # --------------------------------------------------------
@@ -250,59 +237,6 @@ correct_motion_by_dynamic_reference(context)
         except Exception:
             pass
         
-        # -----------------------------------------------
-        # 3) ACTIVE CALIBRATION STEP (mit good/best Referenz)
-        # -----------------------------------------------
-        try:
-            scene = context.scene
-
-            # Aktuelle Kalibrierungstracks
-            calibrate_raw = scene.get("calibrate_tracks", "")
-            if isinstance(calibrate_raw, str):
-                calibrate_tracks = [
-                    t.strip() for t in calibrate_raw.split(",") if t.strip()
-                ]
-            else:
-                calibrate_tracks = []
-
-            # Keine calibrate_tracks → kein Calibration Step
-            if not calibrate_tracks:
-                pass
-            else:
-                # -------------------------------------------
-                # Referenz bestimmen: best_tracks > good_tracks
-                # -------------------------------------------
-                ref_tracks = []
-
-                best_raw = scene.get("best_tracks", "")
-                good_raw = scene.get("good_tracks", "")
-
-                if isinstance(best_raw, str) and best_raw.strip():
-                    ref_tracks = [t.strip() for t in best_raw.split(",") if t.strip()]
-                elif isinstance(good_raw, str) and good_raw.strip():
-                    ref_tracks = [t.strip() for t in good_raw.split(",") if t.strip()]
-
-                # Ohne Referenzen → KEIN Calibration Step
-                if not ref_tracks:
-                    pass
-                else:
-                    # Frames definieren (vorher, aktuell, nachher)
-                    f_a = self._current_frame
-                    f_b = max(self._start_frame, f_a - 1)
-                    f_c = min(self._end_frame, f_a + 1)
-
-                    # Korrektur ausführen
-                    correct_marker_positions(
-                        scene,
-                        ref_tracks,        # ← WICHTIG: good/best als Referenz
-                        calibrate_tracks,  # ← zu korrigierende Tracks
-                        f_a, f_b, f_c
-                    )
-
-        except Exception:
-            pass
-
-
         # -----------------------------------------------
         # 4) adapt search size
         # -----------------------------------------------
