@@ -211,8 +211,8 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # 1) Vor jedem Calibration-Step sichern
         # -----------------------------------------------
         store_calibrate_tracks_in_scene(context, self._processing_names)
-correct_motion_by_reference(context)
-correct_motion_by_dynamic_reference(context)
+        correct_motion_by_reference(context)
+        correct_motion_by_dynamic_reference(context)
         # Danach würde marker_position_forward_calibration.py aufgerufen werden
         # (hier nur vorbereitend, damit calibrate_tracks aktuell ist)
 
