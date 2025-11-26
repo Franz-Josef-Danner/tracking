@@ -57,7 +57,7 @@ def correct_motion_by_dynamic_reference(context: bpy.types.Context,
     f2 = f - 2
 
     # 1) Selektiert
-    selected_tracks = [t for t in tracks if t.select and not t.mute and not t.lock]
+    selected_tracks = [t for t in tracks if t.select and not t.lock and not t.disabled]
 
     if not selected_tracks:
         return {"CANCELLED"}
@@ -65,7 +65,7 @@ def correct_motion_by_dynamic_reference(context: bpy.types.Context,
     # 2) Referenzen sammeln
     ref_tracks = []
     for t in tracks:
-        if t.mute or t.lock or t.select:
+        if t.lock or t.disabled or t.select:
             continue
         p0 = _get_marker(t, f)
         p1 = _get_marker(t, f1)
