@@ -17,23 +17,9 @@ from ...Helper.adapt_search_size_backward import adapt_search_size_for_calibrate
 from ...Helper.motion_average_backwards import get_from_selected_tracks_backwards
 from ...Helper.formula_helper_backward import apply_formula_on_selected_tracks_backwards
 from ...Helper.threshold_stats import update_threshold_extrema
-from ...Helper.validate_motion_backward_helper import validate_calibrate_tracks_backward_window
 from ..Helper.correct_selected_by_ref_motion_backward import correct_motion_by_reference_backward
-
-from ...Helper.marker_position_backward_calibration import (
-    correct_marker_positions_backward
-)
-
-from ...Helper.reference_key import (
-    get_reference_tracks,
-    filter_existing_tracks,
-)
-
-from ...Helper.marker_position_forward_calibration import _resolve_reference_key
-
-from ...Helper.correct_selected_by_ref_dynamic_backward import (
-    correct_motion_by_dynamic_reference_backward
-)
+from ...Helper.reference_key import (get_reference_tracks, filter_existing_tracks,)
+from ...Helper.correct_selected_by_ref_dynamic_backward import correct_motion_by_dynamic_reference_backward
 
 def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
     scene = context.scene
@@ -153,24 +139,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         tracking = clip.tracking
         for tr in tracking.tracks:
             tr.select = (tr.name in self._original_selected)
-        # --------------------------------------------------------
-        # NEU: Referenz-Key bestimmen (identisch zu Forward)
-        # --------------------------------------------------------
-        try:
-            scene = context.scene
-            self._active_ref_key = _resolve_reference_key(scene)
-        except Exception:
-            # Falls kein Key bestimmt werden kann → None,
-            # Backward arbeitet dann wie bisher ohne Referenz-Key.
-            self._active_ref_key = None
-
-        # (Forward speichert den aktiven Key nicht als Scene-Prop,
-        # daher hier ebenfalls kein Scene-Write.)
-
-        # Activate timer
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.05, window=context.window)
-        wm.modal_handler_add(self)
 
         return {"RUNNING_MODAL"}
 
@@ -219,71 +187,6 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             if isinstance(val, str):
                 return bool(val.strip())
             return True
-
-        # -------------------------------------------------------
-        # BACKWARD CALIBRATION STEP (mit Referenzwahl good/best)
-        # -------------------------------------------------------
-        try: correct_motion_by_reference_backward(context)
-
-correct_motion_by_dynamic_reference_backward(context)
-            scene = context.scene
-
-            # calibrate_tracks aus Scene lesen
-            calibrate_raw = scene.get("calibrate_tracks", "")
-            if isinstance(calibrate_raw, str):
-                calibrate_tracks = [
-                    t.strip() for t in calibrate_raw.split(",") if t.strip()
-                ]
-            else:
-                calibrate_tracks = []
-
-            if not calibrate_tracks:
-                pass
-            else:
-                # -------------------------------------------------------
-                # Referenz über zentrales Referenz-Key-System
-                # -------------------------------------------------------
-                ref_names = get_reference_tracks(scene)
-                ref_names = filter_existing_tracks(context, ref_names)
-
-                # --- Dead-Reference Cleanup (neu, Punkt 4) ---
-                clip = getattr(context.space_data, "clip", None)
-                if not clip:
-                    return {"CANCELLED"}
-
-                tracking = clip.tracking
-
-                calibrate_tracks = [t for t in calibrate_tracks if t in tracking.tracks]
-                ref_names = [t for t in ref_names if t in tracking.tracks]
-
-                # Wenn nach Cleanup keine gültigen Tracks mehr existieren → skip
-                if not ref_names or not calibrate_tracks:
-                    pass
-                else:
-                    # Frame-Kontexte für rückwärts Tracking
-                    f_now = int(self._current_frame)
-
-                    f_next  = int(f_now) + 1
-                    f_next2 = int(f_now) + 2
-                    f_next3 = int(f_now) + 3
-
-                    # Clip-Limits
-                    if f_next > self._end_frame:  f_next = None
-                    if f_next2 > self._end_frame: f_next2 = None
-                    if f_next3 > self._end_frame: f_next3 = None
-
-                    if f_next is not None:
-                        correct_marker_positions_backward(
-                            scene,
-                            ref_names,
-                            calibrate_tracks,
-                            f_now,
-                            f_next, f_next2, f_next3
-                        )
-
-
-        except Exception:
-            pass
 
         # adapt search size
         try:
