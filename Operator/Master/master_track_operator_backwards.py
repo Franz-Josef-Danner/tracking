@@ -19,33 +19,22 @@ from ...Helper.formula_helper_backward import apply_formula_on_selected_tracks_b
 from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.validate_motion_backward_helper import validate_calibrate_tracks_backward_window
 from ..Helper.correct_selected_by_ref_motion_backward import correct_motion_by_reference_backward
-# ------------------------------------------------------------
-# Neuer Import: Backward-MarkerCalibration-Helper (ersetzt Forward)
-# ------------------------------------------------------------
+
 from ...Helper.marker_position_backward_calibration import (
     correct_marker_positions_backward
 )
 
-# ------------------------------------------------------------
-# Neuer Import: Zentrales Referenz-Key-System
-# ------------------------------------------------------------
 from ...Helper.reference_key import (
     get_reference_tracks,
     filter_existing_tracks,
-    # NEU: Forward/Backward sollen denselben Referenz-Key verwenden
 )
 
-# ------------------------------------------------------------
-# NEU: Forward/Backward sollen denselben Referenz-Key verwenden
-# ------------------------------------------------------------
 from ...Helper.marker_position_forward_calibration import _resolve_reference_key
 
 from ...Helper.correct_selected_by_ref_dynamic_backward import (
     correct_motion_by_dynamic_reference_backward
 )
-# ------------------------------------------------------------
-# Interner Helper: Speicherung aktiver Tracks in Scene-String
-# ------------------------------------------------------------
+
 def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
     scene = context.scene
     if not track_names:
