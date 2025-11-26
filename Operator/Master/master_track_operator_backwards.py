@@ -153,8 +153,14 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             f"Reset={self._reset_frame}, Tracks={len(self._processing_names)}"
         )
 
-        return {"RUNNING_MODAL"}
+        # --------------------------------------------------------
+        # Timer starten (Modal aktivieren)
+        # --------------------------------------------------------
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.05, window=context.window)
+        wm.modal_handler_add(self)
 
+        return {"RUNNING_MODAL"}
     # --------------------------------------------------------
     # Modal Loop
     # --------------------------------------------------------
