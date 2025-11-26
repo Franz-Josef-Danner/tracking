@@ -41,8 +41,6 @@ from ...Helper.reference_key import (
 from ...Helper.marker_position_forward_calibration import _resolve_reference_key
 
 from ...Helper.correct_selected_by_ref_dynamic_backward import (
-
-from ...Helper.correct_selected_by_ref_dynamic_backward import (
     correct_motion_by_dynamic_reference_backward
 )
 # ------------------------------------------------------------
