@@ -48,16 +48,13 @@ from ...Helper.correct.correct_selected_by_ref_motion import correct_motion_by_r
 from ...Helper.correct.correct_selected_by_ref_dynamic import correct_motion_by_dynamic_reference
 
 
-# Interner Helper: Speicherung aktiver Tracks in Scene-String
+# ------------------------------------------------------------
+# STORE CALIBRATE TRACKS (jetzt MIT LOGS)
 # ------------------------------------------------------------
 def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
-    """
-    Speichert aktive Kalibrierungs-Tracks in der Szene:
-      calibrate_tracks        → reine Namen (LISTE)
-      calibrate_tracks_uuid_map → UUID→Name Mapping (STRING)
-    """
     scene = context.scene
     if not track_names:
+        print("[FORWARD][CALIBRATE_STORE] ⚠ Keine Track-Namen übergeben – Abbruch.")
         return
 
     try:
@@ -65,28 +62,25 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         for key in ("calibrate_tracks", "calibrate_tracks_uuid_map"):
             if key in scene:
                 del scene[key]
+        print("[FORWARD][CALIBRATE_STORE] Entferne alte calibrate_tracks Keys.")
 
         clip = getattr(context.space_data, "clip", None)
         if not clip or not hasattr(clip, "tracking"):
+            print("[FORWARD][CALIBRATE_STORE] ⚠ Kein Clip/Tracking gefunden – Speichern übersprungen.")
             return
 
-        # UUID Map erzeugen (nur im Scene-String, nicht im Track)
+        # UUID Map erzeugen
         import uuid as _uuid
-        uuid_map: Dict[str, str] = {
-            str(_uuid.uuid4()): name for name in track_names
-        }
+        uuid_map: Dict[str, str] = {str(_uuid.uuid4()): name for name in track_names}
 
-        # WICHTIG: Namen als LISTE speichern, nicht als String
         scene["calibrate_tracks"] = list(track_names)
-
-        # Map bleibt String (JSON/Python-String)
         scene["calibrate_tracks_uuid_map"] = str(uuid_map)
 
-        # logging removed
+        print(f"[FORWARD][CALIBRATE_STORE] ✅ {len(track_names)} Tracks gespeichert.")
 
     except Exception as e:
-        # logging removed
-        pass
+        print(f"[FORWARD][CALIBRATE_STORE][ERROR] {e}")
+
 
 # =====================================================================
 # Hauptoperator
@@ -97,7 +91,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     bl_description = "Performs a non-blocking forward tracking cycle for all selected markers"
     bl_options = {"REGISTER", "INTERNAL"}
 
-    max_frames: bpy.props.IntProperty(  # type: ignore
+    max_frames: bpy.props.IntProperty(
         name="Max Frames",
         default=0,
         min=0,
@@ -121,70 +115,70 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     # --------------------------------------------------------
     # Initialization
     # --------------------------------------------------------
-
     def execute(self, context):
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
             self.report({'ERROR'}, "No active clip found.")
+            print("[FORWARD][INIT] ❌ Kein aktiver Clip – Abbruch.")
             return {"CANCELLED"}
 
-        # Start- und End-Frame
+        # Start / Ende
         self._start_frame = ph_get_start_frame(context)
         self._end_frame = get_end_frame(context)
         if self._end_frame < self._start_frame:
             self._end_frame = self._start_frame
 
-        # Aktuelle Track-Selektion
+        # Selektion
         self._original_selected = collect_selected_track_names(context)
         if not self._original_selected:
             self.report({'WARNING'}, "No tracks selected.")
+            print("[FORWARD][INIT] ⚠ Keine Tracks selektiert – Abbruch.")
             return {"CANCELLED"}
-
         self._processing_names = list(self._original_selected)
 
-        # Clip-Editor finden
+        # CLIP EDITOR
         self._window, self._area, self._region, self._space = find_clip_editor_area(clip)
         if not self._window:
             self.report({'ERROR'}, "No CLIP_EDITOR area found.")
+            print("[FORWARD][INIT] ❌ Kein CLIP_EDITOR – Abbruch.")
             return {"CANCELLED"}
 
-        # Startframe setzen
+        # Playhead setzen
         self._current_frame = max(self._start_frame, int(scene.frame_current))
         self._space.clip_user.frame_current = self._current_frame
         scene.frame_current = self._current_frame
 
-        # Historien vorbereiten
+        # Historien
         self._histories = {name: deque(maxlen=10) for name in self._processing_names}
 
         # Auswahl fixieren
-        tracking = clip.tracking
-        for tr in tracking.tracks:
+        for tr in clip.tracking.tracks:
             tr.select = (tr.name in self._original_selected)
-        # --------------------------------------------------------
-        # NEU: Aktuell selektierte und aktive Tracks speichern
-        # --------------------------------------------------------
+
+        # Calibrate speichern
         store_calibrate_tracks_in_scene(context, self._processing_names)
-        # ============================================================
-        # SNAPSHOT DER SELEKTIERTEN TRACKS SPEICHERN
-        # ============================================================
-        # Diese Liste dient später zur Überprüfung, ob nach Cleanup noch
-        # mindestens ein ursprünglicher Marker übrig ist.
+
+        # Snapshot
         self._snapshot_tracks = list(self._processing_names)
-        # --------------------------------------------------------
-        # Timer starten
-        # --------------------------------------------------------
+
+        # Timer
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
+
+        print(
+            f"[FORWARD][INIT] ✅ Start={self._start_frame}, End={self._end_frame}, "
+            f"Frame={self._current_frame}, Tracks={len(self._processing_names)}"
+        )
         return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
     # Modal Loop
     # --------------------------------------------------------
-
     def modal(self, context, event):
         if event.type == 'ESC':
+            print("[FORWARD][MODAL] ⎋ ESC – Abbruch.")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
@@ -193,12 +187,16 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
 
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
+            print("[FORWARD][MODAL] ⚠ Kein Clip – Abbruch.")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
         tracking = clip.tracking
 
-        # Historien aktualisieren
+        # Step-Log
+        print(f"[FORWARD][STEP] Frame={self._current_frame}, Active={len(self._processing_names)}")
+
+        # Historien
         for name in list(self._processing_names):
             tr = tracking.tracks.get(name)
             if not tr:
@@ -207,56 +205,37 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
             if mk and not mk.mute:
                 self._histories[name].append((self._current_frame, mk.co[0], mk.co[1]))
 
-        # -----------------------------------------------
-        # 1) Vor jedem Calibration-Step sichern
-        # -----------------------------------------------
+        # Calibration sichern + Korrekturen
         store_calibrate_tracks_in_scene(context, self._processing_names)
         correct_motion_by_reference(context)
         correct_motion_by_dynamic_reference(context)
-        # Danach würde marker_position_forward_calibration.py aufgerufen werden
-        # (hier nur vorbereitend, damit calibrate_tracks aktuell ist)
 
-        # -----------------------------------------------
-        # 2) Adaptive Formel
-        # -----------------------------------------------
+        # Formel/Motion
         try:
-            # Frames-per-track wird intern aus Scene gelesen
             get_from_selected_tracks(context)
             apply_formula_on_selected_tracks(context)
-            scene = context.scene
-            best_raw = scene.get("best_tracks")
-            good_raw = scene.get("good_tracks")
+            print("[FORWARD][STEP] 🔎 Formel/Bewegungsmodell angewendet.")
+        except Exception as e:
+            print(f"[FORWARD][STEP][FORMULA][ERROR] {e}")
 
-            def _has_tracks(val):
-                if not val:
-                    return False
-                if isinstance(val, str):
-                    return bool(val.strip())
-                return True
-
-        except Exception:
-            pass
-        
-        # -----------------------------------------------
-        # 4) adapt search size
-        # -----------------------------------------------
+        # Search-Size
         try:
             adapt_search_size_for_calibrate_tracks(context)
-        except Exception:
-            pass
+            print("[FORWARD][STEP] 📏 adapt_search_size OK.")
+        except Exception as e:
+            print(f"[FORWARD][STEP][ADAPT_SEARCH][ERROR] {e}")
 
-        # -----------------------------------------------
-        # 5) Tracking-Step
-        # -----------------------------------------------
+        # Tracken
         success = track_markers_with_override(
             self._window, self._area, self._region, self._space,
             backwards=False, sequence=False
         )
         if not success:
+            print("[FORWARD][STEP] ❌ track_markers_with_override fehlgeschlagen.")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
-        # Frame fortsetzen
+        # Frame weiter
         scene = context.scene
         if self._space.clip_user.frame_current == self._current_frame:
             self._space.clip_user.frame_current += 1
@@ -267,21 +246,26 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         self._current_frame = self._space.clip_user.frame_current
         self._frames_processed += 1
 
-        # Aktive Tracks filtern
+        # Track-Filter
+        before_filter = len(self._processing_names)
         self._processing_names, _ = filter_active_tracks_at_frame(
             context, self._processing_names, self._current_frame
         )
+        print(f"[FORWARD][STEP] FilterActiveTracks: {before_filter} → {len(self._processing_names)}")
 
-        # Abbruchbedingungen
+        # Exit
         if self._current_frame >= self._end_frame:
+            print("[FORWARD][EXIT] ⏩ End-Frame erreicht.")
             self._finish(context)
             return {"FINISHED"}
 
         if not self._processing_names:
+            print("[FORWARD][EXIT] ❌ Keine aktiven Tracks mehr.")
             self._finish(context)
             return {"FINISHED"}
 
         if self.max_frames > 0 and self._frames_processed >= self.max_frames:
+            print("[FORWARD][EXIT] ⏱ MaxFrames erreicht.")
             self._finish(context)
             return {"FINISHED"}
 
@@ -290,310 +274,52 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
     # --------------------------------------------------------
     # Abschluss / Cleanup
     # --------------------------------------------------------
-
     def _finish(self, context, cancelled: bool = False):
         wm = context.window_manager
         if self._timer:
             wm.event_timer_remove(self._timer)
         self._timer = None
 
-        # Ursprüngliche Auswahl wiederherstellen
+        print(f"[FORWARD][FINISH] 🧾 cancelled={cancelled}, frames={self._frames_processed}")
+
+        # Auswahl wiederherstellen
         clip = getattr(context.space_data, "clip", None)
         if clip and hasattr(clip, "tracking"):
             for tr in clip.tracking.tracks:
                 tr.select = (tr.name in self._original_selected)
+            print("[FORWARD][FINISH] Auswahl wiederhergestellt.")
 
-        # Zurücksetzen
+        # Reset Playhead auf Start
         try:
             reset_to_frame(context, self._start_frame)
-        except Exception:
-            pass
+            print(f"[FORWARD][FINISH] Playhead → {self._start_frame}")
+        except Exception as e:
+            print(f"[FORWARD][FINISH][RESET][ERROR] {e}")
 
-        # Progress aktualisieren
+        # Qualität / Progress
         try:
             from ...Helper.track_quality_metrics import compute_track_quality_metrics
             metrics = compute_track_quality_metrics(context)
-            quality_percent = float(metrics.get("prozent", 100.0))
-            context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
+            q = float(metrics.get("prozent", 100.0))
+            context.scene.kaiserlich_quality_percent = f"{int(round(q))}%"
+            print(f"[FORWARD][FINISH] Qualität = {context.scene.kaiserlich_quality_percent}")
         except Exception:
             pass
 
         try:
             _, perc = compute_marker_progress(context.scene, update_ui=True)
             context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
+            print(f"[FORWARD][FINISH] Marker-Progress = {context.scene.kaiserlich_marker_progress}")
         except Exception:
             pass
-        # ============================================================
-        # NEU: Marker-Längenvalidierung (aktive Marker pro Track)
-        # ============================================================
-        try:
-            scene = context.scene
-            clip_obj = getattr(context.space_data, "clip", None)
-            if clip_obj:
-                from ...Helper.find_clip_editor_area import find_clip_editor_area
-                from ...Helper.delete import delete_tracks_by_names
 
-                window, area, region, space = find_clip_editor_area(clip_obj)
-                if window and area and region and space:
-                    with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
-                        tracking = clip_obj.tracking
-
-                        # Mindestanzahl Frames pro Track
-                        min_frames = 0
-                        try:
-                            if hasattr(scene, "kaiserlich_frames_per_track"):
-                                val = getattr(scene, "kaiserlich_frames_per_track", None)
-                            else:
-                                val = scene.get("kaiserlich_frames_per_track", None)
-                            if isinstance(val, (int, float)) and val > 0:
-                                min_frames = int(val)
-                        except Exception:
-                            pass
-
-                        flagged_names = []
-                        deleted_info = []
-                        kept_info = []
-
-                        def _is_marker_disabled(track, marker) -> bool:
-                            if getattr(track, "mute", False):
-                                return True
-                            if getattr(marker, "mute", False):
-                                return True
-                            try:
-                                if "disabled" in marker and bool(marker["disabled"]):
-                                    return True
-                            except Exception:
-                                pass
-                            return False
-
-                        if min_frames > 0:
-                            for t in tracking.tracks:
-                                try:
-                                    active_frames = {
-                                        m.frame for m in t.markers
-                                        if hasattr(m, "frame") and not _is_marker_disabled(t, m)
-                                    }
-                                    active_length = len(active_frames)
-                                    if active_length < min_frames:
-                                        flagged_names.append(t.name)
-                                        deleted_info.append((t.name, active_length))
-                                    else:
-                                        kept_info.append((t.name, active_length))
-                                except Exception:
-                                    pass
-                        else:
-                            for t in tracking.tracks:
-                                try:
-                                    active_frames = {
-                                        m.frame for m in t.markers
-                                        if hasattr(m, "frame") and not _is_marker_disabled(t, m)
-                                    }
-                                    kept_info.append((t.name, len(active_frames)))
-                                except Exception:
-                                    pass
-
-                        if flagged_names:
-                            delete_tracks_by_names(bpy.context, flagged_names)
-                        # ----------------------------------------------------
-                        # NEU: Snapshot-Überlebensprüfung
-                        # ----------------------------------------------------
-                        surviving_tracks = {
-                            t.name for t in tracking.tracks
-                            if t.name in getattr(self, "_snapshot_tracks", [])
-                        }
-
-                        if not surviving_tracks:
-                            print("[TRACK_SNAPSHOT] ❌ Alle ursprünglichen Marker wurden entfernt.")
-                            print(f"[TRACK_SNAPSHOT] Ursprünglich: {self._snapshot_tracks}")
-                            print(f"[TRACK_SNAPSHOT] Überlebend:   (keiner)")
-
-                            print("[TRACK_SNAPSHOT][RECOVERY] 🔄 Keine ursprünglichen Tracks überlebt → Search Size erweitern & Detect neu starten.")
-
-                            # 1) Clean Reset auf Startframe
-                            try:
-                                reset_to_frame(context, self._start_frame)
-                            except Exception:
-                                pass
-
-                            # 2) Search-Size Recovery anwenden
-                            try:
-                                update_default_sizes(context)
-                                print("[TRACK_SNAPSHOT][RECOVERY] ✔ update_default_sizes ausgeführt.")
-                            except Exception:
-                                print("[TRACK_SNAPSHOT][RECOVERY] ❌ Fehlgeschlagen: update_default_sizes")
-
-                            # 2b) Pattern-Size-Verlauf prüfen und ggf. Threshold anheben
-                            try:
-                                scene = context.scene
-                                print("\n[TRACE][PATTERN_CHECK] ---- BEGIN STATS ----")
-
-                                # 🟦 Clip sicher holen (unabhängig vom UI-Kontext)
-                                clip_local = None
-                                try:
-                                    if hasattr(context.scene, "tracking"):
-                                        tracking_obj = getattr(context.scene, "tracking", None)
-                                        if tracking_obj and hasattr(tracking_obj, "active"):
-                                            clip_local = getattr(tracking_obj, "active", None)
-                                except Exception:
-                                    clip_local = None
-
-                                # 🟦 Default-Pattern-Size robust aus aktiven TrackingSettings ermitteln (inline ohne Funktion)
-                                current_pz = None
-                                tracking_settings = None
-                                try:
-                                    scr = getattr(context, "screen", None)
-                                    if scr and hasattr(scr, "areas"):
-                                        for _area in scr.areas:
-                                            if _area.type == 'CLIP_EDITOR':
-                                                for _space in _area.spaces:
-                                                    if _space.type == 'CLIP_EDITOR' and getattr(_space, "clip", None):
-                                                        _clip = _space.clip
-                                                        if getattr(_clip, "tracking", None) and getattr(_clip.tracking, "settings", None):
-                                                            tracking_settings = _clip.tracking.settings
-                                                            break
-                                                if tracking_settings:
-                                                    break
-                                    if not tracking_settings:
-                                        _space_clip = getattr(getattr(context, "space_data", None), "clip", None)
-                                        if _space_clip and getattr(_space_clip, "tracking", None) and getattr(_space_clip.tracking, "settings", None):
-                                            tracking_settings = _space_clip.tracking.settings
-                                    if not tracking_settings:
-                                        _scene_clip = getattr(getattr(context, "scene", None), "clip", None)
-                                        if _scene_clip and getattr(_scene_clip, "tracking", None) and getattr(_scene_clip.tracking, "settings", None):
-                                            tracking_settings = _scene_clip.tracking.settings
-                                except Exception:
-                                    tracking_settings = None
-
-                                try:
-                                    if tracking_settings:
-                                        raw_val = getattr(tracking_settings, "default_pattern_size", None)
-                                        if isinstance(raw_val, int):
-                                            if 5 <= raw_val <= 1000:
-                                                current_pz = raw_val
-                                            else:
-                                                print(f"[TRACE][PATTERN_CHECK] out-of-range default_pattern_size={raw_val} (ignored)")
-                                except Exception:
-                                    current_pz = None
-
-                                print(f"[TRACE][PATTERN_CHECK] current default_pattern_size = {current_pz}")
-
-                                if current_pz is not None:
-                                    try:
-                                        last_pz = int(scene.get("kaiserlich_last_pattern_size_recovery", 0))
-                                    except Exception:
-                                        last_pz = 0
-                                    print(f"[TRACE][PATTERN_CHECK] last saved reference = {last_pz}")
-
-                                    # 🟥 FALL 1: Pattern fällt nach letztem Wert → Threshold hart erhöhen (×10)
-                                    if current_pz < last_pz:
-                                        # 🔧 Nur Marker-Multiplikator erhöhen
-                                        mult = float(scene.get("kaiserlich_marker_multiplier", 2.0))
-                                        new_mult = mult + 0.2
-                                        scene["kaiserlich_marker_multiplier"] = new_mult
-                                
-                                        print(f"[TRACE][PATTERN_CHECK] 🔻 Pattern DROP detected! Marker multiplier raised "
-                                              f"{mult} ➜ {new_mult} (+0.1)")
-
-                                        # 👉 Immer den aktuellen Pattern-Size als Referenz speichern
-                                        scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
-                                        print(f"[TRACE][PATTERN_CHECK] 💾 pattern reference updated → {current_pz}")
-                                        print("[TRACE][PATTERN_CHECK] ---- END STATS ----\n")
-                                        # WICHTIG: Keine TR-Änderung, aber Recovery weiterführen
-                                        # Kein StopIteration, normale Recovery-Kette
-
-                                    # Kein Drop (gleich oder größer) → trotzdem immer Referenz aktualisieren
-                                    scene["kaiserlich_last_pattern_size_recovery"] = int(current_pz)
-                                    print(f"[TRACE][PATTERN_CHECK] 💾 pattern reference updated → {current_pz}")
-
-                                else:
-                                    print("[TRACE][PATTERN_CHECK] ❌ current_pz could not be read → No threshold change")
-
-                                print("[TRACE][PATTERN_CHECK] ---- END STATS ----\n")
-                            # ⚠ StopIteration = gezieltes Abbrechen nach Threshold-Boost,
-                            # kein Fehler, Recovery läuft normal weiter
-                            except StopIteration:
-                                pass
-
-                            # ⚠ Alle anderen Fehler melden
-                            except Exception as e:
-                                print(f"[TRACK_SNAPSHOT][RECOVERY] ⚠ Pattern-Size-Check fehlgeschlagen: {e}")
-                            # 3) Weiterleitung an den Master Detect-Adapt Operator
-                            try:
-                                # 🔐 Threshold-Fix: neuen Wert sicher in bootstrap_params speichern
-                                try:
-                                    params = scene.get("bootstrap_params", {})
-                                    if isinstance(params, dict):
-                                        # ergibt sich aus Pattern-Check (base_tr wurde überschrieben)
-                                        base_tr = float(params.get('tr', 0.0001))
-                                        # bei Bedarf könnte hier weitere Logik greifen → aber wichtig ist: schreiben!
-                                        scene["bootstrap_params"] = dict(params)
-                                        print(f"[THRESHOLD][STORE] tr={base_tr}")
-                                except Exception as e:
-                                    print(f"[THRESHOLD][STORE] ⚠ Speichern fehlgeschlagen: {e}")
-        
-                                bpy.ops.kaiserlich_tracker.master_detect_adapt('INVOKE_DEFAULT')
-                                print("[TRACK_SNAPSHOT][RECOVERY] 🚀 Weiterleitung → master_detect_adapt_operator")
-                                # Logging aktuell eingesetzter Schwellenwerte
-                                try:
-                                    p = context.scene.get("bootstrap_params", {})
-                                    if isinstance(p, dict) and "tr" in p:
-                                        print(f"[THRESHOLD][HANDOVER] tr={p.get('tr')} (handover to detect_adapt)")
-                                except Exception:
-                                    pass
-                                # ----------------------------------------------------
-                                # HARD EXIT: Dieser Operator muss komplett beendet werden
-                                # keine Weitergabe an master_cycle_operator!
-                                # ----------------------------------------------------
-                                self._timer = None
-                                return {'FINISHED'}
-                            except Exception:
-                                print("[TRACK_SNAPSHOT][RECOVERY] ❌ Übergabe fehlgeschlagen: master_detect_adapt_operator")
-
-                                return {'CANCELLED'}  # Sicherheitsfallback
-                        else:
-                            print(f"[TRACK_SNAPSHOT] ✔ Überlebende ursprüngliche Tracks: {', '.join(surviving_tracks)}")
-
-                        try:
-                            print(f"[TRACK_LENGTH_VALIDATION] min_frames={min_frames} "
-                                  f"deleted={len(deleted_info)} kept={len(kept_info)} (active frames only)")
-                            if deleted_info:
-                                print("  Deleted Tracks:", ", ".join(f"{n}:{l}" for n, l in deleted_info))
-                            else:
-                                print("  Deleted Tracks: None")
-                            if kept_info:
-                                print("  Kept Tracks:", ", ".join(f"{n}:{l}" for n, l in kept_info))
-                            else:
-                                print("  Kept Tracks: None")
-                        except Exception:
-                            pass
-        except Exception:
-            pass
-        # Folge-Operator starten
+        # Übergabe (nur wenn nicht abgebrochen)
         if not cancelled:
             try:
-                # ----------------------------------------------------
-                # 🌐 Forward-Cycle erfolgreich → Reset Pattern-Peak
-                # ----------------------------------------------------
-                scene = context.scene
-                if "kaiserlich_last_pattern_size_recovery" in scene:
-                    try:
-                        del scene["kaiserlich_last_pattern_size_recovery"]
-                        print("[TRACE][PATTERN_CHECK] 🔄 Reset last_pz (successful cycle)")
-                    except Exception:
-                        pass
-                # ----------------------------------------------------
-                # 🔁 Marker-Multiplier vor Übergabe zurücksetzen
-                # ----------------------------------------------------
-                try:
-                    prev_mult = float(scene.get("kaiserlich_marker_multiplier", 2.0))
-                    scene["kaiserlich_marker_multiplier"] = 2.0
-                    print(f"[TRACE][MULTIPLIER] 🔄 Reset multiplier {prev_mult} ➜ 2.0 (handover)")
-                except Exception:
-                    print("[TRACE][MULTIPLIER] ⚠ Multiplier reset failed")
-                
+                print("[FORWARD][HANDOVER] ▶ Starte master_cycle_operator …")
                 bpy.ops.kaiserlich_tracker.master_cycle_operator('INVOKE_DEFAULT')
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[FORWARD][HANDOVER][ERROR] {e}")
 
 
 # ------------------------------------------------------------
