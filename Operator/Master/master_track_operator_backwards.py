@@ -20,9 +20,11 @@ from ...Helper.threshold_stats import update_threshold_extrema
 from ...Helper.correct.correct_selected_by_ref_motion_backward import correct_motion_by_reference_backward
 from ...Helper.correct.correct_selected_by_ref_dynamic_backward import correct_motion_by_dynamic_reference_backward
 
+
 def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
     scene = context.scene
     if not track_names:
+        print("[BACKWARD][CALIBRATE_STORE] ⚠ keine Track-Namen übergeben – Abbruch.")
         return
 
     try:
@@ -30,9 +32,11 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         for key in ("calibrate_tracks", "calibrate_tracks_uuid_map"):
             if key in scene:
                 del scene[key]
+        print("[BACKWARD][CALIBRATE_STORE] Alte Scene-Keys 'calibrate_tracks' & 'calibrate_tracks_uuid_map' bereinigt.")
 
         clip = getattr(context.space_data, "clip", None)
         if not clip or not getattr(clip, "tracking", None):
+            print("[BACKWARD][CALIBRATE_STORE] ⚠ Kein gültiger Clip/Tracking gefunden – nichts gespeichert.")
             return
 
         # UUID-Map erzeugen
@@ -45,12 +49,13 @@ def store_calibrate_tracks_in_scene(context, track_names: List[str]) -> None:
         scene["calibrate_tracks"] = list(track_names)
         scene["calibrate_tracks_uuid_map"] = str(uuid_map)
 
-        # logging removed
+        print(
+            f"[BACKWARD][CALIBRATE_STORE] ✅ {len(track_names)} Tracks in Scene gespeichert "
+            f"(calibrate_tracks, calibrate_tracks_uuid_map)."
+        )
 
     except Exception as e:
-        # logging removed
-        pass
-
+        print(f"[BACKWARD][CALIBRATE_STORE][ERROR] {e}")
 
 
 # ------------------------------------------------------------
@@ -95,6 +100,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
             self.report({'ERROR'}, "No active clip.")
+            print("[BACKWARD][INIT] ❌ Kein aktiver Clip – Operator abgebrochen.")
             return {"CANCELLED"}
 
         # Determine scene start and end
@@ -107,6 +113,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         self._original_selected = collect_selected_track_names(context)
         if not self._original_selected:
             self.report({'WARNING'}, "No tracks selected.")
+            print("[BACKWARD][INIT] ⚠ Keine Tracks selektiert – Operator abgebrochen.")
             return {"CANCELLED"}
 
         self._processing_names = list(self._original_selected)
@@ -115,6 +122,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         self._window, self._area, self._region, self._space = find_clip_editor_area(clip)
         if not self._window:
             self.report({'ERROR'}, "No CLIP_EDITOR area found.")
+            print("[BACKWARD][INIT] ❌ Keine CLIP_EDITOR-Area gefunden – Operator abgebrochen.")
             return {"CANCELLED"}
 
         # Determine playhead start position
@@ -139,6 +147,12 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         for tr in tracking.tracks:
             tr.select = (tr.name in self._original_selected)
 
+        print(
+            f"[BACKWARD][INIT] ✅ Start Frame={self._start_frame}, "
+            f"End Frame={self._end_frame}, Current={self._current_frame}, "
+            f"Reset={self._reset_frame}, Tracks={len(self._processing_names)}"
+        )
+
         return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
@@ -147,6 +161,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
     def modal(self, context, event):
         if event.type == 'ESC':
+            print("[BACKWARD][MODAL] ⎋ ESC erkannt – Tracking wird abgebrochen.")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
@@ -155,10 +170,17 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
 
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
+            print("[BACKWARD][MODAL] ⚠ Kein aktiver Clip mehr – Operator abgebrochen.")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
         tracking = clip.tracking
+
+        # Kurzer Status-Log pro Step
+        print(
+            f"[BACKWARD][STEP] Frame={self._current_frame}, "
+            f"Aktive Tracks (vor Update)={len(self._processing_names)}"
+        )
 
         # Update histories
         for name in list(self._processing_names):
@@ -173,9 +195,13 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         store_calibrate_tracks_in_scene(context, self._processing_names)
 
         # Apply optional optimization formula
-        # Frames-per-track wird im Helper aus scene.kaiserlich_frames_per_track gelesen
-        get_from_selected_tracks_backwards(context)
-        apply_formula_on_selected_tracks_backwards(context)
+        try:
+            get_from_selected_tracks_backwards(context)
+            apply_formula_on_selected_tracks_backwards(context)
+            print("[BACKWARD][STEP] 🔎 Formel/Optimierung für ausgewählte Tracks ausgeführt.")
+        except Exception as e:
+            print(f"[BACKWARD][STEP][FORMULA][ERROR] {e}")
+
         scene = context.scene
         best_raw = scene.get("best_tracks")
         good_raw = scene.get("good_tracks")
@@ -190,9 +216,10 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         # adapt search size
         try:
             adapt_search_size_for_calibrate_tracks_backward(context)
-        except Exception:
-            pass
-        
+            print("[BACKWARD][STEP] 📏 adapt_search_size_for_calibrate_tracks_backward erfolgreich.")
+        except Exception as e:
+            print(f"[BACKWARD][STEP][ADAPT_SEARCH][ERROR] {e}")
+
         # Perform backward tracking step
         success = track_markers_with_override(
             self._window, self._area, self._region, self._space,
@@ -200,20 +227,32 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         )
 
         if not success:
+            print("[BACKWARD][STEP] ❌ track_markers_with_override (backwards) fehlgeschlagen – Abbruch.")
             self._finish(context, cancelled=True)
             return {"CANCELLED"}
 
         # Filter active tracks
+        before_filter = len(self._processing_names)
         self._processing_names, _ = filter_active_tracks_at_frame(
             context, self._processing_names, self._current_frame
+        )
+        after_filter = len(self._processing_names)
+        print(
+            f"[BACKWARD][STEP] FilterActiveTracks: vorher={before_filter}, "
+            f"nachher={after_filter}"
         )
 
         # Exit conditions
         if not self._processing_names:
+            print("[BACKWARD][EXIT] ✅ Keine aktiven Tracks mehr – Backward-Zyklus abgeschlossen.")
             self._finish(context)
             return {"FINISHED"}
 
         if self.max_frames > 0 and self._frames_processed >= self.max_frames:
+            print(
+                f"[BACKWARD][EXIT] ⏱ MaxFrames erreicht "
+                f"({self._frames_processed}/{self.max_frames}) – Backward-Zyklus beendet."
+            )
             self._finish(context)
             return {"FINISHED"}
 
@@ -230,6 +269,10 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         self._frames_processed += 1
 
         if int(self._current_frame) <= int(self._start_frame):
+            print(
+                f"[BACKWARD][EXIT] ⬅ Start-Frame erreicht "
+                f"(Current={self._current_frame}, Start={self._start_frame}) – Backward-Zyklus beendet."
+            )
             self._finish(context)
             return {"FINISHED"}
 
@@ -245,17 +288,24 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             wm.event_timer_remove(self._timer)
         self._timer = None
 
+        print(
+            f"[BACKWARD][FINISH] 🧾 cancelled={cancelled}, "
+            f"frames_processed={self._frames_processed}"
+        )
+
         # Restore selection
         clip = getattr(context.space_data, "clip", None)
         if clip and hasattr(clip, "tracking"):
             for tr in clip.tracking.tracks:
                 tr.select = (tr.name in self._original_selected)
+            print("[BACKWARD][FINISH] Selektion der ursprünglichen Tracks wiederhergestellt.")
 
         # Reset playhead
         try:
             reset_to_frame(context, self._reset_frame)
-        except Exception:
-            pass
+            print(f"[BACKWARD][FINISH] Playhead auf Frame {self._reset_frame} zurückgesetzt.")
+        except Exception as e:
+            print(f"[BACKWARD][FINISH][RESET_FRAME][ERROR] {e}")
 
         # Compute quality metrics
         try:
@@ -263,6 +313,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
             metrics = compute_track_quality_metrics(context)
             quality_percent = float(metrics.get("prozent", 100.0))
             context.scene.kaiserlich_quality_percent = f"{int(round(quality_percent))}%"
+            print(f"[BACKWARD][FINISH] Qualität: {context.scene.kaiserlich_quality_percent}")
 
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
@@ -271,31 +322,34 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
                             if region.type == "UI":
                                 region.tag_redraw()
         except Exception as e:
-            pass
+            print(f"[BACKWARD][FINISH][QUALITY][ERROR] {e}")
 
         # Compute marker progress
         try:
             _, perc = compute_marker_progress(context.scene, update_ui=True)
             context.scene.kaiserlich_marker_progress = f"{int(round(perc))}%"
+            print(f"[BACKWARD][FINISH] Marker-Progress: {context.scene.kaiserlich_marker_progress}")
         except Exception as e:
-            pass
-
+            print(f"[BACKWARD][FINISH][PROGRESS][ERROR] {e}")
 
         # Hand over control to forward tracking operator
         if not cancelled:
             try:
                 clip = getattr(context.space_data, "clip", None)
                 if clip is None:
+                    print("[BACKWARD][FORWARD_HANDOVER] ⚠ Kein Clip – Forward-Zyklus wird nicht gestartet.")
                     return
 
                 window, area, region, space = find_clip_editor_area(clip)
                 if not window:
+                    print("[BACKWARD][FORWARD_HANDOVER] ⚠ Keine CLIP_EDITOR-Area – Forward-Zyklus wird nicht gestartet.")
                     return
 
+                print("[BACKWARD][FORWARD_HANDOVER] ▶ Starte forward master_track_cycle Operator.")
                 with context.temp_override(window=window, area=area, region=region, space_data=space):
                     bpy.ops.kaiserlich_tracker.master_track_cycle()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[BACKWARD][FORWARD_HANDOVER][ERROR] {e}")
 
 
 def register():
