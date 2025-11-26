@@ -40,6 +40,10 @@ from ...Helper.reference_key import (
 # ------------------------------------------------------------
 from ...Helper.marker_position_forward_calibration import _resolve_reference_key
 
+from ...Helper.correct_selected_by_ref_dynamic_backward import (
+    from ...Helper.correct_selected_by_ref_dynamic_backward import (
+    correct_motion_by_dynamic_reference_backward
+)
 # ------------------------------------------------------------
 # Interner Helper: Speicherung aktiver Tracks in Scene-String
 # ------------------------------------------------------------
@@ -232,6 +236,8 @@ class KAISERLICHTRACKER_OT_master_track_cycle_backwards(bpy.types.Operator):
         # BACKWARD CALIBRATION STEP (mit Referenzwahl good/best)
         # -------------------------------------------------------
         try: correct_motion_by_reference_backward(context)
+
+correct_motion_by_dynamic_reference_backward(context)
             scene = context.scene
 
             # calibrate_tracks aus Scene lesen
