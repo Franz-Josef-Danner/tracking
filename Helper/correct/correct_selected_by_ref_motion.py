@@ -9,8 +9,8 @@ from typing import List, Tuple, Optional
 # INTERNAL: get active valid marker location for a track at frame
 # ------------------------------------------------------------
 def _get_marker(track: bpy.types.MovieTrackingTrack, frame: int) -> Optional[Tuple[float, float]]:
-    if track.mute or track.lock or not track.select:
-        pass  # selecting does NOT disqualify, only mute, lock, disabled
+    # ⚠ track.mute existiert nicht, nur Marker haben mute/disable
+    # selecting disqualifies nicht – nur Marker selbst
     # retrieve marker at exact frame index
     try:
         m = track.markers.find_frame(frame)
@@ -19,7 +19,21 @@ def _get_marker(track: bpy.types.MovieTrackingTrack, frame: int) -> Optional[Tup
         return (m.co[0], m.co[1])
     except Exception:
         return None
-
+#
+# NEW: check if track is valid at a given frame
+#
+def _is_active_track(track: bpy.types.MovieTrackingTrack, frame: int) -> bool:
+    if not track.select or track.lock:
+        return False
+    try:
+        mk = track.markers.find_frame(frame)
+        if not mk:
+            return False
+        if getattr(mk, "mute", False) or not getattr(mk, "enabled", True):
+            return False
+        return True
+    except Exception:
+        return False
 
 # ------------------------------------------------------------
 # INTERNAL: distance + vector operations
@@ -81,14 +95,16 @@ def correct_motion_by_reference(context: bpy.types.Context,
     # --------------------------
     # 1) Selektierte Tracks erfassen
     # --------------------------
-    selected_tracks = [t for t in tracks if t.select and not t.mute and not t.lock]
+    # FIX: kein t.mute, sondern Marker prüfen → _is_active_track()
+    selected_tracks = [t for t in tracks if _is_active_track(t, f)]
 
     # --------------------------
     # 2) Referenz-Tracks ermitteln
     # --------------------------
     ref_tracks = []
     for t in tracks:
-        if t.mute or t.lock or t.select:
+        # FIX: t.mute existiert nicht → skip nur anhand Lock & Auswahl
+        if t.lock or t.select:
             continue  # ref dürfen NICHT selektiert sein
         p0 = _get_marker(t, f)
         p1 = _get_marker(t, f1)
