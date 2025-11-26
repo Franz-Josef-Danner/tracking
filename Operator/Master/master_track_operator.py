@@ -51,7 +51,9 @@ from ..Helper.correct_selected_by_ref_motion import correct_motion_by_reference
 from ...Helper.marker_position_forward_calibration import (_resolve_reference_key, correct_marker_positions)
 # Dieser Helper übernimmt die Forward-Kalibrierung von Tracking-Marker-Positionen auf Basis der aktuellen „best/good_tracks“: Er liest calibrate_tracks und Referenz-Tracklisten robust aus der Szene, filtert tote/fehlende Tracks, prüft eine Mindestabdeckung aktiver Referenzmarker über mehrere vorangegangene Frames und schätzt daraus eine lokal gewichtete Durchschnittsbewegung (Velocity). Auf Basis dieser Velocity wird für jeden Kalibrier-Track eine Vorhersageposition berechnet, mit der gemessenen Position adaptiv verblendet (aspektkorrekt) und der Marker im aktuellen Frame korrigiert. Begleitend werden alle relevanten Scene-Keys und Abweichungen minimal, aber differenziert geloggt.
 
-from ...Helper.marker_position_forward_calibration import (_resolve_reference_key, correct_marker_positions)
+from ...Helper.correct_selected_by_ref_dynamic import (
+    correct_motion_by_dynamic_reference
+)
 
 # Interner Helper: Speicherung aktiver Tracks in Scene-String
 # ------------------------------------------------------------
@@ -223,6 +225,7 @@ class KAISERLICHTRACKER_OT_master_track_cycle(bpy.types.Operator):
         # -----------------------------------------------
         store_calibrate_tracks_in_scene(context, self._processing_names)
 correct_motion_by_reference(context)
+correct_motion_by_dynamic_reference(context)
         # Danach würde marker_position_forward_calibration.py aufgerufen werden
         # (hier nur vorbereitend, damit calibrate_tracks aktuell ist)
 
