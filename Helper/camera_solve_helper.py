@@ -1,7 +1,7 @@
 # Helper/camera_solve_helper.py
 import bpy
 
-ERROR_THRESHOLD = 10.0
+ERROR_THRESHOLD = 2
 
 
 def run_camera_solve(context):
